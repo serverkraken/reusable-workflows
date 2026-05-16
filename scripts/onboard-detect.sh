@@ -61,7 +61,10 @@ if [[ -n "${TARGET_REPO:-}" ]]; then
     echo "::error::repo not accessible: $TARGET_REPO" >&2
     exit 1
   fi
-  raw_tag=$(gh release list --repo "$TARGET_REPO" --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+  # --exclude-pre-releases: seed release-please-manifest.json with the latest STABLE
+  # version, not a prerelease tag like 0.14.2-pre.<sha>. Prereleases as the manifest
+  # baseline confuse release-please's version-bump math on the next release.
+  raw_tag=$(gh release list --repo "$TARGET_REPO" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
   if [[ -n "$raw_tag" ]]; then
     current_version="${raw_tag#v}"
   fi

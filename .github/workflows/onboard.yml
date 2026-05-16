@@ -371,9 +371,11 @@ jobs:
           LANG: ${{ steps.detect.outputs.language || '' }}
           CUR_VER: ${{ steps.detect.outputs.current_version || '' }}
           PR_A_URL: ${{ steps.pr_a.outputs.pr_a_url || '' }}
-          PR_A_STATUS: ${{ steps.pr_a.outputs.pr_a_status || 'error' }}
+          # Distinguish deliberate dry-run skip from real failure so the summary table
+          # doesn't show "error / error" on a successful dry-run.
+          PR_A_STATUS: ${{ steps.pr_a.outputs.pr_a_status || (inputs.dry_run && 'dry-run' || 'error') }}
           PR_B_URL: ${{ steps.pr_b.outputs.pr_b_url || '' }}
-          PR_B_STATUS: ${{ steps.pr_b.outputs.pr_b_status || 'error' }}
+          PR_B_STATUS: ${{ steps.pr_b.outputs.pr_b_status || (inputs.dry_run && 'dry-run' || 'error') }}
           JOB_STATUS: ${{ job.status }}
         run: |
           set -euo pipefail
@@ -453,7 +455,9 @@ jobs:
               pbs=$(jq -r '.pr_b_status' "$f")
               js=$(jq -r '.job_status' "$f")
 
-              if [[ "$pas" == "no-changes" && "$pbs" == "no-legacy" ]]; then
+              if [[ "$pas" == "dry-run" && "$pbs" == "dry-run" ]]; then
+                combined="dry-run (rendered diff in logs)"
+              elif [[ "$pas" == "no-changes" && "$pbs" == "no-legacy" ]]; then
                 combined="complete"
               elif [[ "$pas" == "no-changes" && "$pbs" == "cleanup-open" ]]; then
                 combined="cleanup-open"
