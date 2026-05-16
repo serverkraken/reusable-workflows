@@ -78,11 +78,26 @@ jobs:
           private-key: ${{ secrets.release_please_app_private_key }}
           owner: serverkraken
           repositories: reusable-workflows
+      - name: Resolve catalog ref
+        # github.workflow_sha returns the CALLER's commit SHA when this atom is
+        # invoked via cross-repo workflow_call — that SHA doesn't exist in the
+        # catalog. github.workflow_ref points at the resolved address of the
+        # called workflow (e.g. "serverkraken/reusable-workflows/.../trivy-fs.yml@refs/tags/v2.0.0").
+        # The ref after `@` is what we need to clone the catalog at.
+        id: catalog-ref
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          ref="${WORKFLOW_REF##*@}"
+          ref="${ref#refs/heads/}"
+          ref="${ref#refs/tags/}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Resolved catalog ref: $ref"
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
         with:
           repository: serverkraken/reusable-workflows
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ steps.catalog-ref.outputs.ref }}
           token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
 
