@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Run actionlint
-        uses: rhysd/actionlint@v1
+        uses: rhysd/actionlint@v1.7.12
         with:
           color: 'true'
 
@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Validate renovate.json5
-        uses: suzuki-shunsuke/renovate-config-validator-action@v1
+        uses: suzuki-shunsuke/renovate-config-validator-action@v0.0.1
         with:
           config: .github/renovate.json5
 
