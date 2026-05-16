@@ -263,10 +263,11 @@ jobs:
             gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" --body "$body"
             pr_url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url)
           else
-            pr_url=$(gh pr create --repo "$TARGET_REPO" \
-                                   --base "$DEFAULT_BRANCH" --head "$ADD_BRANCH" \
-                                   --title "chore: onboard serverkraken/reusable-workflows@${PIN}" \
-                                   --body "$body")
+            gh pr create --repo "$TARGET_REPO" \
+                         --base "$DEFAULT_BRANCH" --head "$ADD_BRANCH" \
+                         --title "chore: onboard serverkraken/reusable-workflows@${PIN}" \
+                         --body "$body" >/dev/null
+            pr_url=$(gh pr view "$ADD_BRANCH" --repo "$TARGET_REPO" --json url -q .url)
           fi
           echo "pr_a_url=$pr_url" >> "$GITHUB_OUTPUT"
           echo "pr_a_status=add-open" >> "$GITHUB_OUTPUT"
@@ -354,10 +355,11 @@ jobs:
             gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" --body "$body"
             pr_url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url)
           else
-            pr_url=$(gh pr create --repo "$TARGET_REPO" \
-                                   --base "$DEFAULT_BRANCH" --head "$CLEANUP_BRANCH" \
-                                   --title "chore: remove legacy workflows superseded by reusable-workflows@${PIN}" \
-                                   --body "$body")
+            gh pr create --repo "$TARGET_REPO" \
+                         --base "$DEFAULT_BRANCH" --head "$CLEANUP_BRANCH" \
+                         --title "chore: remove legacy workflows superseded by reusable-workflows@${PIN}" \
+                         --body "$body" >/dev/null
+            pr_url=$(gh pr view "$CLEANUP_BRANCH" --repo "$TARGET_REPO" --json url -q .url)
           fi
           echo "pr_b_url=$pr_url" >> "$GITHUB_OUTPUT"
           echo "pr_b_status=cleanup-open" >> "$GITHUB_OUTPUT"
@@ -407,6 +409,7 @@ jobs:
     steps:
       - name: Mint App token for catalog repo
         id: catalog-token
+        if: ${{ !inputs.dry_run }}
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
@@ -415,6 +418,7 @@ jobs:
           repositories: reusable-workflows
 
       - name: Checkout catalog on main
+        if: ${{ !inputs.dry_run }}
         uses: actions/checkout@v6
         with:
           repository: serverkraken/reusable-workflows
@@ -511,6 +515,7 @@ jobs:
             pas=$(jq -r '.pr_a_status' "$f")
             pb=$(jq -r '.pr_b_url' "$f")
             pbs=$(jq -r '.pr_b_status' "$f")
+            js=$(jq -r '.job_status' "$f")
 
             if [[ "$pas" == "no-changes" && "$pbs" == "no-legacy" ]]; then
               status="complete"
@@ -522,6 +527,9 @@ jobs:
               status="add-open, cleanup-open"
             else
               status="$pas / $pbs"
+            fi
+            if [[ "$js" != "success" ]]; then
+              status="error ($status)"
             fi
 
             pa_md="—"
