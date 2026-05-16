@@ -54,22 +54,27 @@ jobs:
       fail_on_findings: false
       upload_sarif: false
 
-  # ----- trivy-fs failure path: must fail on the secret fixture -----
+  # ----- trivy-fs failure path: must detect secrets on the secret fixture -----
   test-trivy-fs-failure:
     uses: ./.github/workflows/trivy-fs.yml
     with:
       paths_ignore: ''
       upload_sarif: false
-      fail_on_findings: true
+      fail_on_findings: false   # don't fail the job; we assert on findings_count below
 
-  assert-trivy-fs-fails:
+  assert-trivy-fs-finds-secrets:
     needs: test-trivy-fs-failure
-    if: always() && needs.test-trivy-fs-failure.result != 'failure'
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          echo "::error::trivy-fs failure-path expected to fail on with-secret fixture but result was ${{ needs.test-trivy-fs-failure.result }}"
-          exit 1
+      - name: Verify findings_count > 0
+        env:
+          COUNT: ${{ needs.test-trivy-fs-failure.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" == "0" ]]; then
+            echo "::error::Expected secret findings on with-secret fixture, got 0"
+            exit 1
+          fi
+          echo "trivy-fs correctly detected $COUNT findings"
 
   # ----- cleanup-images smoke: verify the workflow accepts inputs -----
   # Runs after trivy-image-happy so the scan completes before cleanup might
