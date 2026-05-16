@@ -48,7 +48,7 @@ permissions:
   security-events: write
 
 concurrency:
-  group: trivy-fs-${{ github.workflow }}-${{ github.ref }}
+  group: trivy-fs-${{ github.workflow }}-${{ github.ref }}-${{ inputs.fail_on_findings }}-${{ inputs.paths_ignore }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
