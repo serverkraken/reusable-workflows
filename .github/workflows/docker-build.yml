@@ -214,7 +214,12 @@ jobs:
       - if: steps.check.outputs.selected == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ steps.suffix.outputs.value }}-${{ matrix.arch }}
+          # Arch FIRST, then image-suffix — keeps the merge job's download
+          # pattern unambiguous. Putting suffix first allowed "test-fixture-*"
+          # to also match "test-fixture-cve-amd64" (because `cve-amd64` is a
+          # valid wildcard match for `*`), which mixed digests from unrelated
+          # builds in the merge job.
+          name: digests-${{ matrix.arch }}-${{ steps.suffix.outputs.value }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -246,11 +251,17 @@ jobs:
       - name: Clean digest dir (self-hosted runners persist /tmp between jobs)
         run: rm -rf /tmp/digests && mkdir -p /tmp/digests
 
-      - uses: actions/download-artifact@v4
+      - name: Download amd64 digest
+        uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-${{ steps.suffix.outputs.value }}-*
-          merge-multiple: true
+          name: digests-amd64-${{ steps.suffix.outputs.value }}
+
+      - name: Download arm64 digest
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          name: digests-arm64-${{ steps.suffix.outputs.value }}
 
       - uses: docker/setup-buildx-action@v4
 
