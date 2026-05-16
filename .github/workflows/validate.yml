@@ -1,0 +1,56 @@
+# .github/workflows/validate.yml
+name: validate
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run actionlint
+        uses: rhysd/actionlint@v1
+        with:
+          color: 'true'
+
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install yamllint
+        run: pipx install yamllint
+      - name: Run yamllint
+        run: yamllint .github/ actions/ tests/
+
+  renovate-config-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate renovate.json5
+        uses: suzuki-shunsuke/renovate-config-validator-action@v1
+        with:
+          config: .github/renovate.json5
+
+  trivy-renovate-annotation-check:
+    # Verify the customManagers regex still matches the # renovate: comment
+    # in install-trivy/action.yml. Catches regression where someone reformats
+    # the comment in a way that breaks the parser.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check that Renovate would detect TRIVY_VERSION
+        run: |
+          set -e
+          PATTERN='# renovate: datasource=github-releases depName=aquasecurity/trivy'
+          grep -A1 "$PATTERN" actions/install-trivy/action.yml \
+            | grep -E "TRIVY_VERSION: '[0-9]+\.[0-9]+\.[0-9]+'" \
+            || { echo "::error::Renovate annotation broken in install-trivy"; exit 1; }
