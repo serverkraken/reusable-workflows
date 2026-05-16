@@ -173,3 +173,100 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           git --no-pager diff --cached --stat
           git --no-pager diff --cached
+
+      - name: Branch A — ensure add-workflows PR
+        if: ${{ !inputs.dry_run }}
+        id: pr_a
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ steps.target-token.outputs.token }}
+          DEFAULT_BRANCH: ${{ steps.detect.outputs.default_branch }}
+          ADD_BRANCH: ${{ inputs.add_branch_name }}
+          TARGET_REPO: ${{ matrix.target.target }}
+          PIN: ${{ inputs.pin_version }}
+          LANG: ${{ steps.detect.outputs.language }}
+          RTYPE: ${{ steps.detect.outputs.release_type }}
+          CUR_VER: ${{ steps.detect.outputs.current_version }}
+        run: |
+          set -euo pipefail
+          # Bot identity: id is public and stable; fetched inline so we never
+          # commit a hardcoded numeric id that could drift.
+          bot_id=$(gh api '/users/serverkraken-release-bot[bot]' -q '.id')
+          git config user.name 'serverkraken-release-bot[bot]'
+          git config user.email "${bot_id}+serverkraken-release-bot[bot]@users.noreply.github.com"
+
+          # Target already has rendered files staged (from prior step's "git add -A").
+          # Reset index, then explicitly add only the 6 rendered files.
+          git reset
+
+          RENDERED=(
+            ".github/workflows/ci.yml"
+            ".github/workflows/release.yml"
+            ".github/workflows/prerelease.yml"
+            ".github/workflows/cleanup.yml"
+            "release-please-config.json"
+            ".release-please-manifest.json"
+          )
+          # All 6 should exist after render; defensive guard.
+          for f in "${RENDERED[@]}"; do
+            [[ -f "$f" ]] || { echo "::error::expected rendered file missing: $f"; exit 1; }
+          done
+
+          # Create / reset the bot branch from default HEAD; rendered files are working-tree
+          # mods so they survive `checkout -B`.
+          git fetch origin "$DEFAULT_BRANCH"
+          git checkout -B "$ADD_BRANCH" "origin/$DEFAULT_BRANCH"
+
+          git add "${RENDERED[@]}"
+
+          existing_pr_num=$(gh pr list --repo "$TARGET_REPO" --head "$ADD_BRANCH" --state open --json number -q '.[0].number' || echo "")
+
+          if git diff --cached --quiet; then
+            echo "No diff for add branch."
+            if [[ -n "$existing_pr_num" ]]; then
+              gh pr close "$existing_pr_num" --repo "$TARGET_REPO" --comment "No changes needed; closing." || true
+            fi
+            echo "pr_a_url=" >> "$GITHUB_OUTPUT"
+            echo "pr_a_status=no-changes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git commit -m "chore: onboard serverkraken/reusable-workflows@${PIN}"
+          git push -f origin "$ADD_BRANCH"
+
+          body=$(cat <<EOF
+          ## Onboard to serverkraken/reusable-workflows@${PIN}
+
+          Drops in the standard reusable-workflow consumer files:
+
+          - \`.github/workflows/ci.yml\`         — PR-time fs scan
+          - \`.github/workflows/release.yml\`    — main → release (orchestrator)
+          - \`.github/workflows/prerelease.yml\` — manual dispatch image builds
+          - \`.github/workflows/cleanup.yml\`    — weekly GHCR retention
+          - \`release-please-config.json\`       — release-please config (release-type: \`${RTYPE}\`)
+          - \`.release-please-manifest.json\`    — seeded at current version \`${CUR_VER}\`
+
+          **Detected language:** \`${LANG}\`
+          **Detected current version:** \`${CUR_VER}\` (from latest GitHub release)
+          **Catalog version pinned:** \`${PIN}\`
+
+          After merging:
+          1. Push a \`feat:\` / \`fix:\` commit to \`${DEFAULT_BRANCH}\` — \`release.yml\` should open a release-please PR.
+          2. Merge that release-please PR. A release + image build + Trivy scan should run end-to-end.
+          3. Once one full release has run green, merge the companion cleanup PR (if open) to retire legacy workflow files.
+
+          _Opened by the \`onboard.yml\` workflow in \`serverkraken/reusable-workflows\`._
+          EOF
+          )
+
+          if [[ -n "$existing_pr_num" ]]; then
+            gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" --body "$body"
+            pr_url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url)
+          else
+            pr_url=$(gh pr create --repo "$TARGET_REPO" \
+                                   --base "$DEFAULT_BRANCH" --head "$ADD_BRANCH" \
+                                   --title "chore: onboard serverkraken/reusable-workflows@${PIN}" \
+                                   --body "$body")
+          fi
+          echo "pr_a_url=$pr_url" >> "$GITHUB_OUTPUT"
+          echo "pr_a_status=add-open" >> "$GITHUB_OUTPUT"
