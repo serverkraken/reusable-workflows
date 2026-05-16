@@ -1,0 +1,111 @@
+# .github/workflows/onboard.yml
+# Operational tool: dispatches per-target onboarding PRs into serverkraken/* repos.
+# Not a public reusable workflow's API surface — input contract may evolve without semver bump.
+# See docs/superpowers/specs/2026-05-16-onboarding-workflow-design.md.
+name: onboard
+on:
+  workflow_dispatch:
+    inputs:
+      target_repos:
+        description: 'Comma-separated owner/repo list (e.g. serverkraken/blupod-ui,serverkraken/flow)'
+        required: true
+        type: string
+      language:
+        description: 'auto = detect, otherwise force release-type'
+        required: false
+        type: choice
+        default: auto
+        options: [auto, go, python, rust, helm, node, simple]
+      dry_run:
+        description: 'Render + log diff; do NOT push or open PRs'
+        required: false
+        type: boolean
+        default: false
+      pin_version:
+        description: 'Catalog @version that rendered templates pin to'
+        required: false
+        type: string
+        default: v1
+      add_branch_name:
+        description: 'Branch for PR A (add new workflows)'
+        required: false
+        type: string
+        default: chore/onboard-reusable-workflows
+      cleanup_branch_name:
+        description: 'Branch for PR B (remove legacy workflows)'
+        required: false
+        type: string
+        default: chore/remove-legacy-workflows
+  workflow_call:
+    inputs:
+      target_repos:
+        required: true
+        type: string
+      language:
+        required: false
+        type: string
+        default: auto
+      dry_run:
+        required: false
+        type: boolean
+        default: true
+      pin_version:
+        required: false
+        type: string
+        default: v1
+      add_branch_name:
+        required: false
+        type: string
+        default: chore/onboard-reusable-workflows
+      cleanup_branch_name:
+        required: false
+        type: string
+        default: chore/remove-legacy-workflows
+
+concurrency:
+  # Hardcoded prefix per CLAUDE-patterns "concurrency group" rule.
+  group: onboard-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  parse-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.parse.outputs.matrix }}
+    steps:
+      - id: parse
+        env:
+          REPOS: ${{ inputs.target_repos }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra raw <<< "$REPOS"
+          declare -A seen=()
+          out='['
+          first=1
+          for entry in "${raw[@]}"; do
+            entry="${entry//[[:space:]]/}"
+            [[ -z "$entry" ]] && continue
+            if [[ ! "$entry" =~ ^serverkraken/[A-Za-z0-9._-]+$ ]]; then
+              echo "::error::invalid target_repos entry: '$entry' (must match ^serverkraken/[A-Za-z0-9._-]+\$)"
+              exit 1
+            fi
+            if [[ -n "${seen[$entry]:-}" ]]; then
+              continue
+            fi
+            seen[$entry]=1
+            owner="${entry%/*}"
+            name="${entry#*/}"
+            if [[ $first -eq 0 ]]; then out+=','; fi
+            out+="{\"target\":\"$entry\",\"owner\":\"$owner\",\"name\":\"$name\"}"
+            first=0
+          done
+          out+=']'
+          if [[ "$out" == "[]" ]]; then
+            echo "::error::target_repos is empty after parse"
+            exit 1
+          fi
+          echo "matrix=$out" >> "$GITHUB_OUTPUT"
+          echo "Parsed matrix: $out"
