@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: ''
+      ignore_unfixed:
+        description: 'Pass --ignore-unfixed to Trivy (suppress findings without a fix available).'
+        required: false
+        type: boolean
+        default: true
       fail_on_findings:
         description: 'Exit non-zero when severity-matching findings exist.'
         required: false
@@ -91,14 +96,17 @@ jobs:
           SCANNERS: ${{ inputs.scanners }}
           SEVERITY: ${{ inputs.severity }}
           IGNORE_ARGS: ${{ steps.ignore.outputs.args }}
+          IGNORE_UNFIXED: ${{ inputs.ignore_unfixed }}
         run: |
           set -e
+          UNFIXED_FLAG=""
+          [[ "$IGNORE_UNFIXED" == "true" ]] && UNFIXED_FLAG="--ignore-unfixed"
           # shellcheck disable=SC2086
           trivy fs \
             --scanners "$SCANNERS" \
             --severity "$SEVERITY" \
             --exit-code 0 \
-            --ignore-unfixed \
+            $UNFIXED_FLAG \
             --format sarif \
             --output trivy-fs.sarif \
             $IGNORE_ARGS .
@@ -107,7 +115,7 @@ jobs:
             --scanners "$SCANNERS" \
             --severity "$SEVERITY" \
             --exit-code 0 \
-            --ignore-unfixed \
+            $UNFIXED_FLAG \
             --format json \
             --output trivy-fs.json \
             $IGNORE_ARGS .
