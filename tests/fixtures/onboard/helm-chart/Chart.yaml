@@ -1,0 +1,3 @@
+apiVersion: v2
+name: onboard-fixture-helm
+version: 0.0.0
