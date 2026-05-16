@@ -18,7 +18,7 @@ runs:
       shell: bash
       env:
         # renovate: datasource=github-releases depName=aquasecurity/trivy
-        TRIVY_VERSION: '0.69.3'
+        TRIVY_VERSION: '0.70.0'
         REQUESTED_TRIVY_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
