@@ -7,6 +7,15 @@ on:
 jobs:
   release:
     uses: serverkraken/reusable-workflows/.github/workflows/release.yml@v1
+    permissions:
+      contents: write          # release-please pushes + creates a release PR
+      pull-requests: write     # release-please opens the release PR
+      issues: write            # release-please labels the release PR
+      packages: write          # docker-build pushes to GHCR
+      id-token: write          # cosign keyless OIDC signing
+      attestations: write      # SLSA build-provenance attestation
+      security-events: write   # trivy-image SARIF upload
+      actions: read            # codeql-action telemetry
     secrets: inherit
     # Optional inputs (uncomment to override defaults):
     # with:
