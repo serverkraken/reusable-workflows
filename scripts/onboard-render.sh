@@ -31,7 +31,9 @@ TEMPLATES="$CATALOG/docs/adopter-templates"
 
 mkdir -p "$TARGET/.github/workflows"
 
-# YAML workflow templates — replace @v1 (word-boundary-terminated) with @<pin>
+# YAML workflow templates — replace @v1 with @<pin>.
+# Uses an explicit non-identifier-or-EOL guard instead of \b because BSD/macOS
+# sed silently ignores \b, which would let @v10 / @v1.0.0 match incorrectly.
 for name in ci release prerelease cleanup; do
   src="$TEMPLATES/${name}.yml"
   dst="$TARGET/.github/workflows/${name}.yml"
