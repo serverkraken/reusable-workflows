@@ -77,7 +77,10 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: docker-build-${{ inputs.tag || github.ref }}
+  # Include image_name so multiple callers building DIFFERENT images from the
+  # same ref (e.g. integration tests building both minimal-go and with-cve
+  # fixtures in parallel) don't cancel each other.
+  group: docker-build-${{ inputs.image_name || github.repository }}-${{ inputs.tag || github.ref }}
   cancel-in-progress: ${{ inputs.prerelease }}
 
 jobs:
