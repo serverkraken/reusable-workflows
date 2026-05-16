@@ -399,3 +399,157 @@ jobs:
           name: onboard-result-${{ matrix.target.owner }}-${{ matrix.target.name }}
           path: result/
           retention-days: 7
+
+  finalize:
+    needs: onboard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint App token for catalog repo
+        id: catalog-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: serverkraken
+          repositories: reusable-workflows
+
+      - name: Checkout catalog on main
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: main
+          token: ${{ steps.catalog-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Download all result artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+          pattern: onboard-result-*
+          merge-multiple: true
+
+      - name: Build step summary table
+        id: summary
+        run: |
+          set -euo pipefail
+          {
+            echo "## Onboarding run summary"
+            echo ""
+            echo "| Repository | Language | Version | Add PR | Cleanup PR | Status |"
+            echo "|---|---|---|---|---|---|"
+            for f in results/*.json; do
+              [[ -f "$f" ]] || continue
+              target=$(jq -r '.target' "$f")
+              lang=$(jq -r '.language' "$f")
+              ver=$(jq -r '.version' "$f")
+              pa=$(jq -r '.pr_a_url' "$f")
+              pas=$(jq -r '.pr_a_status' "$f")
+              pb=$(jq -r '.pr_b_url' "$f")
+              pbs=$(jq -r '.pr_b_status' "$f")
+              js=$(jq -r '.job_status' "$f")
+
+              if [[ "$pas" == "no-changes" && "$pbs" == "no-legacy" ]]; then
+                combined="complete"
+              elif [[ "$pas" == "no-changes" && "$pbs" == "cleanup-open" ]]; then
+                combined="cleanup-open"
+              elif [[ "$pas" == "add-open" && "$pbs" == "no-legacy" ]]; then
+                combined="add-open, no-legacy"
+              elif [[ "$pas" == "add-open" && "$pbs" == "cleanup-open" ]]; then
+                combined="add-open, cleanup-open"
+              else
+                combined="$pas / $pbs"
+              fi
+              if [[ "$js" != "success" ]]; then
+                combined="error ($combined)"
+              fi
+
+              pa_md="—"
+              pb_md="—"
+              [[ -n "$pa" ]] && pa_md="[link]($pa)"
+              [[ -n "$pb" ]] && pb_md="[link]($pb)"
+              echo "| $target | $lang | $ver | $pa_md | $pb_md | $combined |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Also emit a machine-readable copy for the status-doc step.
+          cp -r results results-for-status
+
+      - name: Update docs/onboarding-status.md
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ steps.catalog-token.outputs.token }}
+          PIN_VERSION: ${{ inputs.pin_version }}
+        run: |
+          set -euo pipefail
+          bot_id=$(gh api '/users/serverkraken-release-bot[bot]' -q '.id')
+          git config user.name 'serverkraken-release-bot[bot]'
+          git config user.email "${bot_id}+serverkraken-release-bot[bot]@users.noreply.github.com"
+
+          DOC=docs/onboarding-status.md
+          if [[ ! -f "$DOC" ]]; then
+            echo "::warning::$DOC missing — initializing"
+            cat > "$DOC" <<EOF
+          # Onboarding Status
+
+          _Last updated by the onboarding workflow: $(date -u +%Y-%m-%dT%H:%M:%SZ)_
+
+          | Repository | Onboarded | Catalog Version | Add PR | Cleanup PR | Status |
+          |---|---|---|---|---|---|
+          EOF
+          fi
+
+          # Re-derive "Last updated" line.
+          stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          sed -i "s|^_Last updated by the onboarding workflow:.*|_Last updated by the onboarding workflow: ${stamp}_|" "$DOC"
+
+          # For each result, replace or append a row.
+          for f in results-for-status/*.json; do
+            [[ -f "$f" ]] || continue
+            target=$(jq -r '.target' "$f")
+            pa=$(jq -r '.pr_a_url' "$f")
+            pas=$(jq -r '.pr_a_status' "$f")
+            pb=$(jq -r '.pr_b_url' "$f")
+            pbs=$(jq -r '.pr_b_status' "$f")
+
+            if [[ "$pas" == "no-changes" && "$pbs" == "no-legacy" ]]; then
+              status="complete"
+            elif [[ "$pas" == "no-changes" && "$pbs" == "cleanup-open" ]]; then
+              status="cleanup-open"
+            elif [[ "$pas" == "add-open" && "$pbs" == "no-legacy" ]]; then
+              status="add-open, no-legacy"
+            elif [[ "$pas" == "add-open" && "$pbs" == "cleanup-open" ]]; then
+              status="add-open, cleanup-open"
+            else
+              status="$pas / $pbs"
+            fi
+
+            pa_md="—"
+            pb_md="—"
+            [[ -n "$pa" ]] && pa_md="[PR]($pa)"
+            [[ -n "$pb" ]] && pb_md="[PR]($pb)"
+
+            today=$(date -u +%Y-%m-%d)
+            new_row="| $target | $today | ${PIN_VERSION:-v1} | $pa_md | $pb_md | $status |"
+
+            # Replace existing row (matched by exact "| <target> |" at line start) or append.
+            awk -v tgt="$target" -v row="$new_row" '
+              BEGIN { replaced=0 }
+              {
+                if (index($0, "| " tgt " |") == 1) { print row; replaced=1 }
+                else { print $0 }
+              }
+              END {
+                if (!replaced) { print row }
+              }
+            ' "$DOC" > "$DOC.new" && mv "$DOC.new" "$DOC"
+          done
+
+          if git diff --quiet -- "$DOC"; then
+            echo "No status doc changes."
+            exit 0
+          fi
+
+          git add "$DOC"
+          git commit -m "chore(onboard): update onboarding-status.md [skip ci]"
+          git push origin main
