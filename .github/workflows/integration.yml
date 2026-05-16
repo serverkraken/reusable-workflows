@@ -76,11 +76,48 @@ jobs:
           fi
           echo "trivy-fs correctly detected $COUNT findings"
 
+  # ----- trivy-image failure path: CVE fixture must have findings -----
+  test-docker-build-cve:
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/with-cve
+      dockerfile: tests/fixtures/with-cve/Dockerfile
+      image_name: ${{ github.repository }}/test-fixture-cve
+      sign: false
+      attest: false
+      sbom: false
+
+  test-trivy-image-cve:
+    needs: test-docker-build-cve
+    uses: ./.github/workflows/trivy-image.yml
+    with:
+      image_ref: ${{ needs.test-docker-build-cve.outputs.image_ref }}
+      fail_on_findings: false   # don't fail the job; we assert on findings_count below
+      upload_sarif: false
+
+  assert-trivy-image-cve-finds-vulns:
+    needs: test-trivy-image-cve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify findings_count > 0
+        env:
+          COUNT: ${{ needs.test-trivy-image-cve.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" == "0" ]]; then
+            echo "::error::Expected CVEs on alpine:3.15 fixture, got 0"
+            exit 1
+          fi
+          echo "trivy-image correctly detected $COUNT vulns"
+
   # ----- cleanup-images smoke: verify the workflow accepts inputs -----
-  # Runs after trivy-image-happy so the scan completes before cleanup might
-  # delete the prerelease tag.
+  # Runs after all image scans complete so prerelease tags aren't deleted
+  # before scanning finishes.
   test-cleanup-images:
-    needs: test-trivy-image-happy
+    needs:
+      - test-trivy-image-happy
+      - assert-trivy-image-cve-finds-vulns
     uses: ./.github/workflows/cleanup-images.yml
     with:
       package_name: ${{ github.event.repository.name }}/test-fixture
