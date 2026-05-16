@@ -1,0 +1,109 @@
+# .github/workflows/semantic-release.yml
+name: semantic-release
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","low-performance"]'
+      release_please_config:
+        required: false
+        type: string
+        default: 'release-please-config.json'
+      release_please_manifest:
+        required: false
+        type: string
+        default: '.release-please-manifest.json'
+    outputs:
+      release_created:
+        value: ${{ jobs.release.outputs.release_created }}
+      tag_name:
+        value: ${{ jobs.release.outputs.tag_name }}
+      major_tag:
+        value: ${{ jobs.release.outputs.major_tag }}
+      minor_tag:
+        value: ${{ jobs.release.outputs.minor_tag }}
+    secrets:
+      release_please_app_id:
+        required: true
+        description: 'GitHub App ID for the release-please bot.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM-formatted private key for the release-please bot.'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: semantic-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      major_tag: ${{ steps.float.outputs.major_tag }}
+      minor_tag: ${{ steps.float.outputs.minor_tag }}
+    steps:
+      - name: Mint GitHub App installation token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.release_please_app_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: ${{ inputs.release_please_config }}
+          manifest-file: ${{ inputs.release_please_manifest }}
+
+      - name: Move floating major/minor tags
+        id: float
+        if: |
+          steps.release.outputs.release_created == 'true' &&
+          !contains(steps.release.outputs.tag_name, '-')
+        env:
+          NEW_TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          # Lightweight tags carry no tagger info, so git user.name/email
+          # config is intentionally omitted here. The push is authenticated
+          # by the checkout's App token (set in the earlier checkout step).
+          VERSION="${NEW_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          MAJOR_TAG="v$MAJOR"
+          MINOR_TAG="v$MAJOR.$MINOR"
+          git tag -f "$MAJOR_TAG"
+          git tag -f "$MINOR_TAG"
+          git push origin "$MAJOR_TAG" "$MINOR_TAG" --force
+          {
+            echo "major_tag=$MAJOR_TAG"
+            echo "minor_tag=$MINOR_TAG"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Job summary
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          TAG: ${{ steps.release.outputs.tag_name }}
+          MAJ: ${{ steps.float.outputs.major_tag }}
+          MIN: ${{ steps.float.outputs.minor_tag }}
+        run: |
+          {
+            echo "## 🎉 Released $TAG"
+            echo ""
+            if [[ -n "${MAJ:-}" ]]; then
+              echo "**Floating tags updated:** \`$MAJ\` · \`$MIN\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
