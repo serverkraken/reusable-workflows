@@ -1,0 +1,37 @@
+# actions/compute-prerelease-tag/action.yml
+name: compute-prerelease-tag
+description: |
+  Compute OCI-valid prerelease tags from a branch name and short SHA.
+  Outputs two tags: moving_tag (e.g. 'feat-auth-fix') and tag_with_sha
+  (e.g. 'feat-auth-fix-a1b2c3d'). Branch name is lowercased, non-alphanumeric
+  characters are replaced with dashes, consecutive dashes collapsed,
+  leading/trailing dashes stripped, moving_tag capped at 64 chars.
+
+inputs:
+  branch:
+    description: 'Branch name (e.g. github.head_ref or github.ref_name).'
+    required: true
+  short_sha:
+    description: 'Short commit SHA.'
+    required: true
+
+outputs:
+  tag_with_sha:
+    description: 'Unique-per-commit tag: <sanitized-branch>-<short-sha>'
+    value: ${{ steps.compute.outputs.tag_with_sha }}
+  moving_tag:
+    description: 'Moving tag (without SHA), points to latest build of branch'
+    value: ${{ steps.compute.outputs.moving_tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Sanitize and emit
+      id: compute
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch }}
+        SHORT_SHA: ${{ inputs.short_sha }}
+      run: |
+        bash "${GITHUB_ACTION_PATH}/sanitize.sh" "$BRANCH" "$SHORT_SHA" \
+          | tee -a "$GITHUB_OUTPUT"
