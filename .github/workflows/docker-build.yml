@@ -229,6 +229,7 @@ jobs:
           IMG: ghcr.io/${{ needs.version.outputs.image_name }}
           TAG_ARGS: ${{ steps.tags.outputs.tag_args }}
         run: |
+          # shellcheck disable=SC2046,SC2086
           docker buildx imagetools create $TAG_ARGS \
             $(printf "$IMG@sha256:%s " *)
           DIGEST=$(docker buildx imagetools inspect "$IMG:${{ needs.version.outputs.tag }}" --format '{{.Manifest.Digest}}')

@@ -93,6 +93,7 @@ jobs:
           IGNORE_ARGS: ${{ steps.ignore.outputs.args }}
         run: |
           set -e
+          # shellcheck disable=SC2086
           trivy fs \
             --scanners "$SCANNERS" \
             --severity "$SEVERITY" \
@@ -101,6 +102,7 @@ jobs:
             --format sarif \
             --output trivy-fs.sarif \
             $IGNORE_ARGS .
+          # shellcheck disable=SC2086
           trivy fs \
             --scanners "$SCANNERS" \
             --severity "$SEVERITY" \

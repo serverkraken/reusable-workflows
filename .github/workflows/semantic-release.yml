@@ -82,7 +82,7 @@ jobs:
           # config is intentionally omitted here. The push is authenticated
           # by the checkout's App token (set in the earlier checkout step).
           VERSION="${NEW_TAG#v}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          IFS='.' read -r MAJOR MINOR _PATCH <<< "$VERSION"
           MAJOR_TAG="v$MAJOR"
           MINOR_TAG="v$MAJOR.$MINOR"
           git tag -f "$MAJOR_TAG"
