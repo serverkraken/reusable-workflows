@@ -36,18 +36,21 @@ setup() {
   run "$DETECT" "$FIX/rust-cargo"
   [ "$status" -eq 0 ]
   [[ "$output" == *"language=rust"* ]]
+  [[ "$output" == *"release_type=rust"* ]]
 }
 
 @test "detects helm from Chart.yaml" {
   run "$DETECT" "$FIX/helm-chart"
   [ "$status" -eq 0 ]
   [[ "$output" == *"language=helm"* ]]
+  [[ "$output" == *"release_type=helm"* ]]
 }
 
 @test "detects node from package.json" {
   run "$DETECT" "$FIX/node-package"
   [ "$status" -eq 0 ]
   [[ "$output" == *"language=node"* ]]
+  [[ "$output" == *"release_type=node"* ]]
 }
 
 @test "falls back to simple when no signals" {
