@@ -124,3 +124,34 @@ Branches are bot-owned and force-reset to `default_branch` HEAD on every run. Em
 ### 5.6 Failure handling
 
 `fail-fast: false` ensures one target's failure doesn't abort the rest. Each target's status is in the run's step summary and `docs/onboarding-status.md`. Re-running with the same inputs is safe and skips already-applied changes.
+
+---
+
+## 6. v2.0.0 — App-Token Catalog Checkout
+
+Adopters pinning `@v2` (or `pin_version: v2` at onboard time) must pass `secrets: inherit` on every atom call. The atoms `trivy-fs.yml`, `trivy-image.yml`, and `docker-build.yml` mint a catalog-scoped App token from `RELEASE_PLEASE_APP_ID` + `RELEASE_PLEASE_APP_PRIVATE_KEY` (org secrets, see §1.3) and use it to clone the private catalog repo. Without `secrets: inherit`, the call fails immediately with "required secret missing".
+
+### 6.1 Why this exists
+
+GitHub's "Allow other repos to call this workflow" setting governs `uses:` resolution but **not** `actions/checkout` of a private third repo. Before v2.0.0, atoms used the caller's `GITHUB_TOKEN` for the catalog-checkout step, which works only when caller and catalog are the same repo (self-CI) or both are public. Private-to-private adoption required minting a token with read access to the catalog.
+
+### 6.2 App permissions
+
+The catalog-scoped token needs `contents: read`. The existing `serverkraken-release-bot` App already has it. **Additionally**, the App needs `workflows: write` so it can push `.github/workflows/*.yml` into target repos via the onboarding workflow's PR-A flow — verify this is granted on the App settings page if you skipped it during the original v1.0 setup.
+
+### 6.3 Migration
+
+Adopters on `@v1` are unaffected (those atoms don't declare the secrets). To move to `@v2`:
+
+1. Re-dispatch `onboard.yml` against the target with `pin_version: v2`. The rendered templates pin `@v2` and include `secrets: inherit` on every job that calls a catalog atom.
+2. Merge the refreshed PR A.
+3. The cleanup PR (if applicable) is unchanged — it only deletes files.
+
+### 6.4 What templates ship with `secrets: inherit`
+
+| Template | Calls | `secrets: inherit` |
+|---|---|---|
+| `ci.yml` | `trivy-fs.yml` | yes (since v2.0.0) |
+| `release.yml` | `release.yml` (orchestrator) | yes (always) |
+| `prerelease.yml` | `docker-build.yml`, `trivy-image.yml` | yes (since v2.0.0) |
+| `cleanup.yml` | `cleanup-images.yml` (no catalog-checkout) | no (not needed) |

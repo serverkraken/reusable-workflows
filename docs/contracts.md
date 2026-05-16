@@ -44,6 +44,8 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | output  | `image_ref`     | string  | —        | —                                              | `ghcr.io/<image_name>:<tag>` |
 | output  | `digest`        | string  | —        | —                                              | Manifest-list digest `sha256:…` |
 | output  | `tag`           | string  | —        | —                                              | Final tag (auto-computed if input was empty) |
+| secret  | `release_please_app_id`         | — | **yes** | — | App ID for the catalog-checkout token (since v2.0.0) |
+| secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
 
 ---
 
@@ -61,6 +63,8 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `runs_on`         | string  | no       | `'["self-hosted","Linux"]'`  | JSON-encoded runner labels |
 | output  | `findings_count`  | string  | —        | —                            | Number of severity-matching findings |
+| secret  | `release_please_app_id`         | — | **yes** | — | App ID for the catalog-checkout token (since v2.0.0) |
+| secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
 
 ---
 
@@ -77,6 +81,8 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `fail_on_findings`| boolean | no       | `true`                       | Exit non-zero when findings exist |
 | input   | `runs_on`         | string  | no       | `'["self-hosted","Linux"]'`  | JSON-encoded runner labels |
 | output  | `findings_count`  | string  | —        | —                            | Number of severity-matching findings |
+| secret  | `release_please_app_id`         | — | **yes** | — | App ID for the catalog-checkout token (since v2.0.0) |
+| secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
 
 ---
 

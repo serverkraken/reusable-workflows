@@ -47,6 +47,13 @@ on:
       findings_count:
         description: 'Number of findings at requested severity.'
         value: ${{ jobs.scan.outputs.findings_count }}
+    secrets:
+      release_please_app_id:
+        required: true
+        description: 'GitHub App ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
 
 permissions:
   contents: read
@@ -63,11 +70,20 @@ jobs:
       findings_count: ${{ steps.count.outputs.findings_count }}
     steps:
       - uses: actions/checkout@v6
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.release_please_app_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ github.workflow_sha }}
+          token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
 
       - name: Install Trivy

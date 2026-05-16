@@ -48,6 +48,7 @@ jobs:
     needs: semantic-release
     if: needs.semantic-release.outputs.release_created == 'true' && inputs.build_image
     uses: ./.github/workflows/docker-build.yml
+    secrets: inherit
     with:
       tag: ${{ needs.semantic-release.outputs.tag_name }}
       prerelease: false
@@ -59,6 +60,7 @@ jobs:
     needs: [semantic-release, docker-build]
     if: needs.semantic-release.outputs.release_created == 'true' && inputs.build_image && inputs.run_trivy
     uses: ./.github/workflows/trivy-image.yml
+    secrets: inherit
     with:
       image_ref: ${{ needs.docker-build.outputs.image_ref }}
       severity: ${{ inputs.trivy_severity }}
