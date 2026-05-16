@@ -1,3 +1,14 @@
 CLAUDE.md
 CLAUDE-*.md
 .claude/
+
+# Tooling
+*.tmp
+.act/
+
+# Coverage
+coverage/
+*.bashcov
+
+# OS
+.DS_Store

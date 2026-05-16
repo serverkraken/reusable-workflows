@@ -1,0 +1,55 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    ':dependencyDashboard',
+    ':semanticCommits',
+    'group:allNonMajor',
+  ],
+  timezone: 'Europe/Berlin',
+  schedule: ['before 6am on monday'],
+  labels: ['dependencies'],
+  ignorePaths: ['tests/fixtures/**'],
+  packageRules: [
+    {
+      description: 'GitHub Actions — auto-merge minor+patch (gated by integration tests)',
+      matchManagers: ['github-actions'],
+      matchUpdateTypes: ['minor', 'patch'],
+      automerge: true,
+      automergeType: 'pr',
+      groupName: 'GitHub Actions',
+    },
+    {
+      description: 'Supply-chain actions move in lockstep',
+      matchPackagePatterns: ['^sigstore/', '^actions/attest-', '^anchore/sbom-action'],
+      groupName: 'Supply chain actions',
+    },
+    {
+      description: 'Docker actions',
+      matchPackagePatterns: ['^docker/'],
+      groupName: 'Docker actions',
+    },
+    {
+      description: 'Major updates always require review',
+      matchUpdateTypes: ['major'],
+      automerge: false,
+      labels: ['dependencies', 'major'],
+    },
+  ],
+  vulnerabilityAlerts: {
+    labels: ['security'],
+    automerge: true,
+  },
+  customManagers: [
+    {
+      customType: 'regex',
+      fileMatch: ['^\\.github/workflows/.+\\.ya?ml$', '^actions/.+/action\\.ya?ml$'],
+      matchStrings: [
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*TRIVY_VERSION:\\s*[\'\"]?(?<currentValue>\\S+?)[\'\"]?\\s*$',
+      ],
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'aquasecurity/trivy',
+      extractVersionTemplate: '^v(?<version>.*)$',
+    },
+  ],
+}
