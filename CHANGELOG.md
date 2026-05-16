@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.0.0](https://github.com/serverkraken/reusable-workflows/compare/v1.1.1...v2.0.0) (2026-05-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* trivy-fs.yml, trivy-image.yml, and docker-build.yml now require `secrets.release_please_app_id` and `secrets.release_please_app_private_key`. Callers must pass `secrets: inherit` or fail with "required secret missing". Adopters pinning @v1 are unaffected; @v2 callers must update their templates.
+
+### Features
+
+* add Level-3 onboarding workflow (two-PR adoption flow) ([#7](https://github.com/serverkraken/reusable-workflows/issues/7)) ([7531b39](https://github.com/serverkraken/reusable-workflows/commit/7531b390166080fbad17e98c0ce4065bf78b6388))
+* catalog checkout via App-minted token (v2.0.0) ([#10](https://github.com/serverkraken/reusable-workflows/issues/10)) ([6b92e8e](https://github.com/serverkraken/reusable-workflows/commit/6b92e8ed3fa034e2c9a1634d42653d6566b346ef))
+
+
+### Bug Fixes
+
+* **onboard:** label dry-run skips and seed manifest with stable tags ([#9](https://github.com/serverkraken/reusable-workflows/issues/9)) ([c64a553](https://github.com/serverkraken/reusable-workflows/commit/c64a55385c53178136b75a47af2dcf6515635434))
+
 ## [1.1.1](https://github.com/serverkraken/reusable-workflows/compare/v1.1.0...v1.1.1) (2026-05-16)
 
 
