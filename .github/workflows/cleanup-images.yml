@@ -87,6 +87,11 @@ jobs:
         if: steps.stale.outputs.ids != ''
         uses: actions/delete-package-versions@v5
         with:
+          # package-name + package-type are required by the action.yml schema
+          # (actionlint enforces this) even when using package-version-ids,
+          # which takes precedence at runtime. Provide them as a no-op default.
+          package-name: ${{ steps.pkg.outputs.name }}
+          package-type: container
           package-version-ids: ${{ steps.stale.outputs.ids }}
 
       - name: Prune oldest stable versions over keep threshold
