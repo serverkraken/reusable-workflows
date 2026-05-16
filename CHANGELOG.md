@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.3](https://github.com/serverkraken/reusable-workflows/compare/v2.0.2...v2.0.3) (2026-05-16)
+
+
+### Bug Fixes
+
+* **trivy-atoms:** grant actions:read so SARIF upload works for adopters ([#15](https://github.com/serverkraken/reusable-workflows/issues/15)) ([c4f991b](https://github.com/serverkraken/reusable-workflows/commit/c4f991bd54bff537275093d723709da72ee5525e))
+
 ## [2.0.2](https://github.com/serverkraken/reusable-workflows/compare/v2.0.1...v2.0.2) (2026-05-16)
 
 
