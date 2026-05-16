@@ -107,11 +107,24 @@ jobs:
           private-key: ${{ secrets.release_please_app_private_key }}
           owner: serverkraken
           repositories: reusable-workflows
+      - name: Resolve catalog ref
+        # github.workflow_sha returns the CALLER's commit SHA for cross-repo
+        # workflow_call — broken for adopters. github.workflow_ref points at
+        # the resolved tag/branch of THIS workflow file in the catalog.
+        id: catalog-ref
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          ref="${WORKFLOW_REF##*@}"
+          ref="${ref#refs/heads/}"
+          ref="${ref#refs/tags/}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Resolved catalog ref: $ref"
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
         with:
           repository: serverkraken/reusable-workflows
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ steps.catalog-ref.outputs.ref }}
           token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
 
@@ -190,12 +203,25 @@ jobs:
           private-key: ${{ secrets.release_please_app_private_key }}
           owner: serverkraken
           repositories: reusable-workflows
+      - name: Resolve catalog ref
+        # See version job for rationale; github.workflow_sha is broken for
+        # cross-repo workflow_call (returns caller's SHA).
+        if: steps.check.outputs.selected == 'true'
+        id: catalog-ref
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          ref="${WORKFLOW_REF##*@}"
+          ref="${ref#refs/heads/}"
+          ref="${ref#refs/tags/}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Resolved catalog ref: $ref"
       - name: Checkout catalog for composite actions
         if: steps.check.outputs.selected == 'true'
         uses: actions/checkout@v6
         with:
           repository: serverkraken/reusable-workflows
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ steps.catalog-ref.outputs.ref }}
           token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
       - name: Log in to GHCR
@@ -266,11 +292,24 @@ jobs:
           private-key: ${{ secrets.release_please_app_private_key }}
           owner: serverkraken
           repositories: reusable-workflows
+      - name: Resolve catalog ref
+        # github.workflow_sha returns the CALLER's commit SHA for cross-repo
+        # workflow_call — broken for adopters. github.workflow_ref points at
+        # the resolved tag/branch of THIS workflow file in the catalog.
+        id: catalog-ref
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          ref="${WORKFLOW_REF##*@}"
+          ref="${ref#refs/heads/}"
+          ref="${ref#refs/tags/}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Resolved catalog ref: $ref"
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
         with:
           repository: serverkraken/reusable-workflows
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ steps.catalog-ref.outputs.ref }}
           token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
       - name: Log in to GHCR
@@ -401,10 +440,21 @@ jobs:
           private-key: ${{ secrets.release_please_app_private_key }}
           owner: serverkraken
           repositories: reusable-workflows
+      - name: Resolve catalog ref
+        # See version job for rationale.
+        id: catalog-ref
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          ref="${WORKFLOW_REF##*@}"
+          ref="${ref#refs/heads/}"
+          ref="${ref#refs/tags/}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Resolved catalog ref: $ref"
       - uses: actions/checkout@v6
         with:
           repository: serverkraken/reusable-workflows
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ steps.catalog-ref.outputs.ref }}
           token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
       - name: Post PR comment
