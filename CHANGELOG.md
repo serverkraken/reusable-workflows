@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/serverkraken/reusable-workflows/compare/v1.0.0...v1.0.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* **deps:** bump Trivy CLI from 0.69.3 to 0.70.0 ([80e7af6](https://github.com/serverkraken/reusable-workflows/commit/80e7af66466d9d0048bcc3f946f264f6fe8ac7ff))
+
 ## 1.0.0 (2026-05-16)
 
 
