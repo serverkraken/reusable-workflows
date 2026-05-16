@@ -1,0 +1,79 @@
+# .github/workflows/integration.yml
+# Self-CI: exercises every atom against fixtures. Each atom gets at least
+# one happy-path caller and (where applicable) one failure-path caller
+# with a downstream assertion job that verifies failure occurred.
+name: integration
+on:
+  pull_request:
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----- docker-build happy path -----
+  test-docker-build:
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/minimal-go
+      dockerfile: tests/fixtures/minimal-go/Dockerfile
+      image_name: ${{ github.repository }}/test-fixture
+      sign: false
+      attest: false
+      sbom: true
+
+  # ----- trivy-image happy path (no findings against clean fixture) -----
+  test-trivy-image-happy:
+    needs: test-docker-build
+    uses: ./.github/workflows/trivy-image.yml
+    with:
+      image_ref: ${{ needs.test-docker-build.outputs.image_ref }}
+      fail_on_findings: false
+
+  assert-trivy-image-clean:
+    needs: test-trivy-image-happy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify findings_count == 0
+        env:
+          COUNT: ${{ needs.test-trivy-image-happy.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" != "0" ]]; then
+            echo "::error::Expected 0 findings on clean fixture, got $COUNT"
+            exit 1
+          fi
+
+  # ----- trivy-fs happy path -----
+  test-trivy-fs-happy:
+    uses: ./.github/workflows/trivy-fs.yml
+    with:
+      paths_ignore: 'tests/fixtures/with-secret'
+      fail_on_findings: false
+
+  # ----- trivy-fs failure path: must fail on the secret fixture -----
+  test-trivy-fs-failure:
+    uses: ./.github/workflows/trivy-fs.yml
+    with:
+      paths_ignore: ''
+      upload_sarif: false
+      fail_on_findings: true
+
+  assert-trivy-fs-fails:
+    needs: test-trivy-fs-failure
+    if: always() && needs.test-trivy-fs-failure.result != 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error::trivy-fs failure-path expected to fail on with-secret fixture but result was ${{ needs.test-trivy-fs-failure.result }}"
+          exit 1
+
+  # ----- cleanup-images smoke: verify the workflow accepts inputs -----
+  test-cleanup-images:
+    uses: ./.github/workflows/cleanup-images.yml
+    with:
+      package_name: ${{ github.event.repository.name }}/test-fixture
+      keep_stable_versions: 1000
+      prerelease_age_days: 365
+      runs_on: '["ubuntu-latest"]'
