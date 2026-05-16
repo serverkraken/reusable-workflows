@@ -179,6 +179,18 @@ jobs:
       - if: steps.check.outputs.selected == 'true'
         uses: docker/setup-buildx-action@v4
 
+      - name: Compute artifact + cache suffix from image_name
+        id: suffix
+        if: steps.check.outputs.selected == 'true'
+        env:
+          IMG_NAME: ${{ needs.version.outputs.image_name }}
+        run: |
+          # Slashes are invalid in artifact names and inconvenient in cache
+          # scopes — sanitize to dashes. Including image_name prevents collisions
+          # when multiple docker-build callers run in parallel from the same
+          # workflow (e.g. integration tests building distinct fixtures).
+          echo "value=$(echo "$IMG_NAME" | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Build and push by digest
         id: build
         if: steps.check.outputs.selected == 'true'
@@ -189,8 +201,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: ${{ inputs.build_args }}
           outputs: type=image,name=ghcr.io/${{ needs.version.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=build-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
+          cache-from: type=gha,scope=build-${{ steps.suffix.outputs.value }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=build-${{ steps.suffix.outputs.value }}-${{ matrix.arch }}
 
       - name: Export digest
         if: steps.check.outputs.selected == 'true'
@@ -202,7 +214,7 @@ jobs:
       - if: steps.check.outputs.selected == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.arch }}
+          name: digests-${{ steps.suffix.outputs.value }}-${{ matrix.arch }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -224,10 +236,17 @@ jobs:
       - name: Log in to GHCR
         uses: ./.catalog/actions/ghcr-login
 
+      - name: Compute artifact suffix from image_name
+        id: suffix
+        env:
+          IMG_NAME: ${{ needs.version.outputs.image_name }}
+        run: |
+          echo "value=$(echo "$IMG_NAME" | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
       - uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-*
+          pattern: digests-${{ steps.suffix.outputs.value }}-*
           merge-multiple: true
 
       - uses: docker/setup-buildx-action@v4
