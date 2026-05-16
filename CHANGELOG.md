@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/serverkraken/reusable-workflows/compare/v2.0.1...v2.0.2) (2026-05-16)
+
+
+### Bug Fixes
+
+* **catalog-checkout:** pin to floating v2 for cross-repo callers ([#13](https://github.com/serverkraken/reusable-workflows/issues/13)) ([298a4d1](https://github.com/serverkraken/reusable-workflows/commit/298a4d1b658c0ac4769c320ab60593b7a747408f))
+
 ## [2.0.1](https://github.com/serverkraken/reusable-workflows/compare/v2.0.0...v2.0.1) (2026-05-16)
 
 
