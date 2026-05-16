@@ -1,0 +1,17 @@
+# Drop into <consumer-repo>/.github/workflows/prerelease.yml
+# Trigger from UI (branch dropdown) or CLI:
+#   gh workflow run prerelease.yml --ref feat/foo
+name: prerelease
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v1
+    with:
+      prerelease: true   # auto-computes tag from branch + short SHA
+  scan:
+    needs: build
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v1
+    with:
+      image_ref: ${{ needs.build.outputs.image_ref }}

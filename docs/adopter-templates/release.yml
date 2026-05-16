@@ -1,0 +1,18 @@
+# Drop into <consumer-repo>/.github/workflows/release.yml
+name: release
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    uses: serverkraken/reusable-workflows/.github/workflows/release.yml@v1
+    secrets: inherit
+    # Optional inputs (uncomment to override defaults):
+    # with:
+    #   build_image: true
+    #   run_trivy: true
+    #   dockerfile: ./Dockerfile
+    #   context: .
+    #   platforms: linux/amd64,linux/arm64
+    #   trivy_severity: HIGH,CRITICAL

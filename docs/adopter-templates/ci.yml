@@ -1,0 +1,15 @@
+# Drop into <consumer-repo>/.github/workflows/ci.yml
+name: ci
+on:
+  pull_request:
+
+jobs:
+  secscan:
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-fs.yml@v1
+    # Optional:
+    # with:
+    #   scanners: vuln,secret,misconfig
+    #   severity: HIGH,CRITICAL
+    #   paths_ignore: |
+    #     tests/fixtures/
+    #     docs/examples/
