@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.1.0](https://github.com/serverkraken/reusable-workflows/compare/v1.0.1...v1.1.0) (2026-05-16)
+
+
+### Features
+
+* **trivy-fs:** add ignore_unfixed input (matches trivy-image) ([6cca320](https://github.com/serverkraken/reusable-workflows/commit/6cca320ab2b1afd86707f61891bb22cbefef9cbe))
+
+
+### Bug Fixes
+
+* **cleanup-images:** implement prerelease_age_days filtering ([0dd4f58](https://github.com/serverkraken/reusable-workflows/commit/0dd4f58d539dd9e2b769d6f108103810c362e9c7))
+* **docker-build:** include image_name in concurrency group ([21a5edf](https://github.com/serverkraken/reusable-workflows/commit/21a5edf98c660575cd9b17aaf3fd7b3ad2cec4e0))
+* **docker-build:** make platforms input filter the matrix ([5dc62b9](https://github.com/serverkraken/reusable-workflows/commit/5dc62b9edb76381292131913ef2a92856cf1e0d7))
+* **docker-build:** truncate prerelease SHA to 7 chars ([4657987](https://github.com/serverkraken/reusable-workflows/commit/465798746557fd3b8eabab19039623a1a39395f7))
+* **integration:** refactor failure-path to assert on findings_count ([532dde1](https://github.com/serverkraken/reusable-workflows/commit/532dde1bf716eb76577807f5339643e10f82b16e))
+
+
+### Documentation
+
+* add contracts.md and operations.md referenced by spec ([9a3e3aa](https://github.com/serverkraken/reusable-workflows/commit/9a3e3aa7fa2aa7b8b3b5df59c5815afcc9a94e8f))
+* fix yamllint command in CONTRIBUTING.md to include tests/ ([772bc0e](https://github.com/serverkraken/reusable-workflows/commit/772bc0ebfae05fb98ea4204ea7d31f0b7bebc25a))
+* **semantic-release:** document concurrency group prefix choice ([fddc1d8](https://github.com/serverkraken/reusable-workflows/commit/fddc1d89255f2cbe03d740924879b8fc6ce8f848))
+
 ## [1.0.1](https://github.com/serverkraken/reusable-workflows/compare/v1.0.0...v1.0.1) (2026-05-16)
 
 
