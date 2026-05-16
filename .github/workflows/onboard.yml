@@ -109,3 +109,67 @@ jobs:
           fi
           echo "matrix=$out" >> "$GITHUB_OUTPUT"
           echo "Parsed matrix: $out"
+
+  onboard:
+    needs: parse-inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.parse-inputs.outputs.matrix) }}
+    steps:
+      - name: Mint App token scoped to target
+        id: target-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.target.owner }}
+          repositories: ${{ matrix.target.name }}
+
+      - name: Checkout target repo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ matrix.target.target }}
+          token: ${{ steps.target-token.outputs.token }}
+          path: target
+          fetch-depth: 0
+
+      - name: Checkout catalog at this workflow's SHA
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.workflow_sha }}
+          path: .catalog
+
+      - name: Detect language and version
+        id: detect
+        uses: ./.catalog/actions/onboard-detect
+        with:
+          repo_path: target
+          language_override: ${{ inputs.language }}
+          target_repo: ${{ matrix.target.target }}
+          github_token: ${{ steps.target-token.outputs.token }}
+
+      - name: Render templates into target
+        uses: ./.catalog/actions/onboard-render
+        with:
+          catalog_path: .catalog
+          target_path: target
+          release_type: ${{ steps.detect.outputs.release_type }}
+          current_version: ${{ steps.detect.outputs.current_version }}
+          pin_version: ${{ inputs.pin_version }}
+
+      - name: Stage rendered files and log diff
+        working-directory: target
+        run: |
+          set -euo pipefail
+          git add -A
+          echo "## Rendered diff for ${{ matrix.target.target }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```diff' >> "$GITHUB_STEP_SUMMARY"
+          git --no-pager diff --cached --stat >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          git --no-pager diff --cached --stat
+          git --no-pager diff --cached
