@@ -96,13 +96,20 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: .catalog
 
+      - name: Resolve short SHA
+        id: shortsha
+        env:
+          FULL_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          echo "short=${FULL_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
       - name: Compute prerelease tag (if needed)
         id: prerelease_tag
         if: inputs.prerelease && inputs.tag == ''
         uses: ./.catalog/actions/compute-prerelease-tag
         with:
           branch: ${{ github.head_ref || github.ref_name }}
-          short_sha: ${{ github.event.pull_request.head.sha != '' && github.event.pull_request.head.sha || github.sha }}
+          short_sha: ${{ steps.shortsha.outputs.short }}
 
       - name: Resolve effective tag and image name
         id: resolve
