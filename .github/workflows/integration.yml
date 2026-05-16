@@ -70,7 +70,9 @@ jobs:
           exit 1
 
   # ----- cleanup-images smoke: verify the workflow accepts inputs -----
+  # Runs after docker-build so the test-fixture package exists in GHCR.
   test-cleanup-images:
+    needs: test-docker-build
     uses: ./.github/workflows/cleanup-images.yml
     with:
       package_name: ${{ github.event.repository.name }}/test-fixture
