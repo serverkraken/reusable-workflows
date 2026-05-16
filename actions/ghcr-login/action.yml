@@ -1,0 +1,24 @@
+name: ghcr-login
+description: |
+  Login to GitHub Container Registry (ghcr.io) using the workflow's GITHUB_TOKEN
+  by default. Wraps docker/login-action with sensible defaults.
+
+inputs:
+  username:
+    description: 'GHCR username. Defaults to the workflow actor.'
+    required: false
+    default: ${{ github.actor }}
+  token:
+    description: 'GHCR token. Defaults to GITHUB_TOKEN.'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ inputs.username }}
+        password: ${{ inputs.token }}
