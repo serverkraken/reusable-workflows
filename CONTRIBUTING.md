@@ -9,7 +9,7 @@ Before pushing a PR, run the static checks the CI will run:
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest
 
 # Lint YAML
-pipx run yamllint .github/ actions/
+pipx run yamllint .github/ actions/ tests/
 ```
 
 For the integration tests, use `act`:
