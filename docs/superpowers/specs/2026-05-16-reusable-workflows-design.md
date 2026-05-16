@@ -123,7 +123,8 @@ on:
       major_tag:               # 'v2'
       minor_tag:               # 'v2.3'
     secrets:
-      release_please_token:    # required (PAT; org policy blocks Actions-created PRs)
+      release_please_app_id:         # required. Numeric App ID of org-installed serverkraken-release-bot GitHub App
+      release_please_app_private_key: # required. PEM-formatted private key from the GitHub App
 
 permissions:
   contents: write
@@ -135,9 +136,27 @@ concurrency:
   cancel-in-progress: false
 ```
 
-**Floating-tag step** (after release-please creates `vX.Y.Z`):
+**Auth + release-please + floating-tag flow** (in this order, in the single `release` job):
 
 ```yaml
+- uses: actions/create-github-app-token@v2
+  id: app-token
+  with:
+    app-id: ${{ secrets.release_please_app_id }}
+    private-key: ${{ secrets.release_please_app_private_key }}
+
+- uses: actions/checkout@v6
+  with:
+    token: ${{ steps.app-token.outputs.token }}     # required so the floating-tag git-push bypasses branch protection
+    fetch-depth: 0
+
+- uses: googleapis/release-please-action@v4
+  id: release
+  with:
+    token: ${{ steps.app-token.outputs.token }}
+    config-file: ${{ inputs.release_please_config }}
+    manifest-file: ${{ inputs.release_please_manifest }}
+
 - name: Move floating major/minor tags
   if: |
     steps.release.outputs.release_created == 'true' &&
@@ -147,12 +166,14 @@ concurrency:
   run: |
     VERSION="${NEW_TAG#v}"
     IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-    git config user.name  'github-actions[bot]'
-    git config user.email 'github-actions[bot]@users.noreply.github.com'
+    git config user.name  'serverkraken-release-bot[bot]'
+    git config user.email '<app-id>+serverkraken-release-bot[bot]@users.noreply.github.com'
     git tag -f "v$MAJOR"
     git tag -f "v$MAJOR.$MINOR"
     git push origin "v$MAJOR" "v$MAJOR.$MINOR" --force
 ```
+
+The `actions/create-github-app-token@v2` step mints a fresh 1h installation token at the start of each run. No PAT, no rotation.
 
 ### 4.2 `docker-build.yml` (atomic)
 
@@ -348,14 +369,15 @@ on:
       trivy_severity:          # default: 'HIGH,CRITICAL'
         type: string
     secrets:
-      release_please_token:    # required (pass-through)
+      release_please_app_id:          # pass-through to semantic-release.yml
+      release_please_app_private_key: # pass-through to semantic-release.yml
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 ```
 
-Internal chaining (atoms called with `secrets: inherit` so the orchestrator-level `release_please_token` reaches `semantic-release.yml` without re-mapping):
+Internal chaining (atoms called with `secrets: inherit` so the App secrets reach `semantic-release.yml` without re-mapping):
 
 ```
 semantic-release.yml  (secrets: inherit)
@@ -554,8 +576,7 @@ permissions:
 jobs:
   release:
     uses: ./.github/workflows/semantic-release.yml
-    secrets:
-      release_please_token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+    secrets: inherit   # passes org-level RELEASE_PLEASE_APP_ID + RELEASE_PLEASE_APP_PRIVATE_KEY
 ```
 
 The catalog consumes its own `semantic-release.yml`. If the atom breaks, the catalog cannot release — strong correction signal.
@@ -625,13 +646,7 @@ Documented in `CONTRIBUTING.md`.
 
 ### 8.1 Per-consumer setup
 
-**Step 1** — Repo secret:
-```
-Settings → Secrets and variables → Actions → New repository secret
-  Name:  RELEASE_PLEASE_TOKEN
-  Value: <PAT with `repo` scope>
-```
-(Alternative: org-level secret with selected-repos visibility — see § 9.)
+**Step 1** — *No per-consumer secret setup required.* The `serverkraken-release-bot` GitHub App is installed org-wide; auth secrets (`RELEASE_PLEASE_APP_ID`, `RELEASE_PLEASE_APP_PRIVATE_KEY`) live as org-level secrets visible to all private repos. Consumers just use `secrets: inherit` in their workflow call.
 
 **Step 2** — Release-please files in repo root:
 
@@ -664,8 +679,7 @@ on: { push: { branches: [main] } }
 jobs:
   release:
     uses: serverkraken/reusable-workflows/.github/workflows/release.yml@v1
-    secrets:
-      release_please_token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+    secrets: inherit   # passes org-level RELEASE_PLEASE_APP_ID + RELEASE_PLEASE_APP_PRIVATE_KEY through
 ```
 
 ```yaml
@@ -706,7 +720,7 @@ jobs:
 
 Per repo:
 1. Add `release-please-config.json` + `.release-please-manifest.json`, with the manifest's initial version set to the *current* tag (e.g. `"0.4.2"` if HEAD is at `v0.4.2`).
-2. Add `RELEASE_PLEASE_TOKEN` as repo or org secret.
+2. Verify the `serverkraken-release-bot` GitHub App is installed on this repo (org-wide install handles this automatically unless "Selected repositories" was chosen).
 3. Delete the old hand-rolled `semantic-release.yml`; add the new `release.yml` from the template above.
 4. The first release-please PR is created on the next `feat:`/`fix:` commit. Manually sanity-check the changelog before merging.
 
@@ -736,21 +750,29 @@ gh api -X PUT \
 
 (Equivalent UI path: Settings → Actions → General → Access → "Accessible from repositories in the 'serverkraken' organization".)
 
-### 9.3 Organisation-level RELEASE_PLEASE_TOKEN secret (recommended)
+### 9.3 GitHub App auth (the chosen approach)
 
-Create a PAT (classic, `repo` scope) on an org-owner account and define it as an org-level secret with visibility "Selected repositories" (limit to repos using the catalog) or "All private repositories".
+Auth runs through the `serverkraken-release-bot` GitHub App installed org-wide. One-time setup, already completed:
 
-```bash
-# Requires admin:org scope (NOT in current gh token; one-time manual step)
-gh secret set RELEASE_PLEASE_TOKEN --org serverkraken --visibility selected --repos … < pat.txt
-```
+1. App created at `https://github.com/organizations/serverkraken/settings/apps` with permissions `Contents: R+W`, `Pull requests: R+W`, `Issues: R+W`, `Metadata: R`. Webhooks disabled. Installation scope: "Only on this account".
+2. App installed on `serverkraken` org with access to All repositories.
+3. Org-level secrets:
+   - `RELEASE_PLEASE_APP_ID` — numeric App ID
+   - `RELEASE_PLEASE_APP_PRIVATE_KEY` — full PEM contents
+   - Both with Repository access = "All private repositories" so consumers reach them via `secrets: inherit`.
 
-Trade-off: org-level secret = one place to rotate, but increases blast radius if leaked. Repo-level secret = more onboarding friction but tighter scope. The catalog README documents both options; recommendation = org-level.
+At runtime, `actions/create-github-app-token@v2` mints a fresh 1-hour installation token from the App ID + Private Key at the start of every release run.
 
-### 9.4 Required PAT scope and rotation
+### 9.4 Private key rotation
 
-- Scope: `repo` (classic) or fine-grained: `contents: write`, `pull_requests: write`, `issues: write`.
-- Rotation cadence: 90 days. Calendar reminder + secret rotation runbook in `docs/operations.md`.
+GitHub App private keys are **rotated on suspicion of compromise, not on a fixed schedule** — they're cryptographic material managed in code, not credentials with elapsed time-based weakness. Practical rotation runbook (in `docs/operations.md`):
+
+1. Generate a new private key from the App settings page.
+2. Update the `RELEASE_PLEASE_APP_PRIVATE_KEY` org secret with the new PEM.
+3. Wait one successful release run to confirm the new key works.
+4. Delete the old private key from the App's "Private keys" section.
+
+Multiple private keys can coexist on a GitHub App, enabling zero-downtime rotation. No PAT-style 90-day calendar reminder needed.
 
 ## 10. Decisions Log
 
@@ -758,6 +780,7 @@ Trade-off: org-level secret = one place to rotate, but increases blast radius if
 |---------------------------------------|--------------------------------------------|-------------------------------------------------------------------------|
 | MVP shape                             | Horizontal slice (language-agnostic atoms) | Fastest path to deduplicating the ~6 repos already on bash flow.        |
 | Release engine                        | release-please (googleapis/...@v4)         | Industry standard; better changelogs; release-PR review gate.           |
+| Release-please auth                   | GitHub App (`serverkraken-release-bot`)    | Org-wide install eliminates per-consumer PAT setup; ephemeral 1h tokens; no rotation schedule; survives user account changes. |
 | Floating major/minor tags             | Yes; skip on prereleases (`-` in tag)      | Matches `actions/checkout` convention; "stay on v2" semantics.          |
 | Prerelease trigger                    | Manual `workflow_dispatch` only            | User preference: intentional usage, less CI noise.                      |
 | Prerelease tag format                 | `<sanitized-branch>-<short-sha>` + moving `<branch>` tag | Unique-per-commit + easy-to-pull stable handle.                         |
@@ -790,7 +813,7 @@ Trade-off: org-level secret = one place to rotate, but increases blast radius if
 | Risk | Likelihood | Mitigation |
 |------|------------|------------|
 | Renovate auto-merge breaks an action contract without test catching it | Medium | Tests cover happy + failure paths per atom; major bumps never auto-merge. Manual review for major Action bumps. |
-| RELEASE_PLEASE_TOKEN leaks (org-level secret has broad blast radius) | Low–Medium | 90-day rotation; fine-grained PAT preferred over classic; "Selected repositories" visibility narrows blast radius. |
+| GitHub App private key compromised | Low | Generate new key, update org secret, verify with one run, delete old key. Multiple keys can coexist for zero-downtime rotation. |
 | Cosign keyless signing depends on Sigstore public infrastructure (Fulcio, Rekor) availability | Low | Verifiable signatures don't require Sigstore at verify-time once embedded; signing failures block release-but-leave-image-built. Document fallback if Sigstore is down: re-run after recovery. |
 | Self-hosted runner pool labels change | Medium | All `runs_on` are inputs with documented defaults. Org-wide label change = single search/replace, no consumer churn. |
 | First adopter discovers a contract bug | High (it's v1.0) | Pilot with 1-2 repos before announcing broadly. Bugfix → patch release → consumers floating on `@v1` get it automatically. |
