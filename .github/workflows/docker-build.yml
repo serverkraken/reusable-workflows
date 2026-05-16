@@ -243,6 +243,9 @@ jobs:
         run: |
           echo "value=$(echo "$IMG_NAME" | tr '/' '-')" >> "$GITHUB_OUTPUT"
 
+      - name: Clean digest dir (self-hosted runners persist /tmp between jobs)
+        run: rm -rf /tmp/digests && mkdir -p /tmp/digests
+
       - uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
