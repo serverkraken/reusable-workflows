@@ -1,0 +1,40 @@
+name: install-trivy
+description: |
+  Install the Trivy CLI at a pinned version. Direct binary install — does NOT
+  use aquasecurity/trivy-action (reliability issues per juke.gallery-rest).
+  If `version` input is empty, falls back to the action's pinned default
+  (which Renovate keeps current via the customManager regex).
+
+inputs:
+  version:
+    description: 'Trivy version (without leading v). Empty → pinned default.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install Trivy CLI
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=aquasecurity/trivy
+        TRIVY_VERSION: '0.69.3'
+        REQUESTED_TRIVY_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        TRIVY_VERSION="${REQUESTED_TRIVY_VERSION:-$TRIVY_VERSION}"
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64)  TRIVY_ARCH=64bit ;;
+          aarch64) TRIVY_ARCH=ARM64 ;;
+          arm64)   TRIVY_ARCH=ARM64 ;;
+          *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        TMP=$(mktemp -d)
+        cd "$TMP"
+        curl -fsSL \
+          "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz" \
+          -o trivy.tar.gz
+        tar -xzf trivy.tar.gz trivy
+        sudo install -m 0755 trivy /usr/local/bin/trivy
+        trivy --version
