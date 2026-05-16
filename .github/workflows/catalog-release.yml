@@ -1,0 +1,22 @@
+# .github/workflows/catalog-release.yml
+# Self-release for this repository (NOT a reusable workflow). Calls the
+# semantic-release atom we publish. If the atom is broken, this repo can't
+# release — strong correction signal ("dogfooding").
+name: catalog-release
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: catalog-release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/semantic-release.yml
+    secrets: inherit
