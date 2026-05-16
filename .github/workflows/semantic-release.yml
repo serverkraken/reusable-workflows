@@ -38,6 +38,10 @@ permissions:
   issues: write
 
 concurrency:
+  # Hardcoded 'semantic-release' prefix instead of ${{ github.workflow }} —
+  # github.workflow resolves to the CALLER's workflow name, not this atom's,
+  # so the spec-suggested pattern doesn't uniquely identify this workflow
+  # across multiple callers (e.g. catalog-release + a hypothetical doc-release).
   group: semantic-release-${{ github.ref }}
   cancel-in-progress: false
 
