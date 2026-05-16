@@ -32,3 +32,14 @@ This repo uses [Conventional Commits](https://www.conventionalcommits.org/). rel
 The `inputs:` / `outputs:` / `secrets:` of every reusable workflow are the public API. Any change to those shapes — adding required inputs, removing inputs, renaming outputs — is a **breaking change** and requires `feat!:` or `BREAKING CHANGE:`.
 
 Adding optional inputs (with safe defaults), adding outputs, or changing internal step ordering is **non-breaking**.
+
+## Onboarding workflow — acceptance procedure
+
+Whenever `onboard.yml`, `actions/onboard-*`, or `scripts/onboard-*` change:
+
+1. Bats unit tests pass: `bats tests/shell/`.
+2. Static lint passes: the `validate` workflow on PR.
+3. Self dry-run passes: the `test-onboard-dry-run` job inside `integration` runs the workflow against the catalog itself with `dry_run: true`.
+4. Manual smoke: from a release of the catalog, dispatch `onboard.yml` against one low-risk repo with `dry_run: true`. Verify the rendered diff in the step summary. Re-run with `dry_run: false` and merge PR A. Push a `feat:` commit. Verify `release.yml` end-to-end runs green. Merge PR B.
+
+Document any new gotcha in `CLAUDE-troubleshooting.md` so the next session benefits.

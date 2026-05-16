@@ -135,3 +135,32 @@ No inputs. Logs in to `ghcr.io` using `GITHUB_TOKEN`.
 |-------|-------------|--------|----------|---------|-------------|
 | input | `image_ref` | string | yes      | —       | Full image reference for the pull command |
 | input | `pr_number` | string | yes      | —       | PR number to comment on |
+
+---
+
+## Internal Composite Actions
+
+These are not intended for external consumption — they exist to factor `onboard.yml`. Their inputs/outputs are not part of the catalog's semver-protected surface.
+
+### `actions/onboard-detect`
+
+| Kind | Name | Type | Required | Default | Description |
+|---|---|---|---|---|---|
+| input | `repo_path` | string | yes | — | Path to checked-out target repo on the runner |
+| input | `language_override` | string | no | `'auto'` | `auto` runs file-signal detection; otherwise forces the value |
+| input | `target_repo` | string | yes | — | `owner/repo` of target (for `gh` API lookups) |
+| input | `github_token` | string | yes | — | Token with read access to `target_repo` |
+| output | `language` | string | — | — | Detected language |
+| output | `release_type` | string | — | — | release-please release-type (1:1 with language for V1) |
+| output | `current_version` | string | — | — | Current version (no leading `v`); `0.0.0` if no release found |
+| output | `default_branch` | string | — | — | Default branch of `target_repo` |
+
+### `actions/onboard-render`
+
+| Kind | Name | Type | Required | Default | Description |
+|---|---|---|---|---|---|
+| input | `catalog_path` | string | yes | — | Path to checked-out catalog repo |
+| input | `target_path` | string | yes | — | Path to checked-out target repo (rendered files written here) |
+| input | `release_type` | string | yes | — | release-please release-type |
+| input | `current_version` | string | yes | — | Current version, no leading `v` |
+| input | `pin_version` | string | no | `'v1'` | Catalog `@version` to pin rendered templates to |
