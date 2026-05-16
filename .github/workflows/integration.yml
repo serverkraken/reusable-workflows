@@ -31,6 +31,7 @@ jobs:
     with:
       image_ref: ${{ needs.test-docker-build.outputs.image_ref }}
       fail_on_findings: false
+      upload_sarif: false
 
   assert-trivy-image-clean:
     needs: test-trivy-image-happy
@@ -51,6 +52,7 @@ jobs:
     with:
       paths_ignore: 'tests/fixtures/with-secret'
       fail_on_findings: false
+      upload_sarif: false
 
   # ----- trivy-fs failure path: must fail on the secret fixture -----
   test-trivy-fs-failure:
@@ -70,9 +72,10 @@ jobs:
           exit 1
 
   # ----- cleanup-images smoke: verify the workflow accepts inputs -----
-  # Runs after docker-build so the test-fixture package exists in GHCR.
+  # Runs after trivy-image-happy so the scan completes before cleanup might
+  # delete the prerelease tag.
   test-cleanup-images:
-    needs: test-docker-build
+    needs: test-trivy-image-happy
     uses: ./.github/workflows/cleanup-images.yml
     with:
       package_name: ${{ github.event.repository.name }}/test-fixture
