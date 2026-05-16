@@ -108,18 +108,17 @@ jobs:
           owner: serverkraken
           repositories: reusable-workflows
       - name: Resolve catalog ref
-        # github.workflow_sha returns the CALLER's commit SHA for cross-repo
-        # workflow_call — broken for adopters. github.workflow_ref points at
-        # the resolved tag/branch of THIS workflow file in the catalog.
+        # Self-CI: caller's SHA. Cross-repo: floating v2. See trivy-fs.yml for rationale.
         id: catalog-ref
         env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
         run: |
-          ref="${WORKFLOW_REF##*@}"
-          ref="${ref#refs/heads/}"
-          ref="${ref#refs/tags/}"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Resolved catalog ref: $ref"
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=v2" >> "$GITHUB_OUTPUT"
+          fi
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
         with:
@@ -204,18 +203,18 @@ jobs:
           owner: serverkraken
           repositories: reusable-workflows
       - name: Resolve catalog ref
-        # See version job for rationale; github.workflow_sha is broken for
-        # cross-repo workflow_call (returns caller's SHA).
+        # Self-CI: caller's SHA. Cross-repo: floating v2.
         if: steps.check.outputs.selected == 'true'
         id: catalog-ref
         env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
         run: |
-          ref="${WORKFLOW_REF##*@}"
-          ref="${ref#refs/heads/}"
-          ref="${ref#refs/tags/}"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Resolved catalog ref: $ref"
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=v2" >> "$GITHUB_OUTPUT"
+          fi
       - name: Checkout catalog for composite actions
         if: steps.check.outputs.selected == 'true'
         uses: actions/checkout@v6
@@ -293,18 +292,17 @@ jobs:
           owner: serverkraken
           repositories: reusable-workflows
       - name: Resolve catalog ref
-        # github.workflow_sha returns the CALLER's commit SHA for cross-repo
-        # workflow_call — broken for adopters. github.workflow_ref points at
-        # the resolved tag/branch of THIS workflow file in the catalog.
+        # Self-CI: caller's SHA. Cross-repo: floating v2. See trivy-fs.yml for rationale.
         id: catalog-ref
         env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
         run: |
-          ref="${WORKFLOW_REF##*@}"
-          ref="${ref#refs/heads/}"
-          ref="${ref#refs/tags/}"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Resolved catalog ref: $ref"
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=v2" >> "$GITHUB_OUTPUT"
+          fi
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
         with:
@@ -441,16 +439,17 @@ jobs:
           owner: serverkraken
           repositories: reusable-workflows
       - name: Resolve catalog ref
-        # See version job for rationale.
+        # Self-CI: caller's SHA. Cross-repo: floating v2.
         id: catalog-ref
         env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
         run: |
-          ref="${WORKFLOW_REF##*@}"
-          ref="${ref#refs/heads/}"
-          ref="${ref#refs/tags/}"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Resolved catalog ref: $ref"
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=v2" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v6
         with:
           repository: serverkraken/reusable-workflows
