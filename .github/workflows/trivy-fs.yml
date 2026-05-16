@@ -79,20 +79,28 @@ jobs:
           owner: serverkraken
           repositories: reusable-workflows
       - name: Resolve catalog ref
-        # github.workflow_sha returns the CALLER's commit SHA when this atom is
-        # invoked via cross-repo workflow_call — that SHA doesn't exist in the
-        # catalog. github.workflow_ref points at the resolved address of the
-        # called workflow (e.g. "serverkraken/reusable-workflows/.../trivy-fs.yml@refs/tags/v2.0.0").
-        # The ref after `@` is what we need to clone the catalog at.
+        # GitHub Actions does NOT expose the @version the caller pinned in
+        # `uses:` inside a reusable workflow. github.workflow_sha returns the
+        # caller's commit SHA; github.workflow_ref returns the caller's
+        # workflow address. Both are wrong for cross-repo catalog checkout.
+        #
+        # Self-CI (caller == catalog): use the caller's SHA — it IS a catalog
+        # commit and exercises any feature-branch composite-action changes.
+        # Cross-repo (adopters): pin to the floating major tag `v2` so
+        # adopters at @v2.x.y always get coherent v2 composite actions.
+        # Bump the hardcoded major in this block when a new major releases.
         id: catalog-ref
         env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
         run: |
-          ref="${WORKFLOW_REF##*@}"
-          ref="${ref#refs/heads/}"
-          ref="${ref#refs/tags/}"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Resolved catalog ref: $ref"
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+            echo "Self-CI: catalog ref = $SELF_SHA"
+          else
+            echo "ref=v2" >> "$GITHUB_OUTPUT"
+            echo "Cross-repo: catalog ref = v2 (floating)"
+          fi
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
         with:
