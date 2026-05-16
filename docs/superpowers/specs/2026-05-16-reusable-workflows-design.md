@@ -562,13 +562,15 @@ jobs:
 
 Pattern: every atom gets ≥1 happy-path caller + ≥1 failure-path caller. Failure-path uses `continue-on-error: true` + a downstream assertion job that explicitly verifies failure occurred.
 
-### 6.3 `.github/workflows/release.yml` (push main, eats own dog food)
+### 6.3 `.github/workflows/catalog-release.yml` (push main, eats own dog food)
+
+> **Naming note:** This file is named `catalog-release.yml` (not `release.yml`) to avoid a filename collision with the consumer-facing orchestrator defined in §4.6. The orchestrator must be at `release.yml` because that's the canonical reference path for consumers (`uses: serverkraken/reusable-workflows/.github/workflows/release.yml@v1`); the catalog's own self-release uses a clearly-internal name.
 
 ```yaml
-name: release
+name: catalog-release
 on:
   push: { branches: [main] }
-concurrency: { group: release-main, cancel-in-progress: false }
+concurrency: { group: catalog-release-main, cancel-in-progress: false }
 permissions:
   contents: write
   pull-requests: write
