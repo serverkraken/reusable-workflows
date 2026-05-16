@@ -58,6 +58,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  actions: read           # codeql-action telemetry calls /repos/.../actions/runs
 
 concurrency:
   group: trivy-fs-${{ github.workflow }}-${{ github.ref }}-${{ inputs.fail_on_findings }}-${{ inputs.paths_ignore }}

@@ -8,12 +8,23 @@ on:
 jobs:
   build:
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v1
+    permissions:
+      contents: read
+      packages: write          # push image to GHCR
+      id-token: write          # cosign keyless OIDC signing
+      attestations: write      # SLSA build-provenance attestation
+      pull-requests: write     # post-prerelease-comment on the PR
     secrets: inherit
     with:
       prerelease: true   # auto-computes tag from branch + short SHA
   scan:
     needs: build
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v1
+    permissions:
+      contents: read
+      security-events: write   # SARIF upload to code-scanning
+      packages: read           # pull image from GHCR
+      actions: read            # codeql-action telemetry
     secrets: inherit
     with:
       image_ref: ${{ needs.build.outputs.image_ref }}

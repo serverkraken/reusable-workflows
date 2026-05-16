@@ -54,6 +54,7 @@ permissions:
   contents: read
   security-events: write
   packages: read    # to pull the image from GHCR
+  actions: read     # codeql-action telemetry calls /repos/.../actions/runs
 
 concurrency:
   group: trivy-image-${{ inputs.image_ref }}
