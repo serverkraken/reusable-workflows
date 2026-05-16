@@ -6,6 +6,7 @@ on:
 jobs:
   secscan:
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-fs.yml@v1
+    secrets: inherit
     # Optional:
     # with:
     #   scanners: vuln,secret,misconfig
