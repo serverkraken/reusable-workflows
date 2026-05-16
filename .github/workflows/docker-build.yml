@@ -1,0 +1,309 @@
+# .github/workflows/docker-build.yml
+name: docker-build
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Image tag. Empty → auto-compute (prerelease only).'
+        required: false
+        type: string
+        default: ''
+      prerelease:
+        description: 'Prerelease build (no :latest, auto-compute tag if empty).'
+        required: false
+        type: boolean
+        default: false
+      image_name:
+        description: 'Image name. Default: caller repo (owner/repo).'
+        required: false
+        type: string
+        default: ''
+      dockerfile:
+        required: false
+        type: string
+        default: './Dockerfile'
+      context:
+        required: false
+        type: string
+        default: '.'
+      platforms:
+        required: false
+        type: string
+        default: 'linux/amd64,linux/arm64'
+      build_args:
+        required: false
+        type: string
+        default: ''
+      sign:
+        required: false
+        type: boolean
+        default: true
+      attest:
+        required: false
+        type: boolean
+        default: true
+      sbom:
+        required: false
+        type: boolean
+        default: true
+      runs_on_amd64:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","performance"]'
+      runs_on_arm64:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","ARM64"]'
+      runs_on_merge:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","low-performance"]'
+    outputs:
+      image_ref:
+        description: 'Pushed image reference with tag.'
+        value: ${{ jobs.merge.outputs.image_ref }}
+      digest:
+        description: 'Manifest list digest (sha256:...).'
+        value: ${{ jobs.merge.outputs.digest }}
+      tag:
+        description: 'Final tag (auto-computed if input was empty).'
+        value: ${{ jobs.version.outputs.tag }}
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+  pull-requests: write
+
+concurrency:
+  group: docker-build-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ inputs.prerelease }}
+
+jobs:
+  version:
+    runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      moving_tag: ${{ steps.resolve.outputs.moving_tag }}
+      image_name: ${{ steps.resolve.outputs.image_name }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.workflow_sha }}
+          path: .catalog
+
+      - name: Compute prerelease tag (if needed)
+        id: prerelease_tag
+        if: inputs.prerelease && inputs.tag == ''
+        uses: ./.catalog/actions/compute-prerelease-tag
+        with:
+          branch: ${{ github.head_ref || github.ref_name }}
+          short_sha: ${{ github.event.pull_request.head.sha != '' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Resolve effective tag and image name
+        id: resolve
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_IMAGE: ${{ inputs.image_name }}
+          DEFAULT_IMAGE: ${{ github.repository }}
+          PRE_TAG: ${{ steps.prerelease_tag.outputs.tag_with_sha }}
+          PRE_MOVING: ${{ steps.prerelease_tag.outputs.moving_tag }}
+          IS_PRE: ${{ inputs.prerelease }}
+        run: |
+          TAG="${INPUT_TAG:-}"
+          if [[ -z "$TAG" ]] && [[ "$IS_PRE" == "true" ]]; then
+            TAG="$PRE_TAG"
+          fi
+          if [[ -z "$TAG" ]]; then
+            echo "::error::tag input is empty and prerelease=false; cannot resolve tag"
+            exit 1
+          fi
+          IMG="${INPUT_IMAGE:-$DEFAULT_IMAGE}"
+          {
+            echo "tag=$TAG"
+            echo "moving_tag=$PRE_MOVING"
+            echo "image_name=$IMG"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runs_on_input: runs_on_amd64
+          - platform: linux/arm64
+            arch: arm64
+            runs_on_input: runs_on_arm64
+    runs-on: ${{ fromJSON(matrix.runs_on_input == 'runs_on_amd64' && inputs.runs_on_amd64 || inputs.runs_on_arm64) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.workflow_sha }}
+          path: .catalog
+      - name: Log in to GHCR
+        uses: ./.catalog/actions/ghcr-login
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          build-args: ${{ inputs.build_args }}
+          outputs: type=image,name=ghcr.io/${{ needs.version.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=build-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: [version, build]
+    runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
+    outputs:
+      image_ref: ${{ steps.compose.outputs.image_ref }}
+      digest: ${{ steps.merge_step.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.workflow_sha }}
+          path: .catalog
+      - name: Log in to GHCR
+        uses: ./.catalog/actions/ghcr-login
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Compose tag list
+        id: tags
+        env:
+          IMG: ghcr.io/${{ needs.version.outputs.image_name }}
+          TAG: ${{ needs.version.outputs.tag }}
+          MOVING: ${{ needs.version.outputs.moving_tag }}
+          IS_PRE: ${{ inputs.prerelease }}
+        run: |
+          ARGS="-t $IMG:$TAG"
+          if [[ "$IS_PRE" != "true" ]]; then
+            ARGS="$ARGS -t $IMG:latest"
+          fi
+          if [[ -n "$MOVING" ]]; then
+            ARGS="$ARGS -t $IMG:$MOVING"
+          fi
+          echo "tag_args=$ARGS" >> "$GITHUB_OUTPUT"
+
+      - name: Create manifest list and capture digest
+        id: merge_step
+        working-directory: /tmp/digests
+        env:
+          IMG: ghcr.io/${{ needs.version.outputs.image_name }}
+          TAG_ARGS: ${{ steps.tags.outputs.tag_args }}
+        run: |
+          docker buildx imagetools create $TAG_ARGS \
+            $(printf "$IMG@sha256:%s " *)
+          DIGEST=$(docker buildx imagetools inspect "$IMG:${{ needs.version.outputs.tag }}" --format '{{.Manifest.Digest}}')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Compose image_ref output
+        id: compose
+        run: |
+          echo "image_ref=ghcr.io/${{ needs.version.outputs.image_name }}:${{ needs.version.outputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Cosign
+        if: inputs.sign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image
+        if: inputs.sign
+        env:
+          IMG: ghcr.io/${{ needs.version.outputs.image_name }}
+          DIGEST: ${{ steps.merge_step.outputs.digest }}
+        run: cosign sign --yes "$IMG@$DIGEST"
+
+      - name: Attest build provenance
+        if: inputs.attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ needs.version.outputs.image_name }}
+          subject-digest: ${{ steps.merge_step.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate SBOM
+        if: inputs.sbom
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ needs.version.outputs.image_name }}:${{ needs.version.outputs.tag }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+
+      - name: Upload SBOM artifact
+        if: inputs.sbom
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-spdx
+          path: sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Job summary
+        run: |
+          {
+            echo "## 🐳 Multi-arch image published"
+            echo ""
+            echo "**Image:** \`ghcr.io/${{ needs.version.outputs.image_name }}:${{ needs.version.outputs.tag }}\`"
+            echo "**Digest:** \`${{ steps.merge_step.outputs.digest }}\`"
+            echo "**Platforms:** \`${{ inputs.platforms }}\`"
+            echo "**Signed:** ${{ inputs.sign }}"
+            echo "**Attested:** ${{ inputs.attest }}"
+            echo "**SBOM:** ${{ inputs.sbom }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  post-comment:
+    if: inputs.prerelease && github.event.pull_request.number != ''
+    needs: [version, merge]
+    runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.workflow_sha }}
+          path: .catalog
+      - name: Post PR comment
+        uses: ./.catalog/actions/post-prerelease-comment
+        with:
+          image_ref: ghcr.io/${{ needs.version.outputs.image_name }}:${{ needs.version.outputs.tag }}
+          pr_number: ${{ github.event.pull_request.number }}
