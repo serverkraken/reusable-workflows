@@ -14,10 +14,7 @@ on:
         type: number
         default: 10
       prerelease_age_days:
-        description: |
-          (Not yet enforced — see workflow comments.) Intent: delete non-semver
-          tags older than N days. Current behavior: ALL non-semver tags are
-          deleted on each run.
+        description: 'Delete non-semver tags older than N days.'
         required: false
         type: number
         default: 14
@@ -47,13 +44,50 @@ jobs:
           NAME="${INPUT_NAME:-$DEFAULT_NAME}"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Delete old prerelease/non-semver tags
+      - name: Identify prerelease versions older than N days
+        id: stale
+        env:
+          PKG: ${{ steps.pkg.outputs.name }}
+          DAYS: ${{ inputs.prerelease_age_days }}
+          OWNER: ${{ github.repository_owner }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Date math: works on Linux (date -d) and macOS (date -v).
+          CUTOFF=$(date -u -d "$DAYS days ago" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+                   || date -u -v-"${DAYS}"d '+%Y-%m-%dT%H:%M:%SZ')
+          echo "Cutoff date: $CUTOFF"
+
+          # Determine owner type (org vs user) by checking org membership of the owner.
+          if gh api "/orgs/${OWNER}" >/dev/null 2>&1; then
+            OWNER_PATH="orgs/${OWNER}"
+          else
+            OWNER_PATH="users/${OWNER}"
+          fi
+
+          # URL-encode the package name (may contain slashes for path-style names).
+          PKG_ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$PKG")
+
+          # List all versions, filter non-semver tags older than cutoff, extract IDs.
+          IDS=$(gh api --paginate "/${OWNER_PATH}/packages/container/${PKG_ENC}/versions" \
+            | jq -r --arg cutoff "$CUTOFF" '
+                .[] |
+                select(.metadata.container.tags // [] | length > 0) |
+                select(
+                  (.metadata.container.tags | map(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | any) | not
+                ) |
+                select(.updated_at < $cutoff) |
+                .id
+              ' \
+            | paste -sd, -)
+          echo "Matching version IDs: ${IDS:-<none>}"
+          echo "ids=$IDS" >> "$GITHUB_OUTPUT"
+
+      - name: Delete stale prerelease versions
+        if: steps.stale.outputs.ids != ''
         uses: actions/delete-package-versions@v5
         with:
-          package-name: ${{ steps.pkg.outputs.name }}
-          package-type: container
-          delete-only-pre-release-versions: true
-          min-versions-to-keep: 0
+          package-version-ids: ${{ steps.stale.outputs.ids }}
 
       - name: Prune oldest stable versions over keep threshold
         uses: actions/delete-package-versions@v5
@@ -70,5 +104,6 @@ jobs:
             echo ""
             echo "**Package:** \`${{ steps.pkg.outputs.name }}\`"
             echo "**Kept stable versions:** ${{ inputs.keep_stable_versions }}"
-            echo "**Pre-release retention:** ${{ inputs.prerelease_age_days }} days"
+            echo "**Prerelease deleted if older than:** ${{ inputs.prerelease_age_days }} days"
+            echo "**Stale prerelease IDs deleted:** \`${{ steps.stale.outputs.ids || '<none>' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
