@@ -94,6 +94,7 @@ jobs:
     uses: ./.github/workflows/trivy-image.yml
     with:
       image_ref: ${{ needs.test-docker-build-cve.outputs.image_ref }}
+      ignore_unfixed: false   # alpine:3.15 HIGH/CRITICAL CVEs all have upstream fixes; without this the test detects 0
       fail_on_findings: false   # don't fail the job; we assert on findings_count below
       upload_sarif: false
 
