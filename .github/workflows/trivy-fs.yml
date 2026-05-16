@@ -1,0 +1,154 @@
+# .github/workflows/trivy-fs.yml
+name: trivy-fs
+on:
+  workflow_call:
+    inputs:
+      scanners:
+        description: 'Trivy scanners (vuln,secret,misconfig).'
+        required: false
+        type: string
+        default: 'vuln,secret,misconfig'
+      severity:
+        description: 'Severity levels to fail on.'
+        required: false
+        type: string
+        default: 'HIGH,CRITICAL'
+      paths_ignore:
+        description: 'Newline-separated paths to skip.'
+        required: false
+        type: string
+        default: ''
+      upload_sarif:
+        description: 'Upload SARIF to GitHub code-scanning. Auto-skipped on forks.'
+        required: false
+        type: boolean
+        default: true
+      trivy_version:
+        description: 'Override Trivy version (defaults to install-trivy default).'
+        required: false
+        type: string
+        default: ''
+      fail_on_findings:
+        description: 'Exit non-zero when severity-matching findings exist.'
+        required: false
+        type: boolean
+        default: true
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      findings_count:
+        description: 'Number of findings at requested severity.'
+        value: ${{ jobs.scan.outputs.findings_count }}
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: trivy-fs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scan:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    outputs:
+      findings_count: ${{ steps.count.outputs.findings_count }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.workflow_sha }}
+          path: .catalog
+
+      - name: Install Trivy
+        uses: ./.catalog/actions/install-trivy
+        with:
+          version: ${{ inputs.trivy_version }}
+
+      - name: Build ignore-paths args
+        id: ignore
+        env:
+          PATHS: ${{ inputs.paths_ignore }}
+        run: |
+          if [[ -z "$PATHS" ]]; then
+            echo "args=" >> "$GITHUB_OUTPUT"
+          else
+            ARGS=""
+            while IFS= read -r line; do
+              [[ -z "$line" ]] && continue
+              ARGS="$ARGS --skip-dirs $line"
+            done <<< "$PATHS"
+            echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Trivy filesystem scan
+        env:
+          SCANNERS: ${{ inputs.scanners }}
+          SEVERITY: ${{ inputs.severity }}
+          IGNORE_ARGS: ${{ steps.ignore.outputs.args }}
+        run: |
+          set -e
+          trivy fs \
+            --scanners "$SCANNERS" \
+            --severity "$SEVERITY" \
+            --exit-code 0 \
+            --ignore-unfixed \
+            --format sarif \
+            --output trivy-fs.sarif \
+            $IGNORE_ARGS .
+          trivy fs \
+            --scanners "$SCANNERS" \
+            --severity "$SEVERITY" \
+            --exit-code 0 \
+            --ignore-unfixed \
+            --format json \
+            --output trivy-fs.json \
+            $IGNORE_ARGS .
+
+      - name: Count findings
+        id: count
+        run: |
+          COUNT=$(jq '[.Results[]? | (.Vulnerabilities // []) + (.Secrets // []) + (.Misconfigurations // []) | length] | add // 0' trivy-fs.json)
+          echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT severity-matching findings"
+
+      - name: Upload SARIF to code-scanning
+        if: inputs.upload_sarif && github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Upload SARIF as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-sarif
+          path: trivy-fs.sarif
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Job summary
+        if: always()
+        env:
+          COUNT: ${{ steps.count.outputs.findings_count }}
+        run: |
+          {
+            echo "## 🛡️ Trivy filesystem scan"
+            echo ""
+            echo "**Scanners:** \`${{ inputs.scanners }}\`"
+            echo "**Severity:** \`${{ inputs.severity }}\`"
+            echo "**Findings:** **$COUNT**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on findings
+        if: inputs.fail_on_findings && steps.count.outputs.findings_count != '0'
+        env:
+          COUNT: ${{ steps.count.outputs.findings_count }}
+        run: |
+          echo "::error::Trivy found $COUNT severity-matching findings"
+          exit 1
