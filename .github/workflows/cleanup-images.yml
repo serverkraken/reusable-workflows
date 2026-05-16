@@ -1,0 +1,74 @@
+# .github/workflows/cleanup-images.yml
+name: cleanup-images
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        description: 'GHCR package name. Defaults to the calling repo name.'
+        required: false
+        type: string
+        default: ''
+      keep_stable_versions:
+        description: 'Min count of v* (semver) versions to keep.'
+        required: false
+        type: number
+        default: 10
+      prerelease_age_days:
+        description: |
+          (Not yet enforced — see workflow comments.) Intent: delete non-semver
+          tags older than N days. Current behavior: ALL non-semver tags are
+          deleted on each run.
+        required: false
+        type: number
+        default: 14
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+
+permissions:
+  packages: write
+
+concurrency:
+  group: cleanup-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    steps:
+      - name: Resolve package name
+        id: pkg
+        env:
+          INPUT_NAME: ${{ inputs.package_name }}
+          DEFAULT_NAME: ${{ github.event.repository.name }}
+        run: |
+          NAME="${INPUT_NAME:-$DEFAULT_NAME}"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Delete old prerelease/non-semver tags
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ steps.pkg.outputs.name }}
+          package-type: container
+          delete-only-pre-release-versions: true
+          min-versions-to-keep: 0
+
+      - name: Prune oldest stable versions over keep threshold
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ steps.pkg.outputs.name }}
+          package-type: container
+          min-versions-to-keep: ${{ inputs.keep_stable_versions }}
+          delete-only-untagged-versions: false
+
+      - name: Summary
+        run: |
+          {
+            echo "## 🧹 Cleanup complete"
+            echo ""
+            echo "**Package:** \`${{ steps.pkg.outputs.name }}\`"
+            echo "**Kept stable versions:** ${{ inputs.keep_stable_versions }}"
+            echo "**Pre-release retention:** ${{ inputs.prerelease_age_days }} days"
+          } >> "$GITHUB_STEP_SUMMARY"
