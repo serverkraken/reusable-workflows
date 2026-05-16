@@ -1,0 +1,64 @@
+# .github/workflows/release.yml
+# Opinionated end-to-end release pipeline. Most consumers should call this
+# rather than wiring the atoms directly.
+name: release
+on:
+  workflow_call:
+    inputs:
+      build_image:
+        required: false
+        type: boolean
+        default: true
+      run_trivy:
+        required: false
+        type: boolean
+        default: true
+      dockerfile:
+        required: false
+        type: string
+        default: './Dockerfile'
+      context:
+        required: false
+        type: string
+        default: '.'
+      platforms:
+        required: false
+        type: string
+        default: 'linux/amd64,linux/arm64'
+      trivy_severity:
+        required: false
+        type: string
+        default: 'HIGH,CRITICAL'
+    secrets:
+      release_please_app_id:
+        required: true
+      release_please_app_private_key:
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  semantic-release:
+    uses: ./.github/workflows/semantic-release.yml
+    secrets: inherit
+
+  docker-build:
+    needs: semantic-release
+    if: needs.semantic-release.outputs.release_created == 'true' && inputs.build_image
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      tag: ${{ needs.semantic-release.outputs.tag_name }}
+      prerelease: false
+      dockerfile: ${{ inputs.dockerfile }}
+      context: ${{ inputs.context }}
+      platforms: ${{ inputs.platforms }}
+
+  trivy-image:
+    needs: [semantic-release, docker-build]
+    if: needs.semantic-release.outputs.release_created == 'true' && inputs.build_image && inputs.run_trivy
+    uses: ./.github/workflows/trivy-image.yml
+    with:
+      image_ref: ${{ needs.docker-build.outputs.image_ref }}
+      severity: ${{ inputs.trivy_severity }}
