@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.1](https://github.com/serverkraken/reusable-workflows/compare/v1.1.0...v1.1.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* **docker-build:** clean /tmp/digests before download on self-hosted ([b3bbf3f](https://github.com/serverkraken/reusable-workflows/commit/b3bbf3f7104aec79f561fe27d92edd2bbeb22074))
+* **docker-build:** include image_name in artifact + cache names ([981423f](https://github.com/serverkraken/reusable-workflows/commit/981423f1d3fd142d513f2f838a09348012553524))
+* **docker-build:** unambiguous artifact pattern (arch-first naming) ([2f440c6](https://github.com/serverkraken/reusable-workflows/commit/2f440c64ab76633e7023f090d47a3849ffc9f9fe))
+* **tests:** swap with-cve fixture from alpine:3.15 to node:10-alpine ([bb4933c](https://github.com/serverkraken/reusable-workflows/commit/bb4933ca9fc9e4d95d8df2bf171893fd28785669))
+
 ## [1.1.0](https://github.com/serverkraken/reusable-workflows/compare/v1.0.1...v1.1.0) (2026-05-16)
 
 
