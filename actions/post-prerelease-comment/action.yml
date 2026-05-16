@@ -1,0 +1,70 @@
+# actions/post-prerelease-comment/action.yml
+name: post-prerelease-comment
+description: |
+  Idempotently post or update a PR comment with a Docker pull command for a
+  prerelease image. Detects an existing comment by a stable header marker.
+
+inputs:
+  image_ref:
+    description: 'Full image reference, e.g. ghcr.io/serverkraken/foo:feat-x-a1b2c3d'
+    required: true
+  pr_number:
+    description: 'PR number to post the comment on.'
+    required: true
+  trivy_status:
+    description: 'Optional Trivy result line (e.g. "✅ no HIGH/CRITICAL").'
+    required: false
+    default: ''
+  github_token:
+    description: 'Token with pull-requests:write permission.'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find existing comment
+      id: find
+      uses: peter-evans/find-comment@v3
+      with:
+        issue-number: ${{ inputs.pr_number }}
+        comment-author: 'github-actions[bot]'
+        body-includes: '<!-- prerelease-image-comment -->'
+        token: ${{ inputs.github_token }}
+
+    - name: Compose body
+      id: body
+      shell: bash
+      env:
+        IMAGE_REF: ${{ inputs.image_ref }}
+        TRIVY_STATUS: ${{ inputs.trivy_status }}
+      run: |
+        SHORT_SHA=$(echo "$IMAGE_REF" | rev | cut -d- -f1 | rev | cut -c1-7)
+        BODY=$(cat <<EOF
+        <!-- prerelease-image-comment -->
+        🐳 **Prerelease image ready**
+
+        \`\`\`
+        docker pull $IMAGE_REF
+        \`\`\`
+
+        Built from \`$SHORT_SHA\`
+        EOF
+        )
+        if [[ -n "$TRIVY_STATUS" ]]; then
+          BODY="$BODY · trivy: $TRIVY_STATUS"
+        fi
+        {
+          echo 'body<<DELIM'
+          echo "$BODY"
+          echo 'DELIM'
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Create or update comment
+      uses: peter-evans/create-or-update-comment@v4
+      with:
+        comment-id: ${{ steps.find.outputs.comment-id }}
+        issue-number: ${{ inputs.pr_number }}
+        body: ${{ steps.body.outputs.body }}
+        edit-mode: replace
+        token: ${{ inputs.github_token }}
