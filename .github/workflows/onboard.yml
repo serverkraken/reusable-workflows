@@ -270,3 +270,132 @@ jobs:
           fi
           echo "pr_a_url=$pr_url" >> "$GITHUB_OUTPUT"
           echo "pr_a_status=add-open" >> "$GITHUB_OUTPUT"
+
+      - name: Branch B — ensure remove-legacy PR
+        if: ${{ !inputs.dry_run }}
+        id: pr_b
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ steps.target-token.outputs.token }}
+          DEFAULT_BRANCH: ${{ steps.detect.outputs.default_branch }}
+          CLEANUP_BRANCH: ${{ inputs.cleanup_branch_name }}
+          TARGET_REPO: ${{ matrix.target.target }}
+          PIN: ${{ inputs.pin_version }}
+          PR_A_URL: ${{ steps.pr_a.outputs.pr_a_url }}
+        run: |
+          set -euo pipefail
+          # Hard reset to default branch HEAD to discard rendered files from prior step;
+          # cleanup PR works against the unmodified default branch.
+          git fetch origin "$DEFAULT_BRANCH"
+          git checkout "$DEFAULT_BRANCH"
+          git reset --hard "origin/$DEFAULT_BRANCH"
+          git clean -fd
+
+          LEGACY=(
+            ".github/workflows/semantic-release.yml"
+            ".github/workflows/docker-build.yml"
+            ".github/workflows/trivy.yml"
+            ".github/workflows/trivy.yaml"
+            ".github/workflows/build.yml"
+            ".github/workflows/publish.yml"
+          )
+
+          matched=()
+          for f in "${LEGACY[@]}"; do
+            if [[ -f "$f" ]]; then
+              matched+=("$f")
+            fi
+          done
+
+          existing_pr_num=$(gh pr list --repo "$TARGET_REPO" --head "$CLEANUP_BRANCH" --state open --json number -q '.[0].number' || echo "")
+
+          if (( ${#matched[@]} == 0 )); then
+            echo "No legacy files in target."
+            if [[ -n "$existing_pr_num" ]]; then
+              gh pr close "$existing_pr_num" --repo "$TARGET_REPO" --comment "No legacy files to remove; closing." || true
+            fi
+            echo "pr_b_url=" >> "$GITHUB_OUTPUT"
+            echo "pr_b_status=no-legacy" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git checkout -B "$CLEANUP_BRANCH" "origin/$DEFAULT_BRANCH"
+          git rm "${matched[@]}"
+          git commit -m "chore: remove legacy workflows superseded by reusable-workflows@${PIN}"
+          git push -f origin "$CLEANUP_BRANCH"
+
+          # Build a markdown bullet list of removed files for the PR body.
+          removed_list=""
+          for f in "${matched[@]}"; do
+            removed_list+="- \`$f\`"$'\n'
+          done
+
+          pr_a_ref="(no companion PR opened)"
+          if [[ -n "$PR_A_URL" ]]; then
+            pr_a_ref="$PR_A_URL"
+          fi
+
+          body=$(cat <<EOF
+          ## Retire legacy workflows
+
+          Removes the following files, which are now covered by reusable workflows from \`serverkraken/reusable-workflows@${PIN}\`:
+
+          ${removed_list}
+
+          **Soft dependency:** companion PR ${pr_a_ref} ("onboard reusable-workflows") should be merged
+          and have run at least one successful release before merging this PR.
+          Otherwise this repo loses its release flow until the new one is exercised.
+
+          _Opened by the \`onboard.yml\` workflow in \`serverkraken/reusable-workflows\`._
+          EOF
+          )
+
+          if [[ -n "$existing_pr_num" ]]; then
+            gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" --body "$body"
+            pr_url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url)
+          else
+            pr_url=$(gh pr create --repo "$TARGET_REPO" \
+                                   --base "$DEFAULT_BRANCH" --head "$CLEANUP_BRANCH" \
+                                   --title "chore: remove legacy workflows superseded by reusable-workflows@${PIN}" \
+                                   --body "$body")
+          fi
+          echo "pr_b_url=$pr_url" >> "$GITHUB_OUTPUT"
+          echo "pr_b_status=cleanup-open" >> "$GITHUB_OUTPUT"
+
+      - name: Emit per-target result artifact
+        if: always()
+        env:
+          TARGET: ${{ matrix.target.target }}
+          LANG: ${{ steps.detect.outputs.language || '' }}
+          CUR_VER: ${{ steps.detect.outputs.current_version || '' }}
+          PR_A_URL: ${{ steps.pr_a.outputs.pr_a_url || '' }}
+          PR_A_STATUS: ${{ steps.pr_a.outputs.pr_a_status || 'error' }}
+          PR_B_URL: ${{ steps.pr_b.outputs.pr_b_url || '' }}
+          PR_B_STATUS: ${{ steps.pr_b.outputs.pr_b_status || 'error' }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          mkdir -p result
+          # Sanitize target slash → dash for artifact name
+          safe_name="${TARGET//\//-}"
+          jq -n \
+            --arg target "$TARGET" \
+            --arg language "$LANG" \
+            --arg version "$CUR_VER" \
+            --arg pr_a_url "$PR_A_URL" \
+            --arg pr_a_status "$PR_A_STATUS" \
+            --arg pr_b_url "$PR_B_URL" \
+            --arg pr_b_status "$PR_B_STATUS" \
+            --arg job_status "$JOB_STATUS" \
+            '{target: $target, language: $language, version: $version, pr_a_url: $pr_a_url, pr_a_status: $pr_a_status, pr_b_url: $pr_b_url, pr_b_status: $pr_b_status, job_status: $job_status}' \
+            > "result/$safe_name.json"
+          echo "Artifact contents:"
+          cat "result/$safe_name.json"
+
+      - name: Upload result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onboard-result-${{ matrix.target.owner }}-${{ matrix.target.name }}
+          path: result/
+          retention-days: 7
