@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/serverkraken/reusable-workflows/compare/v2.0.0...v2.0.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* **catalog-checkout:** resolve ref from github.workflow_ref, not workflow_sha ([#11](https://github.com/serverkraken/reusable-workflows/issues/11)) ([7942e48](https://github.com/serverkraken/reusable-workflows/commit/7942e4886e2935c3d6f423b5e87be5367d5d7d63))
+
 ## [2.0.0](https://github.com/serverkraken/reusable-workflows/compare/v1.1.1...v2.0.0) (2026-05-16)
 
 
