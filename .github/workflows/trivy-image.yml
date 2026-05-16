@@ -1,0 +1,144 @@
+# .github/workflows/trivy-image.yml
+name: trivy-image
+on:
+  workflow_call:
+    inputs:
+      image_ref:
+        description: 'Full image reference, e.g. ghcr.io/serverkraken/foo:v1.2.3'
+        required: true
+        type: string
+      scanners:
+        required: false
+        type: string
+        default: 'vuln,secret,misconfig'
+      severity:
+        required: false
+        type: string
+        default: 'HIGH,CRITICAL'
+      ignore_unfixed:
+        required: false
+        type: boolean
+        default: true
+      fail_on_findings:
+        required: false
+        type: boolean
+        default: true
+      paths_ignore:
+        required: false
+        type: string
+        default: ''
+      upload_sarif:
+        required: false
+        type: boolean
+        default: true
+      trivy_version:
+        required: false
+        type: string
+        default: ''
+      runs_on:
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      findings_count:
+        value: ${{ jobs.scan.outputs.findings_count }}
+
+permissions:
+  contents: read
+  security-events: write
+  packages: read    # to pull the image from GHCR
+
+concurrency:
+  group: trivy-image-${{ inputs.image_ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scan:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    outputs:
+      findings_count: ${{ steps.count.outputs.findings_count }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.workflow_sha }}
+          path: .catalog
+      - name: Install Trivy
+        uses: ./.catalog/actions/install-trivy
+        with:
+          version: ${{ inputs.trivy_version }}
+      - name: Log in to GHCR
+        uses: ./.catalog/actions/ghcr-login
+
+      - name: Run Trivy image scan
+        env:
+          IMAGE: ${{ inputs.image_ref }}
+          SCANNERS: ${{ inputs.scanners }}
+          SEVERITY: ${{ inputs.severity }}
+          IGNORE_UNFIXED: ${{ inputs.ignore_unfixed }}
+        run: |
+          set -e
+          UNFIXED_FLAG=""
+          [[ "$IGNORE_UNFIXED" == "true" ]] && UNFIXED_FLAG="--ignore-unfixed"
+          trivy image \
+            --scanners "$SCANNERS" \
+            --severity "$SEVERITY" \
+            --exit-code 0 \
+            $UNFIXED_FLAG \
+            --format sarif \
+            --output trivy-image.sarif \
+            "$IMAGE"
+          trivy image \
+            --scanners "$SCANNERS" \
+            --severity "$SEVERITY" \
+            --exit-code 0 \
+            $UNFIXED_FLAG \
+            --format json \
+            --output trivy-image.json \
+            "$IMAGE"
+
+      - name: Count findings
+        id: count
+        run: |
+          COUNT=$(jq '[.Results[]? | (.Vulnerabilities // []) + (.Secrets // []) + (.Misconfigurations // []) | length] | add // 0' trivy-image.json)
+          echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SARIF to code-scanning
+        if: inputs.upload_sarif && github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Upload SARIF as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-sarif
+          path: trivy-image.sarif
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Job summary
+        if: always()
+        env:
+          COUNT: ${{ steps.count.outputs.findings_count }}
+        run: |
+          {
+            echo "## 🛡️ Trivy image scan"
+            echo ""
+            echo "**Image:** \`${{ inputs.image_ref }}\`"
+            echo "**Scanners:** \`${{ inputs.scanners }}\`"
+            echo "**Severity:** \`${{ inputs.severity }}\`"
+            echo "**Findings:** **$COUNT**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on findings
+        if: inputs.fail_on_findings && steps.count.outputs.findings_count != '0'
+        env:
+          COUNT: ${{ steps.count.outputs.findings_count }}
+          IMAGE: ${{ inputs.image_ref }}
+        run: |
+          echo "::error::Trivy found $COUNT severity-matching findings in $IMAGE"
+          exit 1
