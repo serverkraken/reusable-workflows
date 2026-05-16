@@ -36,9 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Validate renovate.json5
-        uses: suzuki-shunsuke/renovate-config-validator-action@v0.0.1
-        with:
-          config: .github/renovate.json5
+        run: npx --yes --package renovate renovate-config-validator .github/renovate.json5
 
   trivy-renovate-annotation-check:
     # Verify the customManagers regex still matches the # renovate: comment
