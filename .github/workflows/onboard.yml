@@ -1,0 +1,563 @@
+# .github/workflows/onboard.yml
+# Operational tool: dispatches per-target onboarding PRs into serverkraken/* repos.
+# Not a public reusable workflow's API surface — input contract may evolve without semver bump.
+# See docs/superpowers/specs/2026-05-16-onboarding-workflow-design.md.
+name: onboard
+on:
+  workflow_dispatch:
+    inputs:
+      target_repos:
+        description: 'Comma-separated owner/repo list (e.g. serverkraken/blupod-ui,serverkraken/flow)'
+        required: true
+        type: string
+      language:
+        description: 'auto = detect, otherwise force release-type'
+        required: false
+        type: choice
+        default: auto
+        options: [auto, go, python, rust, helm, node, simple]
+      dry_run:
+        description: 'Render + log diff; do NOT push or open PRs'
+        required: false
+        type: boolean
+        default: false
+      pin_version:
+        description: 'Catalog @version that rendered templates pin to'
+        required: false
+        type: string
+        default: v1
+      add_branch_name:
+        description: 'Branch for PR A (add new workflows)'
+        required: false
+        type: string
+        default: chore/onboard-reusable-workflows
+      cleanup_branch_name:
+        description: 'Branch for PR B (remove legacy workflows)'
+        required: false
+        type: string
+        default: chore/remove-legacy-workflows
+  workflow_call:
+    inputs:
+      target_repos:
+        required: true
+        type: string
+      language:
+        required: false
+        type: string
+        default: auto
+      dry_run:
+        required: false
+        type: boolean
+        default: true
+      pin_version:
+        required: false
+        type: string
+        default: v1
+      add_branch_name:
+        required: false
+        type: string
+        default: chore/onboard-reusable-workflows
+      cleanup_branch_name:
+        required: false
+        type: string
+        default: chore/remove-legacy-workflows
+
+concurrency:
+  # Hardcoded prefix per CLAUDE-patterns "concurrency group" rule.
+  group: onboard-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  parse-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.parse.outputs.matrix }}
+    steps:
+      - id: parse
+        env:
+          REPOS: ${{ inputs.target_repos }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra raw <<< "$REPOS"
+          declare -A seen=()
+          out='['
+          first=1
+          for entry in "${raw[@]}"; do
+            entry="${entry//[[:space:]]/}"
+            [[ -z "$entry" ]] && continue
+            if [[ ! "$entry" =~ ^serverkraken/[A-Za-z0-9._-]+$ ]]; then
+              echo "::error::invalid target_repos entry: '$entry' (must match ^serverkraken/[A-Za-z0-9._-]+\$)"
+              exit 1
+            fi
+            if [[ -n "${seen[$entry]:-}" ]]; then
+              continue
+            fi
+            seen[$entry]=1
+            owner="${entry%/*}"
+            name="${entry#*/}"
+            if [[ $first -eq 0 ]]; then out+=','; fi
+            out+="{\"target\":\"$entry\",\"owner\":\"$owner\",\"name\":\"$name\"}"
+            first=0
+          done
+          out+=']'
+          if [[ "$out" == "[]" ]]; then
+            echo "::error::target_repos is empty after parse"
+            exit 1
+          fi
+          echo "matrix=$out" >> "$GITHUB_OUTPUT"
+          echo "Parsed matrix: $out"
+
+  onboard:
+    needs: parse-inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.parse-inputs.outputs.matrix) }}
+    steps:
+      - name: Mint App token scoped to target
+        id: target-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.target.owner }}
+          repositories: ${{ matrix.target.name }}
+
+      - name: Checkout target repo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ matrix.target.target }}
+          token: ${{ steps.target-token.outputs.token }}
+          path: target
+          fetch-depth: 0
+
+      - name: Checkout catalog at this workflow's SHA
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.workflow_sha }}
+          path: .catalog
+
+      - name: Detect language and version
+        id: detect
+        uses: ./.catalog/actions/onboard-detect
+        with:
+          repo_path: target
+          language_override: ${{ inputs.language }}
+          target_repo: ${{ matrix.target.target }}
+          github_token: ${{ steps.target-token.outputs.token }}
+
+      - name: Render templates into target
+        uses: ./.catalog/actions/onboard-render
+        with:
+          catalog_path: .catalog
+          target_path: target
+          release_type: ${{ steps.detect.outputs.release_type }}
+          current_version: ${{ steps.detect.outputs.current_version }}
+          pin_version: ${{ inputs.pin_version }}
+
+      - name: Stage rendered files and log diff
+        working-directory: target
+        run: |
+          set -euo pipefail
+          git add -A
+          echo "## Rendered diff for ${{ matrix.target.target }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```diff' >> "$GITHUB_STEP_SUMMARY"
+          git --no-pager diff --cached --stat >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          git --no-pager diff --cached --stat
+          git --no-pager diff --cached
+
+      - name: Branch A — ensure add-workflows PR
+        if: ${{ !inputs.dry_run }}
+        id: pr_a
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ steps.target-token.outputs.token }}
+          DEFAULT_BRANCH: ${{ steps.detect.outputs.default_branch }}
+          ADD_BRANCH: ${{ inputs.add_branch_name }}
+          TARGET_REPO: ${{ matrix.target.target }}
+          PIN: ${{ inputs.pin_version }}
+          LANG: ${{ steps.detect.outputs.language }}
+          RTYPE: ${{ steps.detect.outputs.release_type }}
+          CUR_VER: ${{ steps.detect.outputs.current_version }}
+        run: |
+          set -euo pipefail
+          # Bot identity: id is public and stable; fetched inline so we never
+          # commit a hardcoded numeric id that could drift.
+          bot_id=$(gh api '/users/serverkraken-release-bot[bot]' -q '.id')
+          git config user.name 'serverkraken-release-bot[bot]'
+          git config user.email "${bot_id}+serverkraken-release-bot[bot]@users.noreply.github.com"
+
+          # Target already has rendered files staged (from prior step's "git add -A").
+          # Reset index, then explicitly add only the 6 rendered files.
+          git reset
+
+          RENDERED=(
+            ".github/workflows/ci.yml"
+            ".github/workflows/release.yml"
+            ".github/workflows/prerelease.yml"
+            ".github/workflows/cleanup.yml"
+            "release-please-config.json"
+            ".release-please-manifest.json"
+          )
+          # All 6 should exist after render; defensive guard.
+          for f in "${RENDERED[@]}"; do
+            [[ -f "$f" ]] || { echo "::error::expected rendered file missing: $f"; exit 1; }
+          done
+
+          # Create / reset the bot branch from default HEAD; rendered files are working-tree
+          # mods so they survive `checkout -B`.
+          git fetch origin "$DEFAULT_BRANCH"
+          git checkout -B "$ADD_BRANCH" "origin/$DEFAULT_BRANCH"
+
+          git add "${RENDERED[@]}"
+
+          existing_pr_num=$(gh pr list --repo "$TARGET_REPO" --head "$ADD_BRANCH" --state open --json number -q '.[0].number' || echo "")
+
+          if git diff --cached --quiet; then
+            echo "No diff for add branch."
+            if [[ -n "$existing_pr_num" ]]; then
+              gh pr close "$existing_pr_num" --repo "$TARGET_REPO" --comment "No changes needed; closing." || true
+            fi
+            echo "pr_a_url=" >> "$GITHUB_OUTPUT"
+            echo "pr_a_status=no-changes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git commit -m "chore: onboard serverkraken/reusable-workflows@${PIN}"
+          git push -f origin "$ADD_BRANCH"
+
+          body=$(cat <<EOF
+          ## Onboard to serverkraken/reusable-workflows@${PIN}
+
+          Drops in the standard reusable-workflow consumer files:
+
+          - \`.github/workflows/ci.yml\`         — PR-time fs scan
+          - \`.github/workflows/release.yml\`    — main → release (orchestrator)
+          - \`.github/workflows/prerelease.yml\` — manual dispatch image builds
+          - \`.github/workflows/cleanup.yml\`    — weekly GHCR retention
+          - \`release-please-config.json\`       — release-please config (release-type: \`${RTYPE}\`)
+          - \`.release-please-manifest.json\`    — seeded at current version \`${CUR_VER}\`
+
+          **Detected language:** \`${LANG}\`
+          **Detected current version:** \`${CUR_VER}\` (from latest GitHub release)
+          **Catalog version pinned:** \`${PIN}\`
+
+          After merging:
+          1. Push a \`feat:\` / \`fix:\` commit to \`${DEFAULT_BRANCH}\` — \`release.yml\` should open a release-please PR.
+          2. Merge that release-please PR. A release + image build + Trivy scan should run end-to-end.
+          3. Once one full release has run green, merge the companion cleanup PR (if open) to retire legacy workflow files.
+
+          _Opened by the \`onboard.yml\` workflow in \`serverkraken/reusable-workflows\`._
+          EOF
+          )
+
+          if [[ -n "$existing_pr_num" ]]; then
+            gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" --body "$body"
+            pr_url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url)
+          else
+            gh pr create --repo "$TARGET_REPO" \
+                         --base "$DEFAULT_BRANCH" --head "$ADD_BRANCH" \
+                         --title "chore: onboard serverkraken/reusable-workflows@${PIN}" \
+                         --body "$body" >/dev/null
+            pr_url=$(gh pr view "$ADD_BRANCH" --repo "$TARGET_REPO" --json url -q .url)
+          fi
+          echo "pr_a_url=$pr_url" >> "$GITHUB_OUTPUT"
+          echo "pr_a_status=add-open" >> "$GITHUB_OUTPUT"
+
+      - name: Branch B — ensure remove-legacy PR
+        if: ${{ !inputs.dry_run }}
+        id: pr_b
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ steps.target-token.outputs.token }}
+          DEFAULT_BRANCH: ${{ steps.detect.outputs.default_branch }}
+          CLEANUP_BRANCH: ${{ inputs.cleanup_branch_name }}
+          TARGET_REPO: ${{ matrix.target.target }}
+          PIN: ${{ inputs.pin_version }}
+          PR_A_URL: ${{ steps.pr_a.outputs.pr_a_url }}
+        run: |
+          set -euo pipefail
+          # Hard reset to default branch HEAD to discard rendered files from prior step;
+          # cleanup PR works against the unmodified default branch.
+          git fetch origin "$DEFAULT_BRANCH"
+          git checkout "$DEFAULT_BRANCH"
+          git reset --hard "origin/$DEFAULT_BRANCH"
+          git clean -fd
+
+          LEGACY=(
+            ".github/workflows/semantic-release.yml"
+            ".github/workflows/docker-build.yml"
+            ".github/workflows/trivy.yml"
+            ".github/workflows/trivy.yaml"
+            ".github/workflows/build.yml"
+            ".github/workflows/publish.yml"
+          )
+
+          matched=()
+          for f in "${LEGACY[@]}"; do
+            if [[ -f "$f" ]]; then
+              matched+=("$f")
+            fi
+          done
+
+          existing_pr_num=$(gh pr list --repo "$TARGET_REPO" --head "$CLEANUP_BRANCH" --state open --json number -q '.[0].number' || echo "")
+
+          if (( ${#matched[@]} == 0 )); then
+            echo "No legacy files in target."
+            if [[ -n "$existing_pr_num" ]]; then
+              gh pr close "$existing_pr_num" --repo "$TARGET_REPO" --comment "No legacy files to remove; closing." || true
+            fi
+            echo "pr_b_url=" >> "$GITHUB_OUTPUT"
+            echo "pr_b_status=no-legacy" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git checkout -B "$CLEANUP_BRANCH" "origin/$DEFAULT_BRANCH"
+          git rm "${matched[@]}"
+          git commit -m "chore: remove legacy workflows superseded by reusable-workflows@${PIN}"
+          git push -f origin "$CLEANUP_BRANCH"
+
+          # Build a markdown bullet list of removed files for the PR body.
+          removed_list=""
+          for f in "${matched[@]}"; do
+            removed_list+="- \`$f\`"$'\n'
+          done
+
+          pr_a_ref="(no companion PR opened)"
+          if [[ -n "$PR_A_URL" ]]; then
+            pr_a_ref="$PR_A_URL"
+          fi
+
+          body=$(cat <<EOF
+          ## Retire legacy workflows
+
+          Removes the following files, which are now covered by reusable workflows from \`serverkraken/reusable-workflows@${PIN}\`:
+
+          ${removed_list}
+
+          **Soft dependency:** companion PR ${pr_a_ref} ("onboard reusable-workflows") should be merged
+          and have run at least one successful release before merging this PR.
+          Otherwise this repo loses its release flow until the new one is exercised.
+
+          _Opened by the \`onboard.yml\` workflow in \`serverkraken/reusable-workflows\`._
+          EOF
+          )
+
+          if [[ -n "$existing_pr_num" ]]; then
+            gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" --body "$body"
+            pr_url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url)
+          else
+            gh pr create --repo "$TARGET_REPO" \
+                         --base "$DEFAULT_BRANCH" --head "$CLEANUP_BRANCH" \
+                         --title "chore: remove legacy workflows superseded by reusable-workflows@${PIN}" \
+                         --body "$body" >/dev/null
+            pr_url=$(gh pr view "$CLEANUP_BRANCH" --repo "$TARGET_REPO" --json url -q .url)
+          fi
+          echo "pr_b_url=$pr_url" >> "$GITHUB_OUTPUT"
+          echo "pr_b_status=cleanup-open" >> "$GITHUB_OUTPUT"
+
+      - name: Emit per-target result artifact
+        if: always()
+        env:
+          TARGET: ${{ matrix.target.target }}
+          LANG: ${{ steps.detect.outputs.language || '' }}
+          CUR_VER: ${{ steps.detect.outputs.current_version || '' }}
+          PR_A_URL: ${{ steps.pr_a.outputs.pr_a_url || '' }}
+          PR_A_STATUS: ${{ steps.pr_a.outputs.pr_a_status || 'error' }}
+          PR_B_URL: ${{ steps.pr_b.outputs.pr_b_url || '' }}
+          PR_B_STATUS: ${{ steps.pr_b.outputs.pr_b_status || 'error' }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          mkdir -p result
+          # Sanitize target slash → dash for artifact name
+          safe_name="${TARGET//\//-}"
+          jq -n \
+            --arg target "$TARGET" \
+            --arg language "$LANG" \
+            --arg version "$CUR_VER" \
+            --arg pr_a_url "$PR_A_URL" \
+            --arg pr_a_status "$PR_A_STATUS" \
+            --arg pr_b_url "$PR_B_URL" \
+            --arg pr_b_status "$PR_B_STATUS" \
+            --arg job_status "$JOB_STATUS" \
+            '{target: $target, language: $language, version: $version, pr_a_url: $pr_a_url, pr_a_status: $pr_a_status, pr_b_url: $pr_b_url, pr_b_status: $pr_b_status, job_status: $job_status}' \
+            > "result/$safe_name.json"
+          echo "Artifact contents:"
+          cat "result/$safe_name.json"
+
+      - name: Upload result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onboard-result-${{ matrix.target.owner }}-${{ matrix.target.name }}
+          path: result/
+          retention-days: 7
+
+  finalize:
+    needs: onboard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint App token for catalog repo
+        id: catalog-token
+        if: ${{ !inputs.dry_run }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: serverkraken
+          repositories: reusable-workflows
+
+      - name: Checkout catalog on main
+        if: ${{ !inputs.dry_run }}
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: main
+          token: ${{ steps.catalog-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Download all result artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+          pattern: onboard-result-*
+          merge-multiple: true
+
+      - name: Build step summary table
+        id: summary
+        run: |
+          set -euo pipefail
+          {
+            echo "## Onboarding run summary"
+            echo ""
+            echo "| Repository | Language | Version | Add PR | Cleanup PR | Status |"
+            echo "|---|---|---|---|---|---|"
+            for f in results/*.json; do
+              [[ -f "$f" ]] || continue
+              target=$(jq -r '.target' "$f")
+              lang=$(jq -r '.language' "$f")
+              ver=$(jq -r '.version' "$f")
+              pa=$(jq -r '.pr_a_url' "$f")
+              pas=$(jq -r '.pr_a_status' "$f")
+              pb=$(jq -r '.pr_b_url' "$f")
+              pbs=$(jq -r '.pr_b_status' "$f")
+              js=$(jq -r '.job_status' "$f")
+
+              if [[ "$pas" == "no-changes" && "$pbs" == "no-legacy" ]]; then
+                combined="complete"
+              elif [[ "$pas" == "no-changes" && "$pbs" == "cleanup-open" ]]; then
+                combined="cleanup-open"
+              elif [[ "$pas" == "add-open" && "$pbs" == "no-legacy" ]]; then
+                combined="add-open, no-legacy"
+              elif [[ "$pas" == "add-open" && "$pbs" == "cleanup-open" ]]; then
+                combined="add-open, cleanup-open"
+              else
+                combined="$pas / $pbs"
+              fi
+              if [[ "$js" != "success" ]]; then
+                combined="error ($combined)"
+              fi
+
+              pa_md="—"
+              pb_md="—"
+              [[ -n "$pa" ]] && pa_md="[link]($pa)"
+              [[ -n "$pb" ]] && pb_md="[link]($pb)"
+              echo "| $target | $lang | $ver | $pa_md | $pb_md | $combined |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Also emit a machine-readable copy for the status-doc step.
+          cp -r results results-for-status
+
+      - name: Update docs/onboarding-status.md
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ steps.catalog-token.outputs.token }}
+          PIN_VERSION: ${{ inputs.pin_version }}
+        run: |
+          set -euo pipefail
+          bot_id=$(gh api '/users/serverkraken-release-bot[bot]' -q '.id')
+          git config user.name 'serverkraken-release-bot[bot]'
+          git config user.email "${bot_id}+serverkraken-release-bot[bot]@users.noreply.github.com"
+
+          DOC=docs/onboarding-status.md
+          if [[ ! -f "$DOC" ]]; then
+            echo "::warning::$DOC missing — initializing"
+            cat > "$DOC" <<EOF
+          # Onboarding Status
+
+          _Last updated by the onboarding workflow: $(date -u +%Y-%m-%dT%H:%M:%SZ)_
+
+          | Repository | Onboarded | Catalog Version | Add PR | Cleanup PR | Status |
+          |---|---|---|---|---|---|
+          EOF
+          fi
+
+          # Re-derive "Last updated" line.
+          stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          sed -i "s|^_Last updated by the onboarding workflow:.*|_Last updated by the onboarding workflow: ${stamp}_|" "$DOC"
+
+          # For each result, replace or append a row.
+          for f in results-for-status/*.json; do
+            [[ -f "$f" ]] || continue
+            target=$(jq -r '.target' "$f")
+            pa=$(jq -r '.pr_a_url' "$f")
+            pas=$(jq -r '.pr_a_status' "$f")
+            pb=$(jq -r '.pr_b_url' "$f")
+            pbs=$(jq -r '.pr_b_status' "$f")
+            js=$(jq -r '.job_status' "$f")
+
+            if [[ "$pas" == "no-changes" && "$pbs" == "no-legacy" ]]; then
+              status="complete"
+            elif [[ "$pas" == "no-changes" && "$pbs" == "cleanup-open" ]]; then
+              status="cleanup-open"
+            elif [[ "$pas" == "add-open" && "$pbs" == "no-legacy" ]]; then
+              status="add-open, no-legacy"
+            elif [[ "$pas" == "add-open" && "$pbs" == "cleanup-open" ]]; then
+              status="add-open, cleanup-open"
+            else
+              status="$pas / $pbs"
+            fi
+            if [[ "$js" != "success" ]]; then
+              status="error ($status)"
+            fi
+
+            pa_md="—"
+            pb_md="—"
+            [[ -n "$pa" ]] && pa_md="[PR]($pa)"
+            [[ -n "$pb" ]] && pb_md="[PR]($pb)"
+
+            today=$(date -u +%Y-%m-%d)
+            new_row="| $target | $today | ${PIN_VERSION:-v1} | $pa_md | $pb_md | $status |"
+
+            # Replace existing row (matched by exact "| <target> |" at line start) or append.
+            awk -v tgt="$target" -v row="$new_row" '
+              BEGIN { replaced=0 }
+              {
+                if (index($0, "| " tgt " |") == 1) { print row; replaced=1 }
+                else { print $0 }
+              }
+              END {
+                if (!replaced) { print row }
+              }
+            ' "$DOC" > "$DOC.new" && mv "$DOC.new" "$DOC"
+          done
+
+          if git diff --quiet -- "$DOC"; then
+            echo "No status doc changes."
+            exit 0
+          fi
+
+          git add "$DOC"
+          git commit -m "chore(onboard): update onboarding-status.md [skip ci]"
+          git push origin main

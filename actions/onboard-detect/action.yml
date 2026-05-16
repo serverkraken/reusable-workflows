@@ -1,0 +1,45 @@
+name: 'Onboard: detect language and version'
+description: 'Detect a target repo language signal and current GitHub-release version. Wraps scripts/onboard-detect.sh.'
+inputs:
+  repo_path:
+    description: 'Path to the checked-out target repo on the runner'
+    required: true
+  language_override:
+    description: 'auto | go | python | rust | helm | node | simple (auto = file-signal detection)'
+    required: false
+    default: 'auto'
+  target_repo:
+    description: 'owner/repo for gh api calls (default_branch + latest release)'
+    required: true
+  github_token:
+    description: 'GitHub token with read access to target_repo'
+    required: true
+outputs:
+  language:
+    description: 'Detected language'
+    value: ${{ steps.detect.outputs.language }}
+  release_type:
+    description: 'release-please release-type (1:1 with language for V1)'
+    value: ${{ steps.detect.outputs.release_type }}
+  current_version:
+    description: 'Current version without leading v (0.0.0 if no release found)'
+    value: ${{ steps.detect.outputs.current_version }}
+  default_branch:
+    description: 'Default branch of target_repo'
+    value: ${{ steps.detect.outputs.default_branch }}
+runs:
+  using: composite
+  steps:
+    - id: detect
+      shell: bash
+      env:
+        TARGET_REPO: ${{ inputs.target_repo }}
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        # The action lives in actions/onboard-detect/action.yml; the script lives in scripts/.
+        # When invoked via the catalog-checkout pattern, $GITHUB_ACTION_PATH is .catalog/actions/onboard-detect/
+        # so ../../scripts/onboard-detect.sh resolves to .catalog/scripts/onboard-detect.sh.
+        "$GITHUB_ACTION_PATH/../../scripts/onboard-detect.sh" \
+          "${{ inputs.repo_path }}" \
+          "${{ inputs.language_override }}" \
+          >> "$GITHUB_OUTPUT"

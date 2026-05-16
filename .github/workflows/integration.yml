@@ -125,3 +125,13 @@ jobs:
       keep_stable_versions: 1000
       prerelease_age_days: 365
       runs_on: '["ubuntu-latest"]'
+
+  # ----- onboard dry-run: exercise detect + render against the catalog itself -----
+  test-onboard-dry-run:
+    uses: ./.github/workflows/onboard.yml
+    with:
+      target_repos: serverkraken/reusable-workflows
+      language: auto
+      dry_run: true
+      pin_version: v1
+    secrets: inherit

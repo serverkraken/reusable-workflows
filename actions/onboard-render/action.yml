@@ -1,0 +1,30 @@
+name: 'Onboard: render adopter templates'
+description: 'Render adopter-template files into the target repo workspace. Wraps scripts/onboard-render.sh.'
+inputs:
+  catalog_path:
+    description: 'Path to the checked-out catalog repo'
+    required: true
+  target_path:
+    description: 'Path to the checked-out target repo'
+    required: true
+  release_type:
+    description: 'release-please release-type (go/python/rust/helm/node/simple)'
+    required: true
+  current_version:
+    description: 'Current version (no leading v)'
+    required: true
+  pin_version:
+    description: 'Catalog @version to pin the rendered templates to'
+    required: false
+    default: 'v1'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        "${{ inputs.catalog_path }}/scripts/onboard-render.sh" \
+          "${{ inputs.catalog_path }}" \
+          "${{ inputs.target_path }}" \
+          "${{ inputs.release_type }}" \
+          "${{ inputs.current_version }}" \
+          "${{ inputs.pin_version }}"
