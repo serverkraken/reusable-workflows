@@ -155,3 +155,16 @@ Adopters on `@v1` are unaffected (those atoms don't declare the secrets). To mov
 | `release.yml` | `release.yml` (orchestrator) | yes (always) |
 | `prerelease.yml` | `docker-build.yml`, `trivy-image.yml` | yes (since v2.0.0) |
 | `cleanup.yml` | `cleanup-images.yml` (no catalog-checkout) | no (not needed) |
+
+### 6.5 Job-level permissions required by adopter templates (since v2.0.4)
+
+The atom callers in `ci.yml`, `prerelease.yml`, and `release.yml` ship with explicit `permissions:` blocks at the job level. This is needed because the workflow_call permission cap is the intersection of caller-grant and called-workflow declaration — without an explicit grant the called workflow can't access scopes like `actions: read` (used by `codeql-action/upload-sarif@v4` for run-metadata telemetry).
+
+| Adopter template job | Permissions granted |
+|---|---|
+| `ci.yml :: secscan` | `contents: read`, `security-events: write`, `actions: read` |
+| `prerelease.yml :: build` | `contents: read`, `packages: write`, `id-token: write`, `attestations: write`, `pull-requests: write` |
+| `prerelease.yml :: scan` | `contents: read`, `security-events: write`, `packages: read`, `actions: read` |
+| `release.yml :: release` | union of all of the above (orchestrator runs every sub-atom) |
+
+These are the maxima the atoms ever request; if you tighten any of them, the corresponding feature breaks (e.g. dropping `security-events: write` silently disables SARIF upload).
