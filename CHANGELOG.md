@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.4](https://github.com/serverkraken/reusable-workflows/compare/v2.0.3...v2.0.4) (2026-05-17)
+
+
+### Bug Fixes
+
+* document job-level permissions required by adopter templates ([#19](https://github.com/serverkraken/reusable-workflows/issues/19)) ([26ac898](https://github.com/serverkraken/reusable-workflows/commit/26ac8980f86a5d78c1f56cdda89eecb076df5e00))
+
 ## [2.0.3](https://github.com/serverkraken/reusable-workflows/compare/v2.0.2...v2.0.3) (2026-05-16)
 
 
