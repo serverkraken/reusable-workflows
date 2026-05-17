@@ -1,0 +1,7 @@
+apiVersion: v2
+name: broken
+type: application
+# version: intentionally missing — exercises helm lint failure.
+# Helm v3 requires `version` as a SemVer string; omitting it causes
+# `helm lint` to exit non-zero, which is what the helm-publish-fail
+# caller is exercising.
