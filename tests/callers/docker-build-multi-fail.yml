@@ -1,0 +1,22 @@
+# tests/callers/docker-build-multi-fail.yml
+# Failure-path caller for docker-build-multi.yml. Passes an empty JSON
+# array as `images`, which the reusable workflow's `parse` job must
+# reject (exits 1 with a clear message). Workflow_dispatch only — we
+# don't want to burn CI on every push for a guaranteed-failing run;
+# reviewers trigger it manually to inspect the failure mode.
+name: caller-docker-build-multi-fail
+on:
+  workflow_dispatch:
+
+jobs:
+  test-docker-build-multi-fail:
+    uses: ./.github/workflows/docker-build-multi.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/multi-image
+      images: '[]'
+      sign: false
+      attest: false
+      sbom: false
