@@ -1,0 +1,33 @@
+# tests/callers/docker-build-multi-happy.yml
+# Happy-path caller for docker-build-multi.yml. Builds two images
+# (api + worker) from the multi-image fixture in a single matrix call.
+# Run by the self-CI `integration.yml` workflow (added in a later task) —
+# this file exists primarily so the atom's contract has a stable, lintable
+# usage example.
+name: caller-docker-build-multi-happy
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/docker-build-multi.yml'
+      - 'tests/callers/docker-build-multi-happy.yml'
+      - 'tests/fixtures/multi-image/**'
+
+jobs:
+  test-docker-build-multi:
+    uses: ./.github/workflows/docker-build-multi.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/multi-image
+      images: >-
+        [
+          {"dockerfile": "tests/fixtures/multi-image/Dockerfile",
+           "image_name": "serverkraken/reusable-workflows/test-multi-api"},
+          {"dockerfile": "tests/fixtures/multi-image/Dockerfile.worker",
+           "image_name": "serverkraken/reusable-workflows/test-multi-worker"}
+        ]
+      sign: false
+      attest: false
+      sbom: false
