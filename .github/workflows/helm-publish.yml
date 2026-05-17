@@ -1,0 +1,121 @@
+# .github/workflows/helm-publish.yml
+# Reusable workflow that lints, packages, and publishes a Helm chart to an
+# OCI registry (GHCR by default). Stability surface: the shape of `inputs`
+# and `permissions` below is the contract — changes are SemVer-significant.
+#
+# Consumer responsibility:
+#   - Point `chart_path` at a directory containing `Chart.yaml`.
+#   - Point `oci_registry` at the target registry path (host + namespace),
+#     e.g. `ghcr.io/serverkraken/charts`. The chart name from `Chart.yaml`
+#     becomes the final repo segment.
+#   - Trigger this workflow on tag push (real publish) or via
+#     `workflow_dispatch` with `dry_run: true` for a smoke test.
+#
+# Auth: `secrets: inherit` is REQUIRED on callers. The atom uses the
+# automatic `GITHUB_TOKEN` for OCI registry login; no explicit `secrets:`
+# block is declared.
+name: helm-publish
+on:
+  workflow_call:
+    inputs:
+      chart_path:
+        description: 'Directory containing Chart.yaml.'
+        required: true
+        type: string
+      oci_registry:
+        description: >-
+          OCI registry path (host + namespace) to push to, without the
+          chart name. Example: `ghcr.io/serverkraken/charts`.
+        required: true
+        type: string
+      helm_version:
+        description: 'Helm CLI version to install (e.g. "v3.15.0", "latest").'
+        required: false
+        type: string
+        default: 'v3.15.0'
+      dry_run:
+        description: 'Lint and package only; skip registry login + push.'
+        required: false
+        type: boolean
+        default: false
+      runs_on:
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+
+permissions:
+  contents: read
+  packages: write
+
+# Concurrency: two simultaneous helm-push runs for the same chart+ref would
+# collide on the OCI tag (GHCR returns 409 for duplicate pushes). We do NOT
+# cancel in-progress real publishes — the first one wins and the second errors
+# cleanly. For dry-runs there is no side effect, so we cancel freely.
+concurrency:
+  group: helm-publish-${{ github.repository }}-${{ inputs.chart_path }}-${{ github.ref }}
+  cancel-in-progress: ${{ inputs.dry_run }}
+
+jobs:
+  publish:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ inputs.helm_version }}
+
+      - name: helm lint
+        env:
+          CHART_PATH: ${{ inputs.chart_path }}
+        run: helm lint "$CHART_PATH"
+
+      - name: helm package
+        id: pkg
+        env:
+          CHART_PATH: ${{ inputs.chart_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/charts
+          out=$(helm package "$CHART_PATH" --destination /tmp/charts)
+          # Helm prints: "Successfully packaged chart and saved it to: /tmp/charts/<name>-<ver>.tgz"
+          # Use sed (POSIX-portable, unlike grep -oP) and tail -n1 to defend against
+          # the line appearing more than once in future Helm versions.
+          file=$(echo "$out" | sed -n 's/.*saved it to: //p' | tail -n1)
+          if [[ -z "$file" || ! -f "$file" ]]; then
+            echo "::error::helm package did not produce a parseable path. Output was: $out"
+            exit 1
+          fi
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+          echo "Packaged: $file"
+
+      - name: helm registry login
+        if: ${{ !inputs.dry_run }}
+        env:
+          REG: ${{ inputs.oci_registry }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          host="${REG%%/*}"
+          echo "$TOKEN" | helm registry login "$host" -u "$ACTOR" --password-stdin
+
+      - name: helm push
+        if: ${{ !inputs.dry_run }}
+        env:
+          FILE: ${{ steps.pkg.outputs.file }}
+          REG: ${{ inputs.oci_registry }}
+        run: helm push "$FILE" "oci://$REG"
+
+      - name: Job summary
+        env:
+          MODE: ${{ inputs.dry_run && 'dry-run' || 'publish' }}
+          FILE: ${{ steps.pkg.outputs.file }}
+          REG: ${{ inputs.oci_registry }}
+        run: |
+          {
+            echo "## ⎈ helm-publish ($MODE)"
+            echo ""
+            echo "**Chart package:** \`$FILE\`"
+            echo "**Registry:** \`oci://$REG\`"
+          } >> "$GITHUB_STEP_SUMMARY"
