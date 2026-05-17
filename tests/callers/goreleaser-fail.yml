@@ -1,0 +1,18 @@
+# tests/callers/goreleaser-fail.yml
+# Failure-path caller for goreleaser.yml. Points the atom at a fixture
+# that has no .goreleaser.yaml, which forces goreleaser to error out
+# during config load. Triggered only via workflow_dispatch so this run
+# does NOT execute on every PR — it always fails by design and is
+# invoked manually (or by an integration-test orchestrator) to confirm
+# the atom surfaces config errors correctly.
+name: caller-goreleaser-fail
+on:
+  workflow_dispatch:
+
+jobs:
+  test-goreleaser-fail:
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/cli-go-no-config
+      snapshot: true
