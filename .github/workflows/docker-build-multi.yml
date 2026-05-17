@@ -1,12 +1,23 @@
 # .github/workflows/docker-build-multi.yml
 # Reusable workflow that fans out a matrix over multiple Dockerfiles and
 # delegates each build to docker-build.yml. Stability surface: the shape
-# of `inputs`, `outputs`, and `secrets` below is the contract — changes
-# are SemVer-significant.
+# of `inputs` and `secrets` below is the contract — changes are
+# SemVer-significant.
 #
 # Outputs: intentionally not exposed. Matrix cardinality makes per-image
 # image_ref/digest/tag mapping ambiguous; consumers needing per-image refs
 # should call docker-build.yml directly.
+#
+# Consumer responsibility:
+#   - Pass a JSON array of {dockerfile, image_name} objects via `images`.
+#   - Ensure each `dockerfile` path is reachable from `context` (default `.`).
+#   - Trigger on tag push (real release) or PR (prerelease) — the nested
+#     docker-build.yml handles tag computation and prerelease semantics.
+#
+# Auth: `secrets: inherit` is REQUIRED on callers. The two declared secrets
+# (`release_please_app_id`, `release_please_app_private_key`) are forwarded
+# unchanged to the nested docker-build.yml so it can mint a GitHub App
+# token for tag-based builds.
 name: docker-build-multi
 on:
   workflow_call:
@@ -80,12 +91,11 @@ on:
         required: true
         description: 'PEM private key for the GitHub App. Forwarded to docker-build.yml.'
 
+# This wrapper itself only parses the matrix and dispatches; the nested
+# docker-build.yml declares its own top-level permissions (packages/id-token/
+# attestations/pull-requests) which apply when it runs.
 permissions:
   contents: read
-  packages: write
-  id-token: write
-  attestations: write
-  pull-requests: write
 
 concurrency:
   # Group all builds for a given ref together so a second push cancels the
