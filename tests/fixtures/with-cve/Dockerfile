@@ -8,4 +8,5 @@
 # Node-ecosystem CVEs that persist indefinitely, making the failure-path test
 # stable over time.
 FROM node:10-alpine
+USER nobody
 CMD ["true"]
