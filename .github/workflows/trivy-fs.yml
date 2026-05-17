@@ -137,6 +137,9 @@ jobs:
           SEVERITY: ${{ inputs.severity }}
           IGNORE_ARGS: ${{ steps.ignore.outputs.args }}
           IGNORE_UNFIXED: ${{ inputs.ignore_unfixed }}
+        # `--skip-dirs .catalog` excludes the catalog-checkout clone (this
+        # workflow's own implementation detail) from the adopter's scan,
+        # otherwise findings in our test fixtures bleed into adopter reports.
         run: |
           set -e
           UNFIXED_FLAG=""
@@ -147,6 +150,7 @@ jobs:
             --severity "$SEVERITY" \
             --exit-code 0 \
             $UNFIXED_FLAG \
+            --skip-dirs .catalog \
             --format sarif \
             --output trivy-fs.sarif \
             $IGNORE_ARGS .
@@ -156,6 +160,7 @@ jobs:
             --severity "$SEVERITY" \
             --exit-code 0 \
             $UNFIXED_FLAG \
+            --skip-dirs .catalog \
             --format json \
             --output trivy-fs.json \
             $IGNORE_ARGS .
