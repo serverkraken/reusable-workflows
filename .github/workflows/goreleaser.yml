@@ -1,0 +1,86 @@
+# .github/workflows/goreleaser.yml
+# Reusable workflow that runs goreleaser to publish CLI binary releases
+# (archives, checksums, optionally homebrew/scoop/etc.) for Go projects.
+# Stability surface: the shape of `inputs` and `permissions` below is the
+# contract — changes are SemVer-significant.
+#
+# Consumer responsibility:
+#   - Provide a `.goreleaser.yaml` at `working_directory`.
+#   - Trigger this workflow on tag push (`on: push: tags: ['v*']`) for real
+#     releases. For PR smoke tests, set `snapshot: true` so goreleaser does
+#     not attempt to create a GitHub release.
+#
+# Auth: `secrets: inherit` is REQUIRED on callers. The atom uses the
+# automatic `GITHUB_TOKEN`; no explicit `secrets:` block is declared.
+name: goreleaser
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: 'Directory containing go.mod and .goreleaser.yaml.'
+        required: false
+        type: string
+        default: '.'
+      goreleaser_version:
+        description: 'goreleaser version constraint (e.g. "~> v2", "v2.5.0", "latest").'
+        required: false
+        type: string
+        default: '~> v2'
+      snapshot:
+        description: 'Run in --snapshot mode (no publish). Useful for PR smoke tests.'
+        required: false
+        type: boolean
+        default: false
+      runs_on:
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: goreleaser-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: ${{ inputs.snapshot }}
+
+jobs:
+  release:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ inputs.working_directory }}/go.mod
+          # No explicit cache-dependency-path: setup-go derives it from
+          # go-version-file. Some CLI fixtures/repos have no go.sum; the
+          # action tolerates the missing file with a warning rather than a
+          # hard failure, which is the behaviour we want here.
+          cache: true
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: ${{ inputs.goreleaser_version }}
+          args: release --clean ${{ inputs.snapshot && '--snapshot' || '' }}
+          workdir: ${{ inputs.working_directory }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Job summary
+        env:
+          MODE: ${{ inputs.snapshot && 'snapshot' || 'release' }}
+          WORKDIR: ${{ inputs.working_directory }}
+          GR_VERSION: ${{ inputs.goreleaser_version }}
+        run: |
+          {
+            echo "## 📦 goreleaser ($MODE)"
+            echo ""
+            echo "**Working directory:** \`$WORKDIR\`"
+            echo "**goreleaser version:** \`$GR_VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
