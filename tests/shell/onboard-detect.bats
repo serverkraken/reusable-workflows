@@ -123,3 +123,28 @@ setup() {
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.current_version == "0.0.0"'
 }
+
+# === Task 2.3: monorepo detection ===
+
+@test "profile-json: go.work monorepo enumerates components" {
+  run "$DETECT" --profile-json "$FIX/monorepo-go"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.monorepo == true'
+  echo "$output" | jq -e '.components | length == 2'
+  echo "$output" | jq -e '[.components[].path] | sort == ["services/api","services/worker"]'
+  echo "$output" | jq -e '[.components[].languages] | flatten | unique | sort == ["go"]'
+}
+
+@test "profile-json: sub-dockerfiles without sub-markers fallback to monorepo" {
+  tmpdir=$(mktemp -d)
+  mkdir -p "$tmpdir/services/api" "$tmpdir/services/worker"
+  echo "FROM scratch" > "$tmpdir/services/api/Dockerfile"
+  echo "FROM scratch" > "$tmpdir/services/worker/Dockerfile"
+
+  run "$DETECT" --profile-json "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.monorepo == true'
+  echo "$output" | jq -e '.components | length == 2'
+  echo "$output" | jq -e '[.components[].release_please_type] | unique == ["generic"]'
+  rm -rf "$tmpdir"
+}

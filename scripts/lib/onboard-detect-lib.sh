@@ -56,32 +56,136 @@ emit_profile_json() {
     }'
 }
 
-# Minimal first cut — single-component, ignores monorepo markers (added in Task 2.3).
+# detect_components — enumerate monorepo components or fall back to single-component.
+#
+# Detection order:
+#   1) Explicit monorepo markers: go.work / Cargo.toml [workspace] / pnpm-workspace.yaml
+#   2) Fallback monorepo: 2+ sub-markers (go.mod / pyproject.toml / Cargo.toml / Chart.yaml)
+#   3) Sub-Dockerfile fallback: 2+ Dockerfiles in subdirs without language markers
+#   4) Single-component fallback (path=".")
 detect_components() {
   local repo="$1"
-  local langs dockerfiles role primary signals
-  langs=$(detect_languages "$repo" ".")
-  dockerfiles=$(inventory_dockerfiles "$repo" ".")
-  role=$(detect_role "$repo" "." "$dockerfiles")
-  primary=$(echo "$langs" | jq -r '.[0] // "generic"')
-  signals=$(detect_release_signals "$repo" ".")
 
-  jq -n \
-    --arg path "." \
-    --argjson languages "$langs" \
-    --arg primary "$primary" \
-    --arg role "$role" \
-    --argjson dockerfiles "$dockerfiles" \
-    --argjson signals "$signals" \
-    '[{
-      path: $path,
-      languages: $languages,
-      primary_language: $primary,
-      release_please_type: $primary,
-      role: $role,
-      dockerfiles: $dockerfiles,
-      release_signals: $signals
-    }]'
+  # 1) Explicit monorepo markers
+  local paths=()
+  if [[ -f "$repo/go.work" ]]; then
+    while IFS= read -r p; do
+      [[ -n "$p" ]] && paths+=("$p")
+    done < <(awk '/^use \(/{flag=1;next}/^\)/{flag=0}flag{gsub(/[()"\t ]/,"");print}' "$repo/go.work" | sed 's|^\./||')
+  elif [[ -f "$repo/Cargo.toml" ]] && grep -q '^\[workspace\]' "$repo/Cargo.toml" 2>/dev/null; then
+    # Cargo workspace: members = [ "crates/a", "crates/b" ]  (single-line or multi-line)
+    while IFS= read -r p; do
+      [[ -n "$p" ]] && paths+=("$p")
+    done < <(awk '
+      /^\[workspace\]/{flag=1; next}
+      /^\[/ && !/^\[workspace\]/{flag=0}
+      flag && /members[[:space:]]*=/{
+        capture=1
+      }
+      capture {
+        line = line $0
+        if (index($0, "]") > 0) {
+          gsub(/.*\[|\].*/, "", line)
+          n = split(line, arr, ",")
+          for (i=1; i<=n; i++) {
+            gsub(/[[:space:]"]/, "", arr[i])
+            if (arr[i] != "") print arr[i]
+          }
+          capture=0; line=""
+        }
+      }
+    ' "$repo/Cargo.toml")
+  elif [[ -f "$repo/pnpm-workspace.yaml" ]]; then
+    # packages: ["apps/*", "packages/foo"]  — expand globs against the repo
+    while IFS= read -r pat; do
+      [[ -z "$pat" ]] && continue
+      while IFS= read -r d; do
+        [[ -d "$d" ]] || continue
+        local rel="${d#"$repo"/}"
+        paths+=("$rel")
+      done < <(compgen -G "$repo/$pat" 2>/dev/null || true)
+    done < <(awk '
+      /^packages:/{flag=1; next}
+      flag && /^[[:space:]]*-/{
+        line=$0
+        gsub(/.*-[[:space:]]*/, "", line)
+        gsub(/^[\042\047]/, "", line)
+        gsub(/[\042\047][[:space:]]*$/, "", line)
+        print line
+      }
+      flag && /^[^[:space:]-]/{flag=0}
+    ' "$repo/pnpm-workspace.yaml")
+  fi
+
+  # 2) Fallback monorepo via multiple sub-markers
+  if [[ ${#paths[@]} -eq 0 ]]; then
+    while IFS= read -r m; do
+      local d
+      d=$(dirname "$m")
+      d="${d#"$repo"/}"
+      [[ "$d" == "." ]] && continue
+      paths+=("$d")
+    done < <(find "$repo" -mindepth 2 -maxdepth 3 \( -name 'go.mod' -o -name 'pyproject.toml' -o -name 'Cargo.toml' -o -name 'Chart.yaml' \) 2>/dev/null | sort -u)
+  fi
+
+  # 3) Sub-Dockerfile fallback (no language markers but multiple sub-Dockerfiles)
+  if [[ ${#paths[@]} -eq 0 ]]; then
+    local sub_dockerfile_dirs=()
+    while IFS= read -r f; do
+      local d
+      d=$(dirname "$f")
+      d="${d#"$repo"/}"
+      [[ "$d" == "." ]] && continue
+      sub_dockerfile_dirs+=("$d")
+    done < <(find "$repo" -mindepth 2 -maxdepth 3 -name 'Dockerfile' 2>/dev/null | sort -u)
+    if [[ ${#sub_dockerfile_dirs[@]} -ge 2 ]]; then
+      paths=("${sub_dockerfile_dirs[@]}")
+    fi
+  fi
+
+  # 4) Single-component fallback
+  if [[ ${#paths[@]} -eq 0 ]]; then
+    paths=(".")
+  fi
+
+  # De-duplicate while preserving order
+  declare -A seen=()
+  local unique=()
+  local p
+  for p in "${paths[@]}"; do
+    if [[ -z "${seen[$p]:-}" ]]; then
+      seen[$p]=1
+      unique+=("$p")
+    fi
+  done
+
+  local arr='[]'
+  for p in "${unique[@]}"; do
+    local langs role dockerfiles primary signals
+    langs=$(detect_languages "$repo" "$p")
+    dockerfiles=$(inventory_dockerfiles "$repo" "$p")
+    role=$(detect_role "$repo" "$p" "$dockerfiles")
+    primary=$(echo "$langs" | jq -r '.[0] // "generic"')
+    signals=$(detect_release_signals "$repo" "$p")
+
+    arr=$(echo "$arr" | jq \
+      --arg path "$p" \
+      --argjson languages "$langs" \
+      --arg primary "$primary" \
+      --arg role "$role" \
+      --argjson dockerfiles "$dockerfiles" \
+      --argjson signals "$signals" \
+      '. + [{
+        path: $path,
+        languages: $languages,
+        primary_language: $primary,
+        release_please_type: $primary,
+        role: $role,
+        dockerfiles: $dockerfiles,
+        release_signals: $signals
+      }]')
+  done
+  echo "$arr"
 }
 
 detect_languages() {
@@ -102,7 +206,10 @@ detect_languages() {
 
 # Stub for Task 2.4 — emits an empty array. Real Dockerfile inventory + override parsing
 # lands in Task 2.4. Keeping the function name stable lets that task swap in the body.
+# Signature: inventory_dockerfiles <repo> <path>
 inventory_dockerfiles() {
+  local _repo="${1:-}" _path="${2:-}"
+  : "$_repo" "$_path"  # silence unused-var lint until Task 2.4
   echo '[]'
 }
 
@@ -127,11 +234,17 @@ detect_role() {
 #     "chart_yaml":        <path/string|null>   # path to charts/*/Chart.yaml if present
 #   }
 # Task 2.5 fills this in.
+# Signature: detect_release_signals <repo> <path>
 detect_release_signals() {
+  local _repo="${1:-}" _path="${2:-}"
+  : "$_repo" "$_path"  # silence unused-var lint until Task 2.5
   echo '{"goreleaser_config": null, "chart_yaml": null}'
 }
 
 # Stub for Task 2.6 — legacy CI scan lands later.
+# Signature: detect_legacy_ci <repo>
 detect_legacy_ci() {
+  local _repo="${1:-}"
+  : "$_repo"
   echo '[]'
 }
