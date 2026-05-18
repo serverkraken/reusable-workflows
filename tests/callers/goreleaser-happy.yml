@@ -1,0 +1,21 @@
+# tests/callers/goreleaser-happy.yml
+# Happy-path caller for goreleaser.yml. Runs in --snapshot mode against the
+# cli-go-with-goreleaser fixture so nothing is published. This file exists
+# primarily so the atom's contract has a stable, lintable usage example;
+# integration.yml may wire it into self-CI in a later task.
+name: caller-goreleaser-happy
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/goreleaser.yml'
+      - 'tests/callers/goreleaser-happy.yml'
+      - 'tests/fixtures/cli-go-with-goreleaser/**'
+
+jobs:
+  test-goreleaser:
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/cli-go-with-goreleaser
+      snapshot: true

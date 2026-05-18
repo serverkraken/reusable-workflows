@@ -1,0 +1,166 @@
+# .github/workflows/docker-build-multi.yml
+# Reusable workflow that fans out a matrix over multiple Dockerfiles and
+# delegates each build to docker-build.yml. Stability surface: the shape
+# of `inputs` and `secrets` below is the contract — changes are
+# SemVer-significant.
+#
+# Outputs: intentionally not exposed. Matrix cardinality makes per-image
+# image_ref/digest/tag mapping ambiguous; consumers needing per-image refs
+# should call docker-build.yml directly.
+#
+# Consumer responsibility:
+#   - Pass a JSON array of {dockerfile, image_name} objects via `images`.
+#   - Ensure each `dockerfile` path is reachable from `context` (default `.`).
+#   - Trigger on tag push (real release) or PR (prerelease) — the nested
+#     docker-build.yml handles tag computation and prerelease semantics.
+#
+# Auth: `secrets: inherit` is REQUIRED on callers. The two declared secrets
+# (`release_please_app_id`, `release_please_app_private_key`) are forwarded
+# unchanged to the nested docker-build.yml so it can mint a GitHub App
+# token for tag-based builds.
+name: docker-build-multi
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: >-
+          JSON array of objects describing each image to build. Each entry
+          must have `dockerfile` (path to the Dockerfile) and `image_name`
+          (owner/repo[/suffix] passed through to docker-build.yml).
+          Example: '[{"dockerfile":"./Dockerfile","image_name":"acme/api"},
+          {"dockerfile":"./Dockerfile.worker","image_name":"acme/worker"}]'
+        required: true
+        type: string
+      context:
+        description: 'Shared build context for every image (default: .).'
+        required: false
+        type: string
+        default: '.'
+      tag:
+        description: 'Shared tag for every image. Empty → auto-compute (prerelease only).'
+        required: false
+        type: string
+        default: ''
+      prerelease:
+        description: 'Prerelease build (no :latest, auto-compute tag if empty).'
+        required: false
+        type: boolean
+        default: false
+      platforms:
+        required: false
+        type: string
+        default: 'linux/amd64,linux/arm64'
+      build_args:
+        required: false
+        type: string
+        default: ''
+      sign:
+        required: false
+        type: boolean
+        default: true
+      attest:
+        required: false
+        type: boolean
+        default: true
+      sbom:
+        required: false
+        type: boolean
+        default: true
+      runs_on_amd64:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","performance"]'
+      runs_on_arm64:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","ARM64"]'
+      runs_on_merge:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","low-performance"]'
+      runs_on_parse:
+        description: 'Runner for the parse job (pure shell; low-performance is fine).'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","low-performance"]'
+    secrets:
+      release_please_app_id:
+        required: true
+        description: 'GitHub App ID with contents:read on the catalog repo. Forwarded to docker-build.yml.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App. Forwarded to docker-build.yml.'
+
+# This wrapper itself only parses the matrix and dispatches; the nested
+# docker-build.yml declares its own top-level permissions (packages/id-token/
+# attestations/pull-requests) which apply when it runs.
+permissions:
+  contents: read
+
+concurrency:
+  # Group all builds for a given ref together so a second push cancels the
+  # first prerelease run (matches docker-build.yml semantics).
+  group: docker-build-multi-${{ github.repository }}-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ inputs.prerelease }}
+
+jobs:
+  parse:
+    runs-on: ${{ fromJSON(inputs.runs_on_parse) }}
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - name: Validate and emit matrix
+        id: build
+        env:
+          IMAGES_JSON: ${{ inputs.images }}
+        run: |
+          set -euo pipefail
+          if ! echo "$IMAGES_JSON" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            echo "::error::inputs.images must be a JSON array, got: $IMAGES_JSON"
+            exit 1
+          fi
+          COUNT=$(echo "$IMAGES_JSON" | jq 'length')
+          if [[ "$COUNT" -lt 1 ]]; then
+            echo "::error::inputs.images is empty; provide at least one {dockerfile,image_name} entry"
+            exit 1
+          fi
+          # Every entry must have non-empty dockerfile + image_name.
+          BAD=$(echo "$IMAGES_JSON" | jq -r '
+            to_entries
+            | map(select(
+                (.value.dockerfile // "") == "" or
+                (.value.image_name // "") == ""
+              ))
+            | map("entry " + (.key|tostring) + ": " + (.value|tostring))
+            | join("; ")
+          ')
+          if [[ -n "$BAD" ]]; then
+            echo "::error::Each images[] entry needs non-empty 'dockerfile' and 'image_name'. Offenders: $BAD"
+            exit 1
+          fi
+          # Wrap in {include:[…]} so the matrix can iterate `include` directly.
+          MATRIX=$(echo "$IMAGES_JSON" | jq -c '{include: .}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Parsed $COUNT image(s) into matrix."
+
+  build:
+    needs: parse
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.parse.outputs.matrix) }}
+    uses: ./.github/workflows/docker-build.yml
+    secrets: inherit
+    with:
+      tag: ${{ inputs.tag }}
+      prerelease: ${{ inputs.prerelease }}
+      image_name: ${{ matrix.image_name }}
+      dockerfile: ${{ matrix.dockerfile }}
+      context: ${{ inputs.context }}
+      platforms: ${{ inputs.platforms }}
+      build_args: ${{ inputs.build_args }}
+      sign: ${{ inputs.sign }}
+      attest: ${{ inputs.attest }}
+      sbom: ${{ inputs.sbom }}
+      runs_on_amd64: ${{ inputs.runs_on_amd64 }}
+      runs_on_arm64: ${{ inputs.runs_on_arm64 }}
+      runs_on_merge: ${{ inputs.runs_on_merge }}

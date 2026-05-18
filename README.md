@@ -77,6 +77,9 @@ jobs:
 |---------------------------|----------------------------------------------------|
 | `semantic-release.yml`    | release-please + floating major/minor tags         |
 | `docker-build.yml`        | multi-arch build + cosign + attestation + SBOM     |
+| `docker-build-multi.yml`  | matrix fan-out over multiple Dockerfiles per repo  |
+| `goreleaser.yml`          | goreleaser-action wrapper for CLI binary releases  |
+| `helm-publish.yml`        | helm lint + package + OCI push to GHCR             |
 | `trivy-image.yml`         | image vuln/secret/misconfig scan                   |
 | `trivy-fs.yml`            | filesystem vuln/secret/misconfig scan              |
 | `cleanup-images.yml`      | GHCR retention                                     |

@@ -1,0 +1,20 @@
+# tests/callers/helm-publish-fail.yml
+# Failure-path caller for helm-publish.yml. Points the atom at a chart
+# fixture whose Chart.yaml is missing the required `version` field, so
+# `helm lint` (Helm v3) exits non-zero. Triggered only via
+# workflow_dispatch so this run does NOT execute on every PR — it
+# always fails by design and is invoked manually (or by an
+# integration-test orchestrator) to confirm the atom surfaces lint
+# errors correctly.
+name: caller-helm-publish-fail
+on:
+  workflow_dispatch:
+
+jobs:
+  test-helm-publish-fail:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      chart_path: tests/fixtures/helm-broken
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
