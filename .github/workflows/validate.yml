@@ -50,3 +50,17 @@ jobs:
           grep -A1 "$PATTERN" actions/install-trivy/action.yml \
             | grep -E "TRIVY_VERSION: '[0-9]+\.[0-9]+\.[0-9]+'" \
             || { echo "::error::Renovate annotation broken in install-trivy"; exit 1; }
+
+  shell-tests:
+    # Run bats unit tests for the catalog's shell scripts (onboard-detect,
+    # onboard-render, compute-prerelease-tag). Requires gomplate because the
+    # renderer tests shell out to it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats jq
+      - name: Install gomplate
+        run: sudo ./scripts/install-gomplate.sh
+      - name: Run bats
+        run: bats tests/shell/
