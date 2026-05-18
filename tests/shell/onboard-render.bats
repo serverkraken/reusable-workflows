@@ -92,3 +92,32 @@ release-please-config.json"
   "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v3.2.1"
   grep -q "semantic-release.yml@v3.2.1" "$TARGET/.github/workflows/release.yml"
 }
+
+# ---- Variant-aware rendering (3.4) ----
+
+@test "render: multi-image service produces docker-build-multi reference" {
+  seed_profile "multi-dockerfile"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
+  grep -q "docker-build-multi.yml@v2" "$TARGET/.github/workflows/release.yml"
+  ! grep -qE "docker-build\.yml@v2" "$TARGET/.github/workflows/release.yml"
+}
+
+@test "render: library-go has no docker job" {
+  seed_profile "library-go"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
+  ! grep -q "docker-build" "$TARGET/.github/workflows/release.yml"
+  ! grep -q "trivy-image" "$TARGET/.github/workflows/release.yml"
+}
+
+@test "render: cli-go-with-goreleaser includes goreleaser job" {
+  seed_profile "cli-go-with-goreleaser"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
+  grep -q "goreleaser.yml@v2" "$TARGET/.github/workflows/release.yml"
+}
+
+@test "render: service-with-helm includes helm-publish job" {
+  seed_profile "service-with-helm"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
+  grep -q "helm-publish.yml@v2" "$TARGET/.github/workflows/release.yml"
+  grep -q "chart_path: charts/svc" "$TARGET/.github/workflows/release.yml"
+}
