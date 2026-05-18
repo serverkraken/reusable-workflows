@@ -383,10 +383,56 @@ detect_release_signals() {
     '{goreleaser_config: $goreleaser_config, chart_yaml: $chart_yaml}'
 }
 
-# Stub for Task 2.6 — legacy CI scan lands later.
+# Scan .github/workflows/*.{yml,yaml} (non-recursive) for legacy CI patterns,
+# emitting one entry per file (excluding OWNED filenames the renderer produces).
 # Signature: detect_legacy_ci <repo>
 detect_legacy_ci() {
-  local _repo="${1:-}"
-  : "$_repo"
-  echo '[]'
+  local repo="${1:-}"
+  local dir="$repo/.github/workflows"
+  if [[ ! -d "$dir" ]]; then
+    echo '[]'; return
+  fi
+
+  # Filenames OWNED by the catalog renderer — skip classification.
+  local OWNED=(ci.yml release.yml prerelease.yml cleanup.yml)
+
+  local arr='[]'
+  local f
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    local base
+    base=$(basename "$f")
+    local owned=0
+    local o
+    for o in "${OWNED[@]}"; do
+      [[ "$base" == "$o" ]] && owned=1 && break
+    done
+    [[ $owned -eq 1 ]] && continue
+
+    local summary="" replacements='[]'
+    if grep -q 'aquasecurity/trivy-action' "$f" 2>/dev/null; then
+      summary="trivy-action (deprecated); replace with trivy-fs.yml or trivy-image.yml"
+      replacements='["trivy-fs.yml","trivy-image.yml"]'
+    elif grep -q 'docker/build-push-action' "$f" 2>/dev/null; then
+      summary="docker/build-push-action; replaced by docker-build.yml"
+      replacements='["docker-build.yml"]'
+    elif grep -qE 'docker (build|buildx).*--push|docker push ' "$f" 2>/dev/null; then
+      summary="ad-hoc docker buildx + push; replaced by docker-build.yml"
+      replacements='["docker-build.yml"]'
+    elif grep -q 'semantic-release' "$f" 2>/dev/null; then
+      summary="hand-rolled semantic-release; replaced by release-please.yml"
+      replacements='["release-please.yml"]'
+    else
+      summary="unrecognized legacy workflow; manual review needed"
+    fi
+
+    local rel="${f#"$repo"/}"
+    arr=$(echo "$arr" | jq \
+      --arg path "$rel" \
+      --arg summary "$summary" \
+      --argjson replaced_by "$replacements" \
+      '. + [{path: $path, summary: $summary, replaced_by: $replaced_by}]')
+  done < <(find "$dir" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort || true)
+
+  echo "$arr"
 }

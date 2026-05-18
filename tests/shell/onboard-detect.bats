@@ -217,3 +217,65 @@ setup() {
   signal=$(echo "$output" | jq -r '.components[0].release_signals.chart_yaml')
   [[ "$signal" == *"Chart.yaml" ]]
 }
+
+# === Task 2.6: legacy CI scan ===
+
+@test "profile-json: legacy_ci detects aquasecurity/trivy-action and recommends trivy replacements" {
+  run "$DETECT" --profile-json "$FIX/legacy-ci"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.legacy_ci | length == 2'
+  echo "$output" | jq -e '
+    [.legacy_ci[] | select(.path == ".github/workflows/trivy.yml") | .replaced_by] | flatten | contains(["trivy-fs.yml"])
+  '
+}
+
+@test "profile-json: legacy_ci detects docker/build-push-action and recommends docker-build" {
+  run "$DETECT" --profile-json "$FIX/legacy-ci"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '
+    [.legacy_ci[] | select(.path == ".github/workflows/build.yml") | .replaced_by] == [["docker-build.yml"]]
+  '
+}
+
+@test "profile-json: legacy_ci skips OWNED workflow filenames" {
+  # build a fixture that has ONLY an owned file — should produce empty legacy_ci
+  tmpdir=$(mktemp -d)
+  echo "module example.com/x" > "$tmpdir/go.mod"
+  echo "go 1.22" >> "$tmpdir/go.mod"
+  mkdir -p "$tmpdir/.github/workflows"
+  cat > "$tmpdir/.github/workflows/release.yml" <<'EOF'
+name: release
+on: [push]
+jobs:
+  r:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+EOF
+  run "$DETECT" --profile-json "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.legacy_ci | length == 0'
+  rm -rf "$tmpdir"
+}
+
+@test "profile-json: legacy_ci default-classifies unrecognized workflows" {
+  tmpdir=$(mktemp -d)
+  echo "module example.com/x" > "$tmpdir/go.mod"
+  echo "go 1.22" >> "$tmpdir/go.mod"
+  mkdir -p "$tmpdir/.github/workflows"
+  cat > "$tmpdir/.github/workflows/random.yml" <<'EOF'
+name: random
+on: [push]
+jobs:
+  r:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo just an unrecognized workflow
+EOF
+  run "$DETECT" --profile-json "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.legacy_ci | length == 1'
+  echo "$output" | jq -e '.legacy_ci[0].replaced_by == []'
+  echo "$output" | jq -e '.legacy_ci[0].summary | startswith("unrecognized")'
+  rm -rf "$tmpdir"
+}
