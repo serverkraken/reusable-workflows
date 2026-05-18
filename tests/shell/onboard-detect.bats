@@ -148,3 +148,37 @@ setup() {
   echo "$output" | jq -e '[.components[].release_please_type] | unique == ["generic"]'
   rm -rf "$tmpdir"
 }
+
+# === Task 2.4: Dockerfile inventory + image-name override ===
+
+@test "profile-json: multi-Dockerfile produces dockerfiles[] of length 2" {
+  run "$DETECT" --profile-json "$FIX/multi-dockerfile"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].dockerfiles | length == 2'
+}
+
+@test "profile-json: Dockerfile.worker override beats convention" {
+  run "$DETECT" --profile-json "$FIX/multi-dockerfile"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[0].dockerfiles[] | select(.path=="Dockerfile.worker") | .image_name] == ["custom-worker"]'
+  echo "$output" | jq -e '[.components[0].dockerfiles[] | select(.path=="Dockerfile.worker") | .image_name_source] == ["override"]'
+}
+
+@test "profile-json: plain Dockerfile gets derived image name with REPO placeholder" {
+  run "$DETECT" --profile-json "$FIX/multi-dockerfile"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[0].dockerfiles[] | select(.path=="Dockerfile") | .image_name_source] == ["derived"]'
+  echo "$output" | jq -e '[.components[0].dockerfiles[] | select(.path=="Dockerfile") | .image_name] == ["$REPO"]'
+}
+
+@test "profile-json: monorepo-go sub-Dockerfiles have derived names with sub-path suffix" {
+  run "$DETECT" --profile-json "$FIX/monorepo-go"
+  [ "$status" -eq 0 ]
+  # Each component has one Dockerfile, derived to "$REPO-api" or "$REPO-worker"
+  echo "$output" | jq -e '
+    [.components[] | select(.path=="services/api") | .dockerfiles[] | .image_name] == ["$REPO-api"]
+  '
+  echo "$output" | jq -e '
+    [.components[] | select(.path=="services/worker") | .dockerfiles[] | .image_name] == ["$REPO-worker"]
+  '
+}

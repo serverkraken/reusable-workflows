@@ -9,7 +9,7 @@
 # Internal helpers (some are stubs filled in by later tasks):
 #   detect_components       — Task 2.2 skeleton, extended for monorepo in Task 2.3
 #   detect_languages        — per-component language inventory
-#   inventory_dockerfiles   — Task 2.4 (currently stub → [])
+#   inventory_dockerfiles   — per-component Dockerfile inventory + image-name override
 #   detect_role             — Task 2.5 minimal heuristic; refined later
 #   detect_release_signals  — Task 2.5 (currently stub)
 #   detect_legacy_ci        — Task 2.6 (currently stub → [])
@@ -204,13 +204,89 @@ detect_languages() {
   fi
 }
 
-# Stub for Task 2.4 — emits an empty array. Real Dockerfile inventory + override parsing
-# lands in Task 2.4. Keeping the function name stable lets that task swap in the body.
+# Inventory all Dockerfiles in a component path. Emits a JSON array of objects:
+#   [{path, image_name, image_name_source}, ...]
+# image_name_source ∈ {override, derived}.
+# `path` is the Dockerfile filename relative to the component path (e.g., "Dockerfile" or "Dockerfile.worker").
 # Signature: inventory_dockerfiles <repo> <path>
 inventory_dockerfiles() {
-  local _repo="${1:-}" _path="${2:-}"
-  : "$_repo" "$_path"  # silence unused-var lint until Task 2.4
-  echo '[]'
+  local repo="$1" path="$2"
+  local p="$repo/$path"
+  [[ -d "$p" ]] || { echo '[]'; return; }
+
+  # Collect Dockerfile names at component root only (not recursive — each sub-component is
+  # its own row in components[]).
+  local files=()
+  while IFS= read -r f; do
+    [[ -n "$f" ]] && files+=("$(basename "$f")")
+  done < <(find "$p" -maxdepth 1 -type f \( -name 'Dockerfile' -o -name 'Dockerfile.*' \) 2>/dev/null | sort || true)
+
+  if (( ${#files[@]} == 0 )); then
+    echo '[]'; return
+  fi
+
+  local arr='[]'
+  local fname
+  for fname in "${files[@]}"; do
+    local override image_name image_name_source
+    override=$(read_image_override "$p/$fname")
+    if [[ -n "$override" ]]; then
+      image_name="$override"
+      image_name_source="override"
+    else
+      image_name=$(derive_image_name "$fname" "$path")
+      image_name_source="derived"
+    fi
+    arr=$(echo "$arr" | jq \
+      --arg path "$fname" \
+      --arg image_name "$image_name" \
+      --arg image_name_source "$image_name_source" \
+      '. + [{path: $path, image_name: $image_name, image_name_source: $image_name_source}]')
+  done
+  echo "$arr"
+}
+
+# Read `# onboard:image=<name>` override from the first 5 lines of a Dockerfile.
+# Emits the name on stdout, or empty string if absent.
+# Signature: read_image_override <file-path>
+read_image_override() {
+  local file="$1"
+  [[ -f "$file" ]] || { echo ""; return; }
+  head -n 5 "$file" 2>/dev/null \
+    | grep -m1 -oE '^# onboard:image=[A-Za-z0-9._/-]+' \
+    | sed 's/^# onboard:image=//' || true
+}
+
+# Derive image name from Dockerfile filename and component path.
+#   path="."             Dockerfile          → $REPO
+#   path="."             Dockerfile.worker   → $REPO-worker
+#   path="services/foo"  Dockerfile          → $REPO-foo
+#   path="services/foo"  Dockerfile.worker   → $REPO-foo-worker
+# The literal $REPO placeholder is substituted by the renderer (Phase 3).
+# Signature: derive_image_name <filename> <component-path>
+derive_image_name() {
+  local filename="$1" cpath="$2"
+  local suffix=""
+  if [[ "$filename" == "Dockerfile" ]]; then
+    suffix=""
+  elif [[ "$filename" =~ ^Dockerfile\.(.+)$ ]]; then
+    suffix="${BASH_REMATCH[1]}"
+  fi
+
+  local seg=""
+  if [[ "$cpath" != "." ]]; then
+    seg="${cpath##*/}"
+  fi
+
+  if [[ -n "$seg" && -n "$suffix" ]]; then
+    echo "\$REPO-${seg}-${suffix}"
+  elif [[ -n "$seg" ]]; then
+    echo "\$REPO-${seg}"
+  elif [[ -n "$suffix" ]]; then
+    echo "\$REPO-${suffix}"
+  else
+    echo "\$REPO"
+  fi
 }
 
 # Stub for Task 2.5 — minimal heuristic, refined in Task 2.5.
