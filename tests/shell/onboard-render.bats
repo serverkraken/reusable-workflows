@@ -137,3 +137,43 @@ release-please-config.json"
   grep -q "docker-build-services-api:" "$TARGET/.github/workflows/release.yml"
   grep -q "docker-build-services-worker:" "$TARGET/.github/workflows/release.yml"
 }
+
+# ---- Golden-file fixtures (3.6) ----
+#
+# golden_check renders a fixture into a tmp dir whose basename is "repo"
+# (so $REPO substitution is deterministic), strips rendered_at from the
+# lock file, then either rewrites tests/fixtures/onboard/<fixture>/expected
+# (UPDATE_GOLDEN=1) or diffs against it. The hashes inside onboard.lock.json
+# stay — they are the reproducibility contract.
+
+golden_check() {
+  local fixture="$1"
+  # Use a fixed basename so $REPO substitution is reproducible across runs.
+  local target="$TARGET/repo"
+  mkdir -p "$target"
+
+  "$DETECT" --profile-json "$FIX/$fixture" > "$target/_profile.json"
+  "$RENDER" "$REPO_ROOT" "$target" "$target/_profile.json" "v2"
+  rm "$target/_profile.json"
+
+  local lock="$target/.github/onboard.lock.json"
+  if [[ -f "$lock" ]]; then
+    jq 'del(.rendered_at)' "$lock" > "$lock.det" && mv "$lock.det" "$lock"
+  fi
+
+  if [[ "${UPDATE_GOLDEN:-0}" == "1" ]]; then
+    rm -rf "$FIX/$fixture/expected"
+    mkdir -p "$FIX/$fixture/expected"
+    cp -R "$target/." "$FIX/$fixture/expected/"
+    skip "UPDATE_GOLDEN — rewrote $fixture/expected"
+  fi
+
+  diff -r "$FIX/$fixture/expected" "$target"
+}
+
+@test "golden: go-repo"                { golden_check "go-repo"; }
+@test "golden: multi-dockerfile"       { golden_check "multi-dockerfile"; }
+@test "golden: library-go"             { golden_check "library-go"; }
+@test "golden: cli-go-with-goreleaser" { golden_check "cli-go-with-goreleaser"; }
+@test "golden: service-with-helm"      { golden_check "service-with-helm"; }
+@test "golden: monorepo-go"            { golden_check "monorepo-go"; }
