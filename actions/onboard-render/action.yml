@@ -1,5 +1,9 @@
 name: 'Onboard: render adopter templates'
-description: 'Render adopter-template files into the target repo workspace. Wraps scripts/onboard-render.sh.'
+description: >-
+  Render adopter-template files into the target repo workspace from a
+  profile.json (emitted by onboard-detect). Writes the six standard files plus
+  .github/onboard.lock.json. Wraps scripts/onboard-render.sh.
+
 inputs:
   catalog_path:
     description: 'Path to the checked-out catalog repo'
@@ -7,24 +11,25 @@ inputs:
   target_path:
     description: 'Path to the checked-out target repo'
     required: true
-  release_type:
-    description: 'release-please release-type (go/python/rust/helm/node/simple)'
-    required: true
-  current_version:
-    description: 'Current version (no leading v)'
+  profile_json:
+    description: 'profile_json output from onboard-detect (raw JSON string)'
     required: true
   pin_version:
     description: 'Catalog @version to pin the rendered templates to'
     required: false
     default: 'v1'
+
 runs:
   using: composite
   steps:
     - shell: bash
       run: |
+        set -euo pipefail
+        tmp=$(mktemp -d)
+        echo '${{ inputs.profile_json }}' > "$tmp/profile.json"
         "${{ inputs.catalog_path }}/scripts/onboard-render.sh" \
           "${{ inputs.catalog_path }}" \
           "${{ inputs.target_path }}" \
-          "${{ inputs.release_type }}" \
-          "${{ inputs.current_version }}" \
+          "$tmp/profile.json" \
           "${{ inputs.pin_version }}"
+        rm -rf "$tmp"
