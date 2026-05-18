@@ -1,0 +1,3 @@
+# onboard:image=custom-worker
+FROM scratch
+COPY Dockerfile.worker /

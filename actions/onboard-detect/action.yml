@@ -27,6 +27,9 @@ outputs:
   default_branch:
     description: 'Default branch of target_repo'
     value: ${{ steps.detect.outputs.default_branch }}
+  profile_json:
+    description: 'Full structured detection profile (JSON-encoded)'
+    value: ${{ steps.detect.outputs.profile_json }}
 runs:
   using: composite
   steps:
@@ -36,10 +39,20 @@ runs:
         TARGET_REPO: ${{ inputs.target_repo }}
         GH_TOKEN: ${{ inputs.github_token }}
       run: |
+        set -euo pipefail
         # The action lives in actions/onboard-detect/action.yml; the script lives in scripts/.
         # When invoked via the catalog-checkout pattern, $GITHUB_ACTION_PATH is .catalog/actions/onboard-detect/
         # so ../../scripts/onboard-detect.sh resolves to .catalog/scripts/onboard-detect.sh.
+        #
+        # Legacy outputs (existing behavior, unchanged).
         "$GITHUB_ACTION_PATH/../../scripts/onboard-detect.sh" \
           "${{ inputs.repo_path }}" \
           "${{ inputs.language_override }}" \
           >> "$GITHUB_OUTPUT"
+        # Structured profile (new) — emitted via multi-line GH-Actions output syntax.
+        profile=$("$GITHUB_ACTION_PATH/../../scripts/onboard-detect.sh" --profile-json "${{ inputs.repo_path }}")
+        {
+          echo "profile_json<<EOF"
+          echo "$profile"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"

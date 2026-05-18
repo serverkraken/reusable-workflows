@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 # onboard-detect.sh — detect target repo language + version.
 #
-# Usage: onboard-detect.sh <repo-path> [language-override]
+# Two modes:
+#   onboard-detect.sh <repo-path> [language-override]
+#     → emits key=value lines (language, release_type, current_version, default_branch)
+#       LEGACY format consumed by onboard.yml's add-PR step. Kept for back-compat.
 #
-# When TARGET_REPO env is set, calls `gh` for default_branch and latest release.
+#   onboard-detect.sh --profile-json <repo-path>
+#     → emits a JSON profile (schema_version + components + signals + legacy_ci + warnings)
+#       NEW format consumed by the gomplate-based renderer in Phase 3.
+#
+# When TARGET_REPO env is set, both modes call `gh` for default_branch and latest release.
 # When unset (local/test mode), emits defaults: current_version=0.0.0, default_branch=main.
 #
-# Outputs (stdout, key=value, GitHub-Actions friendly):
+# Legacy-mode outputs (stdout, key=value, GitHub-Actions friendly):
 #   language=<go|python|rust|helm|node|simple>
 #   release_type=<same as language>
 #   current_version=<X.Y.Z, no leading v>
@@ -14,9 +21,27 @@
 #
 # Exits 1 on:
 #   - repo path missing
-#   - ambiguous language signals (more than one match, no override)
+#   - ambiguous language signals (more than one match, no override) — legacy mode only
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Dispatch on --profile-json before any positional parsing.
+if [[ "${1:-}" == "--profile-json" ]]; then
+  # shellcheck source=lib/onboard-detect-lib.sh
+  source "$SCRIPT_DIR/lib/onboard-detect-lib.sh"
+  shift
+  REPO_PATH="${1:-}"
+  if [[ -z "$REPO_PATH" || ! -d "$REPO_PATH" ]]; then
+    echo "::error::usage: $0 --profile-json <repo-path>" >&2
+    exit 1
+  fi
+  emit_profile_json "$REPO_PATH"
+  exit 0
+fi
+
+# === Legacy key=value path (existing behavior — unchanged) ===
 
 REPO_PATH="${1:-}"
 LANG_OVERRIDE="${2:-auto}"

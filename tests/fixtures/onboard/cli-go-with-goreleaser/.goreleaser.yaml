@@ -1,0 +1,5 @@
+version: 2
+project_name: cli
+builds:
+  - id: cli
+    main: ./cmd/cli
