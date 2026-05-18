@@ -121,3 +121,19 @@ release-please-config.json"
   grep -q "helm-publish.yml@v2" "$TARGET/.github/workflows/release.yml"
   grep -q "chart_path: charts/svc" "$TARGET/.github/workflows/release.yml"
 }
+
+# ---- Monorepo rendering (3.5) ----
+
+@test "render: monorepo-go produces release-please-config.json with packages map" {
+  seed_profile "monorepo-go"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
+  pkgs=$(jq -r '.packages | keys | sort | join(",")' "$TARGET/release-please-config.json")
+  [ "$pkgs" = "services/api,services/worker" ]
+}
+
+@test "render: monorepo-go release.yml has per-component docker-build jobs" {
+  seed_profile "monorepo-go"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
+  grep -q "docker-build-services-api:" "$TARGET/.github/workflows/release.yml"
+  grep -q "docker-build-services-worker:" "$TARGET/.github/workflows/release.yml"
+}

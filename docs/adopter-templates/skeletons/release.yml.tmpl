@@ -2,16 +2,19 @@
   release.yml — adopter-rendered release pipeline.
 
   Composes release-please (via semantic-release.yml) with the build/sign atoms
-  the adopter actually needs, decided from profile.json:
+  the adopter actually needs. The job set is decided per component from
+  profile.components[].dockerfiles and release_signals:
     - dockerfiles[] of length 1   → docker-build.yml
     - dockerfiles[] of length >1  → docker-build-multi.yml
     - release_signals.goreleaser_config → goreleaser.yml
     - release_signals.chart_yaml         → helm-publish.yml
 
-  Single-component template. Monorepo support is added in Phase 3.5.
+  Single-component and monorepo share the same template body. Single-component
+  components have path="." and emit unsuffixed job names (docker-build,
+  goreleaser, helm-publish). Monorepo components emit suffixed job names
+  (docker-build-services-api) so multiple components don't collide.
 */ -}}
 {{- $pin := .pin -}}
-{{- $c := index .profile.components 0 -}}
 name: release
 on:
   push:
@@ -31,49 +34,71 @@ jobs:
   release-please:
     uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@{{ $pin }}
     secrets: inherit
+{{ range $i, $c := .profile.components }}
+{{- $slug := strings.ReplaceAll "/" "-" $c.path -}}
+{{- if eq $slug "." }}{{ $slug = "" }}{{ end -}}
+{{- $suffix := "" -}}
+{{- if $slug }}{{ $suffix = printf "-%s" $slug }}{{ end -}}
+{{- $ctxPath := $c.path -}}
+{{- $isRoot := eq $c.path "." -}}
 
 {{- if eq (len $c.dockerfiles) 1 }}
 {{- $df := index $c.dockerfiles 0 }}
-
-  docker-build:
+  docker-build{{ $suffix }}:
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}
     with:
+    {{- if not $isRoot }}
+      context: {{ $ctxPath }}
+      dockerfile: {{ $ctxPath }}/{{ $df.path }}
+    {{- else }}
       dockerfile: {{ $df.path }}
+    {{- end }}
       image_name: {{ $df.image_name }}
       tag: {{`${{ needs.release-please.outputs.tag_name }}`}}
     secrets: inherit
-{{- else if gt (len $c.dockerfiles) 1 }}
-
-  docker-build:
+{{- else if gt (len $c.dockerfiles) 1 -}}
+{{/* Translate profile.json's dockerfiles[{path, image_name, ...}] into the
+     docker-build-multi atom's expected shape: [{dockerfile, image_name}]. */}}
+{{- $images := coll.Slice -}}
+{{- range $c.dockerfiles -}}
+  {{- $images = coll.Append (coll.Dict "dockerfile" .path "image_name" .image_name) $images -}}
+{{- end }}
+  docker-build{{ $suffix }}:
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@{{ $pin }}
     with:
+    {{- if not $isRoot }}
+      context: {{ $ctxPath }}
+    {{- end }}
       images: |
-        {{ $c.dockerfiles | toJSON }}
+        {{ $images | toJSON }}
       tag: {{`${{ needs.release-please.outputs.tag_name }}`}}
     secrets: inherit
 {{- end }}
 
 {{- if $c.release_signals.goreleaser_config }}
-
-  goreleaser:
+  goreleaser{{ $suffix }}:
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
     uses: serverkraken/reusable-workflows/.github/workflows/goreleaser.yml@{{ $pin }}
+{{- if not $isRoot }}
+    with:
+      working_directory: {{ $ctxPath }}
+{{- end }}
     secrets: inherit
 {{- end }}
 
 {{- if $c.release_signals.chart_yaml }}
-
-  helm-publish:
+  helm-publish{{ $suffix }}:
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
     uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@{{ $pin }}
     with:
       chart_path: {{ path.Dir $c.release_signals.chart_yaml }}
-      oci_registry: ghcr.io/{{ .profile.target_repo }}/charts
+      oci_registry: ghcr.io/{{ $.profile.target_repo }}/charts
     secrets: inherit
 {{- end }}
+{{ end }}

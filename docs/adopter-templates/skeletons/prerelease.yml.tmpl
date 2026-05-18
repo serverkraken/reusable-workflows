@@ -37,7 +37,11 @@ jobs:
     secrets: inherit
     with:
       image_ref: {{`${{ needs.build.outputs.image_ref }}`}}
-{{- else if gt (len $c.dockerfiles) 1 }}
+{{- else if gt (len $c.dockerfiles) 1 -}}
+{{- $images := coll.Slice -}}
+{{- range $c.dockerfiles -}}
+  {{- $images = coll.Append (coll.Dict "dockerfile" .path "image_name" .image_name) $images -}}
+{{- end }}
   build:
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@{{ $pin }}
     permissions:
@@ -50,7 +54,7 @@ jobs:
     with:
       prerelease: true
       images: |
-        {{ $c.dockerfiles | toJSON }}
+        {{ $images | toJSON }}
 {{- else }}
   # No Dockerfiles detected for this component.
   noop:
