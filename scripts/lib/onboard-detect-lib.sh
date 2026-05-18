@@ -6,13 +6,15 @@
 #   emit_profile_json <repo-path>
 #     → prints the full profile JSON document to stdout.
 #
-# Internal helpers (some are stubs filled in by later tasks):
-#   detect_components       — Task 2.2 skeleton, extended for monorepo in Task 2.3
-#   detect_languages        — per-component language inventory
+# Internal helpers:
+#   detect_components       — enumerate sub-components for monorepos, else single root
+#   detect_languages        — per-component language marker inventory
 #   inventory_dockerfiles   — per-component Dockerfile inventory + image-name override
-#   detect_role             — Task 2.5 minimal heuristic; refined later
-#   detect_release_signals  — Task 2.5 (currently stub)
-#   detect_legacy_ci        — Task 2.6 (currently stub → [])
+#   read_image_override     — read `# onboard:image=<name>` from a Dockerfile
+#   derive_image_name       — convention-based image name when no override is set
+#   detect_role             — service / cli / helm-app / library classification
+#   detect_release_signals  — goreleaser config + secondary chart_yaml paths
+#   detect_legacy_ci        — classify legacy .github/workflows/*.yml and suggest replacements
 
 # shellcheck shell=bash
 set -euo pipefail
