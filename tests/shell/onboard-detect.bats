@@ -91,3 +91,35 @@ setup() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"repo path does not exist"* ]]
 }
+
+# === Task 2.2: profile.json mode ===
+
+@test "profile-json: single go service emits schema_version=1" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.schema_version == 1'
+}
+
+@test "profile-json: single go service has one component at path '.'" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components | length == 1'
+  echo "$output" | jq -e '.components[0].path == "."'
+  echo "$output" | jq -e '.components[0].languages == ["go"]'
+  # go-repo fixture has no Dockerfile → role=library
+  echo "$output" | jq -e '.components[0].role == "library"'
+}
+
+@test "profile-json: default_branch defaults to main when TARGET_REPO unset" {
+  unset TARGET_REPO
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.default_branch == "main"'
+}
+
+@test "profile-json: current_version defaults to 0.0.0 when TARGET_REPO unset" {
+  unset TARGET_REPO
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.current_version == "0.0.0"'
+}
