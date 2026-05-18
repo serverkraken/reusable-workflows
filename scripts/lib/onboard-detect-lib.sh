@@ -117,8 +117,16 @@ detect_components() {
     ' "$repo/pnpm-workspace.yaml")
   fi
 
-  # 2) Fallback monorepo via multiple sub-markers
-  if [[ ${#paths[@]} -eq 0 ]]; then
+  # 2) Fallback monorepo via multiple sub-markers — only when the root has no primary
+  # marker of its own. If the root is already a component (has go.mod / pyproject.toml /
+  # Cargo.toml / Chart.yaml / Dockerfile / package.json), any nested marker (e.g.
+  # charts/svc/Chart.yaml) is a release signal of the root component, not a sibling.
+  local root_has_marker=false
+  if [[ -f "$repo/go.mod" || -f "$repo/pyproject.toml" || -f "$repo/Cargo.toml" \
+        || -f "$repo/Chart.yaml" || -f "$repo/Dockerfile" || -f "$repo/package.json" ]]; then
+    root_has_marker=true
+  fi
+  if [[ ${#paths[@]} -eq 0 && "$root_has_marker" == "false" ]]; then
     while IFS= read -r m; do
       local d
       d=$(dirname "$m")
@@ -289,32 +297,90 @@ derive_image_name() {
   fi
 }
 
-# Stub for Task 2.5 — minimal heuristic, refined in Task 2.5.
+# Determine the component's role from filesystem signals.
+# Priority: Dockerfile > CLI signal > Chart.yaml > default library.
+# Signature: detect_role <repo> <path> <dockerfiles-json>
 detect_role() {
   local repo="$1" path="$2" dockerfiles="$3"
   local p="$repo/$path"
+
   local has_docker
   has_docker=$(echo "$dockerfiles" | jq 'length > 0')
   if [[ "$has_docker" == "true" ]]; then
     echo "service"; return
   fi
+
+  # CLI heuristics — check before helm-app so a CLI with Chart.yaml isn't misclassified.
+  if [[ -d "$p/cmd" ]]; then
+    # cmd/<name>/main.go pattern (Go)
+    if [[ -n "$(find "$p/cmd" -mindepth 2 -maxdepth 2 -name 'main.go' -print -quit 2>/dev/null)" ]]; then
+      echo "cli"; return
+    fi
+  fi
+  if [[ -f "$p/Cargo.toml" ]] && grep -q '^\[\[bin\]\]' "$p/Cargo.toml" 2>/dev/null; then
+    echo "cli"; return
+  fi
+  if [[ -f "$p/pyproject.toml" ]] && grep -qE '^\[project\.scripts\]|^\[tool\.poetry\.scripts\]' "$p/pyproject.toml" 2>/dev/null; then
+    echo "cli"; return
+  fi
+
   if [[ -f "$p/Chart.yaml" ]]; then
     echo "helm-app"; return
   fi
+
   echo "library"
 }
 
 # detect_release_signals — emit a JSON object describing optional release signals:
 #   {
-#     "goreleaser_config": <path/string|null>,  # path to .goreleaser.yaml if present
-#     "chart_yaml":        <path/string|null>   # path to charts/*/Chart.yaml if present
+#     "goreleaser_config": <path/string|null>,  # path to .goreleaser.{yaml,yml} at component root
+#     "chart_yaml":        <path/string|null>   # path to a SUB-chart inside the component
 #   }
-# Task 2.5 fills this in.
+# A component-root Chart.yaml is reported via role=helm-app, not via this signal.
+# A sub-chart at e.g. charts/<name>/Chart.yaml means the component publishes a chart
+# alongside its primary artifact (service binary or image).
 # Signature: detect_release_signals <repo> <path>
 detect_release_signals() {
-  local _repo="${1:-}" _path="${2:-}"
-  : "$_repo" "$_path"  # silence unused-var lint until Task 2.5
-  echo '{"goreleaser_config": null, "chart_yaml": null}'
+  local repo="$1" path="$2"
+  local p="$repo/$path"
+
+  local gorel="null"
+  local f
+  for f in .goreleaser.yaml .goreleaser.yml goreleaser.yaml goreleaser.yml; do
+    if [[ -f "$p/$f" ]]; then
+      local rel
+      if [[ "$path" == "." ]]; then
+        rel="$f"
+      else
+        rel="$path/$f"
+      fi
+      gorel=$(jq -nc --arg s "$rel" '$s')
+      break
+    fi
+  done
+
+  # chart_yaml is a SECONDARY chart inside the component (not the component-root Chart.yaml,
+  # which makes the component itself a helm-app). Depth 3 = charts/<name>/Chart.yaml,
+  # depth 4 = helm/charts/<name>/Chart.yaml.
+  local chart="null"
+  local found_chart
+  found_chart=$(cd "$p" && find . -mindepth 2 -maxdepth 4 -name 'Chart.yaml' 2>/dev/null | head -n 1 || true)
+  if [[ -n "$found_chart" ]]; then
+    # found_chart is "./charts/svc/Chart.yaml"; strip leading "./"
+    found_chart="${found_chart#./}"
+    local rel
+    if [[ "$path" == "." ]]; then
+      rel="$found_chart"
+    else
+      rel="$path/$found_chart"
+    fi
+    chart=$(jq -nc --arg s "$rel" '$s')
+  fi
+
+  jq -nc \
+    --argjson goreleaser_config "$gorel" \
+    --argjson chart_yaml "$chart" \
+    '{goreleaser_config: $goreleaser_config, chart_yaml: $chart_yaml}'
 }
 
 # Stub for Task 2.6 — legacy CI scan lands later.

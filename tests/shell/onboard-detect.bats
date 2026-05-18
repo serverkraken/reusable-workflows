@@ -182,3 +182,38 @@ setup() {
     [.components[] | select(.path=="services/worker") | .dockerfiles[] | .image_name] == ["$REPO-worker"]
   '
 }
+
+# === Task 2.5: role + release signals ===
+
+@test "profile-json: library-go has role=library, no dockerfiles, no signals" {
+  run "$DETECT" --profile-json "$FIX/library-go"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].role == "library"'
+  echo "$output" | jq -e '.components[0].dockerfiles | length == 0'
+  echo "$output" | jq -e '.components[0].release_signals.goreleaser_config == null'
+  echo "$output" | jq -e '.components[0].release_signals.chart_yaml == null'
+}
+
+@test "profile-json: cli-go-with-goreleaser has role=cli and goreleaser signal" {
+  run "$DETECT" --profile-json "$FIX/cli-go-with-goreleaser"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].role == "cli"'
+  signal=$(echo "$output" | jq -r '.components[0].release_signals.goreleaser_config')
+  [ -n "$signal" ]
+  [ "$signal" != "null" ]
+  [[ "$signal" == *".goreleaser.yaml" ]]
+}
+
+@test "profile-json: helm-chart fixture has role=helm-app" {
+  run "$DETECT" --profile-json "$FIX/helm-chart"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].role == "helm-app"'
+}
+
+@test "profile-json: service-with-helm has role=service AND chart_yaml signal" {
+  run "$DETECT" --profile-json "$FIX/service-with-helm"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].role == "service"'
+  signal=$(echo "$output" | jq -r '.components[0].release_signals.chart_yaml')
+  [[ "$signal" == *"Chart.yaml" ]]
+}
