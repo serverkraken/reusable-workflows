@@ -1,0 +1,19 @@
+{{- /*
+  ci.yml — PR-time scan workflow.
+
+  Single-component template. Filesystem-only Trivy scan suffices for any role:
+  even library/cli repos benefit from secret + misconfig detection.
+*/ -}}
+{{- $pin := .pin -}}
+name: ci
+on:
+  pull_request:
+
+jobs:
+  secscan:
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-fs.yml@{{ $pin }}
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    secrets: inherit

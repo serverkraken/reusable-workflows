@@ -1,0 +1,79 @@
+{{- /*
+  release.yml — adopter-rendered release pipeline.
+
+  Composes release-please (via semantic-release.yml) with the build/sign atoms
+  the adopter actually needs, decided from profile.json:
+    - dockerfiles[] of length 1   → docker-build.yml
+    - dockerfiles[] of length >1  → docker-build-multi.yml
+    - release_signals.goreleaser_config → goreleaser.yml
+    - release_signals.chart_yaml         → helm-publish.yml
+
+  Single-component template. Monorepo support is added in Phase 3.5.
+*/ -}}
+{{- $pin := .pin -}}
+{{- $c := index .profile.components 0 -}}
+name: release
+on:
+  push:
+    branches: [{{ .profile.default_branch }}]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  packages: write
+  id-token: write
+  attestations: write
+  security-events: write
+  actions: read
+
+jobs:
+  release-please:
+    uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@{{ $pin }}
+    secrets: inherit
+
+{{- if eq (len $c.dockerfiles) 1 }}
+{{- $df := index $c.dockerfiles 0 }}
+
+  docker-build:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}
+    with:
+      dockerfile: {{ $df.path }}
+      image_name: {{ $df.image_name }}
+      tag: {{`${{ needs.release-please.outputs.tag_name }}`}}
+    secrets: inherit
+{{- else if gt (len $c.dockerfiles) 1 }}
+
+  docker-build:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@{{ $pin }}
+    with:
+      images: |
+        {{ $c.dockerfiles | toJSON }}
+      tag: {{`${{ needs.release-please.outputs.tag_name }}`}}
+    secrets: inherit
+{{- end }}
+
+{{- if $c.release_signals.goreleaser_config }}
+
+  goreleaser:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: serverkraken/reusable-workflows/.github/workflows/goreleaser.yml@{{ $pin }}
+    secrets: inherit
+{{- end }}
+
+{{- if $c.release_signals.chart_yaml }}
+
+  helm-publish:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@{{ $pin }}
+    with:
+      chart_path: {{ path.Dir $c.release_signals.chart_yaml }}
+      oci_registry: ghcr.io/{{ .profile.target_repo }}/charts
+    secrets: inherit
+{{- end }}

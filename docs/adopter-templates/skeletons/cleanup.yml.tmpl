@@ -1,0 +1,17 @@
+{{- /*
+  cleanup.yml — weekly GHCR image retention.
+
+  Rendered for every adopter; cleanup-images.yml is a no-op when no images
+  exist for the package, so it's safe for library/cli roles too.
+*/ -}}
+{{- $pin := .pin -}}
+name: cleanup
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch: {}
+
+jobs:
+  cleanup:
+    uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@{{ $pin }}
+    secrets: inherit
