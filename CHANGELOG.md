@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.2](https://github.com/serverkraken/reusable-workflows/compare/v3.3.1...v3.3.2) (2026-05-19)
+
+
+### Bug Fixes
+
+* **deps:** pin astral-sh/setup-uv to v8.1.0 (no floating v8 tag) ([#52](https://github.com/serverkraken/reusable-workflows/issues/52)) ([44a996f](https://github.com/serverkraken/reusable-workflows/commit/44a996fb72b74a5f0ddd6f04b7d8060799eef2fd))
+
 ## [3.3.1](https://github.com/serverkraken/reusable-workflows/compare/v3.3.0...v3.3.1) (2026-05-19)
 
 
