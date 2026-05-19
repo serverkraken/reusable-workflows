@@ -219,7 +219,7 @@ gh workflow run drift-check.yml \
 
 ## 8. Lint and test atoms
 
-Per-language lint and test atoms callable via `workflow_call`. Each accepts a `runs_on` input (default `[self-hosted, Linux]`) so callers without a matching runner pool can override to `ubuntu-latest`.
+Per-language lint and test atoms callable via `workflow_call`. Each atom accepts a `runs_on` input. Build-heavy atoms (`lint-go`, `test-go`, `lint-rust`, `test-rust`) default to `[self-hosted, Linux, X64]`; the lighter atoms (`lint-python`, `test-python`, `lint-helm`) default to `[self-hosted, Linux]`. Callers without a matching runner pool can override to `ubuntu-latest`.
 
 | Atom                  | Purpose                                            |
 |-----------------------|----------------------------------------------------|
