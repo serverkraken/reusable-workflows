@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/serverkraken/reusable-workflows/compare/v2.3.0...v3.0.0) (2026-05-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* Reusable workflows (docker-build, docker-build-multi, trivy-fs, trivy-image, semantic-release, release) now declare and require the org-level secret `release_please_app_client_id` instead of `release_please_app_id`. Adopters using `secrets: inherit` need the new org secret `RELEASE_PLEASE_APP_CLIENT_ID` to be present (which is the case for the serverkraken org as of 2026-05-19). Adopters on @v2 keep working — only @v3 callers see the new contract.
+
+### Features
+
+* migrate App-token auth to client-id (release-please-bot) ([#41](https://github.com/serverkraken/reusable-workflows/issues/41)) ([e7b2372](https://github.com/serverkraken/reusable-workflows/commit/e7b23728fdf92681df3ec24092a02553cb65f2d5))
+
 ## [2.3.0](https://github.com/serverkraken/reusable-workflows/compare/v2.2.0...v2.3.0) (2026-05-19)
 
 
