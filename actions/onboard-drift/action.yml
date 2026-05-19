@@ -1,0 +1,35 @@
+name: 'Onboard: drift'
+description: 'Compute drift status for a single adopter checkout. Wraps scripts/onboard-drift.sh.'
+inputs:
+  target_path:
+    description: 'Path to the checked-out adopter repo on the runner'
+    required: true
+  current_version:
+    description: 'Current catalog major (e.g. "v3") used to compute behind/clean'
+    required: true
+outputs:
+  status:
+    description: 'clean | modified | behind | behind+modified | no-lock'
+    value: ${{ steps.drift.outputs.status }}
+  modified:
+    description: 'Comma-separated list of paths whose hash differs from lock (or has the (missing) suffix)'
+    value: ${{ steps.drift.outputs.modified }}
+  lock_version:
+    description: 'catalog_version field from .github/onboard.lock.json (empty when no-lock)'
+    value: ${{ steps.drift.outputs.lock_version }}
+runs:
+  using: composite
+  steps:
+    - id: drift
+      shell: bash
+      env:
+        CATALOG_CURRENT_VERSION: ${{ inputs.current_version }}
+      run: |
+        set -euo pipefail
+        # Resolve catalog root relative to this action (actions/onboard-drift/action.yml)
+        # so the caller doesn't need to know the layout — matches onboard-detect.
+        catalog="$GITHUB_ACTION_PATH/../.."
+        "$catalog/scripts/onboard-drift.sh" \
+          "${{ inputs.target_path }}" \
+          "$catalog" \
+          >> "$GITHUB_OUTPUT"
