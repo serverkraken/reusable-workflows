@@ -54,7 +54,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ inputs.working_directory }}/go.mod
           # No explicit cache-dependency-path: setup-go derives it from
