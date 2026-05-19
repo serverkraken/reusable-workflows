@@ -63,7 +63,7 @@ jobs:
           # hard failure, which is the behaviour we want here.
           cache: true
 
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: ${{ inputs.goreleaser_version }}
