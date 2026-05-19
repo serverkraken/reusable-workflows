@@ -1,0 +1,4 @@
+apiVersion: v2
+# Intentionally invalid: missing required `name` field.
+version: 0.1.0
+description: Lint-fail fixture (Helm)
