@@ -48,14 +48,14 @@ jobs:
 
       - name: Setup Go (from go.mod)
         if: inputs.go_version == ''
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ${{ inputs.working_directory }}/go.mod
           cache-dependency-path: ${{ inputs.working_directory }}/go.sum
 
       - name: Setup Go (explicit version)
         if: inputs.go_version != ''
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ inputs.go_version }}
 
