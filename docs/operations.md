@@ -168,3 +168,49 @@ The atom callers in `ci.yml`, `prerelease.yml`, and `release.yml` ship with expl
 | `release.yml :: release` | union of all of the above (orchestrator runs every sub-atom) |
 
 These are the maxima the atoms ever request; if you tighten any of them, the corresponding feature breaks (e.g. dropping `security-events: write` silently disables SARIF upload).
+
+---
+
+## 7. Drift Audit
+
+Weekly central audit that flags adopters whose rendered onboarding files have either fallen behind the current catalog major or been hand-edited away from what we'd render today.
+
+### 7.1 What it does
+
+`.github/workflows/drift-check.yml` runs every Monday at 06:00 UTC (plus `workflow_dispatch` for ad-hoc runs). For each adopter listed as onboarded in `docs/onboarding-status.md`:
+
+1. Mint an App token scoped to that target repo, check it out.
+2. Run `actions/onboard-drift` which compares the SHA-256 hashes recorded in `target/.github/onboard.lock.json` against the working-tree files at the same paths.
+3. Also compare the lock's `catalog_version` against the catalog's current major (derived from `git describe --tags --abbrev=0`).
+
+All results land in a single rolling Issue in this repo titled exactly `Onboarding Drift Report`. The Issue body is overwritten on each run — no Issue list spam from a weekly cron.
+
+### 7.2 Status taxonomy
+
+| Status | Meaning | Remediation |
+|---|---|---|
+| `clean` | Hashes match + lock version equals current major | None |
+| `modified` | At least one rendered file's hash differs (hand-edited or hand-deleted) | Re-dispatch `onboard.yml` against the target to refresh, then review the diff |
+| `behind` | Lock's `catalog_version` is older than current major (e.g. lock `v2`, catalog `v3`) | Re-dispatch `onboard.yml` with `pin_version: v3` (or current major) |
+| `behind+modified` | Both | Re-dispatch `onboard.yml`; the bot PR will reset hand-edits and bump the pin in one shot |
+| `no-lock` | `.github/onboard.lock.json` is missing — adopter was onboarded before Phase 3 added the lock file | Re-dispatch `onboard.yml` once to write the lock |
+| `error` | Drift action failed (target inaccessible, malformed lock, …) | Click through to the matrix job for the failing target |
+
+### 7.3 Manual dispatch
+
+```bash
+gh workflow run drift-check.yml --repo serverkraken/reusable-workflows
+# or, to scope to specific repos without touching the status doc:
+gh workflow run drift-check.yml \
+  --repo serverkraken/reusable-workflows \
+  -f target_repos=serverkraken/blupod-ui,serverkraken/flow
+```
+
+### 7.4 What it does NOT do
+
+- No auto-update PRs. Drift is read-only audit; remediation is always a manual `onboard.yml` dispatch — that keeps the human in the loop for renames, image-name overrides, and component-shape changes that detection might re-classify.
+- No comparison against a hypothetical re-render at catalog HEAD ("what would change if we re-rendered today?"). That's effectively what `onboard.yml` dispatch does, so duplicating it in drift-check would be redundant.
+
+### 7.5 Reproducibility guarantee
+
+`scripts/onboard-drift.sh`'s comparison only works because the renderer (`scripts/onboard-render.sh` + gomplate templates) is deterministic for any given `(profile.json, pin)` tuple. A bats test (`tests/shell/onboard-drift.bats :: byte-reproducible`) guards this — re-rendering the fixture twice produces byte-identical files, hash-matching the lock. If a future change to the renderer ever breaks this guarantee, drift-check would flag every adopter as `modified` until they re-onboard.

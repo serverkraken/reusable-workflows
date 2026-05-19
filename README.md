@@ -97,7 +97,9 @@ Reusable sub-steps used internally by the atoms. Available for advanced consumer
 
 ## Operations
 
-See the [spec §9](docs/superpowers/specs/2026-05-16-reusable-workflows-design.md#9-operational-setup-org-level-one-time) for the GitHub App setup, Actions access policy, and private-key rotation runbook.
+- **Setup, secret rotation, App permissions** — [`docs/operations.md`](docs/operations.md) §§1–6, plus spec [§9](docs/superpowers/specs/2026-05-16-reusable-workflows-design.md#9-operational-setup-org-level-one-time).
+- **Onboarding adopters** — dispatch [`onboard.yml`](.github/workflows/onboard.yml) with a comma-separated target list. Renders all 4 adopter workflows + lock file via two PRs (add + cleanup). See [`docs/operations.md`](docs/operations.md) §5.
+- **Drift audit** — [`drift-check.yml`](.github/workflows/drift-check.yml) runs weekly (Mon 06:00 UTC) and upserts a single rolling `Onboarding Drift Report` issue listing adopters that are `behind`, `modified`, or `no-lock`. See [`docs/operations.md`](docs/operations.md) §7.
 
 ## License
 
