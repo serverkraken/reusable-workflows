@@ -47,7 +47,7 @@ jobs:
         with:
           fetch-depth: 0   # ct needs git history for --target-branch diff
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: ${{ inputs.helm_version }}
 
