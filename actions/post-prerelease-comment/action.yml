@@ -61,7 +61,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
     - name: Create or update comment
-      uses: peter-evans/create-or-update-comment@v4
+      uses: peter-evans/create-or-update-comment@v5
       with:
         comment-id: ${{ steps.find.outputs.comment-id }}
         issue-number: ${{ inputs.pr_number }}
