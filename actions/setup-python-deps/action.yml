@@ -41,15 +41,16 @@ runs:
         set -euo pipefail
         pm=""
         prefix=""
-        # The pip-dev probe uses a pure-shell grep against pyproject.toml rather
-        # than python3 -c 'import tomllib' because tomllib only exists in
-        # Python 3.11+, and this probe runs on the runner's pre-existing
-        # system python BEFORE actions/setup-python has had a chance to
-        # install a newer interpreter.
-        if [[ -f poetry.lock ]]; then
+        # Detection prefers content-of-pyproject.toml signals over lockfile
+        # presence: many Poetry projects gitignore poetry.lock, and a uv
+        # project may not have committed uv.lock yet. We use pure-shell
+        # `grep` against pyproject.toml because the runner's pre-existing
+        # system python may be < 3.11 (no tomllib) at this step — it runs
+        # before actions/setup-python has set up a project-version interpreter.
+        if [[ -f pyproject.toml ]] && grep -qE '^\s*\[tool\.poetry\]' pyproject.toml; then
           pm=poetry
           prefix="poetry run"
-        elif [[ -f uv.lock ]]; then
+        elif [[ -f uv.lock ]] || { [[ -f pyproject.toml ]] && grep -qE '^\s*\[tool\.uv\]' pyproject.toml; }; then
           pm=uv
           prefix="uv run"
         elif [[ -f pyproject.toml ]] \
@@ -61,7 +62,7 @@ runs:
           pm=pip-bare
           prefix=""
         else
-          echo "::error::no python package manager detected at $(pwd) (need poetry.lock | uv.lock | pyproject.toml[project.optional-dependencies.dev] | requirements.txt)"
+          echo "::error::no python package manager detected at $(pwd) (need pyproject.toml with [tool.poetry] | [tool.uv] | [project.optional-dependencies].dev, or uv.lock, or requirements.txt)"
           exit 1
         fi
         echo "pm=$pm" >> "$GITHUB_OUTPUT"
@@ -105,10 +106,12 @@ runs:
       run: poetry install --no-interaction --no-ansi
 
     - name: uv sync
+      # No --frozen: detection accepts uv projects without a committed
+      # uv.lock; in that case uv creates the lock at install time.
       if: steps.detect.outputs.pm == 'uv'
       shell: bash
       working-directory: ${{ inputs.working_directory }}
-      run: uv sync --frozen
+      run: uv sync
 
     - name: pip install -e ".[dev]"
       if: steps.detect.outputs.pm == 'pip-dev'
