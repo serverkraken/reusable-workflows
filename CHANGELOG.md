@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.4](https://github.com/serverkraken/reusable-workflows/compare/v3.3.3...v3.3.4) (2026-05-19)
+
+
+### Bug Fixes
+
+* **atom:** install Poetry via pip, not pipx (self-hosted runner compat) ([#56](https://github.com/serverkraken/reusable-workflows/issues/56)) ([0b7b22d](https://github.com/serverkraken/reusable-workflows/commit/0b7b22d5d3bc871b4c0c336c8b4574f62087b58f))
+
 ## [3.3.3](https://github.com/serverkraken/reusable-workflows/compare/v3.3.2...v3.3.3) (2026-05-19)
 
 
