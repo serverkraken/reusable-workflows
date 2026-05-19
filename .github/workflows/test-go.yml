@@ -1,0 +1,76 @@
+# .github/workflows/test-go.yml
+# Reusable workflow: run `go test` with coverage gate.
+#
+# Stability surface: the shape of `inputs` below is the contract.
+# Exit non-zero when measured line coverage < `coverage_threshold`.
+name: test-go
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64"]'
+      working_directory:
+        description: 'Component sub-path.'
+        required: false
+        type: string
+        default: '.'
+      go_version:
+        description: 'Go toolchain version. Empty → read from <working_directory>/go.mod.'
+        required: false
+        type: string
+        default: ''
+      coverage_threshold:
+        description: 'Minimum line coverage percentage (integer 0-100).'
+        required: false
+        type: number
+        default: 90
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-go-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go (from go.mod)
+        if: inputs.go_version == ''
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ inputs.working_directory }}/go.mod
+          cache-dependency-path: ${{ inputs.working_directory }}/go.sum
+
+      - name: Setup Go (explicit version)
+        if: inputs.go_version != ''
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version }}
+
+      - name: go test with coverage
+        working-directory: ${{ inputs.working_directory }}
+        run: go test -coverprofile=cover.out -covermode=atomic ./...
+
+      - name: Coverage gate
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          THRESHOLD: ${{ inputs.coverage_threshold }}
+        run: |
+          set -euo pipefail
+          # Last line of `go tool cover -func` is the total: `total:    (statements)    87.5%`
+          pct=$(go tool cover -func=cover.out | awk '/^total:/ {sub("%","",$3); print $3}')
+          echo "coverage: ${pct}% (threshold: ${THRESHOLD}%)"
+          # bash arithmetic is integer-only; multiply by 10 and compare ints
+          pct_int=$(printf '%.0f' "$(echo "$pct * 10" | bc -l)")
+          thr_int=$((THRESHOLD * 10))
+          if (( pct_int < thr_int )); then
+            echo "::error::coverage ${pct}% < threshold ${THRESHOLD}%"
+            exit 1
+          fi
