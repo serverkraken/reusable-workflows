@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.2.0](https://github.com/serverkraken/reusable-workflows/compare/v3.1.0...v3.2.0) (2026-05-19)
+
+
+### Features
+
+* **atoms:** lint-{go,python,rust,helm} and test-{go,python,rust} ([#47](https://github.com/serverkraken/reusable-workflows/issues/47)) ([fa45c39](https://github.com/serverkraken/reusable-workflows/commit/fa45c391ea0cb8fcb6270eefb717694b71a1a5e9))
+
+
+### Documentation
+
+* lint + test atoms spec and implementation plan ([#45](https://github.com/serverkraken/reusable-workflows/issues/45)) ([3e207d5](https://github.com/serverkraken/reusable-workflows/commit/3e207d5af1a119a23db29421fd96da77b26cbacf))
+
 ## [3.1.0](https://github.com/serverkraken/reusable-workflows/compare/v3.0.0...v3.1.0) (2026-05-19)
 
 
