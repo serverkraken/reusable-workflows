@@ -82,8 +82,9 @@ jobs:
           python_version: ${{ inputs.python_version }}
           install_test_extras: 'true'
 
+      # Exclude .catalog/ from pytest discovery — see lint-python.yml.
       - name: pytest --cov-fail-under
         working-directory: ${{ inputs.working_directory }}
         env:
           THRESHOLD: ${{ inputs.coverage_threshold }}
-        run: ${{ steps.setup.outputs.run_prefix }} pytest --cov --cov-fail-under="$THRESHOLD"
+        run: ${{ steps.setup.outputs.run_prefix }} pytest --ignore=.catalog --cov --cov-fail-under="$THRESHOLD"
