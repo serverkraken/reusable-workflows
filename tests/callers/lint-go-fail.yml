@@ -1,8 +1,8 @@
 # tests/callers/lint-go-fail.yml
 # Failure-path caller for lint-go.yml. The lint-fail fixture has gofmt
-# violations + unused vars; the atom MUST exit non-zero. We invoke the
-# atom with continue-on-error: true and assert in a downstream job that
-# the atom job failed.
+# violations + unused vars; the atom MUST exit non-zero. The assert-failed
+# job uses `if: always()` to run even when the lint job fails, then checks
+# that `needs.lint.result == 'failure'`.
 name: caller-lint-go-fail
 on:
   workflow_dispatch:
