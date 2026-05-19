@@ -1,0 +1,36 @@
+# tests/callers/test-rust-cov-fail.yml
+# Failure-path caller for test-rust.yml. The cov-fail fixture has 0 % coverage
+# because it ships only library code with no tests. The atom MUST fail the
+# coverage gate. assert-failed uses `if: always()` to run after the test
+# job fails, then checks `needs.test.result == 'failure'`.
+name: caller-test-rust-cov-fail
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/test-rust.yml'
+      - 'tests/callers/test-rust-cov-fail.yml'
+      - 'tests/fixtures/lint-test/rust-cov-fail/**'
+
+jobs:
+  test:
+    uses: ./.github/workflows/test-rust.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/rust-cov-fail
+      coverage_threshold: 90
+
+  assert-failed:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert test job failed
+        env:
+          RESULT: ${{ needs.test.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
+            exit 1
+          fi
+          echo "test-rust-cov-fail: correctly observed failure"
