@@ -1,6 +1,9 @@
 # .github/workflows/test-python.yml
 # Reusable workflow: run pytest with coverage gate. Package manager
 # (poetry/uv/pip) is auto-detected by setup-python-deps.
+#
+# Auth: callers MUST pass `secrets: inherit` so the catalog-scoped App
+# token can be minted. See lint-python.yml for the full explanation.
 name: test-python
 on:
   workflow_call:
@@ -25,6 +28,13 @@ on:
         required: false
         type: number
         default: 90
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
 
 permissions:
   contents: read
@@ -39,11 +49,31 @@ jobs:
     steps:
       - name: Checkout adopter repo
         uses: actions/checkout@v6
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=v3" >> "$GITHUB_OUTPUT"
+          fi
       - name: Checkout catalog (for composite actions)
         uses: actions/checkout@v6
         with:
           repository: serverkraken/reusable-workflows
-          ref: ${{ github.action_ref || 'main' }}
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
       - id: setup
         uses: ./.catalog/actions/setup-python-deps
