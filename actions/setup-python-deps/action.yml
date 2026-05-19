@@ -92,8 +92,11 @@ runs:
       run: pipx install poetry
 
     - name: Install uv
+      # renovate: datasource=github-releases depName=astral-sh/setup-uv
+      # astral-sh/setup-uv doesn't ship a floating major v8 tag (only v1..v7
+      # exist). Pin to the specific patch and let Renovate bump it.
       if: steps.detect.outputs.pm == 'uv'
-      uses: astral-sh/setup-uv@v8
+      uses: astral-sh/setup-uv@v8.1.0
 
     - name: poetry install
       if: steps.detect.outputs.pm == 'poetry'
