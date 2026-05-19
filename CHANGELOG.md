@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.5](https://github.com/serverkraken/reusable-workflows/compare/v3.3.4...v3.3.5) (2026-05-19)
+
+
+### Bug Fixes
+
+* **atom:** exclude .catalog/ from python lint/test walks ([#58](https://github.com/serverkraken/reusable-workflows/issues/58)) ([2de05a6](https://github.com/serverkraken/reusable-workflows/commit/2de05a6127fa9ab138b7895bd6406a7fcc87b9af))
+
 ## [3.3.4](https://github.com/serverkraken/reusable-workflows/compare/v3.3.3...v3.3.4) (2026-05-19)
 
 
