@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.0](https://github.com/serverkraken/reusable-workflows/compare/v3.2.0...v3.3.0) (2026-05-19)
+
+
+### Features
+
+* **onboard:** consume lint/test atoms from ci.yml skeleton + unsupported-language warning ([#48](https://github.com/serverkraken/reusable-workflows/issues/48)) ([c74965c](https://github.com/serverkraken/reusable-workflows/commit/c74965c51933c9afbece830ebbb3ca3074cfdfb2))
+
 ## [3.2.0](https://github.com/serverkraken/reusable-workflows/compare/v3.1.0...v3.2.0) (2026-05-19)
 
 
