@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.1](https://github.com/serverkraken/reusable-workflows/compare/v3.3.0...v3.3.1) (2026-05-19)
+
+
+### Bug Fixes
+
+* **atom:** lint-python/test-python need catalog-scoped App token for cross-repo ([#50](https://github.com/serverkraken/reusable-workflows/issues/50)) ([286912e](https://github.com/serverkraken/reusable-workflows/commit/286912ed70e7d992085f29b528ea6ef6e5ba295e))
+
 ## [3.3.0](https://github.com/serverkraken/reusable-workflows/compare/v3.2.0...v3.3.0) (2026-05-19)
 
 
