@@ -7,45 +7,72 @@
     'group:allNonMajor',
   ],
   timezone: 'Europe/Berlin',
-  schedule: ['before 6am on monday'],
-  labels: ['dependencies'],
-  ignorePaths: ['tests/fixtures/**'],
+  schedule: [
+    'before 6am on monday',
+  ],
+  labels: [
+    'dependencies',
+  ],
+  ignorePaths: [
+    'tests/fixtures/**',
+  ],
   packageRules: [
     {
       description: 'GitHub Actions — auto-merge minor+patch (gated by integration tests)',
-      matchManagers: ['github-actions'],
-      matchUpdateTypes: ['minor', 'patch'],
+      matchManagers: [
+        'github-actions',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
       automerge: true,
       automergeType: 'pr',
       groupName: 'GitHub Actions',
     },
     {
       description: 'Supply-chain actions move in lockstep',
-      matchPackagePatterns: ['^sigstore/', '^actions/attest-', '^anchore/sbom-action'],
       groupName: 'Supply chain actions',
+      matchPackageNames: [
+        '/^sigstore//',
+        '/^actions/attest-/',
+        '/^anchore/sbom-action/',
+      ],
     },
     {
       description: 'Docker actions',
-      matchPackagePatterns: ['^docker/'],
       groupName: 'Docker actions',
+      matchPackageNames: [
+        '/^docker//',
+      ],
     },
     {
       description: 'Major updates always require review',
-      matchUpdateTypes: ['major'],
+      matchUpdateTypes: [
+        'major',
+      ],
       automerge: false,
-      labels: ['dependencies', 'major'],
+      labels: [
+        'dependencies',
+        'major',
+      ],
     },
   ],
   vulnerabilityAlerts: {
-    labels: ['security'],
+    labels: [
+      'security',
+    ],
     automerge: true,
   },
   customManagers: [
     {
       customType: 'regex',
-      fileMatch: ['^\\.github/workflows/.+\\.ya?ml$', '^actions/.+/action\\.ya?ml$'],
+      managerFilePatterns: [
+        '/^\\.github/workflows/.+\\.ya?ml$/',
+        '/^actions/.+/action\\.ya?ml$/',
+      ],
       matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*TRIVY_VERSION:\\s*[\'\"]?(?<currentValue>\\S+?)[\'\"]?\\s*$',
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*TRIVY_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s*$',
       ],
       datasourceTemplate: 'github-releases',
       depNameTemplate: 'aquasecurity/trivy',
