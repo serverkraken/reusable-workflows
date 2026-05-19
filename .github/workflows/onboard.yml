@@ -166,6 +166,8 @@ jobs:
 
       - name: Stage rendered files and log diff
         working-directory: target
+        env:
+          PROFILE: ${{ steps.detect.outputs.profile_json }}
         run: |
           set -euo pipefail
           git add -A
@@ -175,6 +177,16 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           git --no-pager diff --cached --stat
           git --no-pager diff --cached
+
+          # Append profile-driven components table for human sanity-check.
+          {
+            echo ""
+            echo "### Detected components"
+            echo "| Path | Role | Languages | Dockerfiles |"
+            echo "| --- | --- | --- | --- |"
+            echo "$PROFILE" | jq -r '.components[] |
+              "| \(.path) | \(.role) | \(.languages|join(",")) | \(.dockerfiles|length) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Branch A — ensure add-workflows PR
         if: ${{ !inputs.dry_run }}
@@ -186,9 +198,7 @@ jobs:
           ADD_BRANCH: ${{ inputs.add_branch_name }}
           TARGET_REPO: ${{ matrix.target.target }}
           PIN: ${{ inputs.pin_version }}
-          LANG: ${{ steps.detect.outputs.language }}
-          RTYPE: ${{ steps.detect.outputs.release_type }}
-          CUR_VER: ${{ steps.detect.outputs.current_version }}
+          PROFILE: ${{ steps.detect.outputs.profile_json }}
         run: |
           set -euo pipefail
           # Bot identity: id is public and stable; fetched inline so we never
@@ -206,10 +216,11 @@ jobs:
             ".github/workflows/release.yml"
             ".github/workflows/prerelease.yml"
             ".github/workflows/cleanup.yml"
+            ".github/onboard.lock.json"
             "release-please-config.json"
             ".release-please-manifest.json"
           )
-          # All 6 should exist after render; defensive guard.
+          # All 7 should exist after render; defensive guard.
           for f in "${RENDERED[@]}"; do
             [[ -f "$f" ]] || { echo "::error::expected rendered file missing: $f"; exit 1; }
           done
@@ -236,22 +247,34 @@ jobs:
           git commit -m "chore: onboard serverkraken/reusable-workflows@${PIN}"
           git push -f origin "$ADD_BRANCH"
 
+          # Build profile-driven markdown blocks for the PR body so the reviewer
+          # can sanity-check what detection saw before merging.
+          components_md=$(echo "$PROFILE" | jq -r '
+            .components[] |
+            "- `\(.path)` — role=`\(.role)`, languages=\(.languages|join(",")), dockerfiles=\(.dockerfiles|length)"
+          ')
+          warnings_md=$(echo "$PROFILE" | jq -r '.warnings // [] | map("- " + .) | join("\n")')
+          legacy_md=$(echo "$PROFILE" | jq -r '
+            .legacy_ci // [] |
+            map("- `\(.path)` — \(.summary) → replaced by \(.replaced_by|join(", "))") |
+            join("\n")
+          ')
+
           body=$(cat <<EOF
           ## Onboard to serverkraken/reusable-workflows@${PIN}
 
-          Drops in the standard reusable-workflow consumer files:
+          Renders the standard reusable-workflow consumer files plus a tracking
+          \`.github/onboard.lock.json\` so future drift can be detected centrally.
 
-          - \`.github/workflows/ci.yml\`         — PR-time fs scan
-          - \`.github/workflows/release.yml\`    — main → release (orchestrator)
-          - \`.github/workflows/prerelease.yml\` — manual dispatch image builds
-          - \`.github/workflows/cleanup.yml\`    — weekly GHCR retention
-          - \`release-please-config.json\`       — release-please config (release-type: \`${RTYPE}\`)
-          - \`.release-please-manifest.json\`    — seeded at current version \`${CUR_VER}\`
+          ### Detected shape
+          ${components_md}
 
-          **Detected language:** \`${LANG}\`
-          **Detected current version:** \`${CUR_VER}\` (from latest GitHub release)
-          **Catalog version pinned:** \`${PIN}\`
-
+          ${warnings_md:+#### Warnings
+          ${warnings_md}
+          }
+          ${legacy_md:+#### Legacy CI to retire (companion PR B)
+          ${legacy_md}
+          }
           After merging:
           1. Push a \`feat:\` / \`fix:\` commit to \`${DEFAULT_BRANCH}\` — \`release.yml\` should open a release-please PR.
           2. Merge that release-please PR. A release + image build + Trivy scan should run end-to-end.
