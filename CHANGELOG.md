@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.3](https://github.com/serverkraken/reusable-workflows/compare/v3.3.2...v3.3.3) (2026-05-19)
+
+
+### Bug Fixes
+
+* **atom:** detect Poetry/uv projects by pyproject.toml content, not lockfile ([#54](https://github.com/serverkraken/reusable-workflows/issues/54)) ([15bda2e](https://github.com/serverkraken/reusable-workflows/commit/15bda2eb4b22795afbfb1650a634e84ed4578ca0))
+
 ## [3.3.2](https://github.com/serverkraken/reusable-workflows/compare/v3.3.1...v3.3.2) (2026-05-19)
 
 
