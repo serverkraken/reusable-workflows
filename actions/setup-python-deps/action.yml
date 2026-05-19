@@ -1,0 +1,124 @@
+# actions/setup-python-deps/action.yml
+# Composite action used by lint-python.yml and test-python.yml. Detects the
+# Python package manager in working_directory, sets up Python at the right
+# version, installs the project and its dev deps, and exposes:
+#   outputs.pm          one of poetry | uv | pip-dev | pip-bare
+#   outputs.run_prefix  command prefix to invoke project tools:
+#                       'poetry run' | 'uv run' | '' (pip paths run tools directly)
+#
+# Probe order: poetry.lock > uv.lock > pyproject.toml[project.optional-dependencies.dev] > requirements.txt.
+# Hard error if none of the above is present.
+name: setup-python-deps
+description: Detect Python package manager and install deps for lint/test atoms.
+inputs:
+  working_directory:
+    description: 'Project directory containing the lockfile or pyproject.toml.'
+    required: false
+    default: '.'
+  python_version:
+    description: 'Python version. Empty → read from <working_directory>/pyproject.toml.'
+    required: false
+    default: ''
+  install_test_extras:
+    description: 'When true, install pytest + pytest-cov on the pip-bare path.'
+    required: false
+    default: 'false'
+outputs:
+  pm:
+    description: 'Detected package manager.'
+    value: ${{ steps.detect.outputs.pm }}
+  run_prefix:
+    description: 'Prefix to invoke tools.'
+    value: ${{ steps.detect.outputs.run_prefix }}
+runs:
+  using: composite
+  steps:
+    - name: Detect package manager
+      id: detect
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        set -euo pipefail
+        pm=""
+        prefix=""
+        # The pip-dev probe uses a pure-shell grep against pyproject.toml rather
+        # than python3 -c 'import tomllib' because tomllib only exists in
+        # Python 3.11+, and this probe runs on the runner's pre-existing
+        # system python BEFORE actions/setup-python has had a chance to
+        # install a newer interpreter.
+        if [[ -f poetry.lock ]]; then
+          pm=poetry
+          prefix="poetry run"
+        elif [[ -f uv.lock ]]; then
+          pm=uv
+          prefix="uv run"
+        elif [[ -f pyproject.toml ]] \
+            && grep -qE '^\s*\[project\.optional-dependencies\]' pyproject.toml \
+            && grep -qE '^\s*dev\s*=' pyproject.toml; then
+          pm=pip-dev
+          prefix=""
+        elif [[ -f requirements.txt ]]; then
+          pm=pip-bare
+          prefix=""
+        else
+          echo "::error::no python package manager detected at $(pwd) (need poetry.lock | uv.lock | pyproject.toml[project.optional-dependencies.dev] | requirements.txt)"
+          exit 1
+        fi
+        echo "pm=$pm" >> "$GITHUB_OUTPUT"
+        echo "run_prefix=$prefix" >> "$GITHUB_OUTPUT"
+        echo "detected pm=$pm"
+
+    - name: Setup Python (from pyproject.toml)
+      if: inputs.python_version == ''
+      uses: actions/setup-python@v5
+      with:
+        python-version-file: ${{ inputs.working_directory }}/pyproject.toml
+
+    - name: Setup Python (explicit)
+      if: inputs.python_version != ''
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install Poetry
+      if: steps.detect.outputs.pm == 'poetry'
+      shell: bash
+      run: pipx install poetry
+
+    - name: Install uv
+      if: steps.detect.outputs.pm == 'uv'
+      uses: astral-sh/setup-uv@v6
+
+    - name: poetry install
+      if: steps.detect.outputs.pm == 'poetry'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: poetry install --no-interaction --no-ansi
+
+    - name: uv sync
+      if: steps.detect.outputs.pm == 'uv'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: uv sync --frozen
+
+    - name: pip install -e ".[dev]"
+      if: steps.detect.outputs.pm == 'pip-dev'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: pip install -r requirements.txt (+ optional test extras)
+      if: steps.detect.outputs.pm == 'pip-bare'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      env:
+        EXTRAS: ${{ inputs.install_test_extras }}
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install ruff mypy
+        if [[ "$EXTRAS" == "true" ]]; then
+          pip install pytest pytest-cov
+        fi
