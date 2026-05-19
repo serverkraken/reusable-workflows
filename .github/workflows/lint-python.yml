@@ -83,14 +83,18 @@ jobs:
           python_version: ${{ inputs.python_version }}
           install_test_extras: 'false'
 
+      # The catalog is checked out into .catalog/ at the adopter root for
+      # the composite action above; we must exclude it from the lint walk
+      # so the catalog's own intentional lint-fail fixtures don't appear
+      # as adopter findings.
       - name: ruff check
         working-directory: ${{ inputs.working_directory }}
-        run: ${{ steps.setup.outputs.run_prefix }} ruff check .
+        run: ${{ steps.setup.outputs.run_prefix }} ruff check --exclude .catalog .
 
       - name: ruff format --check
         working-directory: ${{ inputs.working_directory }}
-        run: ${{ steps.setup.outputs.run_prefix }} ruff format --check .
+        run: ${{ steps.setup.outputs.run_prefix }} ruff format --check --exclude .catalog .
 
       - name: mypy
         working-directory: ${{ inputs.working_directory }}
-        run: ${{ steps.setup.outputs.run_prefix }} mypy .
+        run: ${{ steps.setup.outputs.run_prefix }} mypy --exclude '\.catalog/' .
