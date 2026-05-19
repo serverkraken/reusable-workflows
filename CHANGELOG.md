@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.0](https://github.com/serverkraken/reusable-workflows/compare/v2.0.4...v2.1.0) (2026-05-18)
+
+
+### Features
+
+* phase 1 — new atoms (docker-build-multi, goreleaser, helm-publish) ([#21](https://github.com/serverkraken/reusable-workflows/issues/21)) ([94762ad](https://github.com/serverkraken/reusable-workflows/commit/94762add26520176090b129856ed53dbc8a4c335))
+* phase 2 — structured profile.json detection ([#23](https://github.com/serverkraken/reusable-workflows/issues/23)) ([67010c0](https://github.com/serverkraken/reusable-workflows/commit/67010c0dfec55fd1072ceac988770f7b115f7b6b))
+
 ## [2.0.4](https://github.com/serverkraken/reusable-workflows/compare/v2.0.3...v2.0.4) (2026-05-17)
 
 
