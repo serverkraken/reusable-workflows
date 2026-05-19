@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/serverkraken/reusable-workflows/compare/v2.2.0...v2.3.0) (2026-05-19)
+
+
+### Features
+
+* phase 4 — onboard.yml consumes profile.json (smarter onboarding) ([#39](https://github.com/serverkraken/reusable-workflows/issues/39)) ([2059918](https://github.com/serverkraken/reusable-workflows/commit/205991829e8a3ba5e576c90aff111c8d8a8ef87a))
+
 ## [2.2.0](https://github.com/serverkraken/reusable-workflows/compare/v2.1.0...v2.2.0) (2026-05-19)
 
 
