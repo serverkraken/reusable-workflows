@@ -88,9 +88,14 @@ runs:
         python-version: ${{ inputs.python_version }}
 
     - name: Install Poetry
+      # `pipx` is not guaranteed on self-hosted runners; `pip install poetry`
+      # works wherever actions/setup-python has put a Python interpreter on
+      # PATH, which is by this point in the composite.
       if: steps.detect.outputs.pm == 'poetry'
       shell: bash
-      run: pipx install poetry
+      run: |
+        python -m pip install --upgrade pip
+        pip install poetry
 
     - name: Install uv
       # renovate: datasource=github-releases depName=astral-sh/setup-uv
