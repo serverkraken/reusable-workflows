@@ -1,0 +1,71 @@
+# .github/workflows/lint-go.yml
+# Reusable workflow: lint Go code with `go vet` + golangci-lint.
+#
+# Stability surface: the shape of `inputs` below is the contract — changes
+# are SemVer-significant. No `secrets:` block: callers pass `secrets: inherit`
+# for transparency but the atom itself reads none.
+#
+# Auto-detect: when `go_version` is the empty string (default),
+# actions/setup-go reads <working_directory>/go.mod.
+name: lint-go
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64"]'
+      working_directory:
+        description: 'Component sub-path. Atom resolves all paths relative to this.'
+        required: false
+        type: string
+        default: '.'
+      go_version:
+        description: 'Go toolchain version. Empty → read from <working_directory>/go.mod.'
+        required: false
+        type: string
+        default: ''
+      # renovate: datasource=github-releases depName=golangci/golangci-lint
+      golangci_lint_version:
+        description: 'golangci-lint version (e.g. v2.0.2). Defaults to the atom-pinned version.'
+        required: false
+        type: string
+        default: 'v2.0.2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-go-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go (from go.mod)
+        if: inputs.go_version == ''
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ inputs.working_directory }}/go.mod
+          cache-dependency-path: ${{ inputs.working_directory }}/go.sum
+
+      - name: Setup Go (explicit version)
+        if: inputs.go_version != ''
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version }}
+
+      - name: go vet
+        working-directory: ${{ inputs.working_directory }}
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: ${{ inputs.golangci_lint_version }}
+          working-directory: ${{ inputs.working_directory }}
+          args: --timeout=5m

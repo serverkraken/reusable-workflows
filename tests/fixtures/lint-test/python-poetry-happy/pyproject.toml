@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "python-poetry-happy"
+version = "0.1.0"
+description = "Lint-test fixture (Poetry)"
+authors = ["fixture <fixture@example.com>"]
+packages = [{ include = "lib" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.7"
+mypy = "^1.13"
+pytest = "^8.3"
+pytest-cov = "^6.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+addopts = "--cov=lib --cov-report=term"

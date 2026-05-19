@@ -1,0 +1,36 @@
+# tests/callers/lint-python-fail.yml
+# Failure-path caller for lint-python.yml. The lint-fail fixture has ruff
+# violations (E401, F401, F841); the atom MUST exit non-zero. The
+# assert-failed job uses `if: always()` to run even when the lint job
+# fails, then checks that `needs.lint.result == 'failure'`.
+name: caller-lint-python-fail
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/lint-python.yml'
+      - 'actions/setup-python-deps/**'
+      - 'tests/callers/lint-python-fail.yml'
+      - 'tests/fixtures/lint-test/python-lint-fail/**'
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-lint-fail
+
+  assert-failed:
+    needs: lint
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.lint.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-python-fail: correctly observed failure"

@@ -53,7 +53,9 @@ jobs:
     uses: ./.github/workflows/trivy-fs.yml
     secrets: inherit
     with:
-      paths_ignore: 'tests/fixtures/with-secret'
+      paths_ignore: |
+        tests/fixtures/with-secret
+        tests/fixtures/lint-test/helm-lint-fail
       fail_on_findings: false
       upload_sarif: false
 
@@ -62,7 +64,8 @@ jobs:
     uses: ./.github/workflows/trivy-fs.yml
     secrets: inherit
     with:
-      paths_ignore: ''
+      paths_ignore: |
+        tests/fixtures/lint-test/helm-lint-fail
       upload_sarif: false
       fail_on_findings: false   # don't fail the job; we assert on findings_count below
 

@@ -1,0 +1,35 @@
+# tests/callers/lint-go-fail.yml
+# Failure-path caller for lint-go.yml. The lint-fail fixture has gofmt
+# violations + unused vars; the atom MUST exit non-zero. The assert-failed
+# job uses `if: always()` to run even when the lint job fails, then checks
+# that `needs.lint.result == 'failure'`.
+name: caller-lint-go-fail
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/lint-go.yml'
+      - 'tests/callers/lint-go-fail.yml'
+      - 'tests/fixtures/lint-test/go-lint-fail/**'
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-lint-fail
+
+  assert-failed:
+    needs: lint
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.lint.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-go-fail: correctly observed failure"

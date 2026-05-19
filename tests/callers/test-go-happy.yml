@@ -1,0 +1,18 @@
+# tests/callers/test-go-happy.yml
+# Happy-path caller for test-go.yml against the clean fixture.
+name: caller-test-go-happy
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/test-go.yml'
+      - 'tests/callers/test-go-happy.yml'
+      - 'tests/fixtures/lint-test/go-happy/**'
+
+jobs:
+  test:
+    uses: ./.github/workflows/test-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-happy
+      coverage_threshold: 90

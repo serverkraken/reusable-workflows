@@ -1,0 +1,64 @@
+# .github/workflows/lint-rust.yml
+# Reusable workflow: lint Rust with cargo fmt --check + cargo clippy -D warnings.
+name: lint-rust
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64"]'
+      working_directory:
+        description: 'Crate root directory.'
+        required: false
+        type: string
+        default: '.'
+      rust_toolchain:
+        description: 'rustup toolchain. Empty → rustup reads rust-toolchain.toml if present, else stable.'
+        required: false
+        type: string
+        default: ''
+      clippy_args:
+        description: 'Extra arguments to clippy after `--`.'
+        required: false
+        type: string
+        default: '-D warnings'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-rust-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain (explicit)
+        if: inputs.rust_toolchain != ''
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ inputs.rust_toolchain }}
+          components: rustfmt, clippy
+
+      - name: Install Rust toolchain (from rust-toolchain.toml or stable)
+        if: inputs.rust_toolchain == ''
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ inputs.working_directory }}
+
+      - name: cargo fmt --check
+        working-directory: ${{ inputs.working_directory }}
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        working-directory: ${{ inputs.working_directory }}
+        run: cargo clippy --no-deps -- ${{ inputs.clippy_args }}

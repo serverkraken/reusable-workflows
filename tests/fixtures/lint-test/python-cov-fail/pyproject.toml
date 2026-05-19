@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "python-cov-fail"
+version = "0.1.0"
+description = "Coverage-fail fixture (Poetry)"
+authors = ["fixture <fixture@example.com>"]
+packages = [{ include = "lib" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+pytest-cov = "^6.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+addopts = "--cov=lib --cov-report=term"

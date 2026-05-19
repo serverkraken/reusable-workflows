@@ -1,0 +1,70 @@
+# .github/workflows/test-rust.yml
+# Reusable workflow: run cargo test + cargo-llvm-cov coverage gate.
+name: test-rust
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64"]'
+      working_directory:
+        description: 'Crate root directory.'
+        required: false
+        type: string
+        default: '.'
+      rust_toolchain:
+        description: 'rustup toolchain. Empty → rustup defaults.'
+        required: false
+        type: string
+        default: ''
+      coverage_threshold:
+        description: 'Minimum line coverage percentage (integer 0-100).'
+        required: false
+        type: number
+        default: 90
+      # renovate: datasource=github-releases depName=taiki-e/cargo-llvm-cov
+      cargo_llvm_cov_version:
+        description: 'cargo-llvm-cov release tag.'
+        required: false
+        type: string
+        default: 'v0.6.16'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-rust-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain (explicit)
+        if: inputs.rust_toolchain != ''
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ inputs.rust_toolchain }}
+          components: llvm-tools-preview
+
+      - name: Install Rust toolchain (default)
+        if: inputs.rust_toolchain == ''
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ inputs.working_directory }}
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@${{ inputs.cargo_llvm_cov_version }}
+
+      - name: cargo llvm-cov with threshold
+        working-directory: ${{ inputs.working_directory }}
+        run: cargo llvm-cov --summary-only --fail-under-lines ${{ inputs.coverage_threshold }}

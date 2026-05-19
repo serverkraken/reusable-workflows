@@ -1,0 +1,60 @@
+# .github/workflows/lint-python.yml
+# Reusable workflow: lint Python with ruff (check + format) + mypy.
+# Package manager (poetry/uv/pip) is auto-detected by setup-python-deps.
+name: lint-python
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+      working_directory:
+        description: 'Component sub-path.'
+        required: false
+        type: string
+        default: '.'
+      python_version:
+        description: 'Python version. Empty → read from <working_directory>/pyproject.toml.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-python-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    steps:
+      - name: Checkout adopter repo
+        uses: actions/checkout@v6
+      - name: Checkout catalog (for composite actions)
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.action_ref || 'main' }}
+          path: .catalog
+      - id: setup
+        uses: ./.catalog/actions/setup-python-deps
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          python_version: ${{ inputs.python_version }}
+          install_test_extras: 'false'
+
+      - name: ruff check
+        working-directory: ${{ inputs.working_directory }}
+        run: ${{ steps.setup.outputs.run_prefix }} ruff check .
+
+      - name: ruff format --check
+        working-directory: ${{ inputs.working_directory }}
+        run: ${{ steps.setup.outputs.run_prefix }} ruff format --check .
+
+      - name: mypy
+        working-directory: ${{ inputs.working_directory }}
+        run: ${{ steps.setup.outputs.run_prefix }} mypy .

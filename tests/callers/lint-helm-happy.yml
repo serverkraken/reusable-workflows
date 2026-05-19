@@ -1,0 +1,20 @@
+# tests/callers/lint-helm-happy.yml
+# Happy-path caller: reuses tests/fixtures/helm-only. `charts_dir` points
+# at the fixture itself (which IS the chart), exercising the
+# "Chart.yaml at charts_dir root" branch of the atom.
+name: caller-lint-helm-happy
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/lint-helm.yml'
+      - 'tests/callers/lint-helm-happy.yml'
+      - 'tests/fixtures/helm-only/**'
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures
+      charts_dir: helm-only

@@ -83,6 +83,13 @@ jobs:
 | `trivy-image.yml`         | image vuln/secret/misconfig scan                   |
 | `trivy-fs.yml`            | filesystem vuln/secret/misconfig scan              |
 | `cleanup-images.yml`      | GHCR retention                                     |
+| `lint-go.yml`             | `go vet` + golangci-lint                           |
+| `test-go.yml`             | `go test` + coverage gate (default ≥ 90 %)         |
+| `lint-python.yml`         | ruff check + format + mypy (poetry/uv/pip auto)    |
+| `test-python.yml`         | pytest + coverage gate ≥ 90 % (poetry/uv/pip auto) |
+| `lint-rust.yml`           | `cargo fmt --check` + `cargo clippy -D warnings`   |
+| `test-rust.yml`           | `cargo test` + `cargo-llvm-cov` coverage gate      |
+| `lint-helm.yml`           | `helm lint` + `ct lint`                            |
 
 ## Composite actions
 

@@ -1,0 +1,87 @@
+# .github/workflows/lint-helm.yml
+# Reusable workflow: lint Helm chart(s) with `helm lint` + `ct lint`.
+name: lint-helm
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+      working_directory:
+        description: 'Repo root for ct (charts_dir is relative to this).'
+        required: false
+        type: string
+        default: '.'
+      charts_dir:
+        description: 'Directory containing one or more charts (relative to working_directory).'
+        required: false
+        type: string
+        default: 'charts'
+      # renovate: datasource=github-releases depName=helm/helm
+      helm_version:
+        description: 'Helm CLI version.'
+        required: false
+        type: string
+        default: 'v3.16.3'
+      # renovate: datasource=github-releases depName=helm/chart-testing
+      ct_version:
+        description: 'chart-testing (ct) version.'
+        required: false
+        type: string
+        default: 'v3.11.0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-helm-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}-${{ inputs.charts_dir }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # ct needs git history for --target-branch diff
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ inputs.helm_version }}
+
+      - uses: helm/chart-testing-action@v3
+        with:
+          version: ${{ inputs.ct_version }}
+
+      - name: helm lint (all charts)
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          CHARTS_DIR: ${{ inputs.charts_dir }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # If charts_dir is itself a chart, lint it directly; else lint each subdir that has Chart.yaml.
+          if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
+            helm lint "$CHARTS_DIR"
+          else
+            found=0
+            for d in "$CHARTS_DIR"/*/; do
+              if [[ -f "${d%/}/Chart.yaml" ]]; then
+                helm lint "${d%/}"
+                found=1
+              fi
+            done
+            if (( found == 0 )); then
+              echo "::error::no chart found in $CHARTS_DIR (no Chart.yaml in $CHARTS_DIR or its immediate subdirs)"
+              exit 1
+            fi
+          fi
+
+      - name: ct lint
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          ct lint --all --validate-maintainers=false \
+            --chart-dirs="${{ inputs.charts_dir }}" \
+            --target-branch="${{ github.base_ref || 'main' }}"

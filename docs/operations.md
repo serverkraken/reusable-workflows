@@ -214,3 +214,21 @@ gh workflow run drift-check.yml \
 ### 7.5 Reproducibility guarantee
 
 `scripts/onboard-drift.sh`'s comparison only works because the renderer (`scripts/onboard-render.sh` + gomplate templates) is deterministic for any given `(profile.json, pin)` tuple. A bats test (`tests/shell/onboard-drift.bats :: byte-reproducible`) guards this — re-rendering the fixture twice produces byte-identical files, hash-matching the lock. If a future change to the renderer ever breaks this guarantee, drift-check would flag every adopter as `modified` until they re-onboard.
+
+---
+
+## 8. Lint and test atoms
+
+Per-language lint and test atoms callable via `workflow_call`. Each atom accepts a `runs_on` input. Build-heavy atoms (`lint-go`, `test-go`, `lint-rust`, `test-rust`) default to `[self-hosted, Linux, X64]`; the lighter atoms (`lint-python`, `test-python`, `lint-helm`) default to `[self-hosted, Linux]`. Callers without a matching runner pool can override to `ubuntu-latest`.
+
+| Atom                  | Purpose                                            |
+|-----------------------|----------------------------------------------------|
+| `lint-go.yml`         | `go vet` + golangci-lint                           |
+| `test-go.yml`         | `go test` + coverage gate (default ≥ 90 %)         |
+| `lint-python.yml`     | ruff check + format + mypy (poetry/uv/pip auto)    |
+| `test-python.yml`     | pytest + coverage gate ≥ 90 % (poetry/uv/pip auto) |
+| `lint-rust.yml`       | `cargo fmt --check` + `cargo clippy -D warnings`   |
+| `test-rust.yml`       | `cargo test` + `cargo-llvm-cov` coverage gate      |
+| `lint-helm.yml`       | `helm lint` + `ct lint`                            |
+
+The test atoms expose a `coverage_threshold` input (default `90`) so consumers can tighten or loosen the gate per repo. The Python atoms reuse the `actions/setup-python-deps` composite to auto-detect Poetry / uv / pip-bare project layouts.
