@@ -15,7 +15,7 @@
 #     docker-build.yml handles tag computation and prerelease semantics.
 #
 # Auth: `secrets: inherit` is REQUIRED on callers. The two declared secrets
-# (`release_please_app_id`, `release_please_app_private_key`) are forwarded
+# (`release_please_app_client_id`, `release_please_app_private_key`) are forwarded
 # unchanged to the nested docker-build.yml so it can mint a GitHub App
 # token for tag-based builds.
 name: docker-build-multi
@@ -84,9 +84,9 @@ on:
         type: string
         default: '["self-hosted","Linux","low-performance"]'
     secrets:
-      release_please_app_id:
+      release_please_app_client_id:
         required: true
-        description: 'GitHub App ID with contents:read on the catalog repo. Forwarded to docker-build.yml.'
+        description: 'GitHub App Client ID with contents:read on the catalog repo. Forwarded to docker-build.yml.'
       release_please_app_private_key:
         required: true
         description: 'PEM private key for the GitHub App. Forwarded to docker-build.yml.'

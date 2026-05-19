@@ -29,10 +29,10 @@ The catalog uses the `serverkraken-release-bot` GitHub App for release authentic
 
 Add both secrets as org-level secrets with **Repository access = All private repositories**, so downstream consumers reach them via `secrets: inherit`:
 
-| Secret name                    | Value |
-|--------------------------------|-------|
-| `RELEASE_PLEASE_APP_ID`        | Numeric App ID (e.g. `123456`) |
-| `RELEASE_PLEASE_APP_PRIVATE_KEY` | Full PEM contents (including `-----BEGIN RSA PRIVATE KEY-----` header/footer) |
+| Secret name                       | Value |
+|-----------------------------------|-------|
+| `RELEASE_PLEASE_APP_CLIENT_ID`    | GitHub App **Client ID** from the App's settings page (e.g. `Iv23li…`). Since v3.0.0 — older catalog versions used `RELEASE_PLEASE_APP_ID` (numeric). |
+| `RELEASE_PLEASE_APP_PRIVATE_KEY`  | Full PEM contents (including `-----BEGIN RSA PRIVATE KEY-----` header/footer) |
 
 ---
 
@@ -129,7 +129,7 @@ Branches are bot-owned and force-reset to `default_branch` HEAD on every run. Em
 
 ## 6. v2.0.0 — App-Token Catalog Checkout
 
-Adopters pinning `@v2` (or `pin_version: v2` at onboard time) must pass `secrets: inherit` on every atom call. The atoms `trivy-fs.yml`, `trivy-image.yml`, and `docker-build.yml` mint a catalog-scoped App token from `RELEASE_PLEASE_APP_ID` + `RELEASE_PLEASE_APP_PRIVATE_KEY` (org secrets, see §1.3) and use it to clone the private catalog repo. Without `secrets: inherit`, the call fails immediately with "required secret missing".
+Adopters pinning `@v2` (or `pin_version: v2` at onboard time) must pass `secrets: inherit` on every atom call. The atoms `trivy-fs.yml`, `trivy-image.yml`, and `docker-build.yml` mint a catalog-scoped App token from the org-level App credentials (see §1.3) and use it to clone the private catalog repo. Without `secrets: inherit`, the call fails immediately with "required secret missing". (Since v3.0.0 the secret name is `RELEASE_PLEASE_APP_CLIENT_ID`; `@v2.x` callers still use the older `RELEASE_PLEASE_APP_ID`.)
 
 ### 6.1 Why this exists
 

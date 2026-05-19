@@ -17,8 +17,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Install actionlint
+        # Install via official script so we can pass -ignore flags. actionlint
+        # has a baked-in `popular-actions` data table that v1.7.12 does not
+        # yet know about `client-id` on actions/create-github-app-token@v3
+        # (only `app-id`). Ignore the two specific messages until upstream
+        # refreshes — runtime is fine, only the lint metadata is stale.
+        run: |
+          bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
       - name: Run actionlint
-        uses: rhysd/actionlint@v1.7.12
+        run: |
+          ./actionlint \
+            -ignore 'input "client-id" is not defined in action "actions/create-github-app-token@v3"' \
+            -ignore 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
 
   yamllint:
     runs-on: ubuntu-latest
