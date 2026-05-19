@@ -69,10 +69,16 @@ runs:
         echo "detected pm=$pm"
 
     - name: Setup Python (from pyproject.toml)
-      if: inputs.python_version == ''
+      if: inputs.python_version == '' && steps.detect.outputs.pm != 'pip-bare'
       uses: actions/setup-python@v5
       with:
         python-version-file: ${{ inputs.working_directory }}/pyproject.toml
+
+    - name: Setup Python (pip-bare default 3.x)
+      if: inputs.python_version == '' && steps.detect.outputs.pm == 'pip-bare'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
 
     - name: Setup Python (explicit)
       if: inputs.python_version != ''
