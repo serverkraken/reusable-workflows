@@ -1,0 +1,245 @@
+# .github/workflows/drift-check.yml
+# Weekly central audit. For each onboarded adopter (enumerated from
+# docs/onboarding-status.md, or an explicit list via workflow_dispatch),
+# compute drift status against the adopter's .github/onboard.lock.json
+# and publish a single rolling Issue in the catalog repo.
+#
+# Operational tool — not a public reusable workflow's surface; input contract
+# may evolve without semver bump.
+name: drift-check
+on:
+  schedule:
+    # Monday 06:00 UTC — adopter teams see the report at start of their week.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      target_repos:
+        description: 'Comma-separated owner/repo list (default: all onboarded from status doc)'
+        required: false
+        type: string
+
+concurrency:
+  group: drift-check-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  enumerate:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.enum.outputs.matrix }}
+      current_version: ${{ steps.ver.outputs.current_version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # need full tag history for git describe
+
+      - id: ver
+        name: Derive current catalog major
+        run: |
+          set -euo pipefail
+          # Lock files store the floating major pin (e.g. "v3"), not full semver.
+          # Extract major from the latest tag so behind/clean comparisons match.
+          tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          major=$(echo "$tag" | sed -E 's/^v([0-9]+).*$/v\1/')
+          echo "current_version=$major" >> "$GITHUB_OUTPUT"
+          echo "Resolved current major: $major (from tag $tag)"
+
+      - id: enum
+        name: Enumerate target adopters
+        env:
+          INPUT: ${{ inputs.target_repos }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT:-}" ]]; then
+            list="$INPUT"
+          else
+            # Extract onboarded rows from the status doc — second |-separated
+            # field is "serverkraken/<repo>"; skip rows whose status is "not onboarded".
+            list=$(awk -F'|' '
+              /^\| serverkraken\// {
+                gsub(/[[:space:]]/, "", $2)
+                if (index($0, "not onboarded") == 0) print $2
+              }' docs/onboarding-status.md | paste -sd, -)
+          fi
+
+          out='['
+          first=1
+          IFS=',' read -ra entries <<< "$list"
+          for e in "${entries[@]}"; do
+            e="${e//[[:space:]]/}"
+            [[ -z "$e" ]] && continue
+            owner="${e%/*}"; name="${e#*/}"
+            [[ $first -eq 0 ]] && out+=','
+            out+="{\"target\":\"$e\",\"owner\":\"$owner\",\"name\":\"$name\"}"
+            first=0
+          done
+          out+=']'
+          echo "matrix=$out" >> "$GITHUB_OUTPUT"
+          echo "Matrix: $out"
+
+  check:
+    needs: enumerate
+    if: needs.enumerate.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.enumerate.outputs.matrix) }}
+    steps:
+      - name: Mint App token scoped to target
+        id: target-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.target.owner }}
+          repositories: ${{ matrix.target.name }}
+
+      - name: Checkout target repo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ matrix.target.target }}
+          token: ${{ steps.target-token.outputs.token }}
+          path: target
+
+      - name: Checkout catalog at this workflow's SHA
+        uses: actions/checkout@v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ github.workflow_sha }}
+          path: catalog
+
+      - name: Drift check
+        id: drift
+        uses: ./catalog/actions/onboard-drift
+        with:
+          target_path: target
+          current_version: ${{ needs.enumerate.outputs.current_version }}
+
+      - name: Emit per-target result
+        if: always()
+        env:
+          TARGET: ${{ matrix.target.target }}
+          STATUS: ${{ steps.drift.outputs.status || 'error' }}
+          MODIFIED: ${{ steps.drift.outputs.modified || '' }}
+          LOCK_VERSION: ${{ steps.drift.outputs.lock_version || '' }}
+          CURRENT: ${{ needs.enumerate.outputs.current_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p result
+          safe="${TARGET//\//-}"
+          jq -n \
+            --arg target "$TARGET" \
+            --arg status "$STATUS" \
+            --arg modified "$MODIFIED" \
+            --arg lock_version "$LOCK_VERSION" \
+            --arg current "$CURRENT" \
+            '{target:$target, status:$status, modified:$modified, lock_version:$lock_version, current:$current}' \
+            > "result/$safe.json"
+          echo "Per-target result:"
+          cat "result/$safe.json"
+
+      - name: Upload drift result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: drift-${{ matrix.target.owner }}-${{ matrix.target.name }}
+          path: result/
+          retention-days: 30
+
+  publish:
+    needs: [enumerate, check]
+    if: always() && needs.enumerate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint App token for catalog repo
+        id: cat-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: serverkraken
+          repositories: reusable-workflows
+
+      - name: Download all drift results
+        if: needs.check.result == 'success' || needs.check.result == 'failure'
+        uses: actions/download-artifact@v8
+        with:
+          path: results
+          pattern: drift-*
+          merge-multiple: true
+
+      - name: Build markdown body
+        id: build
+        env:
+          CURRENT_VERSION: ${{ needs.enumerate.outputs.current_version }}
+        run: |
+          set -euo pipefail
+          today=$(date -u +%Y-%m-%d)
+          {
+            echo "# Onboarding Drift Report — $today"
+            echo
+            echo "_Catalog current major: \`$CURRENT_VERSION\` · audit run: [$(date -u +%H:%M:%SZ)](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_"
+            echo
+            if [[ ! -d results ]] || [[ -z "$(ls -A results 2>/dev/null)" ]]; then
+              echo "No onboarded adopters found in \`docs/onboarding-status.md\`."
+            else
+              echo "| Repo | Status | Catalog (lock → current) | Modified files |"
+              echo "|---|---|---|---|"
+              for f in results/*.json; do
+                [[ -f "$f" ]] || continue
+                t=$(jq -r '.target' "$f")
+                s=$(jq -r '.status' "$f")
+                lv=$(jq -r '.lock_version' "$f")
+                cv=$(jq -r '.current' "$f")
+                mods=$(jq -r '.modified' "$f")
+                [[ -z "$mods" || "$mods" == "null" ]] && mods="—"
+                if [[ -z "$lv" ]]; then
+                  ver="— → $cv"
+                elif [[ "$lv" == "$cv" ]]; then
+                  ver="$cv"
+                else
+                  ver="$lv → $cv"
+                fi
+                echo "| $t | $s | $ver | $mods |"
+              done
+            fi
+            echo
+            echo "---"
+            onboard_url="${{ github.server_url }}/${{ github.repository }}/actions/workflows/onboard.yml"
+            echo "_Remediate by running [\`onboard.yml\`]($onboard_url) against the affected repo._"
+            echo "_Status semantics: see [\`docs/operations.md\`](../blob/main/docs/operations.md) §Drift audit._"
+          } > body.md
+          echo "Body preview:"
+          cat body.md
+          echo "body_path=body.md" >> "$GITHUB_OUTPUT"
+
+      - name: Upsert rolling drift issue
+        env:
+          GH_TOKEN: ${{ steps.cat-token.outputs.token }}
+          BODY_PATH: ${{ steps.build.outputs.body_path }}
+        run: |
+          set -euo pipefail
+          # Find existing open issue by exact title — search API can lag,
+          # so list+grep is more deterministic for a low-traffic title.
+          existing=$(gh issue list \
+            --repo serverkraken/reusable-workflows \
+            --state open \
+            --limit 100 \
+            --json number,title \
+            -q '.[] | select(.title == "Onboarding Drift Report") | .number' \
+            | head -1)
+          if [[ -n "$existing" ]]; then
+            echo "Updating existing issue #$existing"
+            gh issue edit "$existing" --repo serverkraken/reusable-workflows --body-file "$BODY_PATH"
+          else
+            echo "Creating new drift report issue"
+            gh issue create --repo serverkraken/reusable-workflows \
+              --title "Onboarding Drift Report" \
+              --body-file "$BODY_PATH"
+          fi
