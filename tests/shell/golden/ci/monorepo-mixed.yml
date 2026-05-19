@@ -1,0 +1,29 @@
+name: ci
+on:
+  pull_request:
+
+jobs:
+  secscan:
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-fs.yml@v3
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    secrets: inherit
+
+  lint-go-services-api:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-go.yml@v3
+    with:
+      working_directory: services/api
+    secrets: inherit
+  test-go-services-api:
+    uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@v3
+    with:
+      working_directory: services/api
+      coverage_threshold: 90
+    secrets: inherit
+  lint-helm-charts-web:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@v3
+    with:
+      working_directory: charts/web
+    secrets: inherit
