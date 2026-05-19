@@ -1,8 +1,13 @@
 {{- /*
-  ci.yml — PR-time scan workflow.
+  ci.yml — PR-time CI workflow.
 
-  Single-component template. Filesystem-only Trivy scan suffices for any role:
-  even library/cli repos benefit from secret + misconfig detection.
+  Always emits a `secscan` job (trivy-fs). For each profile component,
+  emits per-language lint + test jobs keyed off `primary_language`.
+  Job-id pattern: <kind>-<lang>-<suffix>.
+  Suffix rule:  path == "."  → "root"
+                otherwise    → path with `/` → `-`
+  The conditional avoids the naive `replaceAll "." "root"` which would
+  mangle paths containing dots (e.g. `services/v2.api`).
 */ -}}
 {{- $pin := .pin -}}
 name: ci
@@ -17,3 +22,54 @@ jobs:
       security-events: write
       actions: read
     secrets: inherit
+{{ range $i, $c := .profile.components }}
+{{- $suffix := "" -}}
+{{- if eq $c.path "." -}}
+{{- $suffix = "root" -}}
+{{- else -}}
+{{- $suffix = $c.path | replaceAll "/" "-" -}}
+{{- end }}
+{{- if eq $c.primary_language "go" }}
+  lint-go-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-go.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+    secrets: inherit
+  test-go-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+      coverage_threshold: 90
+    secrets: inherit
+{{- else if eq $c.primary_language "python" }}
+  lint-python-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-python.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+    secrets: inherit
+  test-python-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/test-python.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+      coverage_threshold: 90
+    secrets: inherit
+{{- else if eq $c.primary_language "rust" }}
+  lint-rust-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-rust.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+    secrets: inherit
+  test-rust-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/test-rust.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+      coverage_threshold: 90
+    secrets: inherit
+{{- else if eq $c.primary_language "helm" }}
+  lint-helm-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+    secrets: inherit
+{{- end }}
+{{- end }}

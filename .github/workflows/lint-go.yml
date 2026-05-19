@@ -48,14 +48,14 @@ jobs:
 
       - name: Setup Go (from go.mod)
         if: inputs.go_version == ''
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ${{ inputs.working_directory }}/go.mod
           cache-dependency-path: ${{ inputs.working_directory }}/go.sum
 
       - name: Setup Go (explicit version)
         if: inputs.go_version != ''
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ inputs.go_version }}
 
@@ -64,7 +64,7 @@ jobs:
         run: go vet ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ inputs.golangci_lint_version }}
           working-directory: ${{ inputs.working_directory }}

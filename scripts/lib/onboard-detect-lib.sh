@@ -15,9 +15,16 @@
 #   detect_role             — service / cli / helm-app / library classification
 #   detect_release_signals  — goreleaser config + secondary chart_yaml paths
 #   detect_legacy_ci        — classify legacy .github/workflows/*.yml and suggest replacements
+#   emit_unsupported_language_warnings — append no_lint_test_atom warnings for unsupported primary_language values
 
 # shellcheck shell=bash
 set -euo pipefail
+
+# Supported primary_language values for lint/test atoms in the catalog.
+# Anything outside this set triggers a `no_lint_test_atom` warning in profile.json.
+# IMPORTANT: keep this list in sync with docs/adopter-templates/skeletons/ci.yml.tmpl
+# (Task 11 rewrites that template to consume these warnings).
+SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm'
 
 emit_profile_json() {
   local repo="$1"
@@ -37,7 +44,8 @@ emit_profile_json() {
   local legacy_ci
   legacy_ci=$(detect_legacy_ci "$repo")
 
-  jq -n \
+  local profile
+  profile=$(jq -n \
     --argjson schema_version 1 \
     --arg target_repo "$target_repo" \
     --arg default_branch "$default_branch" \
@@ -55,7 +63,31 @@ emit_profile_json() {
       components: $components,
       legacy_ci: $legacy_ci,
       warnings: $warnings
-    }'
+    }')
+
+  emit_unsupported_language_warnings "$profile"
+}
+
+# Append a `no_lint_test_atom` warning for each unique component primary_language
+# that has no lint/test atom in the catalog. Reads the full profile JSON on stdin-as-arg,
+# emits the updated profile JSON to stdout.
+# Signature: emit_unsupported_language_warnings <profile-json>
+emit_unsupported_language_warnings() {
+  local profile_json="$1"
+  echo "$profile_json" | jq --arg supported "$SUPPORTED_LINT_TEST_LANGUAGES" '
+    . as $root
+    | (.components
+        | map(.primary_language)
+        | unique
+        | map(select(test("^(" + $supported + ")$") | not))
+        | map({
+            code: "no_lint_test_atom",
+            primary_language: .,
+            message: ("no lint/test atom for primary_language=" + . + "; rendered ci.yml will fall back to secscan only")
+          })
+      ) as $extra
+    | $root | .warnings += $extra
+  '
 }
 
 # detect_components — enumerate monorepo components or fall back to single-component.

@@ -279,3 +279,26 @@ EOF
   echo "$output" | jq -e '.legacy_ci[0].summary | startswith("unrecognized")'
   rm -rf "$tmpdir"
 }
+
+# === Task 10: warn on unsupported primary_language ===
+
+@test "profile.json warns when primary_language has no lint/test atom" {
+  fixture="$BATS_TEST_TMPDIR/node-svc"
+  mkdir -p "$fixture"
+  cat > "$fixture/package.json" <<'JSON'
+{
+  "name": "node-svc",
+  "version": "0.1.0"
+}
+JSON
+  cat > "$fixture/Dockerfile" <<'DOCKER'
+FROM node:22-alpine
+COPY package.json .
+CMD ["node"]
+DOCKER
+
+  run "$BATS_TEST_DIRNAME/../../scripts/onboard-detect.sh" --profile-json "$fixture"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.warnings | map(select(.code == "no_lint_test_atom")) | length > 0' >/dev/null
+  echo "$output" | jq -e '.warnings[] | select(.code == "no_lint_test_atom") | .primary_language == "node"' >/dev/null
+}

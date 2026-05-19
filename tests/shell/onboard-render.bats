@@ -177,3 +177,106 @@ golden_check() {
 @test "golden: cli-go-with-goreleaser" { golden_check "cli-go-with-goreleaser"; }
 @test "golden: service-with-helm"      { golden_check "service-with-helm"; }
 @test "golden: monorepo-go"            { golden_check "monorepo-go"; }
+
+# ---- ci.yml lint+test atom golden tests (Task 11) ----
+#
+# render_ci_for_profile runs the renderer against an inline JSON profile and
+# a tmpdir target, then echoes the rendered ci.yml path on stdout. Each
+# @test below compares that path against a hand-curated golden under
+# tests/shell/golden/ci/<case>.yml via `diff -u`.
+
+render_ci_for_profile() {
+  local profile_json="$1"
+  local profile="$BATS_TEST_TMPDIR/profile-$$.json"
+  local target="$BATS_TEST_TMPDIR/target-$$"
+  printf '%s' "$profile_json" > "$profile"
+  mkdir -p "$target"
+  bash "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
+    "$BATS_TEST_DIRNAME/../.." "$target" "$profile" "v3" >&2
+  echo "$target/.github/workflows/ci.yml"
+}
+
+@test "ci.yml renders lint+test jobs for a single go component" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"$REPO","image_name_source":"derived"}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-go.yml" "$rendered"
+}
+
+@test "ci.yml renders lint+test jobs for a single python component" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["python"], "primary_language": "python",
+      "release_please_type": "python", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"$REPO","image_name_source":"derived"}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-python.yml" "$rendered"
+}
+
+@test "ci.yml renders lint+test jobs for a single rust component" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["rust"], "primary_language": "rust",
+      "release_please_type": "rust", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"$REPO","image_name_source":"derived"}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-rust.yml" "$rendered"
+}
+
+@test "ci.yml renders lint job for a single helm component (no test-helm)" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["helm"], "primary_language": "helm",
+      "release_please_type": "helm", "role": "chart",
+      "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": "Chart.yaml"}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-helm.yml" "$rendered"
+}
+
+@test "ci.yml renders mixed monorepo (go service + helm chart)" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": true,
+    "components": [
+      {"path": "services/api", "languages": ["go"], "primary_language": "go",
+       "release_please_type": "go", "role": "service",
+       "dockerfiles": [{"path":"services/api/Dockerfile","image_name":"$REPO-api","image_name_source":"derived"}],
+       "release_signals": {"goreleaser_config": null, "chart_yaml": null}},
+      {"path": "charts/web", "languages": ["helm"], "primary_language": "helm",
+       "release_please_type": "helm", "role": "chart",
+       "dockerfiles": [],
+       "release_signals": {"goreleaser_config": null, "chart_yaml": "charts/web/Chart.yaml"}}
+    ],
+    "legacy_ci": [], "warnings": []
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/monorepo-mixed.yml" "$rendered"
+}
+
+@test "ci.yml renders secscan-only for an unsupported language" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["node"], "primary_language": "node",
+      "release_please_type": "node", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"$REPO","image_name_source":"derived"}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [],
+    "warnings": [{"code":"no_lint_test_atom","primary_language":"node","message":"no lint/test atom for primary_language=node; rendered ci.yml will fall back to secscan only"}]
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/unsupported-node.yml" "$rendered"
+}

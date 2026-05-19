@@ -10,3 +10,15 @@ jobs:
       security-events: write
       actions: read
     secrets: inherit
+
+  lint-go-root:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-go.yml@v2
+    with:
+      working_directory: .
+    secrets: inherit
+  test-go-root:
+    uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@v2
+    with:
+      working_directory: .
+      coverage_threshold: 90
+    secrets: inherit
