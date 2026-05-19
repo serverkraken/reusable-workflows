@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/serverkraken/reusable-workflows/compare/v2.1.0...v2.2.0) (2026-05-19)
+
+
+### Features
+
+* phase 3 — gomplate renderer + lock file (smarter onboarding) ([#24](https://github.com/serverkraken/reusable-workflows/issues/24)) ([be9b1a2](https://github.com/serverkraken/reusable-workflows/commit/be9b1a2bfccb7afe0ff192384d55268cf5c52fb0))
+
 ## [2.1.0](https://github.com/serverkraken/reusable-workflows/compare/v2.0.4...v2.1.0) (2026-05-18)
 
 
