@@ -1,0 +1,64 @@
+{{- /*
+  prerelease.yml — manual prerelease image build for service-like components.
+
+  Skipped (file still rendered but empty-jobs) for library/cli roles with no
+  dockerfiles: there's nothing to build.
+*/ -}}
+{{- $pin := .pin -}}
+{{- $c := index .profile.components 0 -}}
+name: prerelease
+on:
+  workflow_dispatch: {}
+
+jobs:
+{{- if eq (len $c.dockerfiles) 1 }}
+{{- $df := index $c.dockerfiles 0 }}
+  build:
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      pull-requests: write
+    secrets: inherit
+    with:
+      prerelease: true
+      dockerfile: {{ $df.path }}
+      image_name: {{ $df.image_name }}
+  scan:
+    needs: build
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    secrets: inherit
+    with:
+      image_ref: {{`${{ needs.build.outputs.image_ref }}`}}
+{{- else if gt (len $c.dockerfiles) 1 -}}
+{{- $images := coll.Slice -}}
+{{- range $c.dockerfiles -}}
+  {{- $images = coll.Append (coll.Dict "dockerfile" .path "image_name" .image_name) $images -}}
+{{- end }}
+  build:
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@{{ $pin }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      pull-requests: write
+    secrets: inherit
+    with:
+      prerelease: true
+      images: |
+        {{ $images | toJSON }}
+{{- else }}
+  # No Dockerfiles detected for this component.
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No prerelease build artifacts for this repo (no Dockerfiles)."
+{{- end }}

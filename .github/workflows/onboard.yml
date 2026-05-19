@@ -153,13 +153,15 @@ jobs:
           target_repo: ${{ matrix.target.target }}
           github_token: ${{ steps.target-token.outputs.token }}
 
+      - name: Install gomplate (needed by onboard-render)
+        run: sudo ${{ github.workspace }}/.catalog/scripts/install-gomplate.sh
+
       - name: Render templates into target
         uses: ./.catalog/actions/onboard-render
         with:
           catalog_path: .catalog
           target_path: target
-          release_type: ${{ steps.detect.outputs.release_type }}
-          current_version: ${{ steps.detect.outputs.current_version }}
+          profile_json: ${{ steps.detect.outputs.profile_json }}
           pin_version: ${{ inputs.pin_version }}
 
       - name: Stage rendered files and log diff

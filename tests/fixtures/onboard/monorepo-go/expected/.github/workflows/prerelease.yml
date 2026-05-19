@@ -1,0 +1,29 @@
+name: prerelease
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      pull-requests: write
+    secrets: inherit
+    with:
+      prerelease: true
+      dockerfile: Dockerfile
+      image_name: repo-api
+  scan:
+    needs: build
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    secrets: inherit
+    with:
+      image_ref: ${{ needs.build.outputs.image_ref }}

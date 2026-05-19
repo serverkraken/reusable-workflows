@@ -1,0 +1,26 @@
+name: release
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  packages: write
+  id-token: write
+  attestations: write
+  security-events: write
+  actions: read
+
+jobs:
+  release-please:
+    uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v2
+    secrets: inherit
+
+  goreleaser:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: serverkraken/reusable-workflows/.github/workflows/goreleaser.yml@v2
+    secrets: inherit
+

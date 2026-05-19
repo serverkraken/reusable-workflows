@@ -1,0 +1,12 @@
+name: ci
+on:
+  pull_request:
+
+jobs:
+  secscan:
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-fs.yml@v2
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    secrets: inherit

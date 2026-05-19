@@ -1,63 +1,135 @@
 #!/usr/bin/env bash
-# onboard-render.sh — render adopter-template files into a target workspace.
+# onboard-render.sh — render adopter templates via gomplate, write lock file.
 #
 # Usage:
-#   onboard-render.sh <catalog-path> <target-path> <release-type> <current-version> <pin-version>
+#   onboard-render.sh <catalog-path> <target-path> <profile-json-path> <pin-version>
 #
-# Writes six files into <target>:
+# Reads profile.json (emitted by onboard-detect --profile-json) and produces:
 #   .github/workflows/{ci,release,prerelease,cleanup}.yml
-#   release-please-config.json
+#   release-please-config.json     (monorepo: from .monorepo.json.tmpl)
 #   .release-please-manifest.json
+#   .github/onboard.lock.json      (schema_version=1, sha256 of each file)
 #
-# Substitutions:
-#   YAML templates: literal "@v1" → "@<pin-version>"
-#   Config tmpl:    "{{RELEASE_TYPE}}" → <release-type>
-#   Manifest tmpl:  "{{VERSION}}"      → <current-version>
+# The lock file is the contract drift-check (Phase 5) compares against.
 
 set -euo pipefail
 
-if [[ $# -lt 5 ]]; then
-  echo "::error::usage: $0 <catalog> <target> <release-type> <current-version> <pin-version>" >&2
+if [[ $# -lt 4 ]]; then
+  echo "::error::usage: $0 <catalog> <target> <profile-json-path> <pin-version>" >&2
   exit 2
 fi
 
 CATALOG="$1"
 TARGET="$2"
-RELEASE_TYPE="$3"
-CURRENT_VERSION="$4"
-PIN_VERSION="$5"
+PROFILE="$3"
+PIN="$4"
 
-TEMPLATES="$CATALOG/docs/adopter-templates"
+if ! command -v gomplate >/dev/null 2>&1; then
+  echo "::error::gomplate not installed; see scripts/install-gomplate.sh" >&2
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "::error::jq is required" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PROFILE" ]]; then
+  echo "::error::profile not found: $PROFILE" >&2
+  exit 1
+fi
+
+MONOREPO=$(jq -r '.monorepo' "$PROFILE")
+
+SKELETONS="$CATALOG/docs/adopter-templates/skeletons"
+CONFIGS="$CATALOG/docs/adopter-templates/configs"
 
 mkdir -p "$TARGET/.github/workflows"
 
-# YAML workflow templates — replace @v1 with @<pin>.
-# Uses an explicit non-identifier-or-EOL guard instead of \b because BSD/macOS
-# sed silently ignores \b, which would let @v10 / @v1.0.0 match incorrectly.
-for name in ci release prerelease cleanup; do
-  src="$TEMPLATES/${name}.yml"
-  dst="$TARGET/.github/workflows/${name}.yml"
+# Build a single gomplate context: {pin, profile}. This lets templates access
+# .pin and .profile.X uniformly. gomplate v5 no longer accepts inline literal
+# values via -c, so we materialise the context to a temp JSON. The .json
+# suffix is load-bearing — gomplate uses it to decide the parser, and
+# extensionless files default to plain text (yielding "can't evaluate field
+# X in type string" errors at template execution).
+CTX_DIR=$(mktemp -d)
+CTX="$CTX_DIR/ctx.json"
+trap 'rm -rf "$CTX_DIR"' EXIT
+jq -n --slurpfile p "$PROFILE" --arg pin "$PIN" \
+  '{pin: $pin, profile: $p[0]}' > "$CTX"
+
+render() {
+  local src="$1" dst="$2"
   if [[ ! -f "$src" ]]; then
     echo "::error::template missing: $src" >&2
     exit 1
   fi
-  sed -E "s/@v1([^a-zA-Z0-9._]|$)/@${PIN_VERSION}\1/g" "$src" > "$dst"
+  gomplate -c ".=$CTX" -f "$src" -o "$dst"
+}
+
+# Workflow skeletons (same set for all variants; conditionals inside templates
+# decide which jobs are emitted).
+render "$SKELETONS/ci.yml.tmpl"         "$TARGET/.github/workflows/ci.yml"
+render "$SKELETONS/release.yml.tmpl"    "$TARGET/.github/workflows/release.yml"
+render "$SKELETONS/prerelease.yml.tmpl" "$TARGET/.github/workflows/prerelease.yml"
+render "$SKELETONS/cleanup.yml.tmpl"    "$TARGET/.github/workflows/cleanup.yml"
+
+# release-please config: single vs monorepo.
+if [[ "$MONOREPO" == "true" ]]; then
+  render "$CONFIGS/release-please-config.monorepo.json.tmpl" "$TARGET/release-please-config.json"
+else
+  render "$CONFIGS/release-please-config.json.tmpl"          "$TARGET/release-please-config.json"
+fi
+render "$CONFIGS/release-please-manifest.json.tmpl" "$TARGET/.release-please-manifest.json"
+
+# Substitute $REPO placeholder in image names. Detection emits "$REPO-api"
+# style names; the renderer resolves $REPO from target-repo basename.
+REPO_SHORT="${TARGET##*/}"
+if [[ "$REPO_SHORT" == "." || "$REPO_SHORT" == "" ]]; then
+  REPO_SHORT="$(basename "$(pwd)")"
+fi
+for f in "$TARGET/.github/workflows/release.yml" "$TARGET/.github/workflows/prerelease.yml"; do
+  if [[ -f "$f" ]] && grep -q '\$REPO' "$f" 2>/dev/null; then
+    # macOS/BSD sed -i needs an explicit backup suffix; we delete it after.
+    sed -i.bak "s/\$REPO/${REPO_SHORT}/g" "$f" && rm -f "$f.bak"
+  fi
 done
 
-# release-please-config.json.tmpl
-src="$TEMPLATES/release-please-config.json.tmpl"
-dst="$TARGET/release-please-config.json"
-if [[ ! -f "$src" ]]; then
-  echo "::error::template missing: $src" >&2
-  exit 1
-fi
-sed "s|{{RELEASE_TYPE}}|${RELEASE_TYPE}|g" "$src" > "$dst"
+# Lock file — sha256 every rendered path, write schema 1.
+LOCK="$TARGET/.github/onboard.lock.json"
+RENDERED=(
+  ".github/workflows/ci.yml"
+  ".github/workflows/release.yml"
+  ".github/workflows/prerelease.yml"
+  ".github/workflows/cleanup.yml"
+  "release-please-config.json"
+  ".release-please-manifest.json"
+)
 
-# release-please-manifest.json.tmpl
-src="$TEMPLATES/release-please-manifest.json.tmpl"
-dst="$TARGET/.release-please-manifest.json"
-if [[ ! -f "$src" ]]; then
-  echo "::error::template missing: $src" >&2
-  exit 1
-fi
-sed "s|{{VERSION}}|${CURRENT_VERSION}|g" "$src" > "$dst"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# Use sha256sum on Linux, shasum -a 256 on macOS.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+files_json='{}'
+for f in "${RENDERED[@]}"; do
+  if [[ ! -f "$TARGET/$f" ]]; then
+    echo "::error::expected rendered file missing: $f" >&2
+    exit 1
+  fi
+  sha=$(sha256_of "$TARGET/$f")
+  files_json=$(echo "$files_json" | jq --arg k "$f" --arg v "sha256:$sha" '. + {($k): $v}')
+done
+
+jq -n \
+  --argjson schema_version 1 \
+  --arg catalog_version "$PIN" \
+  --arg rendered_at "$NOW" \
+  --argjson files "$files_json" \
+  '{schema_version: $schema_version, catalog_version: $catalog_version, rendered_at: $rendered_at, files: $files}' \
+  > "$LOCK"

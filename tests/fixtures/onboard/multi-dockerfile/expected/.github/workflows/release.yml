@@ -1,0 +1,30 @@
+name: release
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  packages: write
+  id-token: write
+  attestations: write
+  security-events: write
+  actions: read
+
+jobs:
+  release-please:
+    uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v2
+    secrets: inherit
+
+  docker-build:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@v2
+    with:
+      images: |
+        [{"dockerfile":"Dockerfile","image_name":"repo"},{"dockerfile":"Dockerfile.worker","image_name":"custom-worker"}]
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    secrets: inherit
+

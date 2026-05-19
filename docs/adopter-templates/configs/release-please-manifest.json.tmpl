@@ -1,0 +1,8 @@
+{
+{{- $first := true }}
+{{- range .profile.components }}
+{{- if not $first }},{{ end }}
+{{- $first = false }}
+  "{{ .path }}": "{{ $.profile.current_version }}"
+{{- end }}
+}

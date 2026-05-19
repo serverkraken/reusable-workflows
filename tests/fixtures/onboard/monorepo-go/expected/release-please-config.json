@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    "services/api": {
+      "release-type": "go",
+      "package-name": "services/api",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true
+    },
+    "services/worker": {
+      "release-type": "go",
+      "package-name": "services/worker",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true
+    }
+  }
+}
