@@ -66,14 +66,10 @@
   },
   customManagers: [
     {
-      // NOTE: customManagers still uses `fileMatch` — Renovate's migration
-      // tool generates `managerFilePatterns` here, but the validator (and
-      // some Renovate runtimes) reject it inside customManagers. Keep
-      // `fileMatch` until upstream sorts this out.
       customType: 'regex',
-      fileMatch: [
-        '^\\.github/workflows/.+\\.ya?ml$',
-        '^actions/.+/action\\.ya?ml$',
+      managerFilePatterns: [
+        '/^\\.github/workflows/.+\\.ya?ml$/',
+        '/^actions/.+/action\\.ya?ml$/',
       ],
       matchStrings: [
         '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*TRIVY_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s*$',
