@@ -122,7 +122,7 @@ jobs:
     steps:
       - name: Mint App token scoped to target
         id: target-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
@@ -414,7 +414,7 @@ jobs:
       - name: Mint App token for catalog repo
         id: catalog-token
         if: ${{ !inputs.dry_run }}
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
