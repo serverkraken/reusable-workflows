@@ -263,7 +263,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - if: steps.check.outputs.selected == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           # Arch FIRST, then image-suffix — keeps the merge job's download
           # pattern unambiguous. Putting suffix first allowed "test-fixture-*"
@@ -324,13 +324,13 @@ jobs:
         run: rm -rf /tmp/digests && mkdir -p /tmp/digests
 
       - name: Download amd64 digest
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
           name: digests-amd64-${{ steps.suffix.outputs.value }}
 
       - name: Download arm64 digest
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
           name: digests-arm64-${{ steps.suffix.outputs.value }}
@@ -402,7 +402,7 @@ jobs:
 
       - name: Upload SBOM artifact
         if: inputs.sbom
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-spdx
           path: sbom.spdx.json
