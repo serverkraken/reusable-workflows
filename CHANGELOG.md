@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0](https://github.com/serverkraken/reusable-workflows/compare/v3.0.0...v3.1.0) (2026-05-19)
+
+
+### Features
+
+* phase 5 — drift-check (smarter onboarding) ([#43](https://github.com/serverkraken/reusable-workflows/issues/43)) ([d58cf58](https://github.com/serverkraken/reusable-workflows/commit/d58cf5825ca1b1a8fa97a4155a1d3fb8b12383d7))
+
 ## [3.0.0](https://github.com/serverkraken/reusable-workflows/compare/v2.3.0...v3.0.0) (2026-05-19)
 
 
