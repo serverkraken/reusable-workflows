@@ -30,7 +30,7 @@ on:
         type: string
         default: 'HIGH,CRITICAL'
     secrets:
-      release_please_app_id:
+      release_please_app_client_id:
         required: true
       release_please_app_private_key:
         required: true

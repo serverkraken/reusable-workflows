@@ -124,7 +124,7 @@ jobs:
         id: target-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
           owner: ${{ matrix.target.owner }}
           repositories: ${{ matrix.target.name }}
@@ -439,7 +439,7 @@ jobs:
         if: ${{ !inputs.dry_run }}
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
           owner: serverkraken
           repositories: reusable-workflows

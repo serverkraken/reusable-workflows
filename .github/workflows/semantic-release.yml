@@ -25,9 +25,9 @@ on:
       minor_tag:
         value: ${{ jobs.release.outputs.minor_tag }}
     secrets:
-      release_please_app_id:
+      release_please_app_client_id:
         required: true
-        description: 'GitHub App ID for the release-please bot.'
+        description: 'GitHub App Client ID for the release-please bot.'
       release_please_app_private_key:
         required: true
         description: 'PEM-formatted private key for the release-please bot.'
@@ -58,7 +58,7 @@ jobs:
         uses: actions/create-github-app-token@v3
         id: app-token
         with:
-          app-id: ${{ secrets.release_please_app_id }}
+          client-id: ${{ secrets.release_please_app_client_id }}
           private-key: ${{ secrets.release_please_app_private_key }}
 
       - uses: actions/checkout@v6

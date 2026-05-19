@@ -15,7 +15,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `runs_on`                       | string  | no       | `'["self-hosted","Linux","low-performance"]'` | JSON-encoded runner labels |
 | input   | `release_please_config`         | string  | no       | `'release-please-config.json'`            | Path to release-please config |
 | input   | `release_please_manifest`       | string  | no       | `'.release-please-manifest.json'`         | Path to release-please manifest |
-| secret  | `release_please_app_id`         | —       | yes      | —                                         | Numeric GitHub App ID |
+| secret  | `release_please_app_client_id`  | —       | yes      | —                                         | GitHub App Client ID (e.g. `Iv23li…`) |
 | secret  | `release_please_app_private_key`| —       | yes      | —                                         | PEM-formatted App private key |
 | output  | `release_created`               | string  | —        | —                                         | `'true'` when a release was created |
 | output  | `tag_name`                      | string  | —        | —                                         | e.g. `'v1.2.3'` |
@@ -44,7 +44,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | output  | `image_ref`     | string  | —        | —                                              | `ghcr.io/<image_name>:<tag>` |
 | output  | `digest`        | string  | —        | —                                              | Manifest-list digest `sha256:…` |
 | output  | `tag`           | string  | —        | —                                              | Final tag (auto-computed if input was empty) |
-| secret  | `release_please_app_id`         | — | **yes** | — | App ID for the catalog-checkout token (since v2.0.0) |
+| secret  | `release_please_app_client_id`  | — | **yes** | — | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
 
 ---
@@ -63,7 +63,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `runs_on`         | string  | no       | `'["self-hosted","Linux"]'`  | JSON-encoded runner labels |
 | output  | `findings_count`  | string  | —        | —                            | Number of severity-matching findings |
-| secret  | `release_please_app_id`         | — | **yes** | — | App ID for the catalog-checkout token (since v2.0.0) |
+| secret  | `release_please_app_client_id`  | — | **yes** | — | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
 
 ---
@@ -81,7 +81,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `fail_on_findings`| boolean | no       | `true`                       | Exit non-zero when findings exist |
 | input   | `runs_on`         | string  | no       | `'["self-hosted","Linux"]'`  | JSON-encoded runner labels |
 | output  | `findings_count`  | string  | —        | —                            | Number of severity-matching findings |
-| secret  | `release_please_app_id`         | — | **yes** | — | App ID for the catalog-checkout token (since v2.0.0) |
+| secret  | `release_please_app_client_id`  | — | **yes** | — | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
 
 ---
@@ -109,7 +109,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `context`                       | string  | no       | `'.'`                        | Pass-through to docker-build |
 | input   | `platforms`                     | string  | no       | `'linux/amd64,linux/arm64'`  | Pass-through to docker-build |
 | input   | `trivy_severity`                | string  | no       | `'HIGH,CRITICAL'`            | Pass-through to trivy-image |
-| secret  | `release_please_app_id`         | —       | yes      | —                            | Pass-through to semantic-release |
+| secret  | `release_please_app_client_id`  | —       | yes      | —                            | Pass-through to semantic-release |
 | secret  | `release_please_app_private_key`| —       | yes      | —                            | Pass-through to semantic-release |
 
 ---

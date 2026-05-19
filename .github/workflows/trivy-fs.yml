@@ -48,9 +48,9 @@ on:
         description: 'Number of findings at requested severity.'
         value: ${{ jobs.scan.outputs.findings_count }}
     secrets:
-      release_please_app_id:
+      release_please_app_client_id:
         required: true
-        description: 'GitHub App ID with contents:read on the catalog repo.'
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
       release_please_app_private_key:
         required: true
         description: 'PEM private key for the GitHub App.'
@@ -75,7 +75,7 @@ jobs:
         id: catalog-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.release_please_app_id }}
+          client-id: ${{ secrets.release_please_app_client_id }}
           private-key: ${{ secrets.release_please_app_private_key }}
           owner: serverkraken
           repositories: reusable-workflows
