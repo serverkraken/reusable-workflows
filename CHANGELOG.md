@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.6](https://github.com/serverkraken/reusable-workflows/compare/v3.3.5...v3.3.6) (2026-05-20)
+
+
+### Bug Fixes
+
+* **atom:** widen docker-build-multi permissions to match nested docker-build.yml ([#60](https://github.com/serverkraken/reusable-workflows/issues/60)) ([be5bdf4](https://github.com/serverkraken/reusable-workflows/commit/be5bdf4e163e617dac3bf99ede8c6d9dc180f1a5))
+
 ## [3.3.5](https://github.com/serverkraken/reusable-workflows/compare/v3.3.4...v3.3.5) (2026-05-19)
 
 
