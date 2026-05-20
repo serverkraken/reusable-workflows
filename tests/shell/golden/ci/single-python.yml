@@ -20,5 +20,4 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/test-python.yml@v3
     with:
       working_directory: .
-      coverage_threshold: 90
     secrets: inherit

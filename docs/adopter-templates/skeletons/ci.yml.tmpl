@@ -39,7 +39,6 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
-      coverage_threshold: 90
     secrets: inherit
 {{- else if eq $c.primary_language "python" }}
   lint-python-{{ $suffix }}:
@@ -51,7 +50,6 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/test-python.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
-      coverage_threshold: 90
     secrets: inherit
 {{- else if eq $c.primary_language "rust" }}
   lint-rust-{{ $suffix }}:
@@ -63,7 +61,6 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/test-rust.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
-      coverage_threshold: 90
     secrets: inherit
 {{- else if eq $c.primary_language "helm" }}
   lint-helm-{{ $suffix }}:

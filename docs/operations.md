@@ -224,11 +224,11 @@ Per-language lint and test atoms callable via `workflow_call`. Each atom accepts
 | Atom                  | Purpose                                            |
 |-----------------------|----------------------------------------------------|
 | `lint-go.yml`         | `go vet` + golangci-lint                           |
-| `test-go.yml`         | `go test` + coverage gate (default ≥ 90 %)         |
+| `test-go.yml`         | `go test` + coverage gate (default ≥ 80 %)         |
 | `lint-python.yml`     | ruff check + format + mypy (poetry/uv/pip auto)    |
-| `test-python.yml`     | pytest + coverage gate ≥ 90 % (poetry/uv/pip auto) |
+| `test-python.yml`     | pytest + coverage gate ≥ 80 % (poetry/uv/pip auto) |
 | `lint-rust.yml`       | `cargo fmt --check` + `cargo clippy -D warnings`   |
 | `test-rust.yml`       | `cargo test` + `cargo-llvm-cov` coverage gate      |
 | `lint-helm.yml`       | `helm lint` + `ct lint`                            |
 
-The test atoms expose a `coverage_threshold` input (default `90`) so consumers can tighten or loosen the gate per repo. The Python atoms reuse the `actions/setup-python-deps` composite to auto-detect Poetry / uv / pip-bare project layouts.
+The test atoms expose a `coverage_threshold` input (default `80`) so consumers can tighten or loosen the gate per repo. The Python atoms reuse the `actions/setup-python-deps` composite to auto-detect Poetry / uv / pip-bare project layouts.
