@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.8](https://github.com/serverkraken/reusable-workflows/compare/v3.3.7...v3.3.8) (2026-05-20)
+
+
+### Bug Fixes
+
+* **atom:** lower default coverage_threshold 90 → 80 in test atoms ([#64](https://github.com/serverkraken/reusable-workflows/issues/64)) ([9a714ea](https://github.com/serverkraken/reusable-workflows/commit/9a714eac3a1c1b724aed995ede176d5959d43fa0))
+
 ## [3.3.7](https://github.com/serverkraken/reusable-workflows/compare/v3.3.6...v3.3.7) (2026-05-20)
 
 
