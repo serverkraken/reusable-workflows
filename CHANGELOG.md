@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.7](https://github.com/serverkraken/reusable-workflows/compare/v3.3.6...v3.3.7) (2026-05-20)
+
+
+### Bug Fixes
+
+* **atom:** bump golangci-lint default to v2.12.2 + replace bc with awk in test-go gate ([#62](https://github.com/serverkraken/reusable-workflows/issues/62)) ([236611d](https://github.com/serverkraken/reusable-workflows/commit/236611da202622f7be0a768b2f127f3ab9bb1100))
+
 ## [3.3.6](https://github.com/serverkraken/reusable-workflows/compare/v3.3.5...v3.3.6) (2026-05-20)
 
 
