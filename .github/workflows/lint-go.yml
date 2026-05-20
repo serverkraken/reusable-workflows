@@ -28,10 +28,10 @@ on:
         default: ''
       # renovate: datasource=github-releases depName=golangci/golangci-lint
       golangci_lint_version:
-        description: 'golangci-lint version (e.g. v2.0.2). Defaults to the atom-pinned version.'
+        description: 'golangci-lint version (e.g. v2.12.2). Must be v2.1.0+ to be compatible with golangci-lint-action@v9.'
         required: false
         type: string
-        default: 'v2.0.2'
+        default: 'v2.12.2'
 
 permissions:
   contents: read
