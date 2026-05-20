@@ -20,7 +20,6 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@v3
     with:
       working_directory: services/api
-      coverage_threshold: 90
     secrets: inherit
   lint-helm-charts-web:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@v3

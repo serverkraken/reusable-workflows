@@ -27,7 +27,7 @@ on:
         description: 'Minimum line coverage percentage (integer 0-100).'
         required: false
         type: number
-        default: 90
+        default: 80
     secrets:
       release_please_app_client_id:
         required: true

@@ -20,7 +20,6 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@v2
     with:
       working_directory: services/api
-      coverage_threshold: 90
     secrets: inherit
   lint-go-services-worker:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-go.yml@v2
@@ -31,5 +30,4 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@v2
     with:
       working_directory: services/worker
-      coverage_threshold: 90
     secrets: inherit

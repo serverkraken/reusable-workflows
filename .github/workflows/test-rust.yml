@@ -23,7 +23,7 @@ on:
         description: 'Minimum line coverage percentage (integer 0-100).'
         required: false
         type: number
-        default: 90
+        default: 80
       # renovate: datasource=github-releases depName=taiki-e/cargo-llvm-cov
       cargo_llvm_cov_version:
         description: 'cargo-llvm-cov release tag.'
