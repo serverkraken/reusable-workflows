@@ -64,13 +64,12 @@ jobs:
           THRESHOLD: ${{ inputs.coverage_threshold }}
         run: |
           set -euo pipefail
-          # Last line of `go tool cover -func` is the total: `total:    (statements)    87.5%`
+          # Last line of `go tool cover -func` is the total: `total:    (statements)    87.5%`.
+          # awk is universal across runner images; bc is not (missing on the
+          # serverkraken self-hosted pool), so we keep all arithmetic in awk.
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {sub("%","",$3); print $3}')
           echo "coverage: ${pct}% (threshold: ${THRESHOLD}%)"
-          # bash arithmetic is integer-only; multiply by 10 and compare ints
-          pct_int=$(printf '%.0f' "$(echo "$pct * 10" | bc -l)")
-          thr_int=$((THRESHOLD * 10))
-          if (( pct_int < thr_int )); then
+          awk -v pct="$pct" -v thr="$THRESHOLD" 'BEGIN { exit (pct + 0 < thr + 0) ? 1 : 0 }' || {
             echo "::error::coverage ${pct}% < threshold ${THRESHOLD}%"
             exit 1
-          fi
+          }
