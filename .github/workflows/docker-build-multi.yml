@@ -91,11 +91,18 @@ on:
         required: true
         description: 'PEM private key for the GitHub App. Forwarded to docker-build.yml.'
 
-# This wrapper itself only parses the matrix and dispatches; the nested
-# docker-build.yml declares its own top-level permissions (packages/id-token/
-# attestations/pull-requests) which apply when it runs.
+# This wrapper itself only parses the matrix and dispatches, but its top-level
+# permissions block is the CEILING for what the nested docker-build.yml call
+# can request when invoked cross-repo. We therefore mirror docker-build.yml's
+# top-level permissions here. Same-repo callers (catalog self-CI) work even
+# with `contents: read` because GitHub relaxes the chain rule for local calls,
+# but external adopters need this wider scope.
 permissions:
   contents: read
+  packages: write
+  id-token: write
+  attestations: write
+  pull-requests: write
 
 concurrency:
   # Group all builds for a given ref together so a second push cancels the
