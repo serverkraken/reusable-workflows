@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.0](https://github.com/serverkraken/reusable-workflows/compare/v3.7.0...v3.8.0) (2026-05-21)
+
+
+### Features
+
+* **atom:** install gcc + libc6-dev on demand when cgo_enabled ([#78](https://github.com/serverkraken/reusable-workflows/issues/78)) ([c23abe9](https://github.com/serverkraken/reusable-workflows/commit/c23abe9c731b1e38ad933dce6e25d5e23fc609d2))
+
 ## [3.7.0](https://github.com/serverkraken/reusable-workflows/compare/v3.6.0...v3.7.0) (2026-05-21)
 
 
