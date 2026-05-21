@@ -303,12 +303,14 @@ inventory_dockerfiles() {
   local p="$repo/$path"
   [[ -d "$p" ]] || { echo '[]'; return; }
 
-  # Collect Dockerfile names at component root only (not recursive — each sub-component is
-  # its own row in components[]).
+  # Collect Dockerfile + Containerfile names at component root only.
   local files=()
   while IFS= read -r f; do
     [[ -n "$f" ]] && files+=("$(basename "$f")")
-  done < <(find "$p" -maxdepth 1 -type f \( -name 'Dockerfile' -o -name 'Dockerfile.*' \) 2>/dev/null | sort || true)
+  done < <(find "$p" -maxdepth 1 -type f \( \
+             -name 'Dockerfile' -o -name 'Dockerfile.*' \
+             -o -name 'Containerfile' -o -name 'Containerfile.*' \
+           \) 2>/dev/null | sort || true)
 
   if (( ${#files[@]} == 0 )); then
     echo '[]'; return
@@ -317,7 +319,7 @@ inventory_dockerfiles() {
   local arr='[]'
   local fname
   for fname in "${files[@]}"; do
-    local override image_name image_name_source
+    local override image_name image_name_source release_override release_eligible
     override=$(read_image_override "$p/$fname")
     if [[ -n "$override" ]]; then
       image_name="$override"
@@ -326,11 +328,28 @@ inventory_dockerfiles() {
       image_name=$(derive_image_name "$fname" "$path")
       image_name_source="derived"
     fi
+    # release-eligibility: bare `Dockerfile`/`Containerfile` default true,
+    # any `*.<suffix>` default false. Header override wins.
+    if [[ "$fname" == "Dockerfile" || "$fname" == "Containerfile" ]]; then
+      release_eligible="true"
+    else
+      release_eligible="false"
+    fi
+    release_override=$(read_release_override "$p/$fname")
+    if [[ -n "$release_override" ]]; then
+      release_eligible="$release_override"
+    fi
     arr=$(echo "$arr" | jq \
       --arg path "$fname" \
       --arg image_name "$image_name" \
       --arg image_name_source "$image_name_source" \
-      '. + [{path: $path, image_name: $image_name, image_name_source: $image_name_source}]')
+      --argjson release_eligible "$release_eligible" \
+      '. + [{
+        path: $path,
+        image_name: $image_name,
+        image_name_source: $image_name_source,
+        release_eligible: $release_eligible
+      }]')
   done
   echo "$arr"
 }

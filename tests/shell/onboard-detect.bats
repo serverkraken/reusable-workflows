@@ -355,3 +355,57 @@ DOCKER
   rm -f "$tmpfile"
   [ -z "$result" ]
 }
+
+@test "inventory_dockerfiles detects Containerfile alongside Dockerfile" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Containerfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].path == "Containerfile"'
+}
+
+@test "inventory_dockerfiles classifies Dockerfile release_eligible=true by default" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == true'
+}
+
+@test "inventory_dockerfiles classifies Dockerfile.dev release_eligible=false by default" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile.dev"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == false'
+}
+
+@test "inventory_dockerfiles honors release=true override on Dockerfile.*" {
+  tmpdir=$(mktemp -d)
+  printf '%s\n' '# onboard:release=true' 'FROM alpine' > "$tmpdir/Dockerfile.worker"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == true'
+}
+
+@test "inventory_dockerfiles honors release=false override on Dockerfile" {
+  tmpdir=$(mktemp -d)
+  printf '%s\n' '# onboard:release=false' 'FROM alpine' > "$tmpdir/Dockerfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == false'
+}
+
+@test "inventory_dockerfiles classifies Containerfile.dev release_eligible=false" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Containerfile.dev"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == false'
+}
