@@ -180,6 +180,7 @@ golden_check() {
 @test "golden: service-with-helm"      { golden_check "service-with-helm"; }
 @test "golden: monorepo-go"            { golden_check "monorepo-go"; }
 @test "golden: release-eligibility-mixed" { golden_check "release-eligibility-mixed"; }
+@test "golden: containerfile-only"     { golden_check "containerfile-only"; }
 
 # ---- ci.yml lint+test atom golden tests (Task 11) ----
 #
