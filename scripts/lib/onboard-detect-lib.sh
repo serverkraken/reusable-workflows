@@ -233,23 +233,48 @@ detect_components() {
   echo "$arr"
 }
 
+# Well-known Go packages whose own source imports cgo. An adopter pulling any
+# of these (direct OR transitive — these all need CGO_ENABLED=1 at build time)
+# must run lint/test with cgo on, even if its OWN source has no `import "C"`.
+# Add to this list when a new cgo-via-dep adopter onboards.
+CGO_PACKAGES=(
+  'github.com/mattn/go-sqlite3'   # SQLite (most common)
+  'github.com/mattn/go-oci8'      # Oracle (legacy)
+  'github.com/godror/godror'      # Oracle (current)
+  'github.com/microsoft/go-mssqldb'
+  'crawshaw.io/sqlite'            # alt SQLite
+  'github.com/containerd/btrfs'
+)
+
 # Signature: detect_cgo <repo> <path> <primary_language>
-# Emits "true" if any *.go file under the component imports cgo (`import "C"`),
-# "false" otherwise. Non-go components always return "false". Adopters with
-# cgo-dependent packages (e.g. mattn/go-sqlite3) need CGO_ENABLED=1 in lint/test
-# atoms; this lets ci.yml.tmpl set it without per-adopter manual overrides.
+# Emits "true" if ANY of: (a) a *.go file under the component imports cgo
+# (`import "C"`), or (b) the component's go.mod references a known transitive
+# cgo dep (CGO_PACKAGES). Non-go components always return "false".
 detect_cgo() {
   local repo="$1" path="$2" primary="$3"
   [[ "$primary" == "go" ]] || { echo false; return; }
   local p="$repo/$path"
-  # Match `import "C"` as a standalone import or inside a parenthesized import
-  # block. Whitespace-tolerant; ignores commented lines. -q exits on first hit.
+
+  # (a) Direct: match `import "C"` as a standalone import or inside a
+  # parenthesized import block. -q exits on first hit.
   if grep -rqE '^[[:space:]]*"C"[[:space:]]*$|^[[:space:]]*import[[:space:]]+"C"' \
        --include='*.go' "$p" 2>/dev/null; then
-    echo true
-  else
-    echo false
+    echo true; return
   fi
+
+  # (b) Transitive: scan go.mod for any well-known cgo-via-dep package. A
+  # plain substring grep is correct here — go.mod lists deps as full module
+  # paths on their own line, so e.g. `github.com/mattn/go-sqlite3 v1.14.x`
+  # matches without partial-prefix collisions.
+  if [[ -f "$p/go.mod" ]]; then
+    for pkg in "${CGO_PACKAGES[@]}"; do
+      if grep -qF -- "$pkg" "$p/go.mod" 2>/dev/null; then
+        echo true; return
+      fi
+    done
+  fi
+
+  echo false
 }
 
 detect_languages() {

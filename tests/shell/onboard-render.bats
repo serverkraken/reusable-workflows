@@ -173,6 +173,7 @@ golden_check() {
 
 @test "golden: go-repo"                { golden_check "go-repo"; }
 @test "golden: go-cgo"                 { golden_check "go-cgo"; }
+@test "golden: go-cgo-transitive"      { golden_check "go-cgo-transitive"; }
 @test "golden: multi-dockerfile"       { golden_check "multi-dockerfile"; }
 @test "golden: library-go"             { golden_check "library-go"; }
 @test "golden: cli-go-with-goreleaser" { golden_check "cli-go-with-goreleaser"; }

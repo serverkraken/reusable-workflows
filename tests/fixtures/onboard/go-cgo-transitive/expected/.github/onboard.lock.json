@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "catalog_version": "v2",
+  "files": {
+    ".github/workflows/ci.yml": "sha256:e7b76e0af9b578d6e8287e405323ec804105ff90be44bc06cdcce12f792e5984",
+    ".github/workflows/release.yml": "sha256:7dbf0d1057941c2bbf13d97dedc2f9f11b53bfee0256c2176a54f4b7e8bc1d8c",
+    ".github/workflows/prerelease.yml": "sha256:6168c2ca745ecf357a665273f0628a825cd336b2c7da54beaa22e7a767134e35",
+    ".github/workflows/cleanup.yml": "sha256:b6722911be52d032d8750ef00414dcf05c230be1651b5c2dfd8592492193456b",
+    "release-please-config.json": "sha256:8f778f4c911fc97e2d5e97aec7b12186d1503b2f7703a14657864598dbb10472",
+    ".release-please-manifest.json": "sha256:b9c66e0126774ab9fa34536f15972438356e7035724a2c0f0ca3b125967e6399"
+  }
+}
