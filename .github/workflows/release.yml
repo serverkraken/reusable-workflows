@@ -25,6 +25,21 @@ on:
         required: false
         type: string
         default: 'linux/amd64,linux/arm64'
+      sign:
+        description: 'Cosign-sign the manifest list. Pass false on runners without gettext-base / cosign prereqs.'
+        required: false
+        type: boolean
+        default: true
+      attest:
+        description: 'Generate SLSA build provenance attestation for the image.'
+        required: false
+        type: boolean
+        default: true
+      sbom:
+        description: 'Generate and upload an SPDX SBOM artifact for the image.'
+        required: false
+        type: boolean
+        default: true
       trivy_severity:
         required: false
         type: string
@@ -55,6 +70,9 @@ jobs:
       dockerfile: ${{ inputs.dockerfile }}
       context: ${{ inputs.context }}
       platforms: ${{ inputs.platforms }}
+      sign: ${{ inputs.sign }}
+      attest: ${{ inputs.attest }}
+      sbom: ${{ inputs.sbom }}
 
   trivy-image:
     needs: [semantic-release, docker-build]
