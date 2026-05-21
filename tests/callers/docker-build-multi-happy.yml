@@ -28,6 +28,8 @@ jobs:
           {"dockerfile": "tests/fixtures/multi-image/Dockerfile.worker",
            "image_name": "serverkraken/reusable-workflows/test-multi-worker"}
         ]
-      sign: false
-      attest: false
-      sbom: false
+      # Exercise the full cosign/attest/sbom path end-to-end. See the matching
+      # comment in .github/workflows/integration.yml.
+      sign: true
+      attest: true
+      sbom: true
