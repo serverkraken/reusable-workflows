@@ -427,3 +427,43 @@ DOCKER
   result=$(derive_image_name "Containerfile.worker" "services/api")
   [ "$result" = "\$REPO-api-worker" ]
 }
+
+# === Task 4: no_release_eligible warning ===
+
+@test "profile-json warns when component has Dockerfiles but none release-eligible" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile.dev"
+  : > "$tmpdir/Dockerfile.debug"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.warnings[] | select(.code == "no_release_eligible")' >/dev/null
+}
+
+@test "profile-json no_release_eligible warning includes component path" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile.dev"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.warnings[] | select(.code == "no_release_eligible") | .path == "."' >/dev/null
+}
+
+@test "profile-json does NOT warn no_release_eligible when at least one Dockerfile is eligible" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile"
+  : > "$tmpdir/Dockerfile.dev"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.warnings[] | select(.code == "no_release_eligible")] | length == 0' >/dev/null
+}
+
+@test "profile-json does NOT warn no_release_eligible for library component with no Dockerfile" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/go.mod"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.warnings[] | select(.code == "no_release_eligible")] | length == 0' >/dev/null
+}

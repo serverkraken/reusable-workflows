@@ -16,6 +16,7 @@
 #   detect_release_signals  — goreleaser config + secondary chart_yaml paths
 #   detect_legacy_ci        — classify legacy .github/workflows/*.yml and suggest replacements
 #   emit_unsupported_language_warnings — append no_lint_test_atom warnings for unsupported primary_language values
+#   emit_no_release_eligible_warnings  — append no_release_eligible warnings for components whose Dockerfiles are all dev/aux
 
 # shellcheck shell=bash
 set -euo pipefail
@@ -65,7 +66,8 @@ emit_profile_json() {
       warnings: $warnings
     }')
 
-  emit_unsupported_language_warnings "$profile"
+  profile=$(emit_unsupported_language_warnings "$profile")
+  emit_no_release_eligible_warnings "$profile"
 }
 
 # Append a `no_lint_test_atom` warning for each unique component primary_language
@@ -84,6 +86,32 @@ emit_unsupported_language_warnings() {
             code: "no_lint_test_atom",
             primary_language: .,
             message: ("no lint/test atom for primary_language=" + . + "; rendered ci.yml will fall back to secscan only")
+          })
+      ) as $extra
+    | $root | .warnings += $extra
+  '
+}
+
+# Append a `no_release_eligible` warning for each component that has 1+ Dockerfiles
+# but none are release_eligible. Such a component would render a release.yml with
+# no docker-build job, which is usually a surprise — adopters opt-in via
+# `# onboard:release=true` on the Dockerfile(s) they want shipped.
+# Reads the full profile JSON, emits the updated profile JSON to stdout.
+# Signature: emit_no_release_eligible_warnings <profile-json>
+emit_no_release_eligible_warnings() {
+  local profile_json="$1"
+  echo "$profile_json" | jq '
+    . as $root
+    | (.components
+        | map(select(
+            (.dockerfiles | length > 0) and
+            ([.dockerfiles[] | select(.release_eligible)] | length == 0)
+          ))
+        | map({
+            code: "no_release_eligible",
+            path: .path,
+            message: ("component at " + .path + " has " + ((.dockerfiles | length) | tostring) +
+                      " Dockerfile(s) but none are release-eligible; rendered release.yml will skip docker-build. Set `# onboard:release=true` on the Dockerfile(s) to ship.")
           })
       ) as $extra
     | $root | .warnings += $extra
