@@ -32,6 +32,11 @@ on:
         required: false
         type: string
         default: 'v2.12.2'
+      cgo_enabled:
+        description: 'Set CGO_ENABLED=1 (true) or 0 (false). Mirror the value used in test-go.yml for cgo-dependent packages.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -61,10 +66,14 @@ jobs:
 
       - name: go vet
         working-directory: ${{ inputs.working_directory }}
+        env:
+          CGO_ENABLED: ${{ inputs.cgo_enabled && '1' || '0' }}
         run: go vet ./...
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
+        env:
+          CGO_ENABLED: ${{ inputs.cgo_enabled && '1' || '0' }}
         with:
           version: ${{ inputs.golangci_lint_version }}
           working-directory: ${{ inputs.working_directory }}
