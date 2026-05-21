@@ -203,6 +203,7 @@ jobs:
       - name: Look up the test-vars-coercion job's coverage-gate log
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -210,7 +211,8 @@ jobs:
           # more reliable than the zip-format whole-run log on in-progress runs.
           # The inner reusable test-go.yml job is named `test`, so when called
           # from the `test-vars-coercion` job above it surfaces in the run as
-          # `test-vars-coercion / test`.
+          # `test-vars-coercion / test`. GH_REPO env tells gh which repo we're
+          # querying since this job runs without a checkout.
           job_id=$(gh run view "$RUN_ID" \
             --json jobs \
             --jq '.jobs[] | select(.name | contains("test-vars-coercion / test")) | .databaseId' \
