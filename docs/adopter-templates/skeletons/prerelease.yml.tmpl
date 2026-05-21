@@ -27,6 +27,9 @@ jobs:
       prerelease: true
       dockerfile: {{ $df.path }}
       image_name: {{ $df.image_name }}
+      sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
+      attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
+      sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
   scan:
     needs: build
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
@@ -59,6 +62,9 @@ jobs:
       prerelease: true
       images: |
         {{ $images | toJSON }}
+      sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
+      attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
+      sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
 {{- else }}
   # No Dockerfiles detected for this component.
   noop:

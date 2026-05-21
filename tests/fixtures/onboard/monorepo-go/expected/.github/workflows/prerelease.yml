@@ -17,6 +17,9 @@ jobs:
       prerelease: true
       dockerfile: Dockerfile
       image_name: repo-api
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
   scan:
     needs: build
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
