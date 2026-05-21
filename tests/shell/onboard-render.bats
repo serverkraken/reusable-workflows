@@ -179,6 +179,8 @@ golden_check() {
 @test "golden: cli-go-with-goreleaser" { golden_check "cli-go-with-goreleaser"; }
 @test "golden: service-with-helm"      { golden_check "service-with-helm"; }
 @test "golden: monorepo-go"            { golden_check "monorepo-go"; }
+@test "golden: release-eligibility-mixed" { golden_check "release-eligibility-mixed"; }
+@test "golden: containerfile-only"     { golden_check "containerfile-only"; }
 
 # ---- ci.yml lint+test atom golden tests (Task 11) ----
 #
@@ -196,6 +198,26 @@ render_ci_for_profile() {
   bash "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
     "$BATS_TEST_DIRNAME/../.." "$target" "$profile" "v3" >&2
   echo "$target/.github/workflows/ci.yml"
+}
+
+render_release_for_profile() {
+  local profile="$1"
+  local target="$BATS_TEST_TMPDIR/render-release-$$"
+  mkdir -p "$target"
+  printf '%s' "$profile" > "$target/_profile.json"
+  "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
+    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v3" >&2
+  echo "$target/.github/workflows/release.yml"
+}
+
+render_prerelease_for_profile() {
+  local profile="$1"
+  local target="$BATS_TEST_TMPDIR/render-prerelease-$$"
+  mkdir -p "$target"
+  printf '%s' "$profile" > "$target/_profile.json"
+  "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
+    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v3" >&2
+  echo "$target/.github/workflows/prerelease.yml"
 }
 
 @test "ci.yml renders lint+test jobs for a single go component" {
@@ -360,4 +382,69 @@ render_ci_for_profile() {
   }')
   grep -qF "severity: \${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}" "$rendered"
   grep -qF "trivy_version: \${{ vars.SK_TRIVY_VERSION || '' }}" "$rendered"
+}
+
+# ---- release.yml SK_SIGN/SK_ATTEST/SK_SBOM threading (Task 6) ----
+
+@test "release.yml emits SK_SIGN/SK_ATTEST/SK_SBOM expressions on single-Dockerfile case" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "sign: \${{ fromJSON(vars.SK_SIGN || 'true') }}" "$rendered"
+  grep -qF "attest: \${{ fromJSON(vars.SK_ATTEST || 'true') }}" "$rendered"
+  grep -qF "sbom: \${{ fromJSON(vars.SK_SBOM || 'true') }}" "$rendered"
+}
+
+@test "release.yml emits SK_*  on multi-Dockerfile case" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [
+        {"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true},
+        {"path":"Dockerfile.worker","image_name":"serverkraken/svc-worker","image_name_source":"derived","release_eligible":true}
+      ],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "sign: \${{ fromJSON(vars.SK_SIGN || 'true') }}" "$rendered"
+  grep -qF "attest: \${{ fromJSON(vars.SK_ATTEST || 'true') }}" "$rendered"
+  grep -qF "sbom: \${{ fromJSON(vars.SK_SBOM || 'true') }}" "$rendered"
+}
+
+@test "release.yml omits docker-build job when no Dockerfile is release-eligible" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile.dev","image_name":"serverkraken/svc-dev","image_name_source":"derived","release_eligible":false}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  ! grep -q "docker-build" "$rendered"
+}
+
+# ---- prerelease.yml SK_SIGN/SK_ATTEST/SK_SBOM threading (Task 7) ----
+
+@test "prerelease.yml emits SK_SIGN/SK_ATTEST/SK_SBOM expressions" {
+  rendered=$(render_prerelease_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "sign: \${{ fromJSON(vars.SK_SIGN || 'true') }}" "$rendered"
+  grep -qF "attest: \${{ fromJSON(vars.SK_ATTEST || 'true') }}" "$rendered"
+  grep -qF "sbom: \${{ fromJSON(vars.SK_SBOM || 'true') }}" "$rendered"
 }

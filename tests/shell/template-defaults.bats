@@ -11,6 +11,7 @@ setup() {
   REPO_ROOT="$BATS_TEST_DIRNAME/../.."
   CI_TMPL="$REPO_ROOT/docs/adopter-templates/skeletons/ci.yml.tmpl"
   PRE_TMPL="$REPO_ROOT/docs/adopter-templates/skeletons/prerelease.yml.tmpl"
+  RELEASE_TMPL="$REPO_ROOT/docs/adopter-templates/skeletons/release.yml.tmpl"
 }
 
 # Args: <template-file> <SK_VAR_NAME>
@@ -99,4 +100,40 @@ atom_default() {
     t=$(template_default "$PRE_TMPL" "$var")
     [ "$t" = "" ] || { echo "$var in PRE_TMPL has non-empty template default '$t'"; false; }
   done
+}
+
+@test "SK_SIGN template default matches docker-build atom default" {
+  t=$(template_default "$RELEASE_TMPL" "SK_SIGN")
+  a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build.yml" "sign")
+  [ "$t" = "$a" ] || { echo "tmpl=$t atom=$a"; false; }
+}
+
+@test "SK_ATTEST template default matches docker-build atom default" {
+  t=$(template_default "$RELEASE_TMPL" "SK_ATTEST")
+  a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build.yml" "attest")
+  [ "$t" = "$a" ] || { echo "tmpl=$t atom=$a"; false; }
+}
+
+@test "SK_SBOM template default matches docker-build atom default" {
+  t=$(template_default "$RELEASE_TMPL" "SK_SBOM")
+  a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build.yml" "sbom")
+  [ "$t" = "$a" ] || { echo "tmpl=$t atom=$a"; false; }
+}
+
+@test "SK_SIGN template default matches docker-build-multi atom default" {
+  t=$(template_default "$RELEASE_TMPL" "SK_SIGN")
+  a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build-multi.yml" "sign")
+  [ "$t" = "$a" ] || { echo "tmpl=$t multi-atom=$a"; false; }
+}
+
+@test "SK_ATTEST template default matches docker-build-multi atom default" {
+  t=$(template_default "$RELEASE_TMPL" "SK_ATTEST")
+  a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build-multi.yml" "attest")
+  [ "$t" = "$a" ] || { echo "tmpl=$t multi-atom=$a"; false; }
+}
+
+@test "SK_SBOM template default matches docker-build-multi atom default" {
+  t=$(template_default "$RELEASE_TMPL" "SK_SBOM")
+  a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build-multi.yml" "sbom")
+  [ "$t" = "$a" ] || { echo "tmpl=$t multi-atom=$a"; false; }
 }

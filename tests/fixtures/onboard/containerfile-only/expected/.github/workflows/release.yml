@@ -19,28 +19,13 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v2
     secrets: inherit
 
-  docker-build-services-api:
+  docker-build:
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
     with:
-      context: services/api
-      dockerfile: services/api/Dockerfile
-      image_name: repo-api
-      tag: ${{ needs.release-please.outputs.tag_name }}
-      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
-      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
-      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
-    secrets: inherit
-
-  docker-build-services-worker:
-    needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
-    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
-    with:
-      context: services/worker
-      dockerfile: services/worker/Dockerfile
-      image_name: repo-worker
+      dockerfile: Containerfile
+      image_name: repo
       tag: ${{ needs.release-please.outputs.tag_name }}
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}

@@ -22,21 +22,13 @@ jobs:
   docker-build:
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
-    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@v2
     with:
-      dockerfile: Dockerfile
-      image_name: repo
+      images: |
+        [{"dockerfile":"Dockerfile","image_name":"repo"},{"dockerfile":"Dockerfile.worker","image_name":"repo-worker"}]
       tag: ${{ needs.release-please.outputs.tag_name }}
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
-    secrets: inherit
-  helm-publish:
-    needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
-    uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@v2
-    with:
-      chart_path: charts/svc
-      oci_registry: ghcr.io//charts
     secrets: inherit
 

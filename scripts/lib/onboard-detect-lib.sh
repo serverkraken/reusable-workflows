@@ -16,6 +16,7 @@
 #   detect_release_signals  — goreleaser config + secondary chart_yaml paths
 #   detect_legacy_ci        — classify legacy .github/workflows/*.yml and suggest replacements
 #   emit_unsupported_language_warnings — append no_lint_test_atom warnings for unsupported primary_language values
+#   emit_no_release_eligible_warnings  — append no_release_eligible warnings for components whose Dockerfiles are all dev/aux
 
 # shellcheck shell=bash
 set -euo pipefail
@@ -65,7 +66,8 @@ emit_profile_json() {
       warnings: $warnings
     }')
 
-  emit_unsupported_language_warnings "$profile"
+  profile=$(emit_unsupported_language_warnings "$profile")
+  emit_no_release_eligible_warnings "$profile"
 }
 
 # Append a `no_lint_test_atom` warning for each unique component primary_language
@@ -84,6 +86,32 @@ emit_unsupported_language_warnings() {
             code: "no_lint_test_atom",
             primary_language: .,
             message: ("no lint/test atom for primary_language=" + . + "; rendered ci.yml will fall back to secscan only")
+          })
+      ) as $extra
+    | $root | .warnings += $extra
+  '
+}
+
+# Append a `no_release_eligible` warning for each component that has 1+ Dockerfiles
+# but none are release_eligible. Such a component would render a release.yml with
+# no docker-build job, which is usually a surprise — adopters opt-in via
+# `# onboard:release=true` on the Dockerfile(s) they want shipped.
+# Reads the full profile JSON, emits the updated profile JSON to stdout.
+# Signature: emit_no_release_eligible_warnings <profile-json>
+emit_no_release_eligible_warnings() {
+  local profile_json="$1"
+  echo "$profile_json" | jq '
+    . as $root
+    | (.components
+        | map(select(
+            (.dockerfiles | length > 0) and
+            ([.dockerfiles[] | select(.release_eligible)] | length == 0)
+          ))
+        | map({
+            code: "no_release_eligible",
+            path: .path,
+            message: ("component at " + .path + " has " + ((.dockerfiles | length) | tostring) +
+                      " Dockerfile(s) but none are release-eligible; rendered release.yml will skip docker-build. Set `# onboard:release=true` on the Dockerfile(s) to ship.")
           })
       ) as $extra
     | $root | .warnings += $extra
@@ -153,11 +181,13 @@ detect_components() {
 
   # 2) Fallback monorepo via multiple sub-markers — only when the root has no primary
   # marker of its own. If the root is already a component (has go.mod / pyproject.toml /
-  # Cargo.toml / Chart.yaml / Dockerfile / package.json), any nested marker (e.g.
-  # charts/svc/Chart.yaml) is a release signal of the root component, not a sibling.
+  # Cargo.toml / Chart.yaml / Dockerfile / Containerfile / package.json), any nested
+  # marker (e.g. charts/svc/Chart.yaml) is a release signal of the root component,
+  # not a sibling.
   local root_has_marker=false
   if [[ -f "$repo/go.mod" || -f "$repo/pyproject.toml" || -f "$repo/Cargo.toml" \
-        || -f "$repo/Chart.yaml" || -f "$repo/Dockerfile" || -f "$repo/package.json" ]]; then
+        || -f "$repo/Chart.yaml" || -f "$repo/Dockerfile" || -f "$repo/Containerfile" \
+        || -f "$repo/package.json" ]]; then
     root_has_marker=true
   fi
   if [[ ${#paths[@]} -eq 0 && "$root_has_marker" == "false" ]]; then
@@ -170,7 +200,7 @@ detect_components() {
     done < <(find "$repo" -mindepth 2 -maxdepth 3 \( -name 'go.mod' -o -name 'pyproject.toml' -o -name 'Cargo.toml' -o -name 'Chart.yaml' \) 2>/dev/null | sort -u)
   fi
 
-  # 3) Sub-Dockerfile fallback (no language markers but multiple sub-Dockerfiles)
+  # 3) Sub-Dockerfile/Containerfile fallback (no language markers but multiple sub-Dockerfiles/Containerfiles)
   if [[ ${#paths[@]} -eq 0 ]]; then
     local sub_dockerfile_dirs=()
     while IFS= read -r f; do
@@ -179,7 +209,7 @@ detect_components() {
       d="${d#"$repo"/}"
       [[ "$d" == "." ]] && continue
       sub_dockerfile_dirs+=("$d")
-    done < <(find "$repo" -mindepth 2 -maxdepth 3 -name 'Dockerfile' 2>/dev/null | sort -u)
+    done < <(find "$repo" -mindepth 2 -maxdepth 3 \( -name 'Dockerfile' -o -name 'Containerfile' \) 2>/dev/null | sort -u)
     if [[ ${#sub_dockerfile_dirs[@]} -ge 2 ]]; then
       paths=("${sub_dockerfile_dirs[@]}")
     fi
@@ -303,12 +333,14 @@ inventory_dockerfiles() {
   local p="$repo/$path"
   [[ -d "$p" ]] || { echo '[]'; return; }
 
-  # Collect Dockerfile names at component root only (not recursive — each sub-component is
-  # its own row in components[]).
+  # Collect Dockerfile + Containerfile names at component root only.
   local files=()
   while IFS= read -r f; do
     [[ -n "$f" ]] && files+=("$(basename "$f")")
-  done < <(find "$p" -maxdepth 1 -type f \( -name 'Dockerfile' -o -name 'Dockerfile.*' \) 2>/dev/null | sort || true)
+  done < <(find "$p" -maxdepth 1 -type f \( \
+             -name 'Dockerfile' -o -name 'Dockerfile.*' \
+             -o -name 'Containerfile' -o -name 'Containerfile.*' \
+           \) 2>/dev/null | sort || true)
 
   if (( ${#files[@]} == 0 )); then
     echo '[]'; return
@@ -317,7 +349,7 @@ inventory_dockerfiles() {
   local arr='[]'
   local fname
   for fname in "${files[@]}"; do
-    local override image_name image_name_source
+    local override image_name image_name_source release_override release_eligible
     override=$(read_image_override "$p/$fname")
     if [[ -n "$override" ]]; then
       image_name="$override"
@@ -326,11 +358,28 @@ inventory_dockerfiles() {
       image_name=$(derive_image_name "$fname" "$path")
       image_name_source="derived"
     fi
+    # release-eligibility: bare `Dockerfile`/`Containerfile` default true,
+    # any `*.<suffix>` default false. Header override wins.
+    if [[ "$fname" == "Dockerfile" || "$fname" == "Containerfile" ]]; then
+      release_eligible="true"
+    else
+      release_eligible="false"
+    fi
+    release_override=$(read_release_override "$p/$fname")
+    if [[ -n "$release_override" ]]; then
+      release_eligible="$release_override"
+    fi
     arr=$(echo "$arr" | jq \
       --arg path "$fname" \
       --arg image_name "$image_name" \
       --arg image_name_source "$image_name_source" \
-      '. + [{path: $path, image_name: $image_name, image_name_source: $image_name_source}]')
+      --argjson release_eligible "$release_eligible" \
+      '. + [{
+        path: $path,
+        image_name: $image_name,
+        image_name_source: $image_name_source,
+        release_eligible: $release_eligible
+      }]')
   done
   echo "$arr"
 }
@@ -346,6 +395,17 @@ read_image_override() {
     | sed 's/^# onboard:image=//' || true
 }
 
+# Read `# onboard:release=true` or `# onboard:release=false` override from
+# the first 5 lines of a Dockerfile. Emits "true", "false", or empty.
+# Signature: read_release_override <file-path>
+read_release_override() {
+  local file="$1"
+  [[ -f "$file" ]] || { echo ""; return; }
+  head -n 5 "$file" 2>/dev/null \
+    | grep -m1 -oE '^# onboard:release=(true|false)' \
+    | sed 's/^# onboard:release=//' || true
+}
+
 # Derive image name from Dockerfile filename and component path.
 #   path="."             Dockerfile          → $REPO
 #   path="."             Dockerfile.worker   → $REPO-worker
@@ -356,10 +416,10 @@ read_image_override() {
 derive_image_name() {
   local filename="$1" cpath="$2"
   local suffix=""
-  if [[ "$filename" == "Dockerfile" ]]; then
+  if [[ "$filename" == "Dockerfile" || "$filename" == "Containerfile" ]]; then
     suffix=""
-  elif [[ "$filename" =~ ^Dockerfile\.(.+)$ ]]; then
-    suffix="${BASH_REMATCH[1]}"
+  elif [[ "$filename" =~ ^(Dockerfile|Containerfile)\.(.+)$ ]]; then
+    suffix="${BASH_REMATCH[2]}"
   fi
 
   local seg=""

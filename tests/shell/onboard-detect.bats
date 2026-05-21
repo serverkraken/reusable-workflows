@@ -319,3 +319,165 @@ DOCKER
   echo "$output" | jq -e '.warnings | map(select(.code == "no_lint_test_atom")) | length > 0' >/dev/null
   echo "$output" | jq -e '.warnings[] | select(.code == "no_lint_test_atom") | .primary_language == "node"' >/dev/null
 }
+
+@test "read_release_override reads true from header" {
+  tmpfile=$(mktemp)
+  printf '%s\n' '# Dockerfile' '# onboard:release=true' 'FROM alpine' > "$tmpfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(read_release_override "$tmpfile")
+  rm -f "$tmpfile"
+  [ "$result" = "true" ]
+}
+
+@test "read_release_override reads false from header" {
+  tmpfile=$(mktemp)
+  printf '%s\n' '# Dockerfile' '# onboard:release=false' 'FROM alpine' > "$tmpfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(read_release_override "$tmpfile")
+  rm -f "$tmpfile"
+  [ "$result" = "false" ]
+}
+
+@test "read_release_override emits empty when annotation absent" {
+  tmpfile=$(mktemp)
+  printf '%s\n' 'FROM alpine' 'RUN echo hi' > "$tmpfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(read_release_override "$tmpfile")
+  rm -f "$tmpfile"
+  [ -z "$result" ]
+}
+
+@test "read_release_override ignores annotation beyond line 5" {
+  tmpfile=$(mktemp)
+  printf '%s\n' '1' '2' '3' '4' '5' '# onboard:release=true' 'FROM alpine' > "$tmpfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(read_release_override "$tmpfile")
+  rm -f "$tmpfile"
+  [ -z "$result" ]
+}
+
+@test "inventory_dockerfiles detects Containerfile alongside Dockerfile" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Containerfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].path == "Containerfile"'
+}
+
+@test "inventory_dockerfiles classifies Dockerfile release_eligible=true by default" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == true'
+}
+
+@test "inventory_dockerfiles classifies Dockerfile.dev release_eligible=false by default" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile.dev"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == false'
+}
+
+@test "inventory_dockerfiles honors release=true override on Dockerfile.*" {
+  tmpdir=$(mktemp -d)
+  printf '%s\n' '# onboard:release=true' 'FROM alpine' > "$tmpdir/Dockerfile.worker"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == true'
+}
+
+@test "inventory_dockerfiles honors release=false override on Dockerfile" {
+  tmpdir=$(mktemp -d)
+  printf '%s\n' '# onboard:release=false' 'FROM alpine' > "$tmpdir/Dockerfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == false'
+}
+
+@test "inventory_dockerfiles classifies Containerfile.dev release_eligible=false" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Containerfile.dev"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(inventory_dockerfiles "$tmpdir" ".")
+  rm -rf "$tmpdir"
+  echo "$result" | jq -e '.[0].release_eligible == false'
+}
+
+@test "derive_image_name handles Containerfile root case" {
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(derive_image_name "Containerfile" ".")
+  [ "$result" = "\$REPO" ]
+}
+
+@test "derive_image_name handles Containerfile.suffix" {
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(derive_image_name "Containerfile.worker" ".")
+  [ "$result" = "\$REPO-worker" ]
+}
+
+@test "derive_image_name handles Containerfile in subpath" {
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(derive_image_name "Containerfile.worker" "services/api")
+  [ "$result" = "\$REPO-api-worker" ]
+}
+
+# === Task 4: no_release_eligible warning ===
+
+@test "profile-json warns when component has Dockerfiles but none release-eligible" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile.dev"
+  : > "$tmpdir/Dockerfile.debug"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.warnings[] | select(.code == "no_release_eligible")' >/dev/null
+}
+
+@test "profile-json no_release_eligible warning includes component path" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile.dev"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.warnings[] | select(.code == "no_release_eligible") | .path == "."' >/dev/null
+}
+
+@test "profile-json does NOT warn no_release_eligible when at least one Dockerfile is eligible" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Dockerfile"
+  : > "$tmpdir/Dockerfile.dev"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.warnings[] | select(.code == "no_release_eligible")] | length == 0' >/dev/null
+}
+
+@test "profile-json does NOT warn no_release_eligible for library component with no Dockerfile" {
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/go.mod"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.warnings[] | select(.code == "no_release_eligible")] | length == 0' >/dev/null
+}
+
+@test "detect_components treats root Containerfile as a root-marker component" {
+  # Regression: root Containerfile must qualify the repo root as a single component,
+  # equivalent to Dockerfile. Previously detect_components only checked Dockerfile,
+  # which would skip the root-marker branch and (wrongly) fall through to find()
+  # for sub-components.
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Containerfile"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components | length == 1' >/dev/null
+  echo "$output" | jq -e '.components[0].path == "."' >/dev/null
+}

@@ -15,7 +15,7 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      dockerfile: Dockerfile
+      dockerfile: Containerfile
       image_name: repo
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
