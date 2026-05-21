@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.9.1](https://github.com/serverkraken/reusable-workflows/compare/v3.9.0...v3.9.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* **onboard:** substitute $REPO with target_repo from profile (not target/ dir basename) ([#82](https://github.com/serverkraken/reusable-workflows/issues/82)) ([7bfe1eb](https://github.com/serverkraken/reusable-workflows/commit/7bfe1eb5eedc666be250b84d07911df490ba6486))
+
 ## [3.9.0](https://github.com/serverkraken/reusable-workflows/compare/v3.8.0...v3.9.0) (2026-05-21)
 
 
