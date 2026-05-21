@@ -66,6 +66,9 @@ jobs:
     {{- end }}
       image_name: {{ $df.image_name }}
       tag: {{`${{ needs.release-please.outputs.tag_name }}`}}
+      sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
+      attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
+      sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
     secrets: inherit
 {{- else if gt (len $releaseDfs) 1 -}}
 {{/* Translate profile.json's dockerfiles[{path, image_name, ...}] into the
@@ -85,6 +88,9 @@ jobs:
       images: |
         {{ $images | toJSON }}
       tag: {{`${{ needs.release-please.outputs.tag_name }}`}}
+      sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
+      attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
+      sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
     secrets: inherit
 {{- end }}
 

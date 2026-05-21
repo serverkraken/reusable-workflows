@@ -27,6 +27,9 @@ jobs:
       dockerfile: Dockerfile
       image_name: repo
       tag: ${{ needs.release-please.outputs.tag_name }}
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
     secrets: inherit
   helm-publish:
     needs: [release-please]

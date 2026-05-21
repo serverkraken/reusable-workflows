@@ -27,5 +27,8 @@ jobs:
       images: |
         [{"dockerfile":"Dockerfile","image_name":"repo"},{"dockerfile":"Dockerfile.worker","image_name":"custom-worker"}]
       tag: ${{ needs.release-please.outputs.tag_name }}
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
     secrets: inherit
 
