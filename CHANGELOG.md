@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.7.0](https://github.com/serverkraken/reusable-workflows/compare/v3.6.0...v3.7.0) (2026-05-21)
+
+
+### Features
+
+* **onboard:** cgo detect also scans go.mod for known transitive cgo deps ([#74](https://github.com/serverkraken/reusable-workflows/issues/74)) ([8867a54](https://github.com/serverkraken/reusable-workflows/commit/8867a545941bf92f5ba520f37e3a17af290c8b22))
+
 ## [3.6.0](https://github.com/serverkraken/reusable-workflows/compare/v3.5.0...v3.6.0) (2026-05-21)
 
 
