@@ -2,4 +2,8 @@ package main
 
 import "fmt"
 
-func main() { fmt.Println("hello from minimal-go fixture") }
+func greet() string {
+	return "hello from minimal-go fixture"
+}
+
+func main() { fmt.Println(greet()) }

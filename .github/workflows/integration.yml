@@ -165,3 +165,27 @@ jobs:
       dry_run: true
       pin_version: v1
     secrets: inherit
+
+  # ----- vars coercion: verify type=number + type=boolean inputs accept
+  #       string-valued GHA expressions WRAPPED IN fromJSON(), which is
+  #       what the SK_* override pattern emits in adopter ci.yml. The
+  #       proof is structural: GHA's pre-flight schema check silently
+  #       drops `uses:` jobs whose `with:` block assigns an unwrappable
+  #       string expression to a typed input (empirically confirmed on
+  #       PR #80 before the fromJSON wrap was introduced). So a passing
+  #       `test-vars-coercion / test` job here IS the proof — if coercion
+  #       were broken, this job wouldn't appear in the run at all.
+  #
+  #       The vars.NONEXISTENT_*_FOR_COERCION_TEST references intentionally
+  #       point at variables that don't exist — the || fallback always
+  #       fires, evaluating to a literal string ('70', 'false') which
+  #       fromJSON() then coerces into the typed value the atom expects.
+  #
+  test-vars-coercion:
+    uses: ./.github/workflows/test-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/minimal-go
+      go_version: '1.22'
+      coverage_threshold: ${{ fromJSON(vars.NONEXISTENT_NUMBER_FOR_COERCION_TEST || '70') }}
+      cgo_enabled: ${{ fromJSON(vars.NONEXISTENT_BOOL_FOR_COERCION_TEST || 'false') }}

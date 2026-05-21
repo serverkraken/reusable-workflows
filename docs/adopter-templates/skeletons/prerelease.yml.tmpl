@@ -38,6 +38,8 @@ jobs:
     secrets: inherit
     with:
       image_ref: {{`${{ needs.build.outputs.image_ref }}`}}
+      severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
+      trivy_version: {{`${{ vars.SK_TRIVY_VERSION || '' }}`}}
 {{- else if gt (len $c.dockerfiles) 1 -}}
 {{- $images := coll.Slice -}}
 {{- range $c.dockerfiles -}}
