@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-05-21T17:33:47Z_
+_Last updated by the onboarding workflow: 2026-05-21T19:42:49Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -10,5 +10,5 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 (The table is intentionally empty here. Run the seed script locally — described in `docs/operations.md` §5 — to populate the rows.)
 | serverkraken/blupod-ui | 2026-05-21 | v3 | [PR](https://github.com/serverkraken/blupod-ui/pull/27) | — | add-open, no-legacy |
 | serverkraken/flow | 2026-05-21 | v3 | [PR](https://github.com/serverkraken/flow/pull/22) | — | add-open, no-legacy |
-| serverkraken/skytrack-ui | 2026-05-21 | v3 | [PR](https://github.com/serverkraken/skytrack-ui/pull/23) | — | add-open, no-legacy |
+| serverkraken/skytrack-ui | 2026-05-21 | v3 | [PR](https://github.com/serverkraken/skytrack-ui/pull/25) | — | add-open, no-legacy |
 | serverkraken/skytrack | 2026-05-21 | v3 | [PR](https://github.com/serverkraken/skytrack/pull/15) | — | add-open, no-legacy |
