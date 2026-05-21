@@ -409,3 +409,21 @@ DOCKER
   rm -rf "$tmpdir"
   echo "$result" | jq -e '.[0].release_eligible == false'
 }
+
+@test "derive_image_name handles Containerfile root case" {
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(derive_image_name "Containerfile" ".")
+  [ "$result" = "\$REPO" ]
+}
+
+@test "derive_image_name handles Containerfile.suffix" {
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(derive_image_name "Containerfile.worker" ".")
+  [ "$result" = "\$REPO-worker" ]
+}
+
+@test "derive_image_name handles Containerfile in subpath" {
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(derive_image_name "Containerfile.worker" "services/api")
+  [ "$result" = "\$REPO-api-worker" ]
+}

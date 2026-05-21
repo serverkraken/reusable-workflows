@@ -386,10 +386,10 @@ read_release_override() {
 derive_image_name() {
   local filename="$1" cpath="$2"
   local suffix=""
-  if [[ "$filename" == "Dockerfile" ]]; then
+  if [[ "$filename" == "Dockerfile" || "$filename" == "Containerfile" ]]; then
     suffix=""
-  elif [[ "$filename" =~ ^Dockerfile\.(.+)$ ]]; then
-    suffix="${BASH_REMATCH[1]}"
+  elif [[ "$filename" =~ ^(Dockerfile|Containerfile)\.(.+)$ ]]; then
+    suffix="${BASH_REMATCH[2]}"
   fi
 
   local seg=""
