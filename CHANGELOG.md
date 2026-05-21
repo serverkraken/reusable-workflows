@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.9.0](https://github.com/serverkraken/reusable-workflows/compare/v3.8.0...v3.9.0) (2026-05-21)
+
+
+### Features
+
+* **onboard:** per-adopter override variables (SK_*) ([#80](https://github.com/serverkraken/reusable-workflows/issues/80)) ([c020304](https://github.com/serverkraken/reusable-workflows/commit/c020304a638cc668fd6f5fb40613e8b0d29fbe27))
+
 ## [3.8.0](https://github.com/serverkraken/reusable-workflows/compare/v3.7.0...v3.8.0) (2026-05-21)
 
 
