@@ -249,6 +249,9 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 | `SK_GOLANGCI_LINT_VERSION` | `golangci_lint_version` | lint-go | `v2.12.2` | string |
 | `SK_CLIPPY_ARGS` | `clippy_args` | lint-rust | `-D warnings` | string |
 | `SK_CARGO_LLVM_COV_VERSION` | `cargo_llvm_cov_version` | test-rust | `v0.6.16` | string |
+| `SK_SIGN` | `sign` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
+| `SK_ATTEST` | `attest` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
+| `SK_SBOM` | `sbom` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
 | `SK_TRIVY_SEVERITY` | `severity` | trivy-fs (ci.yml secscan), trivy-image (prerelease scan) | `HIGH,CRITICAL` | string |
 | `SK_TRIVY_VERSION` | `trivy_version` | trivy-fs, trivy-image | (install-trivy default) | string |
 
@@ -262,3 +265,40 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 - `runs_on` — catalog-side global, not adopter-tunable.
 - `working_directory`, `image_name`, `dockerfile`, `tag`, `prerelease` — per-component or build-derived.
 - `paths_ignore` — multi-line strings, awkward in Variables UI.
+
+## Release-Eligibility per Dockerfile
+
+By default, `release.yml` ships **only the bare `Dockerfile` (or `Containerfile`)** to GHCR on release-please-driven releases. Any `Dockerfile.*` / `Containerfile.*` variant (e.g. `Dockerfile.dev`, `Dockerfile.debug`) is **excluded** from release builds and only ships via the manual `prerelease.yml` workflow_dispatch path.
+
+### Convention
+
+| File matches | `release_eligible` default |
+|---|---|
+| `Dockerfile` / `Containerfile` (exact) | `true` |
+| `Dockerfile.*` / `Containerfile.*` (any extension) | `false` |
+
+### Per-file override
+
+To opt a variant IN for release (e.g. `Dockerfile.worker` for a worker image that ships alongside the main service):
+
+```dockerfile
+# Dockerfile.worker
+# onboard:release=true
+FROM alpine:3.19
+...
+```
+
+To opt the bare `Dockerfile` OUT of release (e.g. a dev-only repo with no production Dockerfile):
+
+```dockerfile
+# Dockerfile
+# onboard:release=false
+FROM alpine:3.19
+...
+```
+
+Only the first 5 lines of the file are scanned. Override wins over convention. The annotation extends the existing `# onboard:image=<name>` convention from `read_image_override`.
+
+### If no Dockerfile is release-eligible
+
+The rendered `release.yml` simply omits the docker-build job. release-please + any other release-signal jobs (goreleaser, helm-publish) continue to run. `onboard-detect` emits a `no_release_eligible` warning into the onboard run's step summary so this isn't a silent surprise.
