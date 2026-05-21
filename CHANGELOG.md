@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.0](https://github.com/serverkraken/reusable-workflows/compare/v3.5.0...v3.6.0) (2026-05-21)
+
+
+### Features
+
+* **onboard:** auto-detect cgo in Go components ([#72](https://github.com/serverkraken/reusable-workflows/issues/72)) ([4df8497](https://github.com/serverkraken/reusable-workflows/commit/4df84978cf31082d24d41657c401d4546afee01e))
+
 ## [3.5.0](https://github.com/serverkraken/reusable-workflows/compare/v3.4.0...v3.5.0) (2026-05-21)
 
 
