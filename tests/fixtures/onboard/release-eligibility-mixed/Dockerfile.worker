@@ -1,0 +1,3 @@
+# Dockerfile.worker — worker variant, explicitly opted-in for release.
+# onboard:release=true
+FROM alpine:3.19

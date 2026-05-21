@@ -179,6 +179,7 @@ golden_check() {
 @test "golden: cli-go-with-goreleaser" { golden_check "cli-go-with-goreleaser"; }
 @test "golden: service-with-helm"      { golden_check "service-with-helm"; }
 @test "golden: monorepo-go"            { golden_check "monorepo-go"; }
+@test "golden: release-eligibility-mixed" { golden_check "release-eligibility-mixed"; }
 
 # ---- ci.yml lint+test atom golden tests (Task 11) ----
 #
