@@ -241,6 +241,23 @@ render_ci_for_profile() {
   grep -cF "cgo_enabled: \${{ vars.SK_CGO_ENABLED || 'true' }}" "$rendered" | grep -qx 2
 }
 
+@test "ci.yml emits SK_* override expressions for Python test atom" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["python"], "primary_language": "python",
+      "release_please_type": "python", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"$REPO","image_name_source":"derived"}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  # python_version appears in BOTH lint-python and test-python — enforce count=2
+  # so a regression that drops it from one block fails the test.
+  grep -cF "python_version: \${{ vars.SK_PYTHON_VERSION || '' }}" "$rendered" | grep -qx 2
+  # coverage_threshold appears only on test-python — presence check is sufficient.
+  grep -qF "coverage_threshold: \${{ vars.SK_COVERAGE_THRESHOLD || '80' }}" "$rendered"
+}
+
 @test "ci.yml renders lint+test jobs for a single python component" {
   rendered=$(render_ci_for_profile '{
     "schema_version": 1, "target_repo": "serverkraken/svc",

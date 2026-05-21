@@ -59,11 +59,14 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-python.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
+      python_version: {{`${{ vars.SK_PYTHON_VERSION || '' }}`}}
     secrets: inherit
   test-python-{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/test-python.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
+      python_version: {{`${{ vars.SK_PYTHON_VERSION || '' }}`}}
+      coverage_threshold: {{`${{ vars.SK_COVERAGE_THRESHOLD || '80' }}`}}
     secrets: inherit
 {{- else if eq $c.primary_language "rust" }}
   lint-rust-{{ $suffix }}:
