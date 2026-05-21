@@ -202,8 +202,8 @@ render_ci_for_profile() {
 
 render_release_for_profile() {
   local profile="$1"
-  local target
-  target=$(mktemp -d)
+  local target="$BATS_TEST_TMPDIR/render-release-$$"
+  mkdir -p "$target"
   printf '%s' "$profile" > "$target/_profile.json"
   "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
     "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v3" >&2
@@ -212,8 +212,8 @@ render_release_for_profile() {
 
 render_prerelease_for_profile() {
   local profile="$1"
-  local target
-  target=$(mktemp -d)
+  local target="$BATS_TEST_TMPDIR/render-prerelease-$$"
+  mkdir -p "$target"
   printf '%s' "$profile" > "$target/_profile.json"
   "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
     "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v3" >&2
@@ -417,6 +417,19 @@ render_prerelease_for_profile() {
   grep -qF "sign: \${{ fromJSON(vars.SK_SIGN || 'true') }}" "$rendered"
   grep -qF "attest: \${{ fromJSON(vars.SK_ATTEST || 'true') }}" "$rendered"
   grep -qF "sbom: \${{ fromJSON(vars.SK_SBOM || 'true') }}" "$rendered"
+}
+
+@test "release.yml omits docker-build job when no Dockerfile is release-eligible" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile.dev","image_name":"serverkraken/svc-dev","image_name_source":"derived","release_eligible":false}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  ! grep -q "docker-build" "$rendered"
 }
 
 # ---- prerelease.yml SK_SIGN/SK_ATTEST/SK_SBOM threading (Task 7) ----

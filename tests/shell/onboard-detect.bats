@@ -467,3 +467,17 @@ DOCKER
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '[.warnings[] | select(.code == "no_release_eligible")] | length == 0' >/dev/null
 }
+
+@test "detect_components treats root Containerfile as a root-marker component" {
+  # Regression: root Containerfile must qualify the repo root as a single component,
+  # equivalent to Dockerfile. Previously detect_components only checked Dockerfile,
+  # which would skip the root-marker branch and (wrongly) fall through to find()
+  # for sub-components.
+  tmpdir=$(mktemp -d)
+  : > "$tmpdir/Containerfile"
+  run "$DETECT" --profile-json "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components | length == 1' >/dev/null
+  echo "$output" | jq -e '.components[0].path == "."' >/dev/null
+}

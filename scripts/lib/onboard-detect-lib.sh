@@ -181,11 +181,13 @@ detect_components() {
 
   # 2) Fallback monorepo via multiple sub-markers — only when the root has no primary
   # marker of its own. If the root is already a component (has go.mod / pyproject.toml /
-  # Cargo.toml / Chart.yaml / Dockerfile / package.json), any nested marker (e.g.
-  # charts/svc/Chart.yaml) is a release signal of the root component, not a sibling.
+  # Cargo.toml / Chart.yaml / Dockerfile / Containerfile / package.json), any nested
+  # marker (e.g. charts/svc/Chart.yaml) is a release signal of the root component,
+  # not a sibling.
   local root_has_marker=false
   if [[ -f "$repo/go.mod" || -f "$repo/pyproject.toml" || -f "$repo/Cargo.toml" \
-        || -f "$repo/Chart.yaml" || -f "$repo/Dockerfile" || -f "$repo/package.json" ]]; then
+        || -f "$repo/Chart.yaml" || -f "$repo/Dockerfile" || -f "$repo/Containerfile" \
+        || -f "$repo/package.json" ]]; then
     root_has_marker=true
   fi
   if [[ ${#paths[@]} -eq 0 && "$root_has_marker" == "false" ]]; then
@@ -198,7 +200,7 @@ detect_components() {
     done < <(find "$repo" -mindepth 2 -maxdepth 3 \( -name 'go.mod' -o -name 'pyproject.toml' -o -name 'Cargo.toml' -o -name 'Chart.yaml' \) 2>/dev/null | sort -u)
   fi
 
-  # 3) Sub-Dockerfile fallback (no language markers but multiple sub-Dockerfiles)
+  # 3) Sub-Dockerfile/Containerfile fallback (no language markers but multiple sub-Dockerfiles/Containerfiles)
   if [[ ${#paths[@]} -eq 0 ]]; then
     local sub_dockerfile_dirs=()
     while IFS= read -r f; do
@@ -207,7 +209,7 @@ detect_components() {
       d="${d#"$repo"/}"
       [[ "$d" == "." ]] && continue
       sub_dockerfile_dirs+=("$d")
-    done < <(find "$repo" -mindepth 2 -maxdepth 3 -name 'Dockerfile' 2>/dev/null | sort -u)
+    done < <(find "$repo" -mindepth 2 -maxdepth 3 \( -name 'Dockerfile' -o -name 'Containerfile' \) 2>/dev/null | sort -u)
     if [[ ${#sub_dockerfile_dirs[@]} -ge 2 ]]; then
       paths=("${sub_dockerfile_dirs[@]}")
     fi

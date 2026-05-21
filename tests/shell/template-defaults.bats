@@ -119,3 +119,21 @@ atom_default() {
   a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build.yml" "sbom")
   [ "$t" = "$a" ] || { echo "tmpl=$t atom=$a"; false; }
 }
+
+@test "SK_SIGN template default matches docker-build-multi atom default" {
+  t=$(template_default "$RELEASE_TMPL" "SK_SIGN")
+  a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build-multi.yml" "sign")
+  [ "$t" = "$a" ] || { echo "tmpl=$t multi-atom=$a"; false; }
+}
+
+@test "SK_ATTEST template default matches docker-build-multi atom default" {
+  t=$(template_default "$RELEASE_TMPL" "SK_ATTEST")
+  a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build-multi.yml" "attest")
+  [ "$t" = "$a" ] || { echo "tmpl=$t multi-atom=$a"; false; }
+}
+
+@test "SK_SBOM template default matches docker-build-multi atom default" {
+  t=$(template_default "$RELEASE_TMPL" "SK_SBOM")
+  a=$(atom_default "$REPO_ROOT/.github/workflows/docker-build-multi.yml" "sbom")
+  [ "$t" = "$a" ] || { echo "tmpl=$t multi-atom=$a"; false; }
+}
