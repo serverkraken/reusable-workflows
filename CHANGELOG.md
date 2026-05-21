@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.5.0](https://github.com/serverkraken/reusable-workflows/compare/v3.4.0...v3.5.0) (2026-05-21)
+
+
+### Features
+
+* **atom:** cgo_enabled toggle for lint-go + test-go ([#69](https://github.com/serverkraken/reusable-workflows/issues/69)) ([d8a4143](https://github.com/serverkraken/reusable-workflows/commit/d8a41438dc65f961bb003da6132fac0f40435d92))
+* **onboard:** auto-enable code_security on private adopters ([#70](https://github.com/serverkraken/reusable-workflows/issues/70)) ([0d64ce9](https://github.com/serverkraken/reusable-workflows/commit/0d64ce91c62e6b16e7b8bd5c02f4dd8f151a7e92))
+
 ## [3.4.0](https://github.com/serverkraken/reusable-workflows/compare/v3.3.8...v3.4.0) (2026-05-21)
 
 
