@@ -43,8 +43,16 @@ jobs:
 {{- $ctxPath := $c.path -}}
 {{- $isRoot := eq $c.path "." -}}
 
-{{- if eq (len $c.dockerfiles) 1 }}
-{{- $df := index $c.dockerfiles 0 }}
+{{- /* Filter to release-eligible Dockerfiles only — non-eligible variants (Dockerfile.dev, Dockerfile.debug, …) ship in prerelease.yml only. */ -}}
+{{- $releaseDfs := coll.Slice -}}
+{{- range $c.dockerfiles -}}
+  {{- if .release_eligible -}}
+    {{- $releaseDfs = coll.Append . $releaseDfs -}}
+  {{- end -}}
+{{- end -}}
+
+{{- if eq (len $releaseDfs) 1 }}
+{{- $df := index $releaseDfs 0 }}
   docker-build{{ $suffix }}:
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
@@ -59,11 +67,11 @@ jobs:
       image_name: {{ $df.image_name }}
       tag: {{`${{ needs.release-please.outputs.tag_name }}`}}
     secrets: inherit
-{{- else if gt (len $c.dockerfiles) 1 -}}
+{{- else if gt (len $releaseDfs) 1 -}}
 {{/* Translate profile.json's dockerfiles[{path, image_name, ...}] into the
      docker-build-multi atom's expected shape: [{dockerfile, image_name}]. */}}
 {{- $images := coll.Slice -}}
-{{- range $c.dockerfiles -}}
+{{- range $releaseDfs -}}
   {{- $images = coll.Append (coll.Dict "dockerfile" .path "image_name" .image_name) $images -}}
 {{- end }}
   docker-build{{ $suffix }}:

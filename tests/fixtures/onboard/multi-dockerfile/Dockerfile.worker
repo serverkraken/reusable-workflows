@@ -1,3 +1,4 @@
 # onboard:image=custom-worker
+# onboard:release=true
 FROM scratch
 COPY Dockerfile.worker /
