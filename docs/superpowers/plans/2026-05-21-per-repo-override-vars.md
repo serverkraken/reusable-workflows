@@ -343,7 +343,7 @@ Locate `{{- else if eq $c.primary_language "rust" }}` in `ci.yml.tmpl`. Replace 
     with:
       working_directory: {{ $c.path }}
       rust_toolchain: {{`${{ vars.SK_RUST_TOOLCHAIN || '' }}`}}
-      clippy_args: {{`${{ vars.SK_CLIPPY_ARGS || '' }}`}}
+      clippy_args: {{`${{ vars.SK_CLIPPY_ARGS || '-D warnings' }}`}}
     secrets: inherit
   test-rust-{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/test-rust.yml@{{ $pin }}
@@ -386,7 +386,7 @@ Must contain:
   }')
   grep -qF "rust_toolchain: \${{ vars.SK_RUST_TOOLCHAIN || '' }}" "$rendered"
   grep -qF "cargo_llvm_cov_version: \${{ vars.SK_CARGO_LLVM_COV_VERSION || 'v0.6.16' }}" "$rendered"
-  grep -qF "clippy_args: \${{ vars.SK_CLIPPY_ARGS || '' }}" "$rendered"
+  grep -qF "clippy_args: \${{ vars.SK_CLIPPY_ARGS || '-D warnings' }}" "$rendered"
 }
 ```
 

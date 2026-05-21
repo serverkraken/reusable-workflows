@@ -73,11 +73,16 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-rust.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
+      rust_toolchain: {{`${{ vars.SK_RUST_TOOLCHAIN || '' }}`}}
+      clippy_args: {{`${{ vars.SK_CLIPPY_ARGS || '-D warnings' }}`}}
     secrets: inherit
   test-rust-{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/test-rust.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
+      rust_toolchain: {{`${{ vars.SK_RUST_TOOLCHAIN || '' }}`}}
+      coverage_threshold: {{`${{ vars.SK_COVERAGE_THRESHOLD || '80' }}`}}
+      cargo_llvm_cov_version: {{`${{ vars.SK_CARGO_LLVM_COV_VERSION || 'v0.6.16' }}`}}
     secrets: inherit
 {{- else if eq $c.primary_language "helm" }}
   lint-helm-{{ $suffix }}:

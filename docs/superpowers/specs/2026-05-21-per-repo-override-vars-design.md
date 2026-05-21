@@ -38,7 +38,7 @@ The initial PR exposes the following variables. Variable names use the `SK_` pre
 | `SK_PYTHON_VERSION` | `python_version` | lint-python, test-python | `''` (atom reads from `pyproject.toml`) | string |
 | `SK_RUST_TOOLCHAIN` | `rust_toolchain` | lint-rust, test-rust | `''` (atom reads from `rust-toolchain.toml`) | string |
 | `SK_GOLANGCI_LINT_VERSION` | `golangci_lint_version` | lint-go | `'v2.12.2'` (mirror of atom default; Renovate-tracked) | string |
-| `SK_CLIPPY_ARGS` | `clippy_args` | lint-rust | `''` (atom default is empty too) | string |
+| `SK_CLIPPY_ARGS` | `clippy_args` | lint-rust | `'-D warnings'` (mirror of atom default) | string |
 | `SK_CARGO_LLVM_COV_VERSION` | `cargo_llvm_cov_version` | test-rust | `'v0.6.16'` (mirror of atom default; Renovate-tracked) | string |
 | `SK_TRIVY_SEVERITY` | `severity` | trivy-fs, trivy-image | `'HIGH,CRITICAL'` | string |
 | `SK_TRIVY_VERSION` | `trivy_version` | trivy-fs, trivy-image | `''` (delegates to `install-trivy` composite's own default) | string |

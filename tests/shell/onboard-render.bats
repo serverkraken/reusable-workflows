@@ -284,6 +284,25 @@ render_ci_for_profile() {
   diff -u "$BATS_TEST_DIRNAME/golden/ci/single-rust.yml" "$rendered"
 }
 
+@test "ci.yml emits SK_* override expressions for Rust test atom" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["rust"], "primary_language": "rust",
+      "release_please_type": "rust", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"$REPO","image_name_source":"derived"}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  # rust_toolchain appears in BOTH lint-rust and test-rust — enforce count=2
+  # so a regression that drops it from one block fails the test.
+  grep -cF "rust_toolchain: \${{ vars.SK_RUST_TOOLCHAIN || '' }}" "$rendered" | grep -qx 2
+  # Other three SK_* vars appear in exactly one job each — presence check is sufficient.
+  grep -qF "cargo_llvm_cov_version: \${{ vars.SK_CARGO_LLVM_COV_VERSION || 'v0.6.16' }}" "$rendered"
+  grep -qF "clippy_args: \${{ vars.SK_CLIPPY_ARGS || '-D warnings' }}" "$rendered"
+  grep -qF "coverage_threshold: \${{ vars.SK_COVERAGE_THRESHOLD || '80' }}" "$rendered"
+}
+
 @test "ci.yml renders lint job for a single helm component (no test-helm)" {
   rendered=$(render_ci_for_profile '{
     "schema_version": 1, "target_repo": "serverkraken/svc",
