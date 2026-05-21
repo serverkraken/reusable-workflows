@@ -232,3 +232,33 @@ Per-language lint and test atoms callable via `workflow_call`. Each atom accepts
 | `lint-helm.yml`       | `helm lint` + `ct lint`                            |
 
 The test atoms expose a `coverage_threshold` input (default `80`) so consumers can tighten or loosen the gate per repo. The Python atoms reuse the `actions/setup-python-deps` composite to auto-detect Poetry / uv / pip-bare project layouts.
+
+## Per-Adopter Overrides via Repository Variables
+
+The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a small set of tunable inputs from **GitHub repository variables**. Adopters set them at `Settings → Secrets and variables → Actions → Variables tab → New repository variable`. The override is picked up at the next CI run — no code change, no PR, no re-onboarding.
+
+> **Variables, not Secrets.** GitHub's Settings UI has two adjacent tabs. The override mechanism reads from the *Variables* tab. A value created in *Secrets* will not resolve via `vars.*` and the template default will silently apply.
+
+| Variable | Atom Input | Atoms Affected | Default | Type |
+|---|---|---|---|---|
+| `SK_COVERAGE_THRESHOLD` | `coverage_threshold` | test-go, test-python, test-rust | `80` | number |
+| `SK_CGO_ENABLED` | `cgo_enabled` | lint-go, test-go | profile auto-detect | boolean |
+| `SK_GO_VERSION` | `go_version` | lint-go, test-go | (read from `go.mod`) | string |
+| `SK_PYTHON_VERSION` | `python_version` | lint-python, test-python | (read from `pyproject.toml`) | string |
+| `SK_RUST_TOOLCHAIN` | `rust_toolchain` | lint-rust, test-rust | (rustup default) | string |
+| `SK_GOLANGCI_LINT_VERSION` | `golangci_lint_version` | lint-go | `v2.12.2` | string |
+| `SK_CLIPPY_ARGS` | `clippy_args` | lint-rust | `-D warnings` | string |
+| `SK_CARGO_LLVM_COV_VERSION` | `cargo_llvm_cov_version` | test-rust | `v0.6.16` | string |
+| `SK_TRIVY_SEVERITY` | `severity` | trivy-fs (ci.yml secscan), trivy-image (prerelease scan) | `HIGH,CRITICAL` | string |
+| `SK_TRIVY_VERSION` | `trivy_version` | trivy-fs, trivy-image | (install-trivy default) | string |
+
+**Org-level layering** (catalog maintainers): set a variable at the organization level (`https://github.com/organizations/serverkraken/settings/variables/actions`) to provide an org-wide default. Repo-level values override org-level. A change to the org var propagates to every non-overriding adopter on the next CI run, no re-rendering required.
+
+**`SK_CGO_ENABLED` override-wins semantic:** the onboard render uses an auto-detected boolean from the adopter's Go source / `go.mod` as the template default. Setting `SK_CGO_ENABLED = true` forces cgo on (auto-detect missed a transitive dep); setting `= false` forces it off (false-positive). Either value wins over the profile-derived default.
+
+**What's not in this list and why:**
+
+- `fail_on_findings`, `ignore_unfixed` — change CI semantics, belong in code review.
+- `runs_on` — catalog-side global, not adopter-tunable.
+- `working_directory`, `image_name`, `dockerfile`, `tag`, `prerelease` — per-component or build-derived.
+- `paths_ignore` — multi-line strings, awkward in Variables UI.
