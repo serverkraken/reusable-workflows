@@ -27,6 +27,11 @@ on:
         required: false
         type: number
         default: 80
+      cgo_enabled:
+        description: 'Set CGO_ENABLED=1 (true) or 0 (false). Required true for cgo-dependent packages like go-sqlite3.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -56,6 +61,8 @@ jobs:
 
       - name: go test with coverage
         working-directory: ${{ inputs.working_directory }}
+        env:
+          CGO_ENABLED: ${{ inputs.cgo_enabled && '1' || '0' }}
         run: go test -coverprofile=cover.out -covermode=atomic ./...
 
       - name: Coverage gate
