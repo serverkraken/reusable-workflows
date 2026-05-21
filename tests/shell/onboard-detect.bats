@@ -319,3 +319,39 @@ DOCKER
   echo "$output" | jq -e '.warnings | map(select(.code == "no_lint_test_atom")) | length > 0' >/dev/null
   echo "$output" | jq -e '.warnings[] | select(.code == "no_lint_test_atom") | .primary_language == "node"' >/dev/null
 }
+
+@test "read_release_override reads true from header" {
+  tmpfile=$(mktemp)
+  printf '%s\n' '# Dockerfile' '# onboard:release=true' 'FROM alpine' > "$tmpfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(read_release_override "$tmpfile")
+  rm -f "$tmpfile"
+  [ "$result" = "true" ]
+}
+
+@test "read_release_override reads false from header" {
+  tmpfile=$(mktemp)
+  printf '%s\n' '# Dockerfile' '# onboard:release=false' 'FROM alpine' > "$tmpfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(read_release_override "$tmpfile")
+  rm -f "$tmpfile"
+  [ "$result" = "false" ]
+}
+
+@test "read_release_override emits empty when annotation absent" {
+  tmpfile=$(mktemp)
+  printf '%s\n' 'FROM alpine' 'RUN echo hi' > "$tmpfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(read_release_override "$tmpfile")
+  rm -f "$tmpfile"
+  [ -z "$result" ]
+}
+
+@test "read_release_override ignores annotation beyond line 5" {
+  tmpfile=$(mktemp)
+  printf '%s\n' '1' '2' '3' '4' '5' '# onboard:release=true' 'FROM alpine' > "$tmpfile"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  result=$(read_release_override "$tmpfile")
+  rm -f "$tmpfile"
+  [ -z "$result" ]
+}

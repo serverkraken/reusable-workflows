@@ -346,6 +346,17 @@ read_image_override() {
     | sed 's/^# onboard:image=//' || true
 }
 
+# Read `# onboard:release=true` or `# onboard:release=false` override from
+# the first 5 lines of a Dockerfile. Emits "true", "false", or empty.
+# Signature: read_release_override <file-path>
+read_release_override() {
+  local file="$1"
+  [[ -f "$file" ]] || { echo ""; return; }
+  head -n 5 "$file" 2>/dev/null \
+    | grep -m1 -oE '^# onboard:release=(true|false)' \
+    | sed 's/^# onboard:release=//' || true
+}
+
 # Derive image name from Dockerfile filename and component path.
 #   path="."             Dockerfile          → $REPO
 #   path="."             Dockerfile.worker   → $REPO-worker
