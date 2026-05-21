@@ -108,6 +108,15 @@ setup() {
   echo "$output" | jq -e '.components[0].languages == ["go"]'
   # go-repo fixture has no Dockerfile → role=library
   echo "$output" | jq -e '.components[0].role == "library"'
+  # go-repo has no `import "C"` → cgo:false
+  echo "$output" | jq -e '.components[0].cgo == false'
+}
+
+@test "profile-json: go-cgo fixture has cgo:true" {
+  run "$DETECT" --profile-json "$FIX/go-cgo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "go"'
+  echo "$output" | jq -e '.components[0].cgo == true'
 }
 
 @test "profile-json: default_branch defaults to main when TARGET_REPO unset" {
