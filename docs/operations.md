@@ -163,7 +163,7 @@ The atom callers in `ci.yml`, `prerelease.yml`, and `release.yml` ship with expl
 | Adopter template job | Permissions granted |
 |---|---|
 | `ci.yml :: secscan` | `contents: read`, `security-events: write`, `actions: read` |
-| `prerelease.yml :: build` | `contents: read`, `packages: write`, `id-token: write`, `attestations: write`, `pull-requests: write` |
+| `prerelease.yml :: build` | `contents: read`, `packages: write`, `id-token: write`, `attestations: write`, `artifact-metadata: write`, `pull-requests: write` |
 | `prerelease.yml :: scan` | `contents: read`, `security-events: write`, `packages: read`, `actions: read` |
 | `release.yml :: release` | union of all of the above (orchestrator runs every sub-atom) |
 

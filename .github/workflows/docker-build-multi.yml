@@ -102,6 +102,10 @@ permissions:
   packages: write
   id-token: write
   attestations: write
+  # Workflow-call permission cap rule: this wrapper must declare every
+  # permission the nested docker-build.yml needs. Mirror artifact-metadata
+  # so the nested attest-build-provenance step doesn't get capped down.
+  artifact-metadata: write
   pull-requests: write
 
 concurrency:

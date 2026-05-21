@@ -81,6 +81,10 @@ permissions:
   packages: write
   id-token: write
   attestations: write
+  # actions/attest-build-provenance@v4 additionally writes to GitHub's new
+  # Artifact Metadata storage API. Without this, the attestation itself
+  # still succeeds but a noisy warning is emitted on every release.
+  artifact-metadata: write
   pull-requests: write
 
 concurrency:

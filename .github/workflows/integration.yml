@@ -6,6 +6,21 @@ name: integration
 on:
   pull_request:
 
+# Workflow_call permission cap: the called atoms (docker-build,
+# docker-build-multi, trivy-*) declare what they need. This block has to
+# at minimum mirror the union, otherwise nested permissions are capped
+# down. artifact-metadata is the new one (Anfang 2026) added for
+# attest-build-provenance@v4's metadata persistence path.
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+  security-events: write
+  pull-requests: write
+  actions: read
+
 concurrency:
   group: integration-${{ github.ref }}
   cancel-in-progress: true
