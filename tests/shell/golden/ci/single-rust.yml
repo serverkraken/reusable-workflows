@@ -26,6 +26,6 @@ jobs:
     with:
       working_directory: .
       rust_toolchain: ${{ vars.SK_RUST_TOOLCHAIN || '' }}
-      coverage_threshold: ${{ vars.SK_COVERAGE_THRESHOLD || '80' }}
+      coverage_threshold: ${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}
       cargo_llvm_cov_version: ${{ vars.SK_CARGO_LLVM_COV_VERSION || 'v0.6.16' }}
     secrets: inherit

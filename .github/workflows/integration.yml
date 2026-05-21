@@ -190,8 +190,8 @@ jobs:
     with:
       working_directory: tests/fixtures/minimal-go
       go_version: '1.22'
-      coverage_threshold: ${{ vars.NONEXISTENT_NUMBER_FOR_COERCION_TEST || '70' }}
-      cgo_enabled: ${{ vars.NONEXISTENT_BOOL_FOR_COERCION_TEST || 'false' }}
+      coverage_threshold: ${{ fromJSON(vars.NONEXISTENT_NUMBER_FOR_COERCION_TEST || '70') }}
+      cgo_enabled: ${{ fromJSON(vars.NONEXISTENT_BOOL_FOR_COERCION_TEST || 'false') }}
 
   assert-vars-coercion-ran-numerically:
     needs: test-vars-coercion

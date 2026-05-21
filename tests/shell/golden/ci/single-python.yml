@@ -25,5 +25,5 @@ jobs:
     with:
       working_directory: .
       python_version: ${{ vars.SK_PYTHON_VERSION || '' }}
-      coverage_threshold: ${{ vars.SK_COVERAGE_THRESHOLD || '80' }}
+      coverage_threshold: ${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}
     secrets: inherit

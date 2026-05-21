@@ -20,15 +20,15 @@ jobs:
       working_directory: services/api
       go_version: ${{ vars.SK_GO_VERSION || '' }}
       golangci_lint_version: ${{ vars.SK_GOLANGCI_LINT_VERSION || 'v2.12.2' }}
-      cgo_enabled: ${{ vars.SK_CGO_ENABLED || 'false' }}
+      cgo_enabled: ${{ fromJSON(vars.SK_CGO_ENABLED || 'false') }}
     secrets: inherit
   test-go-services-api:
     uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@v3
     with:
       working_directory: services/api
       go_version: ${{ vars.SK_GO_VERSION || '' }}
-      coverage_threshold: ${{ vars.SK_COVERAGE_THRESHOLD || '80' }}
-      cgo_enabled: ${{ vars.SK_CGO_ENABLED || 'false' }}
+      coverage_threshold: ${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}
+      cgo_enabled: ${{ fromJSON(vars.SK_CGO_ENABLED || 'false') }}
     secrets: inherit
   lint-helm-charts-web:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@v3

@@ -20,13 +20,13 @@ jobs:
       working_directory: .
       go_version: ${{ vars.SK_GO_VERSION || '' }}
       golangci_lint_version: ${{ vars.SK_GOLANGCI_LINT_VERSION || 'v2.12.2' }}
-      cgo_enabled: ${{ vars.SK_CGO_ENABLED || 'true' }}
+      cgo_enabled: ${{ fromJSON(vars.SK_CGO_ENABLED || 'true') }}
     secrets: inherit
   test-go-root:
     uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@v2
     with:
       working_directory: .
       go_version: ${{ vars.SK_GO_VERSION || '' }}
-      coverage_threshold: ${{ vars.SK_COVERAGE_THRESHOLD || '80' }}
-      cgo_enabled: ${{ vars.SK_CGO_ENABLED || 'true' }}
+      coverage_threshold: ${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}
+      cgo_enabled: ${{ fromJSON(vars.SK_CGO_ENABLED || 'true') }}
     secrets: inherit

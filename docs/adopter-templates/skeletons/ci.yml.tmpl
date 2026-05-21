@@ -44,9 +44,9 @@ jobs:
       go_version: {{`${{ vars.SK_GO_VERSION || '' }}`}}
       golangci_lint_version: {{`${{ vars.SK_GOLANGCI_LINT_VERSION || 'v2.12.2' }}`}}
     {{- if index $c "cgo" }}
-      cgo_enabled: {{`${{ vars.SK_CGO_ENABLED || 'true' }}`}}
+      cgo_enabled: {{`${{ fromJSON(vars.SK_CGO_ENABLED || 'true') }}`}}
     {{- else }}
-      cgo_enabled: {{`${{ vars.SK_CGO_ENABLED || 'false' }}`}}
+      cgo_enabled: {{`${{ fromJSON(vars.SK_CGO_ENABLED || 'false') }}`}}
     {{- end }}
     secrets: inherit
   test-go-{{ $suffix }}:
@@ -54,11 +54,11 @@ jobs:
     with:
       working_directory: {{ $c.path }}
       go_version: {{`${{ vars.SK_GO_VERSION || '' }}`}}
-      coverage_threshold: {{`${{ vars.SK_COVERAGE_THRESHOLD || '80' }}`}}
+      coverage_threshold: {{`${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}`}}
     {{- if index $c "cgo" }}
-      cgo_enabled: {{`${{ vars.SK_CGO_ENABLED || 'true' }}`}}
+      cgo_enabled: {{`${{ fromJSON(vars.SK_CGO_ENABLED || 'true') }}`}}
     {{- else }}
-      cgo_enabled: {{`${{ vars.SK_CGO_ENABLED || 'false' }}`}}
+      cgo_enabled: {{`${{ fromJSON(vars.SK_CGO_ENABLED || 'false') }}`}}
     {{- end }}
     secrets: inherit
 {{- else if eq $c.primary_language "python" }}
@@ -73,7 +73,7 @@ jobs:
     with:
       working_directory: {{ $c.path }}
       python_version: {{`${{ vars.SK_PYTHON_VERSION || '' }}`}}
-      coverage_threshold: {{`${{ vars.SK_COVERAGE_THRESHOLD || '80' }}`}}
+      coverage_threshold: {{`${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}`}}
     secrets: inherit
 {{- else if eq $c.primary_language "rust" }}
   lint-rust-{{ $suffix }}:
@@ -88,7 +88,7 @@ jobs:
     with:
       working_directory: {{ $c.path }}
       rust_toolchain: {{`${{ vars.SK_RUST_TOOLCHAIN || '' }}`}}
-      coverage_threshold: {{`${{ vars.SK_COVERAGE_THRESHOLD || '80' }}`}}
+      coverage_threshold: {{`${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}`}}
       cargo_llvm_cov_version: {{`${{ vars.SK_CARGO_LLVM_COV_VERSION || 'v0.6.16' }}`}}
     secrets: inherit
 {{- else if eq $c.primary_language "helm" }}

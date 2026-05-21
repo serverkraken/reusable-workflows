@@ -14,14 +14,15 @@ setup() {
 }
 
 # Args: <template-file> <SK_VAR_NAME>
-# Echoes the literal string between `||` and `}}` for the first match.
+# Echoes the literal string between `||` and the expression close.
+# Supports both bare:    ${{ vars.SK_FOO || '<DEFAULT>' }}
+# and fromJSON-wrapped:  ${{ fromJSON(vars.SK_FOO || '<DEFAULT>') }}
+# In the wrapped form the literal is followed by `)` instead of ` }}`.
 template_default() {
   local file="$1" var="$2"
-  # Match: vars.SK_FOO || '<DEFAULT>' }}
-  # Use a portable POSIX-ish regex via grep -oE.
-  grep -oE "vars\\.${var} \\|\\| '[^']*' \\}\\}" "$file" \
+  grep -oE "vars\\.${var} \\|\\| '[^']*'" "$file" \
     | head -1 \
-    | sed -E "s/.*\\|\\| '([^']*)' \\}\\}/\\1/"
+    | sed -E "s/.*\\|\\| '([^']*)'/\\1/"
 }
 
 # Args: <atom-yaml> <input-name>
