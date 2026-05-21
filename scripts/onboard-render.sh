@@ -82,15 +82,31 @@ fi
 render "$CONFIGS/release-please-manifest.json.tmpl" "$TARGET/.release-please-manifest.json"
 
 # Substitute $REPO placeholder in image names. Detection emits "$REPO-api"
-# style names; the renderer resolves $REPO from target-repo basename.
-REPO_SHORT="${TARGET##*/}"
-if [[ "$REPO_SHORT" == "." || "$REPO_SHORT" == "" ]]; then
-  REPO_SHORT="$(basename "$(pwd)")"
+# style names; the renderer resolves $REPO from the profile's `target_repo`
+# (a full `<owner>/<name>` string) so downstream callers get a fully-qualified
+# GHCR image path like `ghcr.io/serverkraken/skytrack-ui-dev`.
+#
+# Historical note: previously this read `${TARGET##*/}`, the basename of the
+# filesystem checkout path. Under `onboard.yml` that path is literally `target`
+# (see actions/checkout's `path: target` input), so every adopter ended up
+# with `image_name: target-<suffix>` and any release-please-driven build
+# failed at GHCR push with `400 Bad Request` on the malformed image path.
+# The bug was latent until skytrack-ui shipped the first real release that
+# went through docker-build-multi.
+REPO_FULL=$(jq -r '.target_repo // ""' "$PROFILE")
+if [[ -z "$REPO_FULL" || "$REPO_FULL" == "null" ]]; then
+  # Fallback for callers that omit target_repo (e.g. local fixture runs).
+  REPO_FULL="${TARGET##*/}"
+  if [[ "$REPO_FULL" == "." || -z "$REPO_FULL" ]]; then
+    REPO_FULL="$(basename "$(pwd)")"
+  fi
 fi
 for f in "$TARGET/.github/workflows/release.yml" "$TARGET/.github/workflows/prerelease.yml"; do
   if [[ -f "$f" ]] && grep -q '\$REPO' "$f" 2>/dev/null; then
     # macOS/BSD sed -i needs an explicit backup suffix; we delete it after.
-    sed -i.bak "s/\$REPO/${REPO_SHORT}/g" "$f" && rm -f "$f.bak"
+    # $REPO_FULL contains a forward-slash (`owner/name`); use a sed delimiter
+    # that won't collide.
+    sed -i.bak "s|\\\$REPO|${REPO_FULL}|g" "$f" && rm -f "$f.bak"
   fi
 done
 
