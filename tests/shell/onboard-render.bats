@@ -211,7 +211,23 @@ render_ci_for_profile() {
   diff -u "$BATS_TEST_DIRNAME/golden/ci/single-go.yml" "$rendered"
 }
 
-@test "ci.yml emits cgo_enabled: true when component has cgo:true" {
+@test "ci.yml emits SK_* override expressions for Go test atom" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service", "cgo": false,
+      "dockerfiles": [{"path":"Dockerfile","image_name":"$REPO","image_name_source":"derived"}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "coverage_threshold: \${{ vars.SK_COVERAGE_THRESHOLD || '80' }}" "$rendered"
+  grep -cF "go_version: \${{ vars.SK_GO_VERSION || '' }}" "$rendered" | grep -qx 2
+  grep -qF "golangci_lint_version: \${{ vars.SK_GOLANGCI_LINT_VERSION || 'v2.12.2' }}" "$rendered"
+  grep -qF "cgo_enabled: \${{ vars.SK_CGO_ENABLED || 'false' }}" "$rendered"
+}
+
+@test "ci.yml emits SK_CGO_ENABLED || 'true' branch when profile sets cgo:true" {
   rendered=$(render_ci_for_profile '{
     "schema_version": 1, "target_repo": "serverkraken/svc",
     "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
@@ -221,8 +237,8 @@ render_ci_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
     "legacy_ci": [], "warnings": []
   }')
-  # Both lint-go and test-go jobs must opt into CGO_ENABLED=1.
-  grep -c 'cgo_enabled: true' "$rendered" | grep -qx 2
+  # Both lint-go and test-go branches must carry the 'true' fallback.
+  grep -cF "cgo_enabled: \${{ vars.SK_CGO_ENABLED || 'true' }}" "$rendered" | grep -qx 2
 }
 
 @test "ci.yml renders lint+test jobs for a single python component" {
