@@ -8,6 +8,10 @@
                 otherwise    → path with `/` → `-`
   The conditional avoids the naive `replaceAll "." "root"` which would
   mangle paths containing dots (e.g. `services/v2.api`).
+
+  Tunable inputs accept org/repo `vars.SK_*` overrides — see
+  docs/operations.md §Per-Adopter Overrides for the full list and how
+  to set them. The `||` fallbacks below mirror each atom's `default:`.
 */ -}}
 {{- $pin := .pin -}}
 name: ci
