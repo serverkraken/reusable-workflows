@@ -112,10 +112,18 @@ setup() {
   echo "$output" | jq -e '.components[0].cgo == false'
 }
 
-@test "profile-json: go-cgo fixture has cgo:true" {
+@test "profile-json: go-cgo fixture has cgo:true (direct import C)" {
   run "$DETECT" --profile-json "$FIX/go-cgo"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.components[0].primary_language == "go"'
+  echo "$output" | jq -e '.components[0].cgo == true'
+}
+
+@test "profile-json: go-cgo-transitive fixture has cgo:true (go.mod dep)" {
+  # No `import "C"` in adopter source — cgo:true must still come through
+  # because go.mod references a known cgo-via-dep package (go-sqlite3).
+  run "$DETECT" --profile-json "$FIX/go-cgo-transitive"
+  [ "$status" -eq 0 ]
   echo "$output" | jq -e '.components[0].cgo == true'
 }
 
