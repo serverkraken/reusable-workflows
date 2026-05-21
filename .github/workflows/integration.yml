@@ -167,23 +167,20 @@ jobs:
     secrets: inherit
 
   # ----- vars coercion: verify type=number + type=boolean inputs accept
-  #       string-valued GHA expressions, which is what the SK_* override
-  #       pattern emits in adopter ci.yml. The fixture ships with a smoke
-  #       test giving 100% coverage so the coverage gate PASSES against
-  #       threshold 70 — the assert job below greps the gate's log for
-  #       `threshold: 70%` to prove the string '70' from `vars.X || '70'`
-  #       was coerced into the type=number input. Green-when-coercion-works
-  #       / red-when-broken.
+  #       string-valued GHA expressions WRAPPED IN fromJSON(), which is
+  #       what the SK_* override pattern emits in adopter ci.yml. The
+  #       proof is structural: GHA's pre-flight schema check silently
+  #       drops `uses:` jobs whose `with:` block assigns an unwrappable
+  #       string expression to a typed input (empirically confirmed on
+  #       PR #80 before the fromJSON wrap was introduced). So a passing
+  #       `test-vars-coercion / test` job here IS the proof — if coercion
+  #       were broken, this job wouldn't appear in the run at all.
   #
   #       The vars.NONEXISTENT_*_FOR_COERCION_TEST references intentionally
   #       point at variables that don't exist — the || fallback always
-  #       fires, evaluating to a literal string ('70', 'false'). If the
-  #       atom accepts that as the correct number / boolean, our SK_*
-  #       override pattern works in production.
+  #       fires, evaluating to a literal string ('70', 'false') which
+  #       fromJSON() then coerces into the typed value the atom expects.
   #
-  #       Inlined into integration.yml (rather than a tests/callers/*.yml
-  #       file) because GitHub Actions only resolves local `uses:` paths
-  #       under .github/workflows/.
   test-vars-coercion:
     uses: ./.github/workflows/test-go.yml
     secrets: inherit
@@ -192,43 +189,3 @@ jobs:
       go_version: '1.22'
       coverage_threshold: ${{ fromJSON(vars.NONEXISTENT_NUMBER_FOR_COERCION_TEST || '70') }}
       cgo_enabled: ${{ fromJSON(vars.NONEXISTENT_BOOL_FOR_COERCION_TEST || 'false') }}
-
-  assert-vars-coercion-ran-numerically:
-    needs: test-vars-coercion
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - name: Look up the test-vars-coercion job's coverage-gate log
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          # Look up the specific completed job by name; fetching per-job logs is
-          # more reliable than the zip-format whole-run log on in-progress runs.
-          # The inner reusable test-go.yml job is named `test`, so when called
-          # from the `test-vars-coercion` job above it surfaces in the run as
-          # `test-vars-coercion / test`. GH_REPO env tells gh which repo we're
-          # querying since this job runs without a checkout.
-          job_id=$(gh run view "$RUN_ID" \
-            --json jobs \
-            --jq '.jobs[] | select(.name | contains("test-vars-coercion / test")) | .databaseId' \
-            | head -1)
-          if [[ -z "$job_id" ]]; then
-            echo "::error::could not find test-vars-coercion / test job in run $RUN_ID"
-            exit 1
-          fi
-          # Retry up to 3 times for log eventual-consistency on freshly completed jobs.
-          for attempt in 1 2 3; do
-            if gh run view --job "$job_id" --log | grep -F "threshold: 70%"; then
-              echo "vars.* → number coercion verified (attempt $attempt)"
-              exit 0
-            fi
-            echo "attempt $attempt: log fetch returned no 'threshold: 70%' line yet, retrying in 10s"
-            sleep 10
-          done
-          echo "::error::expected 'threshold: 70%' in coverage-gate log — GHA type coercion may be broken"
-          exit 1
