@@ -64,6 +64,21 @@ jobs:
         with:
           go-version: ${{ inputs.go_version }}
 
+      # The serverkraken actions-runner-image does not bake a C toolchain.
+      # Until that's added (separate runner-image PR), install gcc + libc6-dev
+      # on demand for cgo-using adopters. Idempotent: skips when gcc is already
+      # present.
+      - name: Install C build deps (cgo)
+        if: inputs.cgo_enabled
+        run: |
+          set -euo pipefail
+          if command -v gcc >/dev/null 2>&1; then
+            echo "gcc already present at $(command -v gcc) — skipping install"
+            exit 0
+          fi
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc libc6-dev
+
       - name: go vet
         working-directory: ${{ inputs.working_directory }}
         env:
