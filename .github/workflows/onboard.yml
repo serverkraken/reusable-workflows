@@ -129,6 +129,34 @@ jobs:
           owner: ${{ matrix.target.owner }}
           repositories: ${{ matrix.target.name }}
 
+      # Code scanning needs `code_security` enabled on private repos before
+      # SARIF upload works. Public repos get code-scanning for free and don't
+      # have this knob, so we GET visibility first and skip non-private.
+      # `continue-on-error` so a 403 (App permissions not granted/propagated)
+      # doesn't sink the onboard run — adopters with `code_security` already
+      # enabled or a different policy can still onboard, they just won't get
+      # SARIF reports until that's resolved manually.
+      - name: Enable code_security on private targets
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.target-token.outputs.token }}
+          TARGET: ${{ matrix.target.target }}
+        run: |
+          set -euo pipefail
+          visibility=$(gh api "/repos/$TARGET" --jq '.visibility')
+          if [[ "$visibility" != "private" ]]; then
+            echo "Skipping code_security enable for $TARGET (visibility=$visibility)"
+            exit 0
+          fi
+          current=$(gh api "/repos/$TARGET" --jq '.security_and_analysis.code_security.status // "absent"')
+          if [[ "$current" == "enabled" ]]; then
+            echo "code_security already enabled on $TARGET — no-op"
+            exit 0
+          fi
+          echo "Enabling code_security on $TARGET (was $current)"
+          echo '{"security_and_analysis":{"code_security":{"status":"enabled"}}}' \
+            | gh api --method PATCH "/repos/$TARGET" --input - > /dev/null
+
       - name: Checkout target repo
         uses: actions/checkout@v6
         with:
