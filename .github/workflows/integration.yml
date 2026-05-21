@@ -12,6 +12,12 @@ concurrency:
 
 jobs:
   # ----- docker-build happy path -----
+  # Happy path exercises sign + attest + sbom end-to-end so the catalog
+  # itself verifies cosign works on the runner pool. Until 2026-05-20 the
+  # ARC runner image lacked gettext-base/envsubst (cosign-installer prereq)
+  # and these were forced false. The custom actions-runner-image cutover
+  # bakes gettext-base, so flipping these true also serves as the proof
+  # that downstream repos (actions-runner-image, etc.) can run sign:true.
   test-docker-build:
     uses: ./.github/workflows/docker-build.yml
     secrets: inherit
@@ -21,8 +27,8 @@ jobs:
       context: tests/fixtures/minimal-go
       dockerfile: tests/fixtures/minimal-go/Dockerfile
       image_name: ${{ github.repository }}/test-fixture
-      sign: false
-      attest: false
+      sign: true
+      attest: true
       sbom: true
 
   # ----- trivy-image happy path (no findings against clean fixture) -----
