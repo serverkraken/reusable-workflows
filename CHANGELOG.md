@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.0](https://github.com/serverkraken/reusable-workflows/compare/v3.3.8...v3.4.0) (2026-05-21)
+
+
+### Features
+
+* **atom:** release.yml passthrough sign/attest/sbom to docker-build ([#67](https://github.com/serverkraken/reusable-workflows/issues/67)) ([88c5213](https://github.com/serverkraken/reusable-workflows/commit/88c5213bb323790299a709385b126ef4edca9588))
+
 ## [3.3.8](https://github.com/serverkraken/reusable-workflows/compare/v3.3.7...v3.3.8) (2026-05-20)
 
 
