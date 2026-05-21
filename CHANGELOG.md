@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.10.0](https://github.com/serverkraken/reusable-workflows/compare/v3.9.1...v3.10.0) (2026-05-21)
+
+
+### Features
+
+* **onboard:** release-eligibility per Dockerfile + SK_SIGN/SK_ATTEST/SK_SBOM vars ([#84](https://github.com/serverkraken/reusable-workflows/issues/84)) ([ea8371d](https://github.com/serverkraken/reusable-workflows/commit/ea8371d64fa13f4a6cb010140d18245a34044cfe))
+
 ## [3.9.1](https://github.com/serverkraken/reusable-workflows/compare/v3.9.0...v3.9.1) (2026-05-21)
 
 
