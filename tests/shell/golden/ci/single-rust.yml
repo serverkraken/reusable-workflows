@@ -9,6 +9,9 @@ jobs:
       contents: read
       security-events: write
       actions: read
+    with:
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
     secrets: inherit
 
   lint-rust-root:

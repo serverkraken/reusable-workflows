@@ -348,3 +348,16 @@ render_ci_for_profile() {
   }')
   diff -u "$BATS_TEST_DIRNAME/golden/ci/unsupported-node.yml" "$rendered"
 }
+
+@test "ci.yml secscan wires SK_TRIVY_SEVERITY and SK_TRIVY_VERSION" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [], "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "severity: \${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}" "$rendered"
+  grep -qF "trivy_version: \${{ vars.SK_TRIVY_VERSION || '' }}" "$rendered"
+}
