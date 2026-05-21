@@ -23,6 +23,10 @@ jobs:
         # yet know about `client-id` on actions/create-github-app-token@v3
         # (only `app-id`). Ignore the two specific messages until upstream
         # refreshes — runtime is fine, only the lint metadata is stale.
+        #
+        # Per-path ignores for the type-coercion smoke caller and integration.yml's
+        # `continue-on-error` on a reusable-workflow `uses:` job live in
+        # .github/actionlint.yaml so they only apply to those specific files.
         run: |
           bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
       - name: Run actionlint

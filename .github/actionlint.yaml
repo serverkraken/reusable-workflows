@@ -1,0 +1,21 @@
+# .github/actionlint.yaml — per-path lint suppressions.
+#
+# Use this instead of broad CLI -ignore flags whenever the suppression
+# is rooted in a specific known file, so a future bug in OTHER files
+# still surfaces normally.
+self-hosted-runner:
+  labels: []
+config-variables: null
+paths:
+  .github/workflows/integration.yml:
+    ignore:
+      # The `test-vars-coercion` job in integration.yml proves GHA coerces
+      # a string-valued vars.* fallback into the type=number `coverage_threshold`
+      # input. actionlint 1.7.12 doesn't know about this coercion and flags
+      # it as a type error. Scoping the ignore to this single file keeps
+      # the protection active for every other caller / production workflow.
+      #
+      # GitHub Actions only resolves local `uses:` paths under
+      # .github/workflows/, so the coercion job lives inlined here rather
+      # than in a tests/callers/*.yml file.
+      - 'input "coverage_threshold" is typed as number by reusable workflow'
