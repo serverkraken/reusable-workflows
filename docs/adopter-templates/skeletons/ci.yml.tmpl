@@ -34,11 +34,17 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-go.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
+    {{- if index $c "cgo" }}
+      cgo_enabled: true
+    {{- end }}
     secrets: inherit
   test-go-{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/test-go.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
+    {{- if index $c "cgo" }}
+      cgo_enabled: true
+    {{- end }}
     secrets: inherit
 {{- else if eq $c.primary_language "python" }}
   lint-python-{{ $suffix }}:

@@ -203,12 +203,13 @@ detect_components() {
 
   local arr='[]'
   for p in "${unique[@]}"; do
-    local langs role dockerfiles primary signals
+    local langs role dockerfiles primary signals cgo
     langs=$(detect_languages "$repo" "$p")
     dockerfiles=$(inventory_dockerfiles "$repo" "$p")
     role=$(detect_role "$repo" "$p" "$dockerfiles")
     primary=$(echo "$langs" | jq -r '.[0] // "generic"')
     signals=$(detect_release_signals "$repo" "$p")
+    cgo=$(detect_cgo "$repo" "$p" "$primary")
 
     arr=$(echo "$arr" | jq \
       --arg path "$p" \
@@ -217,6 +218,7 @@ detect_components() {
       --arg role "$role" \
       --argjson dockerfiles "$dockerfiles" \
       --argjson signals "$signals" \
+      --argjson cgo "$cgo" \
       '. + [{
         path: $path,
         languages: $languages,
@@ -224,10 +226,30 @@ detect_components() {
         release_please_type: $primary,
         role: $role,
         dockerfiles: $dockerfiles,
-        release_signals: $signals
+        release_signals: $signals,
+        cgo: $cgo
       }]')
   done
   echo "$arr"
+}
+
+# Signature: detect_cgo <repo> <path> <primary_language>
+# Emits "true" if any *.go file under the component imports cgo (`import "C"`),
+# "false" otherwise. Non-go components always return "false". Adopters with
+# cgo-dependent packages (e.g. mattn/go-sqlite3) need CGO_ENABLED=1 in lint/test
+# atoms; this lets ci.yml.tmpl set it without per-adopter manual overrides.
+detect_cgo() {
+  local repo="$1" path="$2" primary="$3"
+  [[ "$primary" == "go" ]] || { echo false; return; }
+  local p="$repo/$path"
+  # Match `import "C"` as a standalone import or inside a parenthesized import
+  # block. Whitespace-tolerant; ignores commented lines. -q exits on first hit.
+  if grep -rqE '^[[:space:]]*"C"[[:space:]]*$|^[[:space:]]*import[[:space:]]+"C"' \
+       --include='*.go' "$p" 2>/dev/null; then
+    echo true
+  else
+    echo false
+  fi
 }
 
 detect_languages() {

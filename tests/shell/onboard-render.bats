@@ -172,6 +172,7 @@ golden_check() {
 }
 
 @test "golden: go-repo"                { golden_check "go-repo"; }
+@test "golden: go-cgo"                 { golden_check "go-cgo"; }
 @test "golden: multi-dockerfile"       { golden_check "multi-dockerfile"; }
 @test "golden: library-go"             { golden_check "library-go"; }
 @test "golden: cli-go-with-goreleaser" { golden_check "cli-go-with-goreleaser"; }
@@ -207,6 +208,20 @@ render_ci_for_profile() {
     "legacy_ci": [], "warnings": []
   }')
   diff -u "$BATS_TEST_DIRNAME/golden/ci/single-go.yml" "$rendered"
+}
+
+@test "ci.yml emits cgo_enabled: true when component has cgo:true" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service", "cgo": true,
+      "dockerfiles": [{"path":"Dockerfile","image_name":"$REPO","image_name_source":"derived"}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  # Both lint-go and test-go jobs must opt into CGO_ENABLED=1.
+  grep -c 'cgo_enabled: true' "$rendered" | grep -qx 2
 }
 
 @test "ci.yml renders lint+test jobs for a single python component" {
