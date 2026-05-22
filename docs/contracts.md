@@ -143,6 +143,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `runs_on`                       | string  | no       | `'["self-hosted","Linux","low-performance"]'` | JSON-encoded runner labels |
 | input   | `release_please_config`         | string  | no       | `'release-please-config.json'`            | Path to release-please config |
 | input   | `release_please_manifest`       | string  | no       | `'.release-please-manifest.json'`         | Path to release-please manifest |
+| input   | `dry_run`                       | boolean | no       | `false`                                   | When true, run release-please without creating PRs/releases or moving floating tags (integration-test use only) |
 | secret  | `release_please_app_client_id`  | —       | yes      | —                                         | GitHub App Client ID (e.g. `Iv23li…`) |
 | secret  | `release_please_app_private_key`| —       | yes      | —                                         | PEM-formatted App private key |
 | output  | `release_created`               | string  | —        | —                                         | `'true'` when a release was created |
@@ -238,6 +239,10 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `context`                       | string  | no       | `'.'`                        | Pass-through to docker-build |
 | input   | `platforms`                     | string  | no       | `'linux/amd64,linux/arm64'`  | Pass-through to docker-build |
 | input   | `trivy_severity`                | string  | no       | `'HIGH,CRITICAL'`            | Pass-through to trivy-image |
+| input   | `image_name`                    | string  | no       | `''`                                            | Pass-through to docker-build (default: caller repo) |
+| input   | `runs_on_amd64`                 | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | Pass-through to docker-build (amd64 build job) |
+| input   | `runs_on_arm64`                 | string  | no       | `'["self-hosted","Linux","ARM64"]'`             | Pass-through to docker-build (arm64 build job) |
+| input   | `runs_on_merge`                 | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Pass-through to docker-build (version + merge jobs) |
 | secret  | `release_please_app_client_id`  | —       | yes      | —                            | Pass-through to semantic-release |
 | secret  | `release_please_app_private_key`| —       | yes      | —                            | Pass-through to semantic-release |
 
