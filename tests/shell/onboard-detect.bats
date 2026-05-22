@@ -71,6 +71,7 @@ setup() {
   run "$DETECT" "$FIX/pnpm-workspace"
   [ "$status" -eq 0 ]
   [[ "$output" == *"language=node"* ]]
+  [[ "$output" == *"release_type=node"* ]]
 }
 
 @test "pnpm-workspace --profile-json includes all glob-expanded members" {
