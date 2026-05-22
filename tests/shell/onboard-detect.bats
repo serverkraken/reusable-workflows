@@ -496,3 +496,41 @@ DOCKER
   rm -f "$out"
   [ "$extracted" = "$payload" ]
 }
+
+@test "current_version=0.0.0 when target_repo has no releases (gh returns \"null\")" {
+  # gh release list --json tagName -q '.[0].tagName' on an empty list returns
+  # the literal string "null" (exit 0). The script must treat that as no
+  # release found and keep the 0.0.0 default.
+  GH_MOCK=$(mktemp -d)
+  cat > "$GH_MOCK/gh" <<'GHEOF'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "api /repos/owner/repo") echo "main" ;;
+  "release list")          echo "null" ;;
+  *) echo "::error::unexpected gh call: $*" >&2; exit 1 ;;
+esac
+GHEOF
+  chmod +x "$GH_MOCK/gh"
+  PATH="$GH_MOCK:$PATH" TARGET_REPO=owner/repo GH_TOKEN=stub run "$DETECT" "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"current_version=0.0.0"* ]]
+  [[ "$output" != *"current_version=null"* ]]
+  rm -rf "$GH_MOCK"
+}
+
+@test "profile-json: current_version=0.0.0 for repo with no releases" {
+  GH_MOCK=$(mktemp -d)
+  cat > "$GH_MOCK/gh" <<'GHEOF'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "api /repos/owner/repo") echo "main" ;;
+  "release list")          echo "null" ;;
+  *) exit 1 ;;
+esac
+GHEOF
+  chmod +x "$GH_MOCK/gh"
+  PATH="$GH_MOCK:$PATH" TARGET_REPO=owner/repo GH_TOKEN=stub run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq -r '.current_version')" = "0.0.0" ]
+  rm -rf "$GH_MOCK"
+}
