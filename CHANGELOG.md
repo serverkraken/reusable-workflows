@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.11.0](https://github.com/serverkraken/reusable-workflows/compare/v3.10.2...v3.11.0) (2026-05-22)
+
+
+### Features
+
+* **semantic-release:** add dry_run input + integration coverage ([#96](https://github.com/serverkraken/reusable-workflows/issues/96)) ([45c4d7a](https://github.com/serverkraken/reusable-workflows/commit/45c4d7a853e1061bf9cd82a36a9b248ff707971a))
+
+
+### Refactors
+
+* **docs:** remove static adopter templates, pivot README to onboard.yml ([#94](https://github.com/serverkraken/reusable-workflows/issues/94)) ([46bd653](https://github.com/serverkraken/reusable-workflows/commit/46bd6530678d0d0aab49cbfb692f59bac87d41f9))
+
+
+### Documentation
+
+* phase 3 documentation drift cleanup ([#97](https://github.com/serverkraken/reusable-workflows/issues/97)) ([40d269c](https://github.com/serverkraken/reusable-workflows/commit/40d269c20fcca5c6e2d7e8bbfecb13aa75c68eb7))
+* **plan:** phase 2b test coverage expansion implementation plan ([49e1803](https://github.com/serverkraken/reusable-workflows/commit/49e1803a54527a40f7403e710ee4e4a5092e40b6))
+* **plan:** phase 2c adopter-template cleanup implementation plan ([c87b4ed](https://github.com/serverkraken/reusable-workflows/commit/c87b4edfb369e23166c45c18c88048f4bf6ebe1e))
+* **spec:** phase 2b test coverage expansion design ([86f06a0](https://github.com/serverkraken/reusable-workflows/commit/86f06a0b2d96d693a8745e8cef3e1e296bccd603))
+* **spec:** phase 2c adopter-template cleanup design ([60b8579](https://github.com/serverkraken/reusable-workflows/commit/60b8579b57b438a9ff76fdf4675905dda12e65dd))
+
 ## [3.10.2](https://github.com/serverkraken/reusable-workflows/compare/v3.10.1...v3.10.2) (2026-05-22)
 
 
