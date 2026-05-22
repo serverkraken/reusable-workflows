@@ -87,8 +87,8 @@ jobs:
         #
         # Self-CI (caller == catalog): use the caller's SHA — it IS a catalog
         # commit and exercises any feature-branch composite-action changes.
-        # Cross-repo (adopters): pin to the floating major tag `v2` so
-        # adopters at @v2.x.y always get coherent v2 composite actions.
+        # Cross-repo (adopters): pin to the floating major tag `v3` so
+        # adopters at @v3.x.y always get coherent v3 composite actions.
         # Bump the hardcoded major in this block when a new major releases.
         id: catalog-ref
         env:

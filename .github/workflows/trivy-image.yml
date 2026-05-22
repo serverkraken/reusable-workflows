@@ -76,7 +76,7 @@ jobs:
           owner: serverkraken
           repositories: reusable-workflows
       - name: Resolve catalog ref
-        # See trivy-fs.yml for rationale. Self-CI: caller's SHA. Cross-repo: floating v2.
+        # See trivy-fs.yml for rationale. Self-CI: caller's SHA. Cross-repo: floating v3.
         id: catalog-ref
         env:
           IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
