@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # onboard-detect.sh — detect target repo language + version.
 #
-# Two modes:
+# Three modes:
 #   onboard-detect.sh <repo-path> [language-override]
 #     → emits key=value lines (language, release_type, current_version, default_branch)
 #       LEGACY format consumed by onboard.yml's add-PR step. Kept for back-compat.
@@ -9,6 +9,12 @@
 #   onboard-detect.sh --profile-json <repo-path>
 #     → emits a JSON profile (schema_version + components + signals + legacy_ci + warnings)
 #       NEW format consumed by the gomplate-based renderer in Phase 3.
+#
+#   onboard-detect.sh --emit-both <repo-path> [language-override]
+#     → emits BOTH the legacy key=value lines AND a profile_json<<DELIM
+#       multiline block in a single invocation. Used by the onboard-detect
+#       composite action to halve gh-api roundtrips. Output is
+#       GITHUB_OUTPUT-compatible — callers redirect to $GITHUB_OUTPUT directly.
 #
 # When TARGET_REPO env is set, both modes call `gh` for default_branch and latest release.
 # When unset (local/test mode), emits defaults: current_version=0.0.0, default_branch=main.
