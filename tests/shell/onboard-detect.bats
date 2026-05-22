@@ -67,6 +67,20 @@ setup() {
   [[ "$output" == *"release_type=node"* ]]
 }
 
+@test "detects node pnpm-workspace" {
+  run "$DETECT" "$FIX/pnpm-workspace"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=node"* ]]
+}
+
+@test "pnpm-workspace --profile-json includes all glob-expanded members" {
+  run "$DETECT" --profile-json "$FIX/pnpm-workspace"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"apps/web"* ]]
+  [[ "$output" == *"apps/api"* ]]
+  [[ "$output" == *"packages/shared"* ]]
+}
+
 @test "falls back to simple when no signals" {
   run "$DETECT" "$FIX/simple"
   [ "$status" -eq 0 ]
