@@ -67,6 +67,7 @@ jobs:
           if [[ "$IS_SELF_CI" == "true" ]]; then
             echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
           else
+            # renovate-marker: catalog-major-ref
             echo "ref=v3" >> "$GITHUB_OUTPUT"
           fi
       - name: Checkout catalog (for composite actions)

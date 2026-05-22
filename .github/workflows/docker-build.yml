@@ -121,7 +121,8 @@ jobs:
           if [[ "$IS_SELF_CI" == "true" ]]; then
             echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=v2" >> "$GITHUB_OUTPUT"
+            # renovate-marker: catalog-major-ref
+            echo "ref=v3" >> "$GITHUB_OUTPUT"
           fi
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
@@ -217,7 +218,8 @@ jobs:
           if [[ "$IS_SELF_CI" == "true" ]]; then
             echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=v2" >> "$GITHUB_OUTPUT"
+            # renovate-marker: catalog-major-ref
+            echo "ref=v3" >> "$GITHUB_OUTPUT"
           fi
       - name: Checkout catalog for composite actions
         if: steps.check.outputs.selected == 'true'
@@ -305,7 +307,8 @@ jobs:
           if [[ "$IS_SELF_CI" == "true" ]]; then
             echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=v2" >> "$GITHUB_OUTPUT"
+            # renovate-marker: catalog-major-ref
+            echo "ref=v3" >> "$GITHUB_OUTPUT"
           fi
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
@@ -452,7 +455,8 @@ jobs:
           if [[ "$IS_SELF_CI" == "true" ]]; then
             echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=v2" >> "$GITHUB_OUTPUT"
+            # renovate-marker: catalog-major-ref
+            echo "ref=v3" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@v6
         with:
