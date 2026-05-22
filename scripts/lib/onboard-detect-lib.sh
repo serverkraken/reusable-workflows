@@ -30,10 +30,14 @@ SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm'
 emit_profile_json() {
   local repo="$1"
   local target_repo="${TARGET_REPO:-}"
-  local default_branch="main"
-  local current_version="0.0.0"
+  local default_branch="${OVERRIDE_DEFAULT_BRANCH:-main}"
+  local current_version="${OVERRIDE_CURRENT_VERSION:-0.0.0}"
 
-  if [[ -n "$target_repo" ]]; then
+  # OVERRIDE_DEFAULT_BRANCH and OVERRIDE_CURRENT_VERSION are set by the
+  # --emit-both dispatch path so we can skip a second gh-api roundtrip; when
+  # called via --profile-json (legacy callers), they are unset and we do the
+  # lookups ourselves.
+  if [[ -z "${OVERRIDE_DEFAULT_BRANCH:-}" && -n "$target_repo" ]]; then
     default_branch=$(gh api "/repos/$target_repo" -q '.default_branch' 2>/dev/null || echo "main")
     local tag
     tag=$(gh release list --repo "$target_repo" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
