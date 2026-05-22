@@ -493,5 +493,6 @@ DOCKER
   delim="EOF_$(head -c 16 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 16)"
   { echo "profile_json<<${delim}"; echo "$payload"; echo "${delim}"; } > "$out"
   extracted=$(awk -v d="$delim" '$0==("profile_json<<"d){f=1;next} $0==d{f=0;next} f' "$out")
+  rm -f "$out"
   [ "$extracted" = "$payload" ]
 }
