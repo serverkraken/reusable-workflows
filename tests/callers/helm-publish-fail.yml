@@ -1,14 +1,17 @@
 # tests/callers/helm-publish-fail.yml
 # Failure-path caller for helm-publish.yml. Points the atom at a chart
-# fixture whose Chart.yaml is missing the required `version` field, so
-# `helm lint` (Helm v3) exits non-zero. Triggered only via
-# workflow_dispatch so this run does NOT execute on every PR — it
-# always fails by design and is invoked manually (or by an
-# integration-test orchestrator) to confirm the atom surfaces lint
-# errors correctly.
+# fixture whose Chart.yaml lacks the required `version` field, forcing
+# `helm lint` to exit non-zero. The assert-helm-publish-fail sibling
+# job verifies the atom failed as expected. Auto-fires on path-filtered
+# PRs.
 name: caller-helm-publish-fail
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/helm-publish.yml'
+      - 'tests/callers/helm-publish-fail.yml'
+      - 'tests/fixtures/helm-broken/**'
 
 jobs:
   test-helm-publish-fail:
@@ -18,3 +21,18 @@ jobs:
       chart_path: tests/fixtures/helm-broken
       oci_registry: ghcr.io/serverkraken/test
       dry_run: true
+
+  assert-helm-publish-fail:
+    needs: test-helm-publish-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-helm-publish-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected helm-publish to fail for broken Chart.yaml, got result=$RESULT"
+            exit 1
+          fi
+          echo "helm-publish correctly failed for broken Chart.yaml"
