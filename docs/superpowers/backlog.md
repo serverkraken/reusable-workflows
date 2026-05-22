@@ -2,17 +2,6 @@
 
 Spec-Kandidaten, die aus laufenden Brainstorms bewusst ausgeklammert wurden. Jeder Eintrag ist ein potenzieller eigener Spec — Reihenfolge ist nicht festgelegt.
 
-## Lint- und Test-Atoms (Sprach-spezifisch)
-
-Reusable workflows pro Sprache und Anliegen:
-`lint-go.yml`, `lint-python.yml`, `lint-rust.yml`, `lint-helm.yml`,
-`test-go.yml`, `test-python.yml`, `test-rust.yml`.
-
-- **Warum ausgeklammert:** Mischt Template-Rendering mit Sprach-Toolchain-Wissen (golangci-lint, ruff, mypy, clippy, pytest, cargo-llvm-cov). Verdoppelt jeden Onboarding-Spec, dem es zugeschlagen wird.
-- **Scope eines Folge-Specs:** ein Atom pro Sprache, jeweils mit Coverage-Threshold-Input (Default 90). Vorlagen: `serverkraken/blupod-ui` (Python), `serverkraken/flow` (Go). Adopter-Templates referenzieren die Atoms aus `ci.yml`.
-- **Abhängigkeiten:** Keine. Kann parallel zur Smarter-Onboarding-Arbeit laufen.
-- **Referenzen aus existierenden Specs:** `2026-05-16-reusable-workflows-design.md` § "Out of Scope (future specs)", `2026-05-16-onboarding-workflow-design.md` § "Out of scope (future)".
-
 ## Repo-Hygiene-Bootstrapping
 
 Während des Onboardings zusätzlich setzen:
