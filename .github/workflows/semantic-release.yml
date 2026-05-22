@@ -86,7 +86,7 @@ jobs:
       - name: Move floating major/minor tags
         id: float
         if: |
-          !inputs.dry_run &&
+          inputs.dry_run == false &&
           steps.release.outputs.release_created == 'true' &&
           !contains(steps.release.outputs.tag_name, '-')
         env:
@@ -109,7 +109,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Job summary
-        if: steps.release.outputs.release_created == 'true'
+        if: |
+          inputs.dry_run == false &&
+          steps.release.outputs.release_created == 'true'
         env:
           TAG: ${{ steps.release.outputs.tag_name }}
           MAJ: ${{ steps.float.outputs.major_tag }}
