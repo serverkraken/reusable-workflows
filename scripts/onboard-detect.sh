@@ -90,7 +90,9 @@ if [[ -n "${TARGET_REPO:-}" ]]; then
   # version, not a prerelease tag like 0.14.2-pre.<sha>. Prereleases as the manifest
   # baseline confuse release-please's version-bump math on the next release.
   raw_tag=$(gh release list --repo "$TARGET_REPO" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
-  if [[ -n "$raw_tag" ]]; then
+  # jq -q '.[0].tagName' returns the literal string "null" (exit 0) when the
+  # release list is empty. Treat "null" as no-release-found and keep current_version=0.0.0.
+  if [[ -n "$raw_tag" && "$raw_tag" != "null" ]]; then
     current_version="${raw_tag#v}"
   fi
 fi

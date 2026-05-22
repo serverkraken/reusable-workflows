@@ -37,7 +37,8 @@ emit_profile_json() {
     default_branch=$(gh api "/repos/$target_repo" -q '.default_branch' 2>/dev/null || echo "main")
     local tag
     tag=$(gh release list --repo "$target_repo" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
-    [[ -n "$tag" ]] && current_version="${tag#v}"
+    # See onboard-detect.sh: "null" sentinel guard against empty release list.
+    [[ -n "$tag" && "$tag" != "null" ]] && current_version="${tag#v}"
   fi
 
   local components
