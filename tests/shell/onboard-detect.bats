@@ -39,6 +39,20 @@ setup() {
   [[ "$output" == *"release_type=rust"* ]]
 }
 
+@test "detects rust cargo-workspace" {
+  run "$DETECT" "$FIX/cargo-workspace"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=rust"* ]]
+  [[ "$output" == *"release_type=rust"* ]]
+}
+
+@test "cargo-workspace --profile-json emits both member paths" {
+  run "$DETECT" --profile-json "$FIX/cargo-workspace"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pkg-a"* ]]
+  [[ "$output" == *"pkg-b"* ]]
+}
+
 @test "detects helm from Chart.yaml" {
   run "$DETECT" "$FIX/helm-chart"
   [ "$status" -eq 0 ]
@@ -51,6 +65,21 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"language=node"* ]]
   [[ "$output" == *"release_type=node"* ]]
+}
+
+@test "detects node pnpm-workspace" {
+  run "$DETECT" "$FIX/pnpm-workspace"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=node"* ]]
+  [[ "$output" == *"release_type=node"* ]]
+}
+
+@test "pnpm-workspace --profile-json includes all glob-expanded members" {
+  run "$DETECT" --profile-json "$FIX/pnpm-workspace"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"apps/web"* ]]
+  [[ "$output" == *"apps/api"* ]]
+  [[ "$output" == *"packages/shared"* ]]
 }
 
 @test "falls back to simple when no signals" {
