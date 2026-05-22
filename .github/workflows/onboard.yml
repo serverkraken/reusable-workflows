@@ -22,8 +22,9 @@ on:
         type: boolean
         default: false
       # pin_version: Catalog @version that rendered templates pin to.
-      # When a new catalog major releases, bump this default and the matching
-      # one in the workflow_call inputs block below.
+      # When a new catalog major releases, bump this default, the matching
+      # one in the workflow_call inputs block below, AND the ${PIN_VERSION:-vN}
+      # fallback in the "Update docs/onboarding-status.md" step further below.
       pin_version:
         description: 'Catalog @version that rendered templates pin to'
         required: false
@@ -598,7 +599,7 @@ jobs:
             [[ -n "$pb" ]] && pb_md="[PR]($pb)"
 
             today=$(date -u +%Y-%m-%d)
-            new_row="| $target | $today | ${PIN_VERSION:-v1} | $pa_md | $pb_md | $status |"
+            new_row="| $target | $today | ${PIN_VERSION:-v3} | $pa_md | $pb_md | $status |"
 
             # Replace existing row (matched by exact "| <target> |" at line start) or append.
             awk -v tgt="$target" -v row="$new_row" '
