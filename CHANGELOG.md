@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.10.2](https://github.com/serverkraken/reusable-workflows/compare/v3.10.1...v3.10.2) (2026-05-22)
+
+
+### Bug Fixes
+
+* **docker-build,trivy:** bump cross-repo catalog ref to v3 ([#90](https://github.com/serverkraken/reusable-workflows/issues/90)) ([72549dc](https://github.com/serverkraken/reusable-workflows/commit/72549dcd56780c991ffc0d96f020fc63c317f194))
+* **onboard:** default pin_version to v3 (current major) ([#92](https://github.com/serverkraken/reusable-workflows/issues/92)) ([9263712](https://github.com/serverkraken/reusable-workflows/commit/92637128d97502bbe0d7e61560758e9fcb032dcc))
+* **release:** add cross-repo-ready permissions and passthrough inputs ([#91](https://github.com/serverkraken/reusable-workflows/issues/91)) ([6e71fa2](https://github.com/serverkraken/reusable-workflows/commit/6e71fa230b24320f1abb6b3512ee9bb19e07dbdd))
+
+
+### Documentation
+
+* **plan:** phase 2a quick-win hardening implementation plan ([6de87c1](https://github.com/serverkraken/reusable-workflows/commit/6de87c118bcb6a93146f5199e26f8676e205053d))
+* **spec:** phase 2a quick-win hardening design ([b9ec68b](https://github.com/serverkraken/reusable-workflows/commit/b9ec68b35ed19dc3746c34b4d11e6946afaf2be8))
+
 ## [3.10.1](https://github.com/serverkraken/reusable-workflows/compare/v3.10.0...v3.10.1) (2026-05-22)
 
 
