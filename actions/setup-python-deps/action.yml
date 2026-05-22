@@ -6,7 +6,11 @@
 #   outputs.run_prefix  command prefix to invoke project tools:
 #                       'poetry run' | 'uv run' | '' (pip paths run tools directly)
 #
-# Probe order: poetry.lock > uv.lock > pyproject.toml[project.optional-dependencies.dev] > requirements.txt.
+# Probe order (content first, lockfile as fallback):
+#   [tool.poetry] in pyproject.toml  → poetry
+#   uv.lock present  OR  [tool.uv] in pyproject.toml  → uv
+#   [project.optional-dependencies].dev in pyproject.toml  → pip-dev
+#   requirements.txt  → pip-bare
 # Hard error if none of the above is present.
 name: setup-python-deps
 description: Detect Python package manager and install deps for lint/test atoms.

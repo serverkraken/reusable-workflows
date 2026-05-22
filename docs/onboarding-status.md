@@ -6,8 +6,6 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 
 | Repository | Onboarded | Catalog Version | Add PR | Cleanup PR | Status |
 |---|---|---|---|---|---|
-
-(The table is intentionally empty here. Run the seed script locally — described in `docs/operations.md` §5 — to populate the rows.)
 | serverkraken/blupod-ui | 2026-05-21 | v3 | [PR](https://github.com/serverkraken/blupod-ui/pull/27) | — | add-open, no-legacy |
 | serverkraken/flow | 2026-05-21 | v3 | [PR](https://github.com/serverkraken/flow/pull/22) | — | add-open, no-legacy |
 | serverkraken/skytrack-ui | 2026-05-21 | v3 | [PR](https://github.com/serverkraken/skytrack-ui/pull/25) | — | add-open, no-legacy |
