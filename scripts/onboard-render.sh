@@ -127,15 +127,20 @@ RENDERED=(
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-files_json='{}'
+files_entries=()
 for f in "${RENDERED[@]}"; do
   if [[ ! -f "$TARGET/$f" ]]; then
     echo "::error::expected rendered file missing: $f" >&2
     exit 1
   fi
   sha=$(sha256_of "$TARGET/$f")
-  files_json=$(echo "$files_json" | jq --arg k "$f" --arg v "sha256:$sha" '. + {($k): $v}')
+  files_entries+=("$(jq -nc --arg k "$f" --arg v "sha256:$sha" '{($k): $v}')")
 done
+if [[ ${#files_entries[@]} -eq 0 ]]; then
+  files_json='{}'
+else
+  files_json=$(printf '%s\n' "${files_entries[@]}" | jq -cs 'add')
+fi
 
 jq -n \
   --argjson schema_version 1 \
