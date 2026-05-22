@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.11.1](https://github.com/serverkraken/reusable-workflows/compare/v3.11.0...v3.11.1) (2026-05-22)
+
+
+### Documentation
+
+* **plan:** phase 3 documentation drift cleanup implementation plan ([7ceeff8](https://github.com/serverkraken/reusable-workflows/commit/7ceeff8179f954105196255dbfeb876a8b704570))
+* **spec:** phase 3 documentation drift cleanup design ([5797736](https://github.com/serverkraken/reusable-workflows/commit/579773651fa5051ed77a08a3492ab0352dec7eda))
+
 ## [3.11.0](https://github.com/serverkraken/reusable-workflows/compare/v3.10.2...v3.11.0) (2026-05-22)
 
 
