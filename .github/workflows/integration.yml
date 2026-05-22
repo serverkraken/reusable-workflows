@@ -7,18 +7,21 @@ on:
   pull_request:
 
 # Workflow_call permission cap: the called atoms (docker-build,
-# docker-build-multi, trivy-*) declare what they need. This block has to
-# at minimum mirror the union, otherwise nested permissions are capped
-# down. artifact-metadata is the new one (Anfang 2026) added for
-# attest-build-provenance@v4's metadata persistence path.
+# docker-build-multi, trivy-*, semantic-release) declare what they need.
+# This block has to at minimum mirror the union, otherwise nested
+# permissions are capped down. artifact-metadata was added Anfang 2026
+# for attest-build-provenance@v4's metadata persistence path.
+# contents:write + issues:write are needed by semantic-release (added
+# 2026-05-22 with the test-semantic-release-dry-run integration job).
 permissions:
-  contents: read
+  contents: write
   packages: write
   id-token: write
   attestations: write
   artifact-metadata: write
   security-events: write
   pull-requests: write
+  issues: write
   actions: read
 
 concurrency:
