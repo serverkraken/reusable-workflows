@@ -481,3 +481,17 @@ DOCKER
   echo "$output" | jq -e '.components | length == 1' >/dev/null
   echo "$output" | jq -e '.components[0].path == "."' >/dev/null
 }
+
+@test "GITHUB_OUTPUT multiline block survives payload containing literal EOF" {
+  # Mirrors the random-delimiter pattern from actions/onboard-detect/action.yml.
+  # If the action used a fixed "EOF" delimiter, a payload line equal to "EOF"
+  # would terminate the multi-line block early and the rest would be parsed
+  # as a new key=value assignment. This test guards against that regression
+  # by running the delimiter generation + extraction in isolation.
+  payload=$'{"a":"line1"\nEOF\n"b":"line3"}'
+  out=$(mktemp)
+  delim="EOF_$(head -c 16 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 16)"
+  { echo "profile_json<<${delim}"; echo "$payload"; echo "${delim}"; } > "$out"
+  extracted=$(awk -v d="$delim" '$0==("profile_json<<"d){f=1;next} $0==d{f=0;next} f' "$out")
+  [ "$extracted" = "$payload" ]
+}
