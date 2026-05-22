@@ -21,11 +21,14 @@ on:
         required: false
         type: boolean
         default: false
+      # pin_version: Catalog @version that rendered templates pin to.
+      # When a new catalog major releases, bump this default and the matching
+      # one in the workflow_call inputs block below.
       pin_version:
         description: 'Catalog @version that rendered templates pin to'
         required: false
         type: string
-        default: v1
+        default: v3
       add_branch_name:
         description: 'Branch for PR A (add new workflows)'
         required: false
@@ -52,7 +55,7 @@ on:
       pin_version:
         required: false
         type: string
-        default: v1
+        default: v3
       add_branch_name:
         required: false
         type: string
