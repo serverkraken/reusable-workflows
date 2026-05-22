@@ -294,6 +294,7 @@ These are not intended for external consumption — they exist to factor `onboar
 | output | `release_type` | string | — | — | release-please release-type (1:1 with language for V1) |
 | output | `current_version` | string | — | — | Current version (no leading `v`); `0.0.0` if no release found |
 | output | `default_branch` | string | — | — | Default branch of `target_repo` |
+| output | `profile_json` | string | — | — | Full structured detection profile (JSON-encoded) |
 
 ### `actions/onboard-render`
 
@@ -301,6 +302,15 @@ These are not intended for external consumption — they exist to factor `onboar
 |---|---|---|---|---|---|
 | input | `catalog_path` | string | yes | — | Path to checked-out catalog repo |
 | input | `target_path` | string | yes | — | Path to checked-out target repo (rendered files written here) |
-| input | `release_type` | string | yes | — | release-please release-type |
-| input | `current_version` | string | yes | — | Current version, no leading `v` |
+| input | `profile_json` | string | yes | — | Detection profile JSON from `onboard-detect` (forwarded as multi-line input) |
 | input | `pin_version` | string | no | `'v1'` | Catalog `@version` to pin rendered templates to |
+
+### `actions/onboard-drift`
+
+| Kind | Name | Type | Required | Default | Description |
+|---|---|---|---|---|---|
+| input | `target_path` | string | yes | — | Path to checked-out adopter repo (contains `.github/onboard.lock.json`) |
+| input | `current_version` | string | yes | — | Current catalog major (e.g. `v3`) used to compute `behind`/`clean` |
+| output | `status` | string | — | — | One of `clean` / `modified` / `behind` / `behind+modified` / `no-lock` |
+| output | `modified` | string | — | — | Comma-separated list of paths whose hash differs from lock (or has the `(missing)` suffix) |
+| output | `lock_version` | string | — | — | `catalog_version` field from `.github/onboard.lock.json` (empty when `no-lock`) |
