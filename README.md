@@ -88,7 +88,7 @@ This catalog uses [Semantic Versioning](https://semver.org/) driven by [release-
 
 ## Workflow contracts
 
-The complete input/output/secret schema of every reusable workflow is documented in the [design spec](docs/superpowers/specs/2026-05-16-reusable-workflows-design.md) §4.
+The complete input/output/secret schema of every reusable workflow and composite action is documented in [`docs/contracts.md`](docs/contracts.md).
 
 ## Atomic workflows (advanced)
 
@@ -112,9 +112,9 @@ jobs:
 | `trivy-fs.yml`            | filesystem vuln/secret/misconfig scan              |
 | `cleanup-images.yml`      | GHCR retention                                     |
 | `lint-go.yml`             | `go vet` + golangci-lint                           |
-| `test-go.yml`             | `go test` + coverage gate (default ≥ 90 %)         |
+| `test-go.yml`             | `go test` + coverage gate (default ≥ 80 %)         |
 | `lint-python.yml`         | ruff check + format + mypy (poetry/uv/pip auto)    |
-| `test-python.yml`         | pytest + coverage gate ≥ 90 % (poetry/uv/pip auto) |
+| `test-python.yml`         | pytest + coverage gate ≥ 80 % (poetry/uv/pip auto) |
 | `lint-rust.yml`           | `cargo fmt --check` + `cargo clippy -D warnings`   |
 | `test-rust.yml`           | `cargo test` + `cargo-llvm-cov` coverage gate      |
 | `lint-helm.yml`           | `helm lint` + `ct lint`                            |
@@ -129,6 +129,7 @@ Reusable sub-steps used internally by the atoms. Available for advanced consumer
 | `actions/ghcr-login`                   | GHCR login wrapper                         |
 | `actions/compute-prerelease-tag`       | OCI-valid tag from branch + short SHA      |
 | `actions/post-prerelease-comment`      | Idempotent PR comment with pull command    |
+| `actions/setup-python-deps`            | Detect Python package manager (poetry/uv/pip-dev/pip-bare) + install deps |
 
 ## Operations
 
