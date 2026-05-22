@@ -156,6 +156,20 @@ jobs:
       prerelease_age_days: 365
       runs_on: '["ubuntu-latest"]'
 
+  # ----- semantic-release dry-run: exercise the atom against the catalog's
+  #       own release-please configs WITHOUT mutating remote state.
+  #       skip-github-release + skip-github-pull-request flags on the
+  #       release-please-action prevent PR/release/tag mutations. The
+  #       atom-level !dry_run guard on the "Move floating major/minor tags"
+  #       step prevents the git push --force --tags. So this job exercises
+  #       app-token mint, checkout, release-please logic, and output wiring
+  #       without any production side-effects.
+  test-semantic-release-dry-run:
+    uses: ./.github/workflows/semantic-release.yml
+    secrets: inherit
+    with:
+      dry_run: true
+
   # ----- onboard dry-run: exercise detect + render against the catalog itself -----
   test-onboard-dry-run:
     uses: ./.github/workflows/onboard.yml
