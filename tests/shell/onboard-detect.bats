@@ -39,6 +39,20 @@ setup() {
   [[ "$output" == *"release_type=rust"* ]]
 }
 
+@test "detects rust cargo-workspace" {
+  run "$DETECT" "$FIX/cargo-workspace"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=rust"* ]]
+  [[ "$output" == *"release_type=rust"* ]]
+}
+
+@test "cargo-workspace --profile-json emits both member paths" {
+  run "$DETECT" --profile-json "$FIX/cargo-workspace"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pkg-a"* ]]
+  [[ "$output" == *"pkg-b"* ]]
+}
+
 @test "detects helm from Chart.yaml" {
   run "$DETECT" "$FIX/helm-chart"
   [ "$status" -eq 0 ]
