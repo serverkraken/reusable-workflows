@@ -563,3 +563,33 @@ GHEOF
   [ "$(echo "$output" | jq -r '.current_version')" = "0.0.0" ]
   rm -rf "$GH_MOCK"
 }
+
+@test "--emit-both emits legacy key=value lines AND profile_json block" {
+  run "$DETECT" --emit-both "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=go"* ]]
+  [[ "$output" == *"release_type=go"* ]]
+  [[ "$output" == *"current_version=0.0.0"* ]]
+  [[ "$output" == *"default_branch=main"* ]]
+  [[ "$output" == *"profile_json<<EOF_"* ]]
+}
+
+@test "--emit-both profile_json block contains valid JSON" {
+  run "$DETECT" --emit-both "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  # Extract the profile_json block content between the delimiter markers.
+  # The first line of the block is "profile_json<<EOF_<hash>"; the closing
+  # marker is "EOF_<hash>" on its own line. We use awk to find both.
+  block=$(echo "$output" | awk '
+    /^profile_json<<EOF_/ {
+      delim = $0
+      sub(/^profile_json<</, "", delim)
+      flag = 1
+      next
+    }
+    flag && $0 == delim { flag = 0; next }
+    flag { print }
+  ')
+  # Validate that the extracted block is valid JSON with the expected schema.
+  echo "$block" | jq -e '.schema_version == 1 and (.components | type == "array")'
+}
