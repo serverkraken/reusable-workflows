@@ -144,8 +144,8 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `release_please_config`         | string  | no       | `'release-please-config.json'`            | Path to release-please config |
 | input   | `release_please_manifest`       | string  | no       | `'.release-please-manifest.json'`         | Path to release-please manifest |
 | input   | `dry_run`                       | boolean | no       | `false`                                   | When true, run release-please without creating PRs/releases or moving floating tags (integration-test use only) |
-| secret  | `release_please_app_client_id`  | —       | yes      | —                                         | GitHub App Client ID (e.g. `Iv23li…`) |
-| secret  | `release_please_app_private_key`| —       | yes      | —                                         | PEM-formatted App private key |
+| secret  | `release_please_app_client_id`  | —       | **yes**  | —                                         | GitHub App Client ID (e.g. `Iv23li…`) |
+| secret  | `release_please_app_private_key`| —       | **yes**  | —                                         | PEM-formatted App private key |
 | output  | `release_created`               | string  | —        | —                                         | `'true'` when a release was created |
 | output  | `tag_name`                      | string  | —        | —                                         | e.g. `'v1.2.3'` |
 | output  | `major_tag`                     | string  | —        | —                                         | e.g. `'v1'` |
@@ -231,20 +231,23 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 
 ### `release.yml`
 
-| Kind    | Name                            | Type    | Required | Default                      | Description |
-|---------|---------------------------------|---------|----------|------------------------------|-------------|
-| input   | `build_image`                   | boolean | no       | `true`                       | `false` → release-only (library repos) |
-| input   | `run_trivy`                     | boolean | no       | `true`                       | Run trivy-image after build (only when `build_image`) |
-| input   | `dockerfile`                    | string  | no       | `'./Dockerfile'`             | Pass-through to docker-build |
-| input   | `context`                       | string  | no       | `'.'`                        | Pass-through to docker-build |
-| input   | `platforms`                     | string  | no       | `'linux/amd64,linux/arm64'`  | Pass-through to docker-build |
-| input   | `trivy_severity`                | string  | no       | `'HIGH,CRITICAL'`            | Pass-through to trivy-image |
+| Kind    | Name                            | Type    | Required | Default                                         | Description |
+|---------|---------------------------------|---------|----------|-------------------------------------------------|-------------|
+| input   | `build_image`                   | boolean | no       | `true`                                          | `false` → release-only (library repos) |
+| input   | `run_trivy`                     | boolean | no       | `true`                                          | Run trivy-image after build (only when `build_image`) |
+| input   | `dockerfile`                    | string  | no       | `'./Dockerfile'`                                | Pass-through to docker-build |
+| input   | `context`                       | string  | no       | `'.'`                                           | Pass-through to docker-build |
+| input   | `platforms`                     | string  | no       | `'linux/amd64,linux/arm64'`                     | Pass-through to docker-build |
+| input   | `sign`                          | boolean | no       | `true`                                          | Pass-through to docker-build (Cosign keyless signing via OIDC) |
+| input   | `attest`                        | boolean | no       | `true`                                          | Pass-through to docker-build (SLSA build provenance attestation) |
+| input   | `sbom`                          | boolean | no       | `true`                                          | Pass-through to docker-build (SPDX-JSON SBOM via Syft) |
+| input   | `trivy_severity`                | string  | no       | `'HIGH,CRITICAL'`                               | Pass-through to trivy-image |
 | input   | `image_name`                    | string  | no       | `''`                                            | Pass-through to docker-build (default: caller repo) |
 | input   | `runs_on_amd64`                 | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | Pass-through to docker-build (amd64 build job) |
 | input   | `runs_on_arm64`                 | string  | no       | `'["self-hosted","Linux","ARM64"]'`             | Pass-through to docker-build (arm64 build job) |
 | input   | `runs_on_merge`                 | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Pass-through to docker-build (version + merge jobs) |
-| secret  | `release_please_app_client_id`  | —       | yes      | —                            | Pass-through to semantic-release |
-| secret  | `release_please_app_private_key`| —       | yes      | —                            | Pass-through to semantic-release |
+| secret  | `release_please_app_client_id`  | —       | **yes**  | —                                               | Pass-through to semantic-release |
+| secret  | `release_please_app_private_key`| —       | **yes**  | —                                               | Pass-through to semantic-release |
 
 ---
 
