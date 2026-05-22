@@ -44,11 +44,44 @@ on:
         required: false
         type: string
         default: 'HIGH,CRITICAL'
+      image_name:
+        description: 'Image name. Default: caller repo (owner/repo). Passed through to docker-build.yml.'
+        required: false
+        type: string
+        default: ''
+      runs_on_amd64:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","performance"]'
+      runs_on_arm64:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","ARM64"]'
+      runs_on_merge:
+        required: false
+        type: string
+        default: '["self-hosted","Linux","low-performance"]'
     secrets:
       release_please_app_client_id:
         required: true
       release_please_app_private_key:
         required: true
+
+permissions:
+  # UNION of nested calls: semantic-release (contents/pull-requests/issues:write),
+  # docker-build (packages/id-token/attestations/artifact-metadata:write +
+  # pull-requests:write), trivy-image (security-events:write + actions/packages:read).
+  # Required so cross-repo callers (`uses: …/release.yml@v3`) don't hit the
+  # strict-intersection permission-ceiling on the nested workflow_call jobs.
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+  pull-requests: write
+  issues: write
+  security-events: write
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -67,12 +100,16 @@ jobs:
     with:
       tag: ${{ needs.semantic-release.outputs.tag_name }}
       prerelease: false
+      image_name: ${{ inputs.image_name }}
       dockerfile: ${{ inputs.dockerfile }}
       context: ${{ inputs.context }}
       platforms: ${{ inputs.platforms }}
       sign: ${{ inputs.sign }}
       attest: ${{ inputs.attest }}
       sbom: ${{ inputs.sbom }}
+      runs_on_amd64: ${{ inputs.runs_on_amd64 }}
+      runs_on_arm64: ${{ inputs.runs_on_arm64 }}
+      runs_on_merge: ${{ inputs.runs_on_merge }}
 
   trivy-image:
     needs: [semantic-release, docker-build]
