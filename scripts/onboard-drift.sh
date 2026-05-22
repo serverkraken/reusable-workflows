@@ -19,6 +19,10 @@
 #   current_version=<value from env>      absent when env unset
 set -euo pipefail
 
+# Resolve script directory so we can source siblings even when called via $PATH.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/hash-lib.sh"
+
 TARGET="${1:-}"
 CATALOG="${2:-}"
 CURRENT="${CATALOG_CURRENT_VERSION:-}"
@@ -48,7 +52,7 @@ while IFS= read -r f; do
     continue
   fi
   expected=$(jq -r --arg k "$f" '.files[$k]' "$LOCK")
-  actual="sha256:$(sha256sum "$TARGET/$f" | cut -d' ' -f1)"
+  actual="sha256:$(sha256_of "$TARGET/$f")"
   [[ "$expected" != "$actual" ]] && modified_files+=("$f")
 done < <(jq -r '.files | keys[]' "$LOCK")
 
