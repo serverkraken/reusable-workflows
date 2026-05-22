@@ -14,6 +14,10 @@
 
 set -euo pipefail
 
+# Resolve script directory so we can source siblings even when called via $PATH.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/hash-lib.sh"
+
 if [[ $# -lt 4 ]]; then
   echo "::error::usage: $0 <catalog> <target> <profile-json-path> <pin-version>" >&2
   exit 2
@@ -122,15 +126,6 @@ RENDERED=(
 )
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-# Use sha256sum on Linux, shasum -a 256 on macOS.
-sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | cut -d' ' -f1
-  else
-    shasum -a 256 "$1" | cut -d' ' -f1
-  fi
-}
 
 files_json='{}'
 for f in "${RENDERED[@]}"; do

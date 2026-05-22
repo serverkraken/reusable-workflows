@@ -19,6 +19,8 @@ setup() {
   RENDER="$REPO_ROOT/scripts/onboard-render.sh"
   FIX="$REPO_ROOT/tests/fixtures/onboard"
 
+  source "$REPO_ROOT/scripts/lib/hash-lib.sh"
+
   TARGET=$(mktemp -d)
   profile=$("$DETECT" --profile-json "$FIX/go-repo")
   echo "$profile" > "$TARGET/profile.json"
@@ -87,7 +89,7 @@ teardown() {
   "$RENDER" "$REPO_ROOT" "$re" "$re/profile.json" "v3"
   for f in $(jq -r 'keys[]' <<< "$before"); do
     expected=$(jq -r --arg k "$f" '.[$k]' <<< "$before")
-    actual="sha256:$(sha256sum "$re/$f" | cut -d' ' -f1)"
+    actual="sha256:$(sha256_of "$re/$f")"
     [ "$expected" = "$actual" ]
   done
   rm -rf "$re"
