@@ -28,6 +28,7 @@ permissions:
 jobs:
   enumerate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       matrix: ${{ steps.enum.outputs.matrix }}
       current_version: ${{ steps.ver.outputs.current_version }}
@@ -84,6 +85,7 @@ jobs:
     needs: enumerate
     if: needs.enumerate.outputs.matrix != '[]'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     strategy:
@@ -156,6 +158,7 @@ jobs:
     needs: [enumerate, check]
     if: always() && needs.enumerate.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Mint App token for catalog repo
         id: cat-token

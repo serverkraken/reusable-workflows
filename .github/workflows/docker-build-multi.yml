@@ -117,6 +117,7 @@ concurrency:
 jobs:
   parse:
     runs-on: ${{ fromJSON(inputs.runs_on_parse) }}
+    timeout-minutes: 60
     outputs:
       matrix: ${{ steps.build.outputs.matrix }}
     steps:

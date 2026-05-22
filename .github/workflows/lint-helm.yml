@@ -42,6 +42,7 @@ concurrency:
 jobs:
   lint:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:

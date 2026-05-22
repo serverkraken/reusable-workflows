@@ -63,6 +63,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 20
     outputs:
       findings_count: ${{ steps.count.outputs.findings_count }}
     steps:
