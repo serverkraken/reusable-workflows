@@ -4,22 +4,50 @@ Versioned, tested catalog of GitHub Actions reusable workflows for the `serverkr
 
 ## Quick start (adopters)
 
-**Prerequisites** (one-time per repo):
+**Prerequisite** (one-time per repo):
 
-1. `release-please-config.json` in repo root (see [release-please docs](https://github.com/googleapis/release-please) for `release-type` per language).
-2. `.release-please-manifest.json` in repo root with initial version, e.g. `{ ".": "0.0.0" }`.
-3. The `serverkraken-release-bot` GitHub App must be installed on the repo (org-wide install handles this automatically).
+- The `serverkraken-release-bot` GitHub App must be installed on the repo
+  (org-wide install handles this automatically). No per-repo secret setup —
+  `secrets: inherit` reaches the org-level App secrets.
 
-**Then** copy templates from [`docs/adopter-templates/`](docs/adopter-templates/) into `.github/workflows/` of your repo:
+**Then** dispatch the onboarding workflow from this catalog repo's Actions tab:
 
-| Template          | Trigger              | Purpose                                              |
-|-------------------|----------------------|------------------------------------------------------|
-| `release.yml`     | push → main          | Full release pipeline (release-please → image build → trivy) |
-| `ci.yml`          | pull_request         | PR-time security scan (trivy-fs)                     |
-| `prerelease.yml`  | workflow_dispatch    | Manual image build from a feature branch             |
-| `cleanup.yml`     | weekly cron          | GHCR retention                                       |
+1. Open [`onboard.yml`](.github/workflows/onboard.yml) in the catalog's
+   Actions tab.
+2. Click "Run workflow" and set `target_repos: owner/repo` (comma-separated
+   for multiple). Leave other inputs at their defaults.
+3. Onboarding produces two PRs in the target repo:
+   **PR-A** adds the rendered workflows + `.github/onboard.lock.json` +
+   release-please configs; **PR-B** removes any superseded legacy workflows.
+4. Merge PR-A. Push a `feat:`/`fix:` commit. release-please opens a release
+   PR. Merge it → image build + trivy scan + release run automatically.
 
-That's the complete onboarding. No per-repo secret setup — `secrets: inherit` reaches the org-level App secrets.
+See [`docs/operations.md`](docs/operations.md) §5 for the full onboarding
+contract and operator-facing knobs.
+
+### What gets rendered
+
+The onboarding renders 4 workflows in `.github/workflows/` of the target
+repo, pinned to `@v3` (the current catalog major). The skeleton sources are
+the canonical reference for what each contains:
+
+- [`ci.yml.tmpl`](docs/adopter-templates/skeletons/ci.yml.tmpl) — lint + test + trivy-fs (pull_request)
+- [`release.yml.tmpl`](docs/adopter-templates/skeletons/release.yml.tmpl) — release-please → image build → trivy-image (push → main)
+- [`prerelease.yml.tmpl`](docs/adopter-templates/skeletons/prerelease.yml.tmpl) — manual image build (workflow_dispatch)
+- [`cleanup.yml.tmpl`](docs/adopter-templates/skeletons/cleanup.yml.tmpl) — GHCR retention (weekly cron)
+
+All four expose `SK_*` repo/org variables for per-adopter overrides — see
+the rendered files for the full list, or [`docs/contracts.md`](docs/contracts.md)
+for the upstream workflow input schemas.
+
+### Manual setup (advanced)
+
+If the onboarding workflow doesn't fit (target repo outside the
+serverkraken org, GitHub App not installed, etc.), compose the atoms
+directly. See [`docs/contracts.md`](docs/contracts.md) for each workflow's
+input/output/secret schema and the
+[`docs/adopter-templates/skeletons/`](docs/adopter-templates/skeletons/)
+directory for reference renders that you can adapt by hand.
 
 ## What it does
 
