@@ -518,7 +518,7 @@ GHEOF
   rm -rf "$GH_MOCK"
 }
 
-@test "profile_json: current_version=0.0.0 for repo with no releases" {
+@test "profile-json: current_version=0.0.0 for repo with no releases" {
   GH_MOCK=$(mktemp -d)
   cat > "$GH_MOCK/gh" <<'GHEOF'
 #!/usr/bin/env bash
