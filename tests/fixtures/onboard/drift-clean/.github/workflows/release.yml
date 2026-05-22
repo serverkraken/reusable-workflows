@@ -1,0 +1,22 @@
+name: release
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+  security-events: write
+  actions: read
+
+jobs:
+  release-please:
+    uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v3
+    secrets: inherit
+
+
