@@ -392,9 +392,7 @@ inventory_dockerfiles() {
 read_image_override() {
   local file="$1"
   [[ -f "$file" ]] || { echo ""; return; }
-  head -n 5 "$file" 2>/dev/null \
-    | grep -m1 -oE '^# onboard:image=[A-Za-z0-9._/-]+' \
-    | sed 's/^# onboard:image=//' || true
+  awk '/^# onboard:image=[A-Za-z0-9._\/-]+/{sub(/^# onboard:image=/,""); print; exit} NR>5{exit}' "$file"
 }
 
 # Read `# onboard:release=true` or `# onboard:release=false` override from
