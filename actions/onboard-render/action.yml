@@ -22,14 +22,19 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    - id: render
+      shell: bash
+      env:
+        CATALOG_PATH: ${{ inputs.catalog_path }}
+        TARGET_PATH: ${{ inputs.target_path }}
+        PROFILE_JSON: ${{ inputs.profile_json }}
+        PIN_VERSION: ${{ inputs.pin_version }}
       run: |
         set -euo pipefail
+        # Inputs are passed via env so the shell never re-parses them. printf
+        # avoids echo's backslash-interpretation surprises on bash.
         tmp=$(mktemp -d)
-        echo '${{ inputs.profile_json }}' > "$tmp/profile.json"
-        "${{ inputs.catalog_path }}/scripts/onboard-render.sh" \
-          "${{ inputs.catalog_path }}" \
-          "${{ inputs.target_path }}" \
-          "$tmp/profile.json" \
-          "${{ inputs.pin_version }}"
-        rm -rf "$tmp"
+        trap 'rm -rf "$tmp"' EXIT
+        printf '%s' "$PROFILE_JSON" > "$tmp/profile.json"
+        "$CATALOG_PATH/scripts/onboard-render.sh" \
+          "$CATALOG_PATH" "$TARGET_PATH" "$tmp/profile.json" "$PIN_VERSION"

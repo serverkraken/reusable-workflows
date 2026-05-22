@@ -38,21 +38,22 @@ runs:
       env:
         TARGET_REPO: ${{ inputs.target_repo }}
         GH_TOKEN: ${{ inputs.github_token }}
+        REPO_PATH: ${{ inputs.repo_path }}
+        LANG_OVERRIDE: ${{ inputs.language_override }}
       run: |
         set -euo pipefail
-        # The action lives in actions/onboard-detect/action.yml; the script lives in scripts/.
-        # When invoked via the catalog-checkout pattern, $GITHUB_ACTION_PATH is .catalog/actions/onboard-detect/
-        # so ../../scripts/onboard-detect.sh resolves to .catalog/scripts/onboard-detect.sh.
+        # Inputs are passed via env to avoid GHA expression interpolation into
+        # shell text (a single-quote in any input would terminate the quoted
+        # section and inject shell code). Multi-line GITHUB_OUTPUT uses a
+        # random delimiter to prevent collision with a literal "EOF" line in
+        # the payload.
         #
-        # Legacy outputs (existing behavior, unchanged).
+        # The action lives in actions/onboard-detect/action.yml; the script
+        # lives in scripts/. When invoked via the catalog-checkout pattern,
+        # $GITHUB_ACTION_PATH is .catalog/actions/onboard-detect/ so
+        # ../../scripts/onboard-detect.sh resolves to .catalog/scripts/onboard-detect.sh.
         "$GITHUB_ACTION_PATH/../../scripts/onboard-detect.sh" \
-          "${{ inputs.repo_path }}" \
-          "${{ inputs.language_override }}" \
-          >> "$GITHUB_OUTPUT"
-        # Structured profile (new) — emitted via multi-line GH-Actions output syntax.
-        profile=$("$GITHUB_ACTION_PATH/../../scripts/onboard-detect.sh" --profile-json "${{ inputs.repo_path }}")
-        {
-          echo "profile_json<<EOF"
-          echo "$profile"
-          echo "EOF"
-        } >> "$GITHUB_OUTPUT"
+          "$REPO_PATH" "$LANG_OVERRIDE" >> "$GITHUB_OUTPUT"
+        profile=$("$GITHUB_ACTION_PATH/../../scripts/onboard-detect.sh" --profile-json "$REPO_PATH")
+        delim="EOF_$(head -c 16 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 16)"
+        { echo "profile_json<<${delim}"; echo "$profile"; echo "${delim}"; } >> "$GITHUB_OUTPUT"
