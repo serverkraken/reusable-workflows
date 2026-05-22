@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.10.1](https://github.com/serverkraken/reusable-workflows/compare/v3.10.0...v3.10.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* **onboard:** harden composite-action inputs and GITHUB_OUTPUT delimiter ([#86](https://github.com/serverkraken/reusable-workflows/issues/86)) ([b50f27b](https://github.com/serverkraken/reusable-workflows/commit/b50f27b484008b8c278b95938d6ca009836631eb))
+* **onboard:** treat empty gh-release-list as no-release-found ([#87](https://github.com/serverkraken/reusable-workflows/issues/87)) ([fe432da](https://github.com/serverkraken/reusable-workflows/commit/fe432dad9b59be7716db6016943d22d33e07af92))
+
+
+### Refactors
+
+* **onboard:** extract sha256_of helper, fix drift on macOS ([#88](https://github.com/serverkraken/reusable-workflows/issues/88)) ([8ae8998](https://github.com/serverkraken/reusable-workflows/commit/8ae899853cda2340b9a13594d76d8fb71f617125))
+
+
+### Documentation
+
+* **plan:** phase 1 critical fixes implementation plan ([086c721](https://github.com/serverkraken/reusable-workflows/commit/086c721cb45d0486ba1c30338f4c7cd901868f62))
+* **spec:** phase 1 critical fixes design ([9e48a7f](https://github.com/serverkraken/reusable-workflows/commit/9e48a7f70b123eb54b096a28ce862d0dfecb9109))
+
 ## [3.10.0](https://github.com/serverkraken/reusable-workflows/compare/v3.9.1...v3.10.0) (2026-05-21)
 
 
