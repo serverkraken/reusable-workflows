@@ -12,8 +12,8 @@ Versioned, tested catalog of GitHub Actions reusable workflows for the `serverkr
 
 **Then** dispatch the onboarding workflow from this catalog repo's Actions tab:
 
-1. Open [`onboard.yml`](.github/workflows/onboard.yml) in the catalog's
-   Actions tab.
+1. Open the **Actions** tab in the catalog repo and select the
+   **onboard** workflow from the sidebar.
 2. Click "Run workflow" and set `target_repos: owner/repo` (comma-separated
    for multiple). Leave other inputs at their defaults.
 3. Onboarding produces two PRs in the target repo:
@@ -133,7 +133,7 @@ Reusable sub-steps used internally by the atoms. Available for advanced consumer
 ## Operations
 
 - **Setup, secret rotation, App permissions** — [`docs/operations.md`](docs/operations.md) §§1–6, plus spec [§9](docs/superpowers/specs/2026-05-16-reusable-workflows-design.md#9-operational-setup-org-level-one-time).
-- **Onboarding adopters** — dispatch [`onboard.yml`](.github/workflows/onboard.yml) with a comma-separated target list. Renders all 4 adopter workflows + lock file via two PRs (add + cleanup). See [`docs/operations.md`](docs/operations.md) §5.
+- **Onboarding adopters** — dispatch the **onboard** workflow from the catalog's **Actions** tab with a comma-separated target list. Renders all 4 adopter workflows + lock file via two PRs (add + cleanup). See [`docs/operations.md`](docs/operations.md) §5.
 - **Drift audit** — [`drift-check.yml`](.github/workflows/drift-check.yml) runs weekly (Mon 06:00 UTC) and upserts a single rolling `Onboarding Drift Report` issue listing adopters that are `behind`, `modified`, or `no-lock`. See [`docs/operations.md`](docs/operations.md) §7.
 
 ## License
