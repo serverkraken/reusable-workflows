@@ -7,18 +7,21 @@ on:
   pull_request:
 
 # Workflow_call permission cap: the called atoms (docker-build,
-# docker-build-multi, trivy-*) declare what they need. This block has to
-# at minimum mirror the union, otherwise nested permissions are capped
-# down. artifact-metadata is the new one (Anfang 2026) added for
-# attest-build-provenance@v4's metadata persistence path.
+# docker-build-multi, trivy-*, semantic-release) declare what they need.
+# This block has to at minimum mirror the union, otherwise nested
+# permissions are capped down. artifact-metadata was added Anfang 2026
+# for attest-build-provenance@v4's metadata persistence path.
+# contents:write + issues:write are needed by semantic-release (added
+# 2026-05-22 with the test-semantic-release-dry-run integration job).
 permissions:
-  contents: read
+  contents: write
   packages: write
   id-token: write
   attestations: write
   artifact-metadata: write
   security-events: write
   pull-requests: write
+  issues: write
   actions: read
 
 concurrency:
@@ -155,6 +158,20 @@ jobs:
       keep_stable_versions: 1000
       prerelease_age_days: 365
       runs_on: '["ubuntu-latest"]'
+
+  # ----- semantic-release dry-run: exercise the atom against the catalog's
+  #       own release-please configs WITHOUT mutating remote state.
+  #       skip-github-release + skip-github-pull-request flags on the
+  #       release-please-action prevent PR/release/tag mutations. The
+  #       atom-level !dry_run guard on the "Move floating major/minor tags"
+  #       step prevents the git push --force --tags. So this job exercises
+  #       app-token mint, checkout, release-please logic, and output wiring
+  #       without any production side-effects.
+  test-semantic-release-dry-run:
+    uses: ./.github/workflows/semantic-release.yml
+    secrets: inherit
+    with:
+      dry_run: true
 
   # ----- onboard dry-run: exercise detect + render against the catalog itself -----
   test-onboard-dry-run:
