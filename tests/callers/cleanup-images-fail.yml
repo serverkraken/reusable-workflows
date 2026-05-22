@@ -1,0 +1,34 @@
+# tests/callers/cleanup-images-fail.yml
+# Failure-path caller for cleanup-images.yml. Passes runs_on as an empty
+# JSON array; fromJSON yields [], and GHA rejects an empty runner-labels
+# array at runner allocation. The assert-cleanup-images-fail sibling job
+# verifies the atom failed as expected. Auto-fires on path-filtered PRs.
+name: caller-cleanup-images-fail
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/cleanup-images.yml'
+      - 'tests/callers/cleanup-images-fail.yml'
+
+jobs:
+  test-cleanup-images-fail:
+    uses: ./.github/workflows/cleanup-images.yml
+    secrets: inherit
+    with:
+      runs_on: '[]'
+
+  assert-cleanup-images-fail:
+    needs: test-cleanup-images-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-cleanup-images-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected cleanup-images to fail for empty runs_on, got result=$RESULT"
+            exit 1
+          fi
+          echo "cleanup-images correctly failed for empty runs_on"
