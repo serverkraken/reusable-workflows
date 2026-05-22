@@ -15,6 +15,14 @@ on:
         required: false
         type: string
         default: '.release-please-manifest.json'
+      dry_run:
+        description: |
+          When true, run release-please without creating/updating a release PR,
+          creating a GitHub release, or moving floating major/minor tags.
+          Used by integration tests; production callers leave at false.
+        required: false
+        type: boolean
+        default: false
     outputs:
       release_created:
         value: ${{ jobs.release.outputs.release_created }}
@@ -72,10 +80,13 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           config-file: ${{ inputs.release_please_config }}
           manifest-file: ${{ inputs.release_please_manifest }}
+          skip-github-release: ${{ inputs.dry_run }}
+          skip-github-pull-request: ${{ inputs.dry_run }}
 
       - name: Move floating major/minor tags
         id: float
         if: |
+          !inputs.dry_run &&
           steps.release.outputs.release_created == 'true' &&
           !contains(steps.release.outputs.tag_name, '-')
         env:
