@@ -242,7 +242,7 @@ jobs:
           git config user.email "${bot_id}+serverkraken-release-bot[bot]@users.noreply.github.com"
 
           # Target already has rendered files staged (from prior step's "git add -A").
-          # Reset index, then explicitly add only the 6 rendered files.
+          # Reset index, then explicitly add only the 7 rendered files.
           git reset
 
           RENDERED=(
