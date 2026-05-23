@@ -240,7 +240,7 @@ detect_components() {
   fi
 
   # De-duplicate while preserving order
-  declare -A seen=()
+  local -A seen=()
   local unique=()
   local p
   for p in "${paths[@]}"; do
