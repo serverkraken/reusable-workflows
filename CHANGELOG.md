@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.11.2](https://github.com/serverkraken/reusable-workflows/compare/v3.11.1...v3.11.2) (2026-05-23)
+
+
+### Performance
+
+* **onboard:** phase 5 shell-script optimizations (PR-M) ([#102](https://github.com/serverkraken/reusable-workflows/issues/102)) ([cfd0b0b](https://github.com/serverkraken/reusable-workflows/commit/cfd0b0bb0207f2f6c041c14673397f01ba818238))
+* **workflows:** add timeout-minutes to every job (PR-L) ([#101](https://github.com/serverkraken/reusable-workflows/issues/101)) ([0f983cb](https://github.com/serverkraken/reusable-workflows/commit/0f983cb3d95caf7e59eb8693a776d1204b2d5658))
+
 ## [3.11.1](https://github.com/serverkraken/reusable-workflows/compare/v3.11.0...v3.11.1) (2026-05-22)
 
 
