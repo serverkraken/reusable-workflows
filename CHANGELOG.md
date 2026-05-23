@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.11.3](https://github.com/serverkraken/reusable-workflows/compare/v3.11.2...v3.11.3) (2026-05-23)
+
+
+### Bug Fixes
+
+* phase 6 production bug sweep (PR-N) ([#104](https://github.com/serverkraken/reusable-workflows/issues/104)) ([dae7cdb](https://github.com/serverkraken/reusable-workflows/commit/dae7cdba90fc6e40b0f7bdef437e1a7dedc29357))
+
 ## [3.11.2](https://github.com/serverkraken/reusable-workflows/compare/v3.11.1...v3.11.2) (2026-05-23)
 
 
