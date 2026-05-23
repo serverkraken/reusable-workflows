@@ -593,3 +593,15 @@ GHEOF
   # Validate that the extracted block is valid JSON with the expected schema.
   echo "$block" | jq -e '.schema_version == 1 and (.components | type == "array")'
 }
+
+@test "detects go workspace single-entry form" {
+  run "$DETECT" "$FIX/go-work-single"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=go"* ]]
+}
+
+@test "go-work-single --profile-json emits the single member path" {
+  run "$DETECT" --profile-json "$FIX/go-work-single"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"\"svc\""* ]]
+}
