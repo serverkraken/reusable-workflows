@@ -12,6 +12,7 @@ setup() {
   SCRIPT="$REPO_ROOT/scripts/seed-onboarding-status.sh"
   WORK="$(mktemp -d)"
   cd "$WORK"
+  export REPO_ROOT="$WORK"
   mkdir -p docs
 
   # PATH-injected gh mock: emits a fixed list of three repos when invoked
@@ -33,6 +34,7 @@ EOF
 }
 
 teardown() {
+  unset REPO_ROOT
   rm -rf "$WORK"
 }
 

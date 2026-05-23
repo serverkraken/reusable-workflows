@@ -7,7 +7,9 @@
 
 set -euo pipefail
 
-DOC=docs/onboarding-status.md
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+DOC="$REPO_ROOT/docs/onboarding-status.md"
 
 if ! command -v gh >/dev/null; then
   echo "gh CLI required" >&2
