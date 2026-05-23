@@ -139,7 +139,20 @@ detect_components() {
   if [[ -f "$repo/go.work" ]]; then
     while IFS= read -r p; do
       [[ -n "$p" ]] && paths+=("$p")
-    done < <(awk '/^use \(/{flag=1;next}/^\)/{flag=0}flag{gsub(/[()"\t ]/,"");print}' "$repo/go.work" | sed 's|^\./||')
+    done < <(awk '
+      /^use \(/{flag=1; next}
+      /^\)/{flag=0; next}
+      flag {
+        gsub(/[()"\t ]/, "");
+        if ($0 != "") print
+        next
+      }
+      /^use[[:space:]]+[^(]/ {
+        sub(/^use[[:space:]]+/, "");
+        gsub(/["\t ]/, "");
+        print
+      }
+    ' "$repo/go.work" | sed 's|^\./||')
   elif [[ -f "$repo/Cargo.toml" ]] && grep -q '^\[workspace\]' "$repo/Cargo.toml" 2>/dev/null; then
     # Cargo workspace: members = [ "crates/a", "crates/b" ]  (single-line or multi-line)
     while IFS= read -r p; do
@@ -227,7 +240,7 @@ detect_components() {
   fi
 
   # De-duplicate while preserving order
-  declare -A seen=()
+  local -A seen=()
   local unique=()
   local p
   for p in "${paths[@]}"; do

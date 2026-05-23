@@ -64,6 +64,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ inputs.go_version }}
+          cache-dependency-path: ${{ inputs.working_directory }}/go.sum
 
       # The serverkraken actions-runner-image does not bake a C toolchain.
       # Until that's added (separate runner-image PR), install gcc + libc6-dev

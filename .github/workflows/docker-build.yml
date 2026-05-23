@@ -433,7 +433,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   post-comment:
-    if: inputs.prerelease && github.event.pull_request.number != ''
+    if: inputs.prerelease && github.event_name == 'pull_request'
     needs: [version, merge]
     runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
     timeout-minutes: 60

@@ -25,6 +25,7 @@ on:
         default: '["self-hosted","Linux"]'
 
 permissions:
+  contents: read
   packages: write
 
 concurrency:

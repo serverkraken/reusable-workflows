@@ -38,6 +38,8 @@ on:
 
 permissions:
   contents: write
+  # packages: write — required when .goreleaser.yaml has a dockers: block
+  packages: write
 
 concurrency:
   group: goreleaser-${{ github.repository }}-${{ github.ref }}
