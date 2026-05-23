@@ -7,4 +7,3 @@ on:
 jobs:
   cleanup:
     uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v2
-    secrets: inherit

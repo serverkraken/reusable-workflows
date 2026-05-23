@@ -18,6 +18,12 @@ For the integration tests, use `act`:
 act pull_request -W .github/workflows/integration.yml --container-architecture linux/amd64
 ```
 
+> **`act` limitations.** `act` cannot exercise the self-hosted runner labels
+> (defaults to ubuntu-latest images), cannot perform cosign keyless signing
+> (no OIDC token in `act`'s runner identity), and cannot push to GHCR without
+> a manually-mounted token. For end-to-end validation of those paths, rely
+> on the catalog's `integration.yml` self-CI.
+
 ## Commit messages
 
 This repo uses [Conventional Commits](https://www.conventionalcommits.org/). release-please reads the log to decide the next version:
