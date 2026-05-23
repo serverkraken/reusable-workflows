@@ -44,16 +44,14 @@ runs:
         set -euo pipefail
         # Inputs are passed via env to avoid GHA expression interpolation into
         # shell text (a single-quote in any input would terminate the quoted
-        # section and inject shell code). Multi-line GITHUB_OUTPUT uses a
-        # random delimiter to prevent collision with a literal "EOF" line in
-        # the payload.
+        # section and inject shell code). The --emit-both mode produces both
+        # the legacy key=value outputs AND a profile_json<<DELIM multiline
+        # block in a single script invocation, halving gh api roundtrips and
+        # avoiding the second shell-startup cost.
         #
         # The action lives in actions/onboard-detect/action.yml; the script
         # lives in scripts/. When invoked via the catalog-checkout pattern,
         # $GITHUB_ACTION_PATH is .catalog/actions/onboard-detect/ so
         # ../../scripts/onboard-detect.sh resolves to .catalog/scripts/onboard-detect.sh.
-        "$GITHUB_ACTION_PATH/../../scripts/onboard-detect.sh" \
+        "$GITHUB_ACTION_PATH/../../scripts/onboard-detect.sh" --emit-both \
           "$REPO_PATH" "$LANG_OVERRIDE" >> "$GITHUB_OUTPUT"
-        profile=$("$GITHUB_ACTION_PATH/../../scripts/onboard-detect.sh" --profile-json "$REPO_PATH")
-        delim="EOF_$(head -c 16 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 16)"
-        { echo "profile_json<<${delim}"; echo "$profile"; echo "${delim}"; } >> "$GITHUB_OUTPUT"

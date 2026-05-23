@@ -30,10 +30,14 @@ SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm'
 emit_profile_json() {
   local repo="$1"
   local target_repo="${TARGET_REPO:-}"
-  local default_branch="main"
-  local current_version="0.0.0"
+  local default_branch="${OVERRIDE_DEFAULT_BRANCH:-main}"
+  local current_version="${OVERRIDE_CURRENT_VERSION:-0.0.0}"
 
-  if [[ -n "$target_repo" ]]; then
+  # OVERRIDE_DEFAULT_BRANCH and OVERRIDE_CURRENT_VERSION are set by the
+  # --emit-both dispatch path so we can skip a second gh-api roundtrip; when
+  # called via --profile-json (legacy callers), they are unset and we do the
+  # lookups ourselves.
+  if [[ -z "${OVERRIDE_DEFAULT_BRANCH:-}" && -n "$target_repo" ]]; then
     default_branch=$(gh api "/repos/$target_repo" -q '.default_branch' 2>/dev/null || echo "main")
     local tag
     tag=$(gh release list --repo "$target_repo" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
@@ -233,7 +237,7 @@ detect_components() {
     fi
   done
 
-  local arr='[]'
+  local entries=()
   for p in "${unique[@]}"; do
     local langs role dockerfiles primary signals cgo
     langs=$(detect_languages "$repo" "$p")
@@ -243,7 +247,7 @@ detect_components() {
     signals=$(detect_release_signals "$repo" "$p")
     cgo=$(detect_cgo "$repo" "$p" "$primary")
 
-    arr=$(echo "$arr" | jq \
+    entries+=("$(jq -nc \
       --arg path "$p" \
       --argjson languages "$langs" \
       --arg primary "$primary" \
@@ -251,7 +255,7 @@ detect_components() {
       --argjson dockerfiles "$dockerfiles" \
       --argjson signals "$signals" \
       --argjson cgo "$cgo" \
-      '. + [{
+      '{
         path: $path,
         languages: $languages,
         primary_language: $primary,
@@ -260,9 +264,13 @@ detect_components() {
         dockerfiles: $dockerfiles,
         release_signals: $signals,
         cgo: $cgo
-      }]')
+      }')")
   done
-  echo "$arr"
+  if [[ ${#entries[@]} -eq 0 ]]; then
+    echo '[]'
+  else
+    printf '%s\n' "${entries[@]}" | jq -cs '.'
+  fi
 }
 
 # Well-known Go packages whose own source imports cgo. An adopter pulling any
@@ -348,7 +356,7 @@ inventory_dockerfiles() {
     echo '[]'; return
   fi
 
-  local arr='[]'
+  local entries=()
   local fname
   for fname in "${files[@]}"; do
     local override image_name image_name_source release_override release_eligible
@@ -371,19 +379,23 @@ inventory_dockerfiles() {
     if [[ -n "$release_override" ]]; then
       release_eligible="$release_override"
     fi
-    arr=$(echo "$arr" | jq \
+    entries+=("$(jq -nc \
       --arg path "$fname" \
       --arg image_name "$image_name" \
       --arg image_name_source "$image_name_source" \
       --argjson release_eligible "$release_eligible" \
-      '. + [{
+      '{
         path: $path,
         image_name: $image_name,
         image_name_source: $image_name_source,
         release_eligible: $release_eligible
-      }]')
+      }')")
   done
-  echo "$arr"
+  if [[ ${#entries[@]} -eq 0 ]]; then
+    echo '[]'
+  else
+    printf '%s\n' "${entries[@]}" | jq -cs '.'
+  fi
 }
 
 # Read `# onboard:image=<name>` override from the first 5 lines of a Dockerfile.
@@ -392,9 +404,7 @@ inventory_dockerfiles() {
 read_image_override() {
   local file="$1"
   [[ -f "$file" ]] || { echo ""; return; }
-  head -n 5 "$file" 2>/dev/null \
-    | grep -m1 -oE '^# onboard:image=[A-Za-z0-9._/-]+' \
-    | sed 's/^# onboard:image=//' || true
+  awk '/^# onboard:image=[A-Za-z0-9._\/-]+/{sub(/^# onboard:image=/,""); print; exit} NR>5{exit}' "$file"
 }
 
 # Read `# onboard:release=true` or `# onboard:release=false` override from
@@ -539,7 +549,7 @@ detect_legacy_ci() {
   # Filenames OWNED by the catalog renderer — skip classification.
   local OWNED=(ci.yml release.yml prerelease.yml cleanup.yml)
 
-  local arr='[]'
+  local entries=()
   local f
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
@@ -570,12 +580,16 @@ detect_legacy_ci() {
     fi
 
     local rel="${f#"$repo"/}"
-    arr=$(echo "$arr" | jq \
+    entries+=("$(jq -nc \
       --arg path "$rel" \
       --arg summary "$summary" \
       --argjson replaced_by "$replacements" \
-      '. + [{path: $path, summary: $summary, replaced_by: $replaced_by}]')
+      '{path: $path, summary: $summary, replaced_by: $replaced_by}')")
   done < <(find "$dir" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort || true)
 
-  echo "$arr"
+  if [[ ${#entries[@]} -eq 0 ]]; then
+    echo '[]'
+  else
+    printf '%s\n' "${entries[@]}" | jq -cs '.'
+  fi
 }
