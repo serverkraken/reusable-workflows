@@ -15,6 +15,10 @@ inputs:
     description: 'Optional Trivy result line (e.g. "✅ no HIGH/CRITICAL").'
     required: false
     default: ''
+  commit_sha:
+    description: 'Optional commit SHA; if unset, derived from image_ref tag (best-effort).'
+    required: false
+    default: ''
   github_token:
     description: 'Token with pull-requests:write permission.'
     required: false
@@ -38,8 +42,13 @@ runs:
       env:
         IMAGE_REF: ${{ inputs.image_ref }}
         TRIVY_STATUS: ${{ inputs.trivy_status }}
+        COMMIT_SHA: ${{ inputs.commit_sha }}
       run: |
-        SHORT_SHA=$(echo "$IMAGE_REF" | rev | cut -d- -f1 | rev | cut -c1-7)
+        if [[ -n "$COMMIT_SHA" ]]; then
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+        else
+          SHORT_SHA=$(echo "$IMAGE_REF" | rev | cut -d- -f1 | rev | cut -c1-7)
+        fi
         BODY=$(cat <<EOF
         <!-- prerelease-image-comment -->
         🐳 **Prerelease image ready**
