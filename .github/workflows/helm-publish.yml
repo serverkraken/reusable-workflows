@@ -28,11 +28,12 @@ on:
           chart name. Example: `ghcr.io/serverkraken/charts`.
         required: true
         type: string
+      # renovate: datasource=github-releases depName=helm/helm
       helm_version:
-        description: 'Helm CLI version to install (e.g. "v3.15.0", "latest").'
+        description: 'Helm CLI version to install (e.g. "v3.16.3", "latest").'
         required: false
         type: string
-        default: 'v3.15.0'
+        default: 'v3.16.3'
       dry_run:
         description: 'Lint and package only; skip registry login + push.'
         required: false
