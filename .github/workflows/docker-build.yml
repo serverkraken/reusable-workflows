@@ -97,6 +97,7 @@ concurrency:
 jobs:
   version:
     runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
+    timeout-minutes: 60
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       moving_tag: ${{ steps.resolve.outputs.moving_tag }}
@@ -185,6 +186,7 @@ jobs:
             arch: arm64
             runs_on_input: runs_on_arm64
     runs-on: ${{ fromJSON(matrix.runs_on_input == 'runs_on_amd64' && inputs.runs_on_amd64 || inputs.runs_on_arm64) }}
+    timeout-minutes: 60
     steps:
       - name: Check platform selected
         id: check
@@ -284,6 +286,7 @@ jobs:
   merge:
     needs: [version, build]
     runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
+    timeout-minutes: 60
     outputs:
       image_ref: ${{ steps.compose.outputs.image_ref }}
       digest: ${{ steps.merge_step.outputs.digest }}
@@ -433,6 +436,7 @@ jobs:
     if: inputs.prerelease && github.event.pull_request.number != ''
     needs: [version, merge]
     runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
+    timeout-minutes: 60
     permissions:
       contents: read
       pull-requests: write

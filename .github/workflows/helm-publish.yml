@@ -58,6 +58,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 

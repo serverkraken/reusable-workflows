@@ -34,6 +34,7 @@ concurrency:
 jobs:
   cleanup:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 15
     steps:
       - name: Resolve package name
         id: pkg

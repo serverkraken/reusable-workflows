@@ -15,6 +15,7 @@ permissions:
 jobs:
   actionlint:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - name: Install actionlint
@@ -37,6 +38,7 @@ jobs:
 
   yamllint:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - name: Install yamllint
@@ -46,6 +48,7 @@ jobs:
 
   renovate-config-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - name: Validate renovate.json5
@@ -56,6 +59,7 @@ jobs:
     # in install-trivy/action.yml. Catches regression where someone reformats
     # the comment in a way that breaks the parser.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - name: Check that Renovate would detect TRIVY_VERSION
@@ -71,6 +75,7 @@ jobs:
     # onboard-render, compute-prerelease-tag). Requires gomplate because the
     # renderer tests shell out to it.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - name: Install bats

@@ -46,6 +46,7 @@ concurrency:
 jobs:
   release:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ${{ inputs.working_directory }}
