@@ -142,3 +142,28 @@ jobs:
           echo "Update batch ($uc repos): $update_csv"
           echo "Fresh batch ($oc repos): $onboard_csv"
           echo "Skipped ($sc): $skipped_csv"
+
+  update-batch:
+    needs: enumerate
+    if: needs.enumerate.outputs.update_targets != ''
+    uses: ./.github/workflows/onboard.yml
+    secrets: inherit
+    with:
+      target_repos: ${{ needs.enumerate.outputs.update_targets }}
+      language: auto
+      pin_version: ${{ needs.enumerate.outputs.current_version }}
+      # Forward dry_run from the top-level dispatch input (default false for cron).
+      # workflow_call inputs require fromJSON wrap for boolean conversion
+      # (cf. memory: troubleshooting_gha_type_coercion).
+      dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
+
+  fresh-batch:
+    needs: enumerate
+    if: needs.enumerate.outputs.onboard_targets != ''
+    uses: ./.github/workflows/onboard.yml
+    secrets: inherit
+    with:
+      target_repos: ${{ needs.enumerate.outputs.onboard_targets }}
+      language: auto
+      pin_version: ${{ needs.enumerate.outputs.current_version }}
+      dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
