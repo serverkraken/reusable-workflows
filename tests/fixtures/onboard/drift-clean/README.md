@@ -20,3 +20,7 @@ old major and drift will report `behind`, breaking the wrapper test. Refresh:
     rm /tmp/profile.json
 
 Then restore this README and update the `current_version:` input in the caller.
+
+The same regeneration is needed whenever the render-and-compare detection
+(added 2026-05-24) reports `stale-lock` against this fixture, which happens
+when templates evolve within the same major.

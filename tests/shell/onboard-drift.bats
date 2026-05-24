@@ -100,3 +100,52 @@ teardown() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"usage"* ]]
 }
+
+@test "drift: clean state stays clean when re-render matches lock files" {
+  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"status=clean"* ]]
+  # render_error field is present and empty
+  [[ "$output" == *"render_error="* ]]
+  # Negative: render_error= followed by nothing-but-newline (no error reason captured)
+  echo "$output" | grep -E "^render_error=$" >/dev/null
+}
+
+@test "drift: clean state flips to stale-lock when catalog template evolves" {
+  # Simulate template evolution: clone the catalog to a scratch dir, edit a
+  # template in the scratch copy so re-render would produce different output,
+  # then run drift against the unchanged TARGET with the scratch catalog as
+  # the catalog-source argument.
+  scratch_catalog=$(mktemp -d)
+  cp -R "$REPO_ROOT/." "$scratch_catalog/"
+  # Append a benign marker to ci.yml.tmpl so the rendered ci.yml diverges.
+  echo "# stale-lock-test marker $(date +%s%N)" \
+    >> "$scratch_catalog/docs/adopter-templates/skeletons/ci.yml.tmpl"
+  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$scratch_catalog"
+  rm -rf "$scratch_catalog"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"status=stale-lock"* ]]
+  # The diverged file should appear in the modified list.
+  [[ "$output" == *"ci.yml"* ]]
+  # render_error stays empty (render succeeded; just produced different content).
+  echo "$output" | grep -E "^render_error=$" >/dev/null
+}
+
+@test "drift: render failure keeps status=clean and sets render_error" {
+  # Force render-failure by stripping gomplate (and other render-time tools)
+  # from PATH. The script still needs core tools (bash, jq, mktemp, etc.) for
+  # the lock-comparison phase, so we build a minimal PATH that has those but
+  # NOT gomplate.
+  fake_path=$(mktemp -d)
+  for tool in bash jq mktemp sha256sum cat awk grep cut tr head find sort cmp basename dirname date sed rm; do
+    cmd=$(command -v "$tool" 2>/dev/null) || continue
+    ln -s "$cmd" "$fake_path/$tool"
+  done
+  CATALOG_CURRENT_VERSION=v3 PATH="$fake_path" run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  rm -rf "$fake_path"
+  [ "$status" -eq 0 ]
+  # Status stays clean (no false-positive stale-lock when render fails).
+  [[ "$output" == *"status=clean"* ]]
+  # render_error captures the failure phase.
+  [[ "$output" =~ render_error=(detect|render)-failed: ]]
+}
