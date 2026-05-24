@@ -9,14 +9,30 @@ inputs:
     required: true
 outputs:
   status:
-    description: 'clean | modified | behind | behind+modified | no-lock'
+    description: |
+      clean | modified | behind | behind+modified | no-lock | stale-lock
+
+      stale-lock: lock hashes match working-tree files, but a fresh render of
+      the catalog templates at the current catalog state would produce
+      different output. Adopter needs re-onboarding to refresh the rendered
+      files (and the lock).
     value: ${{ steps.drift.outputs.status }}
   modified:
-    description: 'Comma-separated list of paths whose hash differs from lock (or has the (missing) suffix)'
+    description: |
+      Comma-separated list of paths whose hash differs from lock (or has the
+      (missing) suffix). When status=stale-lock, lists paths whose rendered
+      content differs from the lock-tracked hash.
     value: ${{ steps.drift.outputs.modified }}
   lock_version:
     description: 'catalog_version field from .github/onboard.lock.json (empty when no-lock)'
     value: ${{ steps.drift.outputs.lock_version }}
+  render_error:
+    description: |
+      Reason if the render-and-compare check could not run (empty when render
+      succeeded or was skipped because status was already non-clean).
+      Format: '<phase>:<truncated-stderr>' where phase is detect-failed or
+      render-failed.
+    value: ${{ steps.drift.outputs.render_error }}
 runs:
   using: composite
   steps:
