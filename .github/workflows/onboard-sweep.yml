@@ -167,3 +167,75 @@ jobs:
       language: auto
       pin_version: ${{ needs.enumerate.outputs.current_version }}
       dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
+
+  summary:
+    needs: [enumerate, update-batch, fresh-batch]
+    if: always() && needs.enumerate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Mint App token for catalog repo
+        id: cat-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: serverkraken
+          repositories: reusable-workflows
+
+      - name: Build digest body
+        id: body
+        env:
+          UPDATE_TARGETS: ${{ needs.enumerate.outputs.update_targets }}
+          ONBOARD_TARGETS: ${{ needs.enumerate.outputs.onboard_targets }}
+          SKIPPED: ${{ needs.enumerate.outputs.skipped }}
+          UPDATE_RESULT: ${{ needs.update-batch.result }}
+          FRESH_RESULT: ${{ needs.fresh-batch.result }}
+        run: |
+          set -euo pipefail
+          today=$(date -u +%Y-%m-%d)
+          {
+            echo "## Onboard Sweep — $today"
+            echo
+            echo "**Update batch:** ${UPDATE_RESULT:-skipped} — \`${UPDATE_TARGETS:-(empty)}\`"
+            echo "**Fresh batch:** ${FRESH_RESULT:-skipped} — \`${ONBOARD_TARGETS:-(empty)}\`"
+            echo "**Skipped:** \`${SKIPPED:-(none)}\`"
+            echo
+            echo "_Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_"
+          } > digest.md
+          {
+            echo 'body<<EOF_DIGEST'
+            cat digest.md
+            echo 'EOF_DIGEST'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post digest as comment on rolling Onboarding Drift Report Issue
+        env:
+          GH_TOKEN: ${{ steps.cat-token.outputs.token }}
+          BODY: ${{ steps.body.outputs.body }}
+        run: |
+          set -euo pipefail
+          # Find the rolling Issue by exact title (drift-check.yml uses the
+          # same title-match pattern when upserting).
+          drift_issue=$(gh issue list \
+            --repo serverkraken/reusable-workflows \
+            --state open \
+            --limit 100 \
+            --json number,title \
+            -q '.[] | select(.title == "Onboarding Drift Report") | .number' \
+            | head -1)
+          if [[ -n "$drift_issue" ]]; then
+            gh issue comment "$drift_issue" --repo serverkraken/reusable-workflows --body "$BODY"
+            echo "Posted summary comment on Issue #$drift_issue"
+          else
+            gh issue create \
+              --repo serverkraken/reusable-workflows \
+              --title "Onboard sweep — $(date -u +%Y-%m-%d)" \
+              --body "$BODY"
+            echo "No rolling drift Issue found — created standalone Issue"
+          fi
