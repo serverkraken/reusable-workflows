@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.12.0](https://github.com/serverkraken/reusable-workflows/compare/v3.11.3...v3.12.0) (2026-05-24)
+
+
+### Features
+
+* **drift-check:** render-and-compare for stale-lock detection ([#107](https://github.com/serverkraken/reusable-workflows/issues/107)) ([0b3ea59](https://github.com/serverkraken/reusable-workflows/commit/0b3ea59471fd8148730405161e92cbc097451678))
+
 ## [3.11.3](https://github.com/serverkraken/reusable-workflows/compare/v3.11.2...v3.11.3) (2026-05-23)
 
 
