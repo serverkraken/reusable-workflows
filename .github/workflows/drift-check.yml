@@ -130,6 +130,7 @@ jobs:
           STATUS: ${{ steps.drift.outputs.status || 'error' }}
           MODIFIED: ${{ steps.drift.outputs.modified || '' }}
           LOCK_VERSION: ${{ steps.drift.outputs.lock_version || '' }}
+          RENDER_ERROR: ${{ steps.drift.outputs.render_error || '' }}
           CURRENT: ${{ needs.enumerate.outputs.current_version }}
         run: |
           set -euo pipefail
@@ -140,8 +141,9 @@ jobs:
             --arg status "$STATUS" \
             --arg modified "$MODIFIED" \
             --arg lock_version "$LOCK_VERSION" \
+            --arg render_error "$RENDER_ERROR" \
             --arg current "$CURRENT" \
-            '{target:$target, status:$status, modified:$modified, lock_version:$lock_version, current:$current}' \
+            '{target:$target, status:$status, modified:$modified, lock_version:$lock_version, render_error:$render_error, current:$current}' \
             > "result/$safe.json"
           echo "Per-target result:"
           cat "result/$safe.json"
@@ -192,8 +194,8 @@ jobs:
             if [[ ! -d results ]] || [[ -z "$(ls -A results 2>/dev/null)" ]]; then
               echo "No onboarded adopters found in \`docs/onboarding-status.md\`."
             else
-              echo "| Repo | Status | Catalog (lock → current) | Modified files |"
-              echo "|---|---|---|---|"
+              echo "| Repo | Status | Catalog (lock → current) | Modified files | Render error |"
+              echo "|---|---|---|---|---|"
               for f in results/*.json; do
                 [[ -f "$f" ]] || continue
                 t=$(jq -r '.target' "$f")
@@ -201,7 +203,9 @@ jobs:
                 lv=$(jq -r '.lock_version' "$f")
                 cv=$(jq -r '.current' "$f")
                 mods=$(jq -r '.modified' "$f")
+                re=$(jq -r '.render_error' "$f")
                 [[ -z "$mods" || "$mods" == "null" ]] && mods="—"
+                [[ -z "$re" || "$re" == "null" ]] && re="—"
                 if [[ -z "$lv" ]]; then
                   ver="— → $cv"
                 elif [[ "$lv" == "$cv" ]]; then
@@ -209,7 +213,16 @@ jobs:
                 else
                   ver="$lv → $cv"
                 fi
-                echo "| $t | $s | $ver | $mods |"
+                case "$s" in
+                  clean) icon="✅" ;;
+                  modified) icon="✏️" ;;
+                  behind) icon="↩️" ;;
+                  behind+modified) icon="↩️✏️" ;;
+                  no-lock) icon="❓" ;;
+                  stale-lock) icon="⚠️" ;;
+                  *) icon="🔥" ;;
+                esac
+                echo "| $t | $icon $s | $ver | $mods | $re |"
               done
             fi
             echo
