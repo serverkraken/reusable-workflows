@@ -217,6 +217,41 @@ gh workflow run drift-check.yml \
 
 ---
 
+## Onboard sweep (weekly auto-update + auto-onboard)
+
+`.github/workflows/onboard-sweep.yml` runs every Monday at 07:00 UTC (1h after
+drift-check) and:
+
+1. **Re-onboards** adopters with `status=behind` or `status=stale-lock` against
+   the current catalog major (opens an Onboarding PR on the adopter).
+2. **Fresh-onboards** `serverkraken/*` repositories not yet present in
+   `docs/onboarding-status.md` (opens an Onboarding PR on the adopter).
+3. **Skips** any repo with the GitHub topic `no-serverkraken-onboard`, plus any
+   repo where the bot already has an open onboarding PR (`chore/onboard-reusable-workflows`
+   or `chore/remove-legacy-workflows` branch).
+
+Adopters with `status=modified` or `status=behind+modified` are NOT touched —
+the sweep avoids overwriting hand-edits. Re-onboard those manually after
+reviewing the diff in the drift report.
+
+A summary comment is posted on the rolling "Onboarding Drift Report" Issue
+after each run; if that Issue doesn't exist, the sweep opens its own
+standalone Issue.
+
+### Opting out
+
+Add the GitHub topic **`no-serverkraken-onboard`** to any repository's
+Settings → "Topics" field. The next sweep run will skip the repo. Existing
+rows in `docs/onboarding-status.md` are left intact for history.
+
+### Dry-run mode
+
+Trigger via `workflow_dispatch` with `dry_run: true` to see what would be
+dispatched without opening PRs. Useful before the first scheduled run after
+a major catalog change.
+
+---
+
 ## 8. Lint and test atoms
 
 Per-language lint and test atoms callable via `workflow_call`. Each atom accepts a `runs_on` input. Build-heavy atoms (`lint-go`, `test-go`, `lint-rust`, `test-rust`) default to `[self-hosted, Linux, X64]`; the lighter atoms (`lint-python`, `test-python`, `lint-helm`) default to `[self-hosted, Linux]`. Callers without a matching runner pool can override to `ubuntu-latest`.
