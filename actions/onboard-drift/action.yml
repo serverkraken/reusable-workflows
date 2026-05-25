@@ -36,6 +36,18 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Install gomplate (idempotent — needed for render-and-compare)
+      shell: bash
+      run: |
+        set -euo pipefail
+        # onboard-drift.sh's render-and-compare block shells out to
+        # onboard-render.sh, which requires gomplate. Install it here so any
+        # consumer of this action (drift-check.yml, onboard-sweep.yml, the
+        # Phase 4 caller-onboard-drift-happy.yml) gets the dependency
+        # automatically. install-gomplate.sh is idempotent: if the pinned
+        # version is already on PATH, it's a no-op.
+        sudo "$GITHUB_ACTION_PATH/../../scripts/install-gomplate.sh"
+
     - id: drift
       shell: bash
       env:
