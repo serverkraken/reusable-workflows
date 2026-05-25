@@ -287,7 +287,9 @@ jobs:
             .components[] |
             "- `\(.path)` — role=`\(.role)`, languages=\(.languages|join(",")), dockerfiles=\(.dockerfiles|length)"
           ')
-          warnings_md=$(echo "$PROFILE" | jq -r '.warnings // [] | map("- " + .) | join("\n")')
+          # Warnings are objects {code, path, message} from emit_*_warnings in
+          # onboard-detect-lib.sh — extract human-readable fields for the PR body.
+          warnings_md=$(echo "$PROFILE" | jq -r '.warnings // [] | map("- `\(.code)` at `\(.path)` — \(.message)") | join("\n")')
           legacy_md=$(echo "$PROFILE" | jq -r '
             .legacy_ci // [] |
             map("- `\(.path)` — \(.summary) → replaced by \(.replaced_by|join(", "))") |
