@@ -1,0 +1,241 @@
+# .github/workflows/onboard-sweep.yml
+# Weekly auto-update + auto-onboard sweep.
+# - Re-onboards adopters with status=behind OR status=stale-lock against the
+#   current catalog major.
+# - Fresh-onboards serverkraken/* repos not yet in onboarding-status.md.
+# - Skips repos with topic `no-serverkraken-onboard` (opt-out).
+#
+# Schedule: Monday 07:00 UTC, 1h after drift-check.yml (06:00 UTC) so the
+# drift report Issue already exists when sweep posts its summary comment.
+#
+# Operational tool — not a public reusable workflow.
+name: onboard-sweep
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'When true, enumerate + bucket but skip the batch jobs.'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: onboard-sweep-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  enumerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      update_targets: ${{ steps.bucket.outputs.update_targets }}
+      onboard_targets: ${{ steps.bucket.outputs.onboard_targets }}
+      skipped: ${{ steps.bucket.outputs.skipped }}
+      current_version: ${{ steps.ver.outputs.current_version }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # need full tag history for git describe
+
+      - id: ver
+        name: Derive current catalog major
+        run: |
+          set -euo pipefail
+          tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          major=$(echo "$tag" | sed -E 's/^v([0-9]+).*$/v\1/')
+          echo "current_version=$major" >> "$GITHUB_OUTPUT"
+          echo "Resolved current major: $major (from tag $tag)"
+
+      - name: Mint App token for org-wide enumerate + drift
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: serverkraken
+
+      - id: list
+        name: List all org repos
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh api -X GET '/orgs/serverkraken/repos' \
+            --paginate -f per_page=100 \
+            -q '.[] | select(.archived | not) | select(.name | test("^(reusable-workflows|\\.github)$") | not) | {name: .name, topics: .topics}' \
+            > all-repos.json
+          count=$(jq -s 'length' all-repos.json)
+          echo "Total in-scope repos (before opt-out filter): $count"
+
+      - id: bucket
+        name: Bucket repos into update vs fresh-onboard vs skip
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          CURRENT: ${{ steps.ver.outputs.current_version }}
+        run: |
+          set -euo pipefail
+
+          # Step 1: filter out opt-out topic
+          jq -c 'select(.topics | index("no-serverkraken-onboard") | not)' all-repos.json > in-scope.json
+
+          # Step 2: parse onboarding-status.md for existing rows
+          onboarded=$(grep -oE '^\| serverkraken/[A-Za-z0-9._-]+ \|' docs/onboarding-status.md 2>/dev/null | \
+                      sed -E 's/^\| serverkraken\/([A-Za-z0-9._-]+) \|.*/\1/' | sort -u || true)
+
+          update_csv=""
+          onboard_csv=""
+          skipped_csv=""
+
+          while IFS= read -r r; do
+            name=$(echo "$r" | jq -r '.name')
+            full="serverkraken/$name"
+
+            # Duplicate-PR guard: skip if an open bot PR already exists.
+            open_pr=$(gh api -X GET "/repos/$full/pulls" \
+              -f state=open \
+              -q '[.[] | select(.user.login == "serverkraken-release-bot[bot]")
+                        | select(.head.ref | test("^chore/(onboard-reusable-workflows|remove-legacy-workflows)$"))
+                  ] | length' 2>/dev/null || echo "0")
+            if [[ "$open_pr" -gt 0 ]]; then
+              skipped_csv+="${full}:open-pr,"
+              continue
+            fi
+
+            if echo "$onboarded" | grep -qx "$name"; then
+              # Bucket A: existing onboarded. Compute drift.
+              status=$(scripts/onboard-sweep-drift-status.sh "$full" "$CURRENT") || status="error"
+              case "$status" in
+                behind|stale-lock)
+                  update_csv+="${full},"
+                  ;;
+                clean|modified|behind+modified|no-lock|error|*)
+                  skipped_csv+="${full}:${status},"
+                  ;;
+              esac
+            else
+              # Bucket B: fresh candidate (not in status doc).
+              onboard_csv+="${full},"
+            fi
+          done < <(jq -c '.' in-scope.json)
+
+          # Strip trailing commas
+          update_csv="${update_csv%,}"
+          onboard_csv="${onboard_csv%,}"
+          skipped_csv="${skipped_csv%,}"
+
+          {
+            echo "update_targets=$update_csv"
+            echo "onboard_targets=$onboard_csv"
+            echo "skipped=$skipped_csv"
+          } >> "$GITHUB_OUTPUT"
+
+          uc=$([[ -n "$update_csv" ]] && echo "$update_csv" | tr ',' '\n' | wc -l | tr -d ' ' || echo 0)
+          oc=$([[ -n "$onboard_csv" ]] && echo "$onboard_csv" | tr ',' '\n' | wc -l | tr -d ' ' || echo 0)
+          sc=$([[ -n "$skipped_csv" ]] && echo "$skipped_csv" | tr ',' '\n' | wc -l | tr -d ' ' || echo 0)
+          echo "Update batch ($uc repos): $update_csv"
+          echo "Fresh batch ($oc repos): $onboard_csv"
+          echo "Skipped ($sc): $skipped_csv"
+
+  update-batch:
+    needs: enumerate
+    if: needs.enumerate.outputs.update_targets != ''
+    uses: ./.github/workflows/onboard.yml
+    secrets: inherit
+    with:
+      target_repos: ${{ needs.enumerate.outputs.update_targets }}
+      language: auto
+      pin_version: ${{ needs.enumerate.outputs.current_version }}
+      # Forward dry_run from the top-level dispatch input (default false for cron).
+      # workflow_call inputs require fromJSON wrap for boolean conversion
+      # (cf. memory: troubleshooting_gha_type_coercion).
+      dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
+
+  fresh-batch:
+    needs: enumerate
+    if: needs.enumerate.outputs.onboard_targets != ''
+    uses: ./.github/workflows/onboard.yml
+    secrets: inherit
+    with:
+      target_repos: ${{ needs.enumerate.outputs.onboard_targets }}
+      language: auto
+      pin_version: ${{ needs.enumerate.outputs.current_version }}
+      dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
+
+  summary:
+    needs: [enumerate, update-batch, fresh-batch]
+    if: always() && needs.enumerate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Mint App token for catalog repo
+        id: cat-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: serverkraken
+          repositories: reusable-workflows
+
+      - name: Build digest body
+        id: body
+        env:
+          UPDATE_TARGETS: ${{ needs.enumerate.outputs.update_targets }}
+          ONBOARD_TARGETS: ${{ needs.enumerate.outputs.onboard_targets }}
+          SKIPPED: ${{ needs.enumerate.outputs.skipped }}
+          UPDATE_RESULT: ${{ needs.update-batch.result }}
+          FRESH_RESULT: ${{ needs.fresh-batch.result }}
+        run: |
+          set -euo pipefail
+          today=$(date -u +%Y-%m-%d)
+          {
+            echo "## Onboard Sweep — $today"
+            echo
+            echo "**Update batch:** ${UPDATE_RESULT:-skipped} — \`${UPDATE_TARGETS:-(empty)}\`"
+            echo "**Fresh batch:** ${FRESH_RESULT:-skipped} — \`${ONBOARD_TARGETS:-(empty)}\`"
+            echo "**Skipped:** \`${SKIPPED:-(none)}\`"
+            echo
+            echo "_Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_"
+          } > digest.md
+          {
+            echo 'body<<EOF_DIGEST'
+            cat digest.md
+            echo 'EOF_DIGEST'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post digest as comment on rolling Onboarding Drift Report Issue
+        env:
+          GH_TOKEN: ${{ steps.cat-token.outputs.token }}
+          BODY: ${{ steps.body.outputs.body }}
+        run: |
+          set -euo pipefail
+          # Find the rolling Issue by exact title (drift-check.yml uses the
+          # same title-match pattern when upserting).
+          drift_issue=$(gh issue list \
+            --repo serverkraken/reusable-workflows \
+            --state open \
+            --limit 100 \
+            --json number,title \
+            -q '.[] | select(.title == "Onboarding Drift Report") | .number' \
+            | head -1)
+          if [[ -n "$drift_issue" ]]; then
+            gh issue comment "$drift_issue" --repo serverkraken/reusable-workflows --body "$BODY"
+            echo "Posted summary comment on Issue #$drift_issue"
+          else
+            gh issue create \
+              --repo serverkraken/reusable-workflows \
+              --title "Onboard sweep — $(date -u +%Y-%m-%d)" \
+              --body "$BODY"
+            echo "No rolling drift Issue found — created standalone Issue"
+          fi
