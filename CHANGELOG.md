@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.13.0](https://github.com/serverkraken/reusable-workflows/compare/v3.12.0...v3.13.0) (2026-05-25)
+
+
+### Features
+
+* weekly onboard-sweep cron (auto-update + auto-onboard) ([#109](https://github.com/serverkraken/reusable-workflows/issues/109)) ([2fcda96](https://github.com/serverkraken/reusable-workflows/commit/2fcda9654169fbea9d9cda289b40a3c398154acb))
+
+
+### Bug Fixes
+
+* **onboard-drift:** install gomplate in composite action (closes [#66](https://github.com/serverkraken/reusable-workflows/issues/66)) ([#111](https://github.com/serverkraken/reusable-workflows/issues/111)) ([2c49983](https://github.com/serverkraken/reusable-workflows/commit/2c49983135a8db320106ec001116f957658e83fb))
+* **onboard-drift:** skip .release-please-manifest.json from compare ([#112](https://github.com/serverkraken/reusable-workflows/issues/112)) ([8109e0d](https://github.com/serverkraken/reusable-workflows/commit/8109e0d51d702a2fac0e2e28094b2ea02a668e86))
+* **onboard-sweep:** add actions:read + issues:write to top-level permissions ([#114](https://github.com/serverkraken/reusable-workflows/issues/114)) ([5127352](https://github.com/serverkraken/reusable-workflows/commit/5127352fe6ff108fb7c2b9bfe66040622e99f488))
+
 ## [3.12.0](https://github.com/serverkraken/reusable-workflows/compare/v3.11.3...v3.12.0) (2026-05-24)
 
 
