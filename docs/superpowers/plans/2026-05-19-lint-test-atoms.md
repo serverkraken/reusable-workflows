@@ -1,5 +1,10 @@
 # Lint & Test Atoms Implementation Plan
 
+> **STATUS: COMPLETED 2026-05-21.** All seven atoms shipped, `ci.yml.tmpl` wired, reference adopters onboarded
+> (`serverkraken/blupod-ui` via PR #10 + cleanup PR #11, `serverkraken/flow` via PR #10). Subsequent onboarding
+> sweeps (PR #11+ on each adopter) rolled the rendered output forward as the catalog evolved. Unchecked task
+> boxes below reflect the original plan state and are kept for historical traceability — not pending work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship seven reusable lint/test workflow atoms (`lint-{go,python,rust,helm}.yml`, `test-{go,python,rust}.yml`), wire them into the smarter-onboarding `ci.yml` template, and migrate the two reference adopters (`blupod-ui`, `flow`) onto the new pipeline.

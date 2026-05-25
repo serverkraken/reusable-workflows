@@ -1,6 +1,11 @@
 CLAUDE.md
 CLAUDE-*.md
+GEMINI.md
+GEMINI-*.md
 .claude/
+
+# Scratch review/spec docs that live untracked at the repo root
+REVIEW-*.md
 
 # Tooling
 *.tmp
