@@ -68,6 +68,26 @@ render() {
     exit 1
   fi
   gomplate -c ".=$CTX" -f "$src" -o "$dst"
+  normalize_trailing_newline "$dst"
+}
+
+# Strip trailing blank lines; ensure exactly one trailing \n.
+#
+# gomplate preserves the template's EOF \n unconditionally. When a per-component
+# range body emits no visible output — e.g., a Dockerfile-only repo whose
+# primary_language is "generic", which matches none of the language branches
+# in ci.yml.tmpl/release.yml.tmpl — the EOF \n stacks on top of the preceding
+# secscan line's \n and yamllint fails the rendered file with empty-lines
+# max-end > 0. The trim gymnastics required template-side are fragile across
+# all language branches; normalizing the rendered output is simpler and
+# template-independent.
+normalize_trailing_newline() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  # $(<file) strips all trailing \n; printf '%s\n' re-adds exactly one.
+  local content
+  content=$(<"$f")
+  printf '%s\n' "$content" > "$f"
 }
 
 # Workflow skeletons (same set for all variants; conditionals inside templates
