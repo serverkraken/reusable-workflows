@@ -406,7 +406,6 @@ jobs:
           REF: ${{ github.ref }}
           SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
-          WORKFLOW: ${{ github.workflow }}
         run: |
           set -euo pipefail
           BUILD_STARTED="$(date -u -Iseconds)"
@@ -414,13 +413,13 @@ jobs:
           {
             "buildType": "https://github.com/actions/runner/buildTypes/workflow/v1",
             "builder": {
-              "id": "https://github.com/${REPO}/.github/workflows/${WORKFLOW}@${REF}"
+              "id": "https://github.com/serverkraken/reusable-workflows/.github/workflows/docker-build.yml"
             },
             "invocation": {
               "configSource": {
                 "uri": "git+https://github.com/${REPO}@${REF}",
                 "digest": {"sha1": "${SHA}"},
-                "entryPoint": "${WORKFLOW}"
+                "entryPoint": ".github/workflows/docker-build.yml"
               },
               "parameters": {},
               "environment": {}
@@ -439,6 +438,8 @@ jobs:
             ]
           }
           EOF
+          # Defensive: ensure variable expansion produced well-formed JSON.
+          jq empty predicate.json
           cosign attest --yes --type slsaprovenance \
             --predicate predicate.json "${IMG}@${DIGEST}"
 

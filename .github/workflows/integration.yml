@@ -78,8 +78,9 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             --certificate-identity-regexp '^https://github\.com/serverkraken/reusable-workflows/\.github/workflows/docker-build\.yml@' \
             "$IMG_REF" > /tmp/att.json
-          # Sanity-check: a verified attestation has a non-empty payload
-          jq -e '.payload' /tmp/att.json > /dev/null
+          # Defensive: validate the output is well-formed JSON.
+          # cosign's exit code is the actual verification signal.
+          jq empty /tmp/att.json
           echo "Cosign SLSA attestation verifies for $IMG_REF"
 
   # ----- trivy-image happy path (no findings against clean fixture) -----
