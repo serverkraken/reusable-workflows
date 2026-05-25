@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.14.0](https://github.com/serverkraken/reusable-workflows/compare/v3.13.0...v3.14.0) (2026-05-25)
+
+
+### Features
+
+* **release:** expose trivy_fail_on_findings input (default true) ([#116](https://github.com/serverkraken/reusable-workflows/issues/116)) ([c52f6d0](https://github.com/serverkraken/reusable-workflows/commit/c52f6d0ff3739c4d9db891c21aacb17364733bae))
+
+
+### Bug Fixes
+
+* **onboard:** format warnings as markdown — they are objects, not strings ([#115](https://github.com/serverkraken/reusable-workflows/issues/115)) ([06a1e39](https://github.com/serverkraken/reusable-workflows/commit/06a1e39eaf7686c058a36262292f0031ccbe17b2))
+
 ## [3.13.0](https://github.com/serverkraken/reusable-workflows/compare/v3.12.0...v3.13.0) (2026-05-25)
 
 
