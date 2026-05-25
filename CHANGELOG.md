@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.14.1](https://github.com/serverkraken/reusable-workflows/compare/v3.14.0...v3.14.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* **onboard-detect:** map generic primary_language to simple release-type ([#118](https://github.com/serverkraken/reusable-workflows/issues/118)) ([87e969c](https://github.com/serverkraken/reusable-workflows/commit/87e969ccd3135ab04f32d7b404a92ee5afc78aff))
+
 ## [3.14.0](https://github.com/serverkraken/reusable-workflows/compare/v3.13.0...v3.14.0) (2026-05-25)
 
 
