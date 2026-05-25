@@ -44,6 +44,16 @@ on:
         required: false
         type: string
         default: 'HIGH,CRITICAL'
+      trivy_fail_on_findings:
+        description: |
+          Whether trivy findings at or above `trivy_severity` should fail the
+          release. Default true. Set false for images that by-design carry
+          inherited CVEs you can't patch (e.g. runner images with a baked
+          Docker daemon / buildkit / kubelet libs). SARIF still uploads to
+          Code Scanning when false — only the gating behaviour changes.
+        required: false
+        type: boolean
+        default: true
       image_name:
         description: 'Image name. Default: caller repo (owner/repo). Passed through to docker-build.yml.'
         required: false
@@ -119,3 +129,4 @@ jobs:
     with:
       image_ref: ${{ needs.docker-build.outputs.image_ref }}
       severity: ${{ inputs.trivy_severity }}
+      fail_on_findings: ${{ inputs.trivy_fail_on_findings }}
