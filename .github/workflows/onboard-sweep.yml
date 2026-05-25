@@ -26,7 +26,13 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  # Top-level must declare the UNION of permissions that nested workflow_call
+  # workflows need (onboard.yml's finalize job requests actions: read), plus
+  # what the summary job needs (issues: write to post the rolling digest).
+  # See memory: troubleshooting_chained_reusable_permissions.
   contents: read
+  actions: read
+  issues: write
 
 jobs:
   enumerate:
