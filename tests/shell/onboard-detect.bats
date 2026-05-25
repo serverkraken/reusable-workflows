@@ -191,8 +191,20 @@ setup() {
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.monorepo == true'
   echo "$output" | jq -e '.components | length == 2'
-  echo "$output" | jq -e '[.components[].release_please_type] | unique == ["generic"]'
+  # primary_language is "generic" for no-signal components, but release_please_type
+  # maps that to "simple" (release-please's catch-all type) since "generic" is
+  # not a valid release-please release-type enum value.
+  echo "$output" | jq -e '[.components[].primary_language] | unique == ["generic"]'
+  echo "$output" | jq -e '[.components[].release_please_type] | unique == ["simple"]'
   rm -rf "$tmpdir"
+}
+
+@test "profile-json: empty-signals component maps release_please_type to simple" {
+  # Direct test of the generic→simple mapping for fully-empty repos.
+  run "$DETECT" --profile-json "$FIX/simple"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "generic"'
+  echo "$output" | jq -e '.components[0].release_please_type == "simple"'
 }
 
 # === Task 2.4: Dockerfile inventory + image-name override ===
