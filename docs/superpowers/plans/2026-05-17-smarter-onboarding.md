@@ -1,5 +1,10 @@
 # Smarter Onboarding Implementation Plan
 
+> **STATUS: COMPLETED 2026-05-22.** All five phases landed; `v3` ships the new detect/render/onboard pipeline.
+> Drift-audit (Phase 5) runs weekly via `drift-check.yml`. Render-and-compare extension added 2026-05-24
+> (PR #107). Unchecked task boxes below reflect the original plan state and are kept for historical
+> traceability — not pending work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend `onboard.yml` to handle monorepos, multi-Dockerfile repos, libraries, CLIs, Helm-only repos, and mixed-language single components; add three new build atoms (`docker-build-multi`, `goreleaser`, `helm-publish`); add a weekly central drift-audit.
