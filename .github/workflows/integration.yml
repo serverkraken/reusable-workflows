@@ -9,16 +9,15 @@ on:
 # Workflow_call permission cap: the called atoms (docker-build,
 # docker-build-multi, trivy-*, semantic-release) declare what they need.
 # This block has to at minimum mirror the union, otherwise nested
-# permissions are capped down. artifact-metadata was added Anfang 2026
-# for attest-build-provenance@v4's metadata persistence path.
-# contents:write + issues:write are needed by semantic-release (added
-# 2026-05-22 with the test-semantic-release-dry-run integration job).
+# permissions are capped down. contents:write + issues:write are needed
+# by semantic-release (added 2026-05-22 with the test-semantic-release-dry-run
+# integration job). attestations / artifact-metadata permissions removed in
+# v4 — cosign-based attest uses packages:write (sidecar push) + id-token:write
+# (OIDC), both already covered.
 permissions:
   contents: write
   packages: write
   id-token: write
-  attestations: write
-  artifact-metadata: write
   security-events: write
   pull-requests: write
   issues: write
