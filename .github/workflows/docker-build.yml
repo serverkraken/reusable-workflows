@@ -1,4 +1,12 @@
 # .github/workflows/docker-build.yml
+#
+# Reusable workflow: build a multi-arch image distributed across native
+# amd64/arm64 self-hosted runners, push by digest, stitch a manifest list,
+# optionally cosign-sign, optionally attest build provenance as a
+# cosign-attached SLSA v0.2 in-toto predicate (free-tier-compatible:
+# stored as OCI sidecar at <image>@<digest>, verified with
+# `cosign verify-attestation --type slsaprovenance`),
+# optionally generate an SBOM artifact.
 name: docker-build
 on:
   workflow_call:
@@ -39,6 +47,7 @@ on:
         type: boolean
         default: true
       attest:
+        description: 'Generate SLSA v0.2 build provenance attestation for the image. Uses cosign keyless signing (free-tier compatible). Verify with `cosign verify-attestation --type slsaprovenance`.'
         required: false
         type: boolean
         default: true
@@ -80,11 +89,6 @@ permissions:
   contents: read
   packages: write
   id-token: write
-  attestations: write
-  # actions/attest-build-provenance@v4 additionally writes to GitHub's new
-  # Artifact Metadata storage API. Without this, the attestation itself
-  # still succeeds but a noisy warning is emitted on every release.
-  artifact-metadata: write
   pull-requests: write
 
 concurrency:
@@ -383,7 +387,7 @@ jobs:
           echo "image_ref=ghcr.io/${{ needs.version.outputs.image_name }}:${{ needs.version.outputs.tag }}" >> "$GITHUB_OUTPUT"
 
       - name: Install Cosign
-        if: inputs.sign
+        if: inputs.sign || inputs.attest
         uses: sigstore/cosign-installer@v4.1.2
 
       - name: Sign image
@@ -393,13 +397,51 @@ jobs:
           DIGEST: ${{ steps.merge_step.outputs.digest }}
         run: cosign sign --yes "$IMG@$DIGEST"
 
-      - name: Attest build provenance
+      - name: Attest build provenance (cosign SLSA v0.2)
         if: inputs.attest
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: ghcr.io/${{ needs.version.outputs.image_name }}
-          subject-digest: ${{ steps.merge_step.outputs.digest }}
-          push-to-registry: true
+        env:
+          IMG: ghcr.io/${{ needs.version.outputs.image_name }}
+          DIGEST: ${{ steps.merge_step.outputs.digest }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          BUILD_STARTED="$(date -u -Iseconds)"
+          cat > predicate.json <<EOF
+          {
+            "buildType": "https://github.com/actions/runner/buildTypes/workflow/v1",
+            "builder": {
+              "id": "https://github.com/serverkraken/reusable-workflows/.github/workflows/docker-build.yml"
+            },
+            "invocation": {
+              "configSource": {
+                "uri": "git+https://github.com/${REPO}@${REF}",
+                "digest": {"sha1": "${SHA}"},
+                "entryPoint": ".github/workflows/docker-build.yml"
+              },
+              "parameters": {},
+              "environment": {}
+            },
+            "metadata": {
+              "buildInvocationId": "${REPO}/actions/runs/${RUN_ID}",
+              "buildStartedOn": "${BUILD_STARTED}",
+              "completeness": {"parameters": true, "environment": false, "materials": false},
+              "reproducible": false
+            },
+            "materials": [
+              {
+                "uri": "git+https://github.com/${REPO}@${REF}",
+                "digest": {"sha1": "${SHA}"}
+              }
+            ]
+          }
+          EOF
+          # Defensive: ensure variable expansion produced well-formed JSON.
+          jq empty predicate.json
+          cosign attest --yes --type slsaprovenance \
+            --predicate predicate.json "${IMG}@${DIGEST}"
 
       - name: Generate SBOM
         if: inputs.sbom

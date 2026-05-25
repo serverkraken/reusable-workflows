@@ -31,7 +31,7 @@ on:
         type: boolean
         default: true
       attest:
-        description: 'Generate SLSA build provenance attestation for the image.'
+        description: 'Generate SLSA v0.2 build provenance attestation for the image. Uses cosign keyless signing (free-tier compatible). Verify with `cosign verify-attestation --type slsaprovenance`.'
         required: false
         type: boolean
         default: true
@@ -79,15 +79,13 @@ on:
 
 permissions:
   # UNION of nested calls: semantic-release (contents/pull-requests/issues:write),
-  # docker-build (packages/id-token/attestations/artifact-metadata:write +
-  # pull-requests:write), trivy-image (security-events:write, packages:read, actions:read).
-  # Required so cross-repo callers (`uses: …/release.yml@v3`) don't hit the
+  # docker-build (packages/id-token:write + pull-requests:write),
+  # trivy-image (security-events:write, packages:read, actions:read).
+  # Required so cross-repo callers (`uses: …/release.yml@v4`) don't hit the
   # strict-intersection permission-ceiling on the nested workflow_call jobs.
   contents: write
   packages: write
   id-token: write
-  attestations: write
-  artifact-metadata: write
   pull-requests: write
   issues: write
   security-events: write

@@ -9,16 +9,15 @@ on:
 # Workflow_call permission cap: the called atoms (docker-build,
 # docker-build-multi, trivy-*, semantic-release) declare what they need.
 # This block has to at minimum mirror the union, otherwise nested
-# permissions are capped down. artifact-metadata was added Anfang 2026
-# for attest-build-provenance@v4's metadata persistence path.
-# contents:write + issues:write are needed by semantic-release (added
-# 2026-05-22 with the test-semantic-release-dry-run integration job).
+# permissions are capped down. contents:write + issues:write are needed
+# by semantic-release (added 2026-05-22 with the test-semantic-release-dry-run
+# integration job). attestations / artifact-metadata permissions removed in
+# v4 — cosign-based attest uses packages:write (sidecar push) + id-token:write
+# (OIDC), both already covered.
 permissions:
   contents: write
   packages: write
   id-token: write
-  attestations: write
-  artifact-metadata: write
   security-events: write
   pull-requests: write
   issues: write
@@ -48,6 +47,41 @@ jobs:
       sign: true
       attest: true
       sbom: true
+
+  # ----- attestation verification (proves the cosign attest step produced
+  # a sigstore-bundled SLSA predicate at the OCI sidecar location) -----
+  assert-attestation-verifies:
+    needs: test-docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: read
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+      - name: GHCR login (read-only)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GH_TOKEN" | cosign login ghcr.io -u "$ACTOR" --password-stdin
+      - name: Verify cosign SLSA attestation
+        env:
+          IMG_REF: ${{ needs.test-docker-build.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          # OIDC identity: cosign attest was invoked from docker-build.yml on this
+          # branch, so the cert SAN contains the docker-build.yml workflow path
+          # (NOT integration.yml). The regexp matches any ref-suffix.
+          cosign verify-attestation \
+            --type slsaprovenance \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp '^https://github\.com/serverkraken/reusable-workflows/\.github/workflows/docker-build\.yml@' \
+            "$IMG_REF" > /tmp/att.json
+          # Defensive: validate the output is well-formed JSON.
+          # cosign's exit code is the actual verification signal.
+          jq empty /tmp/att.json
+          echo "Cosign SLSA attestation verifies for $IMG_REF"
 
   # ----- trivy-image happy path (no findings against clean fixture) -----
   test-trivy-image-happy:
