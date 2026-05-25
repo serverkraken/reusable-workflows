@@ -31,7 +31,7 @@ on:
         type: boolean
         default: true
       attest:
-        description: 'Generate SLSA v1.0 build provenance attestation for the image. Uses cosign keyless signing (free-tier compatible). Verify with `cosign verify-attestation --type slsaprovenance`.'
+        description: 'Generate SLSA v0.2 build provenance attestation for the image. Uses cosign keyless signing (free-tier compatible). Verify with `cosign verify-attestation --type slsaprovenance`.'
         required: false
         type: boolean
         default: true

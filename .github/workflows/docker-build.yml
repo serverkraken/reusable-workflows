@@ -3,7 +3,7 @@
 # Reusable workflow: build a multi-arch image distributed across native
 # amd64/arm64 self-hosted runners, push by digest, stitch a manifest list,
 # optionally cosign-sign, optionally attest build provenance as a
-# cosign-attached SLSA v1.0 in-toto predicate (free-tier-compatible:
+# cosign-attached SLSA v0.2 in-toto predicate (free-tier-compatible:
 # stored as OCI sidecar at <image>@<digest>, verified with
 # `cosign verify-attestation --type slsaprovenance`),
 # optionally generate an SBOM artifact.
@@ -47,7 +47,7 @@ on:
         type: boolean
         default: true
       attest:
-        description: 'Generate SLSA v1.0 build provenance attestation for the image. Uses cosign keyless signing (free-tier compatible). Verify with `cosign verify-attestation --type slsaprovenance`.'
+        description: 'Generate SLSA v0.2 build provenance attestation for the image. Uses cosign keyless signing (free-tier compatible). Verify with `cosign verify-attestation --type slsaprovenance`.'
         required: false
         type: boolean
         default: true
@@ -397,7 +397,7 @@ jobs:
           DIGEST: ${{ steps.merge_step.outputs.digest }}
         run: cosign sign --yes "$IMG@$DIGEST"
 
-      - name: Attest build provenance (cosign SLSA v1.0)
+      - name: Attest build provenance (cosign SLSA v0.2)
         if: inputs.attest
         env:
           IMG: ghcr.io/${{ needs.version.outputs.image_name }}
