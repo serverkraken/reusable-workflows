@@ -252,11 +252,21 @@ detect_components() {
 
   local entries=()
   for p in "${unique[@]}"; do
-    local langs role dockerfiles primary signals cgo
+    local langs role dockerfiles primary release_type signals cgo
     langs=$(detect_languages "$repo" "$p")
     dockerfiles=$(inventory_dockerfiles "$repo" "$p")
     role=$(detect_role "$repo" "$p" "$dockerfiles")
     primary=$(echo "$langs" | jq -r '.[0] // "generic"')
+    # Map primary_language → release-please-action's release-type enum.
+    # "generic" is our internal no-language-detected marker, not a valid
+    # release-please type — map it to "simple" (release-please's catch-all
+    # for repos without a package-manager-specific version file). Other
+    # language strings pass through; if release-please doesn't recognize
+    # one, the consumer can override release-please-config.json after onboard.
+    case "$primary" in
+      generic) release_type="simple" ;;
+      *)       release_type="$primary" ;;
+    esac
     signals=$(detect_release_signals "$repo" "$p")
     cgo=$(detect_cgo "$repo" "$p" "$primary")
 
@@ -264,6 +274,7 @@ detect_components() {
       --arg path "$p" \
       --argjson languages "$langs" \
       --arg primary "$primary" \
+      --arg release_type "$release_type" \
       --arg role "$role" \
       --argjson dockerfiles "$dockerfiles" \
       --argjson signals "$signals" \
@@ -272,7 +283,7 @@ detect_components() {
         path: $path,
         languages: $languages,
         primary_language: $primary,
-        release_please_type: $primary,
+        release_please_type: $release_type,
         role: $role,
         dockerfiles: $dockerfiles,
         release_signals: $signals,
