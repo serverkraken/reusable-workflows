@@ -46,4 +46,3 @@ jobs:
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
     secrets: inherit
-

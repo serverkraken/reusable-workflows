@@ -18,5 +18,3 @@ jobs:
   release-please:
     uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v2
     secrets: inherit
-
-

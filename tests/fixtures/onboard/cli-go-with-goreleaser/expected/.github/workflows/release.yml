@@ -24,4 +24,3 @@ jobs:
     if: needs.release-please.outputs.release_created == 'true'
     uses: serverkraken/reusable-workflows/.github/workflows/goreleaser.yml@v2
     secrets: inherit
-

@@ -39,4 +39,3 @@ jobs:
       chart_path: charts/svc
       oci_registry: ghcr.io//charts
     secrets: inherit
-
