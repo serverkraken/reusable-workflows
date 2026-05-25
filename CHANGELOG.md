@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.14.2](https://github.com/serverkraken/reusable-workflows/compare/v3.14.1...v3.14.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **render:** strip trailing blank lines from rendered files ([#120](https://github.com/serverkraken/reusable-workflows/issues/120)) ([bb12576](https://github.com/serverkraken/reusable-workflows/commit/bb125767cd3e356a6c2963523e7b6834df061e54))
+
 ## [3.14.1](https://github.com/serverkraken/reusable-workflows/compare/v3.14.0...v3.14.1) (2026-05-25)
 
 
