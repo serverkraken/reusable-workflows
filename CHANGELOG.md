@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0](https://github.com/serverkraken/reusable-workflows/compare/v3.14.2...v4.0.0) (2026-05-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* `attest: true` now produces a cosign-attached SLSA v1.0 attestation stored as OCI sidecar at <image>@<digest>, replacing the GitHub Artifact Attestations API call. This makes attest work on free-tier private repos. Consumers verifying with `gh attestation verify` must switch to `cosign verify-attestation --type slsaprovenance`. Input contract is unchanged; only the implementation differs.
+
+### Features
+
+* switch to cosign-based SLSA provenance (free-tier compatible) ([#123](https://github.com/serverkraken/reusable-workflows/issues/123)) ([a7b5e79](https://github.com/serverkraken/reusable-workflows/commit/a7b5e7920429af773f325db6d11b86f9f473aca9))
+
 ## [3.14.2](https://github.com/serverkraken/reusable-workflows/compare/v3.14.1...v3.14.2) (2026-05-25)
 
 
