@@ -9,6 +9,10 @@
 # emits status=stale-lock. This catches within-major template evolution that
 # pure lock-comparison cannot see.
 #
+# Skipped from both compare loops (by-design adopter mutation):
+#   - .github/onboard.lock.json     lock never self-tracks (defensive)
+#   - .release-please-manifest.json release-please rewrites it on every release
+#
 # Usage:   onboard-drift.sh <target-path> <catalog-path>
 # Env:     CATALOG_CURRENT_VERSION   string, e.g. "v3" or "v3.0.1"
 #                                    Empty → only modified/no-lock/stale-lock
@@ -51,6 +55,10 @@ behind=0
 
 modified_files=()
 while IFS= read -r f; do
+  # .release-please-manifest.json is by-design mutated by release-please-action
+  # on every release (rewrites the version-state object). Skip from compare so
+  # active-release adopters don't show as perpetually modified.
+  [[ "$f" == ".release-please-manifest.json" ]] && continue
   if [[ ! -f "$TARGET/$f" ]]; then
     modified_files+=("$f(missing)")
     continue
@@ -100,6 +108,10 @@ if [[ "$status" == "clean" ]]; then
     while IFS= read -r f; do
       # Lock should never track itself, but guard defensively.
       [[ "$f" == ".github/onboard.lock.json" ]] && continue
+      # .release-please-manifest.json mutates by-design (see lock-compare loop).
+      # Skip here too so the render-compare doesn't surface stale-lock for the
+      # same reason.
+      [[ "$f" == ".release-please-manifest.json" ]] && continue
       # If the rendered tree doesn't contain this path (profile-conditional
       # template), skip — we can't compare what doesn't exist on both sides.
       [[ -f "$scratch/rendered/$f" ]] || continue
