@@ -149,3 +149,32 @@ teardown() {
   # render_error captures the failure phase.
   [[ "$output" =~ render_error=(detect|render)-failed: ]]
 }
+
+@test "drift: mutated .release-please-manifest.json does NOT count as modified" {
+  # Simulate release-please updating the manifest after a release.
+  echo '{".":"0.32.0"}' > "$TARGET/.release-please-manifest.json"
+  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  [ "$status" -eq 0 ]
+  # Should still report clean — manifest is skipped from the lock-compare loop.
+  [[ "$output" == *"status=clean"* ]]
+  # And modified should NOT mention the manifest.
+  [[ "$output" != *"release-please-manifest"* ]]
+}
+
+@test "drift: divergent manifest in render-compare does NOT count as stale-lock" {
+  # Mutate working-tree manifest AND update lock to record the new hash so the
+  # lock-compare loop sees match. The render-compare loop then re-renders the
+  # original initial-state manifest, which would byte-diverge from the
+  # working-tree's "1.2.3" content. With the skip, the manifest is excluded
+  # → no divergence detected → stays clean (instead of stale-lock).
+  echo '{".":"1.2.3"}' > "$TARGET/.release-please-manifest.json"
+  new_hash="sha256:$(sha256_of "$TARGET/.release-please-manifest.json")"
+  jq --arg h "$new_hash" '.files[".release-please-manifest.json"] = $h' \
+    "$TARGET/.github/onboard.lock.json" > "$TARGET/.github/onboard.lock.json.new"
+  mv "$TARGET/.github/onboard.lock.json.new" "$TARGET/.github/onboard.lock.json"
+
+  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"status=clean"* ]]
+  [[ "$output" != *"release-please-manifest"* ]]
+}
