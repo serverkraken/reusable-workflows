@@ -74,3 +74,25 @@ run_with_stub() {
   [ "$status" -eq 0 ]
   grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
 }
+
+@test "tier_1 delete_branch_on_merge: clean (already true) → no PATCH" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  ! grep -qE $'^PATCH\t/repos/o/r\t' "$GH_STUB_CALL_LOG"
+}
+
+@test "tier_1 topics: target absent → PUT with union" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-no-topics --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  grep -q $'^PUT\t/repos/o/r/topics' "$GH_STUB_CALL_LOG"
+  grep -q "serverkraken-onboarded" "$GH_STUB_CALL_LOG"
+}
+
+@test "tier_1 topics: target already present → no PUT" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  ! grep -q $'^PUT\t/repos/o/r/topics' "$GH_STUB_CALL_LOG"
+}

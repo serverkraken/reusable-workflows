@@ -116,6 +116,38 @@ if [[ -n "$BP_DIFF" ]]; then
   MODIFIED_CATEGORIES+=("branch_protection")
 fi
 
+# --- Tier 1: delete_branch_on_merge (always) ---
+
+DEL_BRANCH_TARGET=$(jq -r '.merge_hygiene.delete_branch_on_merge' "$CONFIG")
+DEL_BRANCH_CURRENT=$(echo "$REPO_META" | jq -r '.delete_branch_on_merge')
+
+if [[ "$DEL_BRANCH_CURRENT" != "$DEL_BRANCH_TARGET" ]]; then
+  if (( DRY_RUN )); then
+    echo "::notice::dry-run: would PATCH delete_branch_on_merge=$DEL_BRANCH_TARGET"
+  else
+    jq -nc --argjson v "$DEL_BRANCH_TARGET" '{delete_branch_on_merge:$v}' \
+      | gh api -X PATCH "/repos/$REPO" --input - > /dev/null
+  fi
+  MODIFIED_CATEGORIES+=("delete_branch_on_merge")
+fi
+
+# --- Tier 1: topics additive (always) ---
+
+TOPICS_RESPONSE=$(gh api "/repos/$REPO/topics" 2>/dev/null || echo '{"names":[]}')
+CURRENT_TOPICS=$(echo "$TOPICS_RESPONSE" | jq -c '.names')
+ADDITIVE=$(jq -c '.topics_additive' "$CONFIG")
+NEW_TOPICS=$(compute_topics_union "$CURRENT_TOPICS" "$ADDITIVE")
+
+if [[ "$NEW_TOPICS" != "$CURRENT_TOPICS" ]]; then
+  if (( DRY_RUN )); then
+    echo "::notice::dry-run: would PUT topics=$NEW_TOPICS"
+  else
+    jq -nc --argjson n "$NEW_TOPICS" '{names:$n}' \
+      | gh api -X PUT "/repos/$REPO/topics" --input - > /dev/null
+  fi
+  MODIFIED_CATEGORIES+=("topics")
+fi
+
 # --- Lock mutation implemented in Task 12 ---
 
 # Outputs
