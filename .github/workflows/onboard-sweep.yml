@@ -205,13 +205,82 @@ jobs:
         run: |
           set -euo pipefail
           today=$(date -u +%Y-%m-%d)
+
+          # Result → glyph + label. Empty/unset → em-dash.
+          glyph_for() {
+            case "$1" in
+              success)   echo "✓ success" ;;
+              failure)   echo "✗ failure" ;;
+              cancelled) echo "~ cancelled" ;;
+              skipped)   echo "skipped" ;;
+              "")        echo "—" ;;
+              *)         echo "$1" ;;
+            esac
+          }
+
+          # Count non-empty comma-separated entries.
+          count_csv() {
+            [[ -z "$1" ]] && { echo 0; return; }
+            echo "$1" | awk -F, '{ for (i=1; i<=NF; i++) if ($i ~ /[^[:space:]]/) c++ } END { print c+0 }'
+          }
+
+          # Emit one bullet per non-empty CSV entry.
+          bullet_list() {
+            echo "$1" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;/^$/d;s/^/- /'
+          }
+
+          # Render skipped CSV (repo:reason) as a 2-col markdown table.
+          skipped_table() {
+            echo "| Repo | Reason |"
+            echo "| --- | --- |"
+            echo "$1" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;/^$/d' \
+              | awk -F: '{ printf "| %s | %s |\n", $1, ($2 ? $2 : "—") }'
+          }
+
+          update_count=$(count_csv "$UPDATE_TARGETS")
+          fresh_count=$(count_csv "$ONBOARD_TARGETS")
+          skipped_count=$(count_csv "$SKIPPED")
+
+          update_label=$(glyph_for "${UPDATE_RESULT:-skipped}")
+          fresh_label=$(glyph_for "${FRESH_RESULT:-skipped}")
+
           {
             echo "## Onboard Sweep — $today"
             echo
-            echo "**Update batch:** ${UPDATE_RESULT:-skipped} — \`${UPDATE_TARGETS:-(empty)}\`"
-            echo "**Fresh batch:** ${FRESH_RESULT:-skipped} — \`${ONBOARD_TARGETS:-(empty)}\`"
-            echo "**Skipped:** \`${SKIPPED:-(none)}\`"
+            echo "| Batch    | Result      | Count |"
+            echo "| -------- | ----------- | ----- |"
+            printf "| Update   | %s | %s |\n" "$update_label" "$update_count"
+            printf "| Fresh    | %s | %s |\n" "$fresh_label" "$fresh_count"
+            printf "| Skipped  | —           | %s |\n" "$skipped_count"
             echo
+
+            if [[ "$update_count" -gt 0 ]]; then
+              echo "<details><summary>Update batch — $update_count repos</summary>"
+              echo
+              bullet_list "$UPDATE_TARGETS"
+              echo
+              echo "</details>"
+              echo
+            fi
+
+            if [[ "$fresh_count" -gt 0 ]]; then
+              echo "<details><summary>Fresh batch — $fresh_count repos</summary>"
+              echo
+              bullet_list "$ONBOARD_TARGETS"
+              echo
+              echo "</details>"
+              echo
+            fi
+
+            if [[ "$skipped_count" -gt 0 ]]; then
+              echo "<details><summary>Skipped — $skipped_count repos</summary>"
+              echo
+              skipped_table "$SKIPPED"
+              echo
+              echo "</details>"
+              echo
+            fi
+
             echo "_Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_"
           } > digest.md
           {
