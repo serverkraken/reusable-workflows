@@ -198,11 +198,32 @@ if [[ -f "$LOCK_PATH" ]]; then
 fi
 
 # Outputs
-modified_csv=$(IFS=,; echo "${MODIFIED_CATEGORIES[*]:-}")
-echo "defaults_applied=true"
-if (( APPLY_TIER_2 )); then
-  echo "tier_2_applied=true"
-else
+categories_csv=$(IFS=,; echo "${MODIFIED_CATEGORIES[*]:-}")
+if (( DRY_RUN )); then
+  echo "defaults_applied=false"
   echo "tier_2_applied=false"
+  echo "would_change=$categories_csv"
+
+  # Spec §Dry-run: emit markdown diff table to step summary if available.
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+      echo "## apply-repo-defaults (dry-run)"
+      echo ""
+      echo "**Repo:** \`$REPO\`"
+      echo ""
+      if [[ -n "$categories_csv" ]]; then
+        echo "**Would change:** \`$categories_csv\`"
+      else
+        echo "**Would change:** _nothing — already in sync_"
+      fi
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
+else
+  echo "defaults_applied=true"
+  if (( APPLY_TIER_2 )); then
+    echo "tier_2_applied=true"
+  else
+    echo "tier_2_applied=false"
+  fi
+  echo "modified=$categories_csv"
 fi
-echo "modified=$modified_csv"

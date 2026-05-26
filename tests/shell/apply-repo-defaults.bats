@@ -153,9 +153,24 @@ run_with_stub() {
   [ "$before_sha" = "$after_sha" ]
 }
 
-@test "dry-run: still emits defaults_applied=true output" {
+@test "dry-run: emits defaults_applied=false + would_change key" {
   tgt=$(prepare_target "lock-v1-no-marker.json")
   run_with_stub api-drifted --repo o/r --target-path "$tgt" --prev-marker "" --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *defaults_applied=true* ]]
+  [[ "$output" == *defaults_applied=false* ]]
+  [[ "$output" == *tier_2_applied=false* ]]
+  [[ "$output" == *would_change=* ]]
+  # Must NOT use the live-mode key 'modified='
+  ! [[ "$output" == *modified=* ]]
+}
+
+@test "dry-run: writes markdown diff to GITHUB_STEP_SUMMARY if set" {
+  tgt=$(prepare_target "lock-v1-no-marker.json")
+  summary_file="$WORK/step_summary.md"
+  GITHUB_STEP_SUMMARY="$summary_file" \
+    run_with_stub api-drifted --repo o/r --target-path "$tgt" --prev-marker "" --dry-run
+  [ "$status" -eq 0 ]
+  [ -f "$summary_file" ]
+  grep -q "apply-repo-defaults" "$summary_file"
+  grep -q "dry-run" "$summary_file"
 }
