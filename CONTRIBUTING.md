@@ -57,3 +57,18 @@ Reusable workflows ("Atoms") follow shared conventions enforced by `.github/work
 - [`docs/conventions/step-summary.md`](docs/conventions/step-summary.md) — required Markdown block written to `$GITHUB_STEP_SUMMARY`.
 
 New conventions land in `docs/conventions/`. Each must be linked from this section and (where automatable) gated in `validate.yml`.
+
+## Action Pinning
+
+All GitHub Actions in `.github/workflows/` and `actions/*/action.yml` are pinned to
+SHA digests with a `# v<version>` trailer comment, e.g.:
+
+    uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+
+Renovate is configured with `helpers:pinGitHubActionDigests` and maintains the
+pins automatically — both initial pinning and ongoing updates. Manual edits
+should follow the same format; Renovate will re-pin any tag-only references on
+its next run.
+
+Background: defense-in-depth against tag-injection (tj-actions/changed-files
+incident, March 2025).
