@@ -1,15 +1,15 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-05-26T07:50:41Z_
+_Last updated by the onboarding workflow: 2026-05-26T17:10:31Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
 | Repository | Onboarded | Catalog Version | Add PR | Cleanup PR | Status |
 |---|---|---|---|---|---|
 | serverkraken/blupod-ui | 2026-05-26 | v4 | [PR](https://github.com/serverkraken/blupod-ui/pull/34) | — | add-open, no-legacy |
-| serverkraken/flow | 2026-05-25 | v3 | [PR](https://github.com/serverkraken/flow/pull/28) | — | add-open, no-legacy |
+| serverkraken/flow | 2026-05-26 | v4 | [PR](https://github.com/serverkraken/flow/pull/28) | — | add-open, no-legacy |
 | serverkraken/skytrack-ui | 2026-05-26 | v4 | [PR](https://github.com/serverkraken/skytrack-ui/pull/51) | — | add-open, no-legacy |
-| serverkraken/skytrack | 2026-05-25 | v3 | [PR](https://github.com/serverkraken/skytrack/pull/15) | — | add-open, no-legacy |
+| serverkraken/skytrack | 2026-05-26 | v4 | [PR](https://github.com/serverkraken/skytrack/pull/15) | — | add-open, no-legacy |
 | serverkraken/actions-runner-image | 2026-05-25 | v3 | [PR](https://github.com/serverkraken/actions-runner-image/pull/11) | — | add-open, no-legacy |
 | serverkraken/alexandria | 2026-05-25 | v3 | [PR](https://github.com/serverkraken/alexandria/pull/122) | [PR](https://github.com/serverkraken/alexandria/pull/123) | add-open, cleanup-open |
 | serverkraken/anio6-hass | 2026-05-25 | v3 | — | — | error (error / error) |
