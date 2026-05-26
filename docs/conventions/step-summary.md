@@ -8,6 +8,7 @@ Every reusable workflow ("atom") in `.github/workflows/` writes a single, confor
 ## <atom-name>
 
 **Tool:** <toolname> <version>
+[optional context lines: **Working dir:**, **Image:**, **Path:**, **Severities:** — atom-specific key-value lines]
 **Result:** <glyph> <one-line status>
 
 <atom-specific body — table or key-value list>
@@ -15,8 +16,9 @@ Every reusable workflow ("atom") in `.github/workflows/` writes a single, confor
 
 - **`<atom-name>`** is the workflow filename without `.yml` (e.g., `lint-go`, `docker-build-multi`). The CI gate matches `^## <atom-name>$` (with surrounding whitespace tolerated).
 - **`**Tool:**`** lists the primary tool and version. For multi-tool atoms (e.g., `lint-go` runs `go vet` and `golangci-lint`), use `**Tools:**` with comma separation.
+- **Context lines** (optional, between Tool and Result): atom-specific `**Key:** value` lines that contextualize the run — e.g., `**Working dir:**`, `**Image:**`, `**Path:**`, `**Severities:**`. Use backticks for paths/refs/versions.
 - **`**Result:**`** uses exactly one glyph from the set below.
-- **Body** content varies by atom class — see "Per-Class Body" below.
+- **Body** content (after a blank line): table or extended key-value list — see "Per-Class Body" below.
 
 ### Result Glyphs
 
@@ -26,7 +28,7 @@ Every reusable workflow ("atom") in `.github/workflows/` writes a single, confor
 | `✗` | Failure (at least one check failed, build broke, etc.) |
 | `▲` | Warning / Partial (e.g., Trivy findings present with `fail_on_findings=false`; coverage below threshold with enforcement off) |
 
-No emoji. Only the glyphs above. Rationale: see `MEMORY/feedback_no_emoji_use_glyphs.md`.
+No emoji. Only the glyphs above.
 
 ## Per-Class Body
 
@@ -60,7 +62,7 @@ No emoji. Only the glyphs above. Rationale: see `MEMORY/feedback_no_emoji_use_gl
 | `trivy-*` | `if: always()` | Findings must be visible before the gate-fail step aborts |
 | `docker-build*` | normal (no `always()`) | Digest only exists after successful push |
 | `helm-publish`, `semantic-release`, `goreleaser`, `cleanup-images` | normal | Values only exist after success |
-| `onboard*`, `drift-check` | existing conditions stay | Bestehender Step-Flow bleibt |
+| `onboard*`, `drift-check` | existing conditions stay | Existing step flow stays intact |
 
 ## Examples
 
@@ -90,8 +92,12 @@ No emoji. Only the glyphs above. Rationale: see `MEMORY/feedback_no_emoji_use_gl
 
 | Metric | Value |
 |---|---|
+| Tests run | 142 |
+| Passed | 142 |
+| Failed | 0 |
 | Coverage | 84% |
 | Threshold | 90% |
+| Duration | 38s |
 ```
 
 ### `trivy-image` (findings, fail_on_findings=false)
@@ -115,7 +121,7 @@ No emoji. Only the glyphs above. Rationale: see `MEMORY/feedback_no_emoji_use_gl
 ```markdown
 ## docker-build-multi
 
-**Tool:** Buildx, distributed multi-arch
+**Tool:** Buildx v0.21.0 (distributed multi-arch)
 **Result:** ✓ pushed
 
 | Field | Value |
