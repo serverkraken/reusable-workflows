@@ -6,6 +6,7 @@
 # token can be minted. The catalog repo is private; the implicit
 # adopter-scoped `github.token` cannot clone it, so we mint a separate
 # token whose only permission is `contents:read` on reusable-workflows.
+# Summary convention: docs/conventions/step-summary.md
 name: lint-python
 on:
   workflow_call:
@@ -90,13 +91,51 @@ jobs:
       # so the catalog's own intentional lint-fail fixtures don't appear
       # as adopter findings.
       - name: ruff check
+        id: ruff_check
         working-directory: ${{ inputs.working_directory }}
         run: ${{ steps.setup.outputs.run_prefix }} ruff check --exclude .catalog .
 
       - name: ruff format --check
+        id: ruff_format
         working-directory: ${{ inputs.working_directory }}
         run: ${{ steps.setup.outputs.run_prefix }} ruff format --check --exclude .catalog .
 
       - name: mypy
+        id: mypy
         working-directory: ${{ inputs.working_directory }}
         run: ${{ steps.setup.outputs.run_prefix }} mypy --exclude '\.catalog/' .
+
+      - name: Summary
+        if: always()
+        env:
+          WD: ${{ inputs.working_directory }}
+          RUFF_CHECK_OUTCOME: ${{ steps.ruff_check.outcome }}
+          RUFF_FORMAT_OUTCOME: ${{ steps.ruff_format.outcome }}
+          MYPY_OUTCOME: ${{ steps.mypy.outcome }}
+        run: |
+          glyph() {
+            case "$1" in
+              success) echo "✓" ;;
+              failure) echo "✗" ;;
+              skipped) echo "−" ;;
+              *)       echo "?" ;;
+            esac
+          }
+          if [[ "$RUFF_CHECK_OUTCOME" == "success" && "$RUFF_FORMAT_OUTCOME" == "success" && "$MYPY_OUTCOME" == "success" ]]; then
+            result="✓ passed"
+          else
+            result="✗ failed"
+          fi
+          {
+            echo "## lint-python"
+            echo ""
+            echo "**Tools:** ruff (check + format), mypy"
+            echo "**Working dir:** \`${WD}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|---|---|"
+            echo "| ruff check | $(glyph "$RUFF_CHECK_OUTCOME") |"
+            echo "| ruff format --check | $(glyph "$RUFF_FORMAT_OUTCOME") |"
+            echo "| mypy | $(glyph "$MYPY_OUTCOME") |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

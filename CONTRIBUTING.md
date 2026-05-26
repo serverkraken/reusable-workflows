@@ -49,3 +49,11 @@ Whenever `onboard.yml`, `actions/onboard-*`, or `scripts/onboard-*` change:
 4. Manual smoke: from a release of the catalog, dispatch `onboard.yml` against one low-risk repo with `dry_run: true`. Verify the rendered diff in the step summary. Re-run with `dry_run: false` and merge PR A. Push a `feat:` commit. Verify `release.yml` end-to-end runs green. Merge PR B.
 
 Document any new gotcha in `CLAUDE-troubleshooting.md` so the next session benefits.
+
+## Atom-Konventionen
+
+Reusable workflows ("Atoms") follow shared conventions enforced by `.github/workflows/validate.yml`. When adding or modifying an atom, consult:
+
+- [`docs/conventions/step-summary.md`](docs/conventions/step-summary.md) — required Markdown block written to `$GITHUB_STEP_SUMMARY`.
+
+New conventions land in `docs/conventions/`. Each must be linked from this section and (where automatable) gated in `validate.yml`.

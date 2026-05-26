@@ -1,4 +1,5 @@
 # .github/workflows/trivy-fs.yml
+# Summary convention: docs/conventions/step-summary.md
 name: trivy-fs
 on:
   workflow_call:
@@ -189,18 +190,45 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Job summary
+      - name: Summary
         if: always()
         env:
+          SEVERITY: ${{ inputs.severity }}
+          FAIL_ON_FINDINGS: ${{ inputs.fail_on_findings }}
           COUNT: ${{ steps.count.outputs.findings_count }}
+          REPORT: trivy-fs.json
         run: |
+          trivy_version=$(trivy --version 2>/dev/null | awk '/^Version:/ {print $2}' || echo unknown)
+          if [[ -f "$REPORT" ]]; then
+            crit=$(jq '[.Results[]? | (.Vulnerabilities // [], .Secrets // [], .Misconfigurations // [])[] | select(.Severity=="CRITICAL")] | length' "$REPORT")
+            high=$(jq '[.Results[]? | (.Vulnerabilities // [], .Secrets // [], .Misconfigurations // [])[] | select(.Severity=="HIGH")] | length' "$REPORT")
+            med=$(jq '[.Results[]? | (.Vulnerabilities // [], .Secrets // [], .Misconfigurations // [])[] | select(.Severity=="MEDIUM")] | length' "$REPORT")
+            low=$(jq '[.Results[]? | (.Vulnerabilities // [], .Secrets // [], .Misconfigurations // [])[] | select(.Severity=="LOW")] | length' "$REPORT")
+          else
+            crit=0; high=0; med=0; low=0
+          fi
+          if [[ "$COUNT" == "0" ]]; then
+            result="✓ no findings"
+          elif [[ "$FAIL_ON_FINDINGS" == "true" ]]; then
+            result="✗ ${COUNT} findings"
+          else
+            result="▲ ${COUNT} findings (gate disabled)"
+          fi
           {
-            echo "## Trivy filesystem scan"
+            echo "## trivy-fs"
             echo ""
-            echo "**Scanners:** \`${{ inputs.scanners }}\`"
-            echo "**Severity:** \`${{ inputs.severity }}\`"
-            echo "**Findings:** **$COUNT**"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "**Tool:** Trivy ${trivy_version}"
+            echo "**Path:** \`.\`"
+            echo "**Severities:** \`${SEVERITY}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Severity | Count |"
+            echo "|---|---|"
+            echo "| CRITICAL | ${crit} |"
+            echo "| HIGH | ${high} |"
+            echo "| MEDIUM | ${med} |"
+            echo "| LOW | ${low} |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Fail on findings
         if: inputs.fail_on_findings && steps.count.outputs.findings_count != '0'

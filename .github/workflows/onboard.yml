@@ -2,6 +2,7 @@
 # Operational tool: dispatches per-target onboarding PRs into serverkraken/* repos.
 # Not a public reusable workflow's API surface — input contract may evolve without semver bump.
 # See docs/superpowers/specs/2026-05-16-onboarding-workflow-design.md.
+# Summary convention: docs/conventions/step-summary.md
 name: onboard
 on:
   workflow_dispatch:
@@ -126,6 +127,26 @@ jobs:
       matrix:
         target: ${{ fromJSON(needs.parse-inputs.outputs.matrix) }}
     steps:
+      - name: Begin summary
+        if: always()
+        env:
+          TARGET: ${{ matrix.target.target }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [[ "$DRY_RUN" == "true" ]]; then
+            mode="dry-run (no PR push)"
+          else
+            mode="apply"
+          fi
+          {
+            echo "## onboard"
+            echo ""
+            echo "**Tool:** onboard render+PR"
+            echo "**Target:** \`${TARGET}\`"
+            echo "**Mode:** ${mode}"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
       - name: Mint App token scoped to target
         id: target-token
         uses: actions/create-github-app-token@v3
@@ -205,7 +226,7 @@ jobs:
         run: |
           set -euo pipefail
           git add -A
-          echo "## Rendered diff for ${{ matrix.target.target }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Rendered diff for ${{ matrix.target.target }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```diff' >> "$GITHUB_STEP_SUMMARY"
           git --no-pager diff --cached --stat >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -505,7 +526,7 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "## Onboarding run summary"
+            echo "### Onboarding run summary"
             echo ""
             echo "| Repository | Language | Version | Add PR | Cleanup PR | Status |"
             echo "|---|---|---|---|---|---|"

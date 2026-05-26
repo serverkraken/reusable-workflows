@@ -4,6 +4,7 @@
 #
 # Auth: callers MUST pass `secrets: inherit` so the catalog-scoped App
 # token can be minted. See lint-python.yml for the full explanation.
+# Summary convention: docs/conventions/step-summary.md
 name: test-python
 on:
   workflow_call:
@@ -86,7 +87,43 @@ jobs:
 
       # Exclude .catalog/ from pytest discovery — see lint-python.yml.
       - name: pytest --cov-fail-under
+        id: pytest
         working-directory: ${{ inputs.working_directory }}
         env:
           THRESHOLD: ${{ inputs.coverage_threshold }}
-        run: ${{ steps.setup.outputs.run_prefix }} pytest --ignore=.catalog --cov --cov-fail-under="$THRESHOLD"
+        run: |
+          set -o pipefail
+          rc=0
+          ${{ steps.setup.outputs.run_prefix }} pytest --ignore=.catalog --cov --cov-report=term --cov-fail-under="$THRESHOLD" | tee pytest.out || rc=$?
+          pct=$(awk '/^TOTAL/ {gsub("%","",$NF); print $NF}' pytest.out)
+          echo "coverage_pct=${pct:-N/A}" >> "$GITHUB_OUTPUT"
+          echo "threshold=${THRESHOLD}" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - name: Summary
+        if: always()
+        env:
+          WD: ${{ inputs.working_directory }}
+          PYTEST_OUTCOME: ${{ steps.pytest.outcome }}
+          PCT: ${{ steps.pytest.outputs.coverage_pct }}
+          THRESHOLD: ${{ steps.pytest.outputs.threshold }}
+        run: |
+          if [[ "$PYTEST_OUTCOME" == "success" ]]; then
+            result="✓ coverage ${PCT}% ≥ threshold ${THRESHOLD}%"
+          elif [[ -n "$PCT" && "$PCT" != "N/A" ]]; then
+            result="✗ coverage ${PCT}% < threshold ${THRESHOLD}% (or tests failed)"
+          else
+            result="✗ tests failed"
+          fi
+          {
+            echo "## test-python"
+            echo ""
+            echo "**Tool:** pytest"
+            echo "**Working dir:** \`${WD}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Coverage | ${PCT:-N/A}% |"
+            echo "| Threshold | ${THRESHOLD}% |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

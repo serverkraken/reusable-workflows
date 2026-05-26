@@ -7,6 +7,7 @@
 #
 # Auto-detect: when `go_version` is the empty string (default),
 # actions/setup-go reads <working_directory>/go.mod.
+# Summary convention: docs/conventions/step-summary.md
 name: lint-go
 on:
   workflow_call:
@@ -82,12 +83,14 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc libc6-dev
 
       - name: go vet
+        id: vet
         working-directory: ${{ inputs.working_directory }}
         env:
           CGO_ENABLED: ${{ inputs.cgo_enabled && '1' || '0' }}
         run: go vet ./...
 
       - name: golangci-lint
+        id: lint
         uses: golangci/golangci-lint-action@v9
         env:
           CGO_ENABLED: ${{ inputs.cgo_enabled && '1' || '0' }}
@@ -95,3 +98,37 @@ jobs:
           version: ${{ inputs.golangci_lint_version }}
           working-directory: ${{ inputs.working_directory }}
           args: --timeout=5m
+
+      - name: Summary
+        if: always()
+        env:
+          WD: ${{ inputs.working_directory }}
+          GOLANGCI_VERSION: ${{ inputs.golangci_lint_version }}
+          VET_OUTCOME: ${{ steps.vet.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+        run: |
+          glyph() {
+            case "$1" in
+              success) echo "✓" ;;
+              failure) echo "✗" ;;
+              skipped) echo "−" ;;
+              *)       echo "?" ;;
+            esac
+          }
+          if [[ "$VET_OUTCOME" == "success" && "$LINT_OUTCOME" == "success" ]]; then
+            result="✓ passed"
+          else
+            result="✗ failed"
+          fi
+          {
+            echo "## lint-go"
+            echo ""
+            echo "**Tools:** go vet, golangci-lint ${GOLANGCI_VERSION}"
+            echo "**Working dir:** \`${WD}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|---|---|"
+            echo "| go vet | $(glyph "$VET_OUTCOME") |"
+            echo "| golangci-lint | $(glyph "$LINT_OUTCOME") |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
