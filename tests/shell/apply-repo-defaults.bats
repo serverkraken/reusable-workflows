@@ -142,3 +142,20 @@ run_with_stub() {
   [ "$status" -eq 0 ]
   [ ! -f "$tgt/.github/onboard.lock.json" ]
 }
+
+@test "dry-run: drifted state produces no mutating API calls, no lock write" {
+  tgt=$(prepare_target "lock-v1-no-marker.json")
+  before_sha=$(jq -S . "$tgt/.github/onboard.lock.json" | sha256sum | awk '{print $1}')
+  run_with_stub api-drifted --repo o/r --target-path "$tgt" --prev-marker "" --dry-run
+  [ "$status" -eq 0 ]
+  ! grep -qE $'^(PUT|PATCH|POST|DELETE)\t' "$GH_STUB_CALL_LOG"
+  after_sha=$(jq -S . "$tgt/.github/onboard.lock.json" | sha256sum | awk '{print $1}')
+  [ "$before_sha" = "$after_sha" ]
+}
+
+@test "dry-run: still emits defaults_applied=true output" {
+  tgt=$(prepare_target "lock-v1-no-marker.json")
+  run_with_stub api-drifted --repo o/r --target-path "$tgt" --prev-marker "" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *defaults_applied=true* ]]
+}
