@@ -1,6 +1,9 @@
 name: 'Onboard: apply repo defaults'
 description: 'Apply catalog repo-level defaults to a target. Wraps scripts/apply-repo-defaults.sh.'
 inputs:
+  token:
+    description: 'GitHub token with administration:write on the target repo'
+    required: true
   target_repo:
     description: 'owner/repo of the target adopter'
     required: true
@@ -34,7 +37,7 @@ runs:
     - id: apply
       shell: bash
       env:
-        GH_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ inputs.token }}
       run: |
         set -euo pipefail
         catalog="$GITHUB_ACTION_PATH/../.."

@@ -234,6 +234,7 @@ jobs:
       - name: Apply repo defaults
         uses: ./.catalog/actions/onboard-apply-defaults
         with:
+          token: ${{ steps.target-token.outputs.token }}
           target_repo: ${{ matrix.target.target }}
           target_path: target
           prev_defaults_applied_at: ${{ steps.snap_defaults.outputs.prev }}
