@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.0](https://github.com/serverkraken/reusable-workflows/compare/v4.0.3...v4.1.0) (2026-05-26)
+
+
+### Features
+
+* step-summary convention + sweep across all atoms ([#131](https://github.com/serverkraken/reusable-workflows/issues/131)) ([918e18c](https://github.com/serverkraken/reusable-workflows/commit/918e18c3ba3e437cb63d24b38fcaa19d9f4298bb))
+
 ## [4.0.3](https://github.com/serverkraken/reusable-workflows/compare/v4.0.2...v4.0.3) (2026-05-26)
 
 
