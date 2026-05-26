@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.2](https://github.com/serverkraken/reusable-workflows/compare/v4.0.1...v4.0.2) (2026-05-26)
+
+
+### Bug Fixes
+
+* **catalog:** bump default catalog ref v3 → v4 across onboard, atoms, goldens ([#127](https://github.com/serverkraken/reusable-workflows/issues/127)) ([8f6abf4](https://github.com/serverkraken/reusable-workflows/commit/8f6abf409378b9ad9e2f05bd91891e42b638b3e5))
+
 ## [4.0.1](https://github.com/serverkraken/reusable-workflows/compare/v4.0.0...v4.0.1) (2026-05-26)
 
 
