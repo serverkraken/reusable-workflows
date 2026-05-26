@@ -186,6 +186,9 @@ jobs:
         run: |
           set -euo pipefail
           today=$(date -u +%Y-%m-%d)
+          # Aggregate counts for the step-summary block.
+          targets_checked=0
+          drifted=0
           {
             echo "# Onboarding Drift Report — $today"
             echo
@@ -215,13 +218,14 @@ jobs:
                 fi
                 case "$s" in
                   clean) icon="✓" ;;
-                  modified) icon="~" ;;
-                  behind) icon="←" ;;
-                  behind+modified) icon="←~" ;;
-                  no-lock) icon="?" ;;
-                  stale-lock) icon="⚠" ;;
-                  *) icon="⚑" ;;
+                  modified) icon="~"; drifted=$((drifted + 1)) ;;
+                  behind) icon="←"; drifted=$((drifted + 1)) ;;
+                  behind+modified) icon="←~"; drifted=$((drifted + 1)) ;;
+                  no-lock) icon="?"; drifted=$((drifted + 1)) ;;
+                  stale-lock) icon="⚠"; drifted=$((drifted + 1)) ;;
+                  *) icon="⚑"; drifted=$((drifted + 1)) ;;
                 esac
+                targets_checked=$((targets_checked + 1))
                 echo "| $t | $icon $s | $ver | $mods | $re |"
               done
             fi
@@ -233,9 +237,14 @@ jobs:
           } > body.md
           echo "Body preview:"
           cat body.md
-          echo "body_path=body.md" >> "$GITHUB_OUTPUT"
+          {
+            echo "body_path=body.md"
+            echo "targets_checked=$targets_checked"
+            echo "drifted_count=$drifted"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upsert rolling drift issue
+        id: upsert
         env:
           GH_TOKEN: ${{ steps.cat-token.outputs.token }}
           BODY_PATH: ${{ steps.build.outputs.body_path }}
@@ -259,3 +268,29 @@ jobs:
               --title "Onboarding Drift Report" \
               --body-file "$BODY_PATH"
           fi
+          echo "issues_opened=1" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        env:
+          TARGETS_CHECKED: ${{ steps.build.outputs.targets_checked }}
+          DRIFTED: ${{ steps.build.outputs.drifted_count }}
+          ISSUES_OPENED: ${{ steps.upsert.outputs.issues_opened }}
+        run: |
+          if [[ "${DRIFTED:-0}" == "0" ]]; then
+            result="✓ ${TARGETS_CHECKED:-0} targets in sync"
+          else
+            result="▲ ${DRIFTED} of ${TARGETS_CHECKED:-0} drifted"
+          fi
+          {
+            echo "## drift-check"
+            echo ""
+            echo "**Tool:** drift-check render-and-compare"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Targets checked | ${TARGETS_CHECKED:-0} |"
+            echo "| Drifted | ${DRIFTED:-0} |"
+            echo "| Issues opened/updated | ${ISSUES_OPENED:-0} |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

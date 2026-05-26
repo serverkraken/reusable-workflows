@@ -314,3 +314,49 @@ jobs:
               --body "$BODY"
             echo "No rolling drift Issue found — created standalone Issue"
           fi
+
+      - name: Summary
+        if: always()
+        env:
+          UPDATE_TARGETS: ${{ needs.enumerate.outputs.update_targets }}
+          ONBOARD_TARGETS: ${{ needs.enumerate.outputs.onboard_targets }}
+          SKIPPED: ${{ needs.enumerate.outputs.skipped }}
+          UPDATE_RESULT: ${{ needs.update-batch.result }}
+          FRESH_RESULT: ${{ needs.fresh-batch.result }}
+        run: |
+          set -euo pipefail
+          # Count non-empty comma-separated entries (mirrors body builder above).
+          count_csv() {
+            [[ -z "$1" ]] && { echo 0; return; }
+            echo "$1" | awk -F, '{ for (i=1; i<=NF; i++) if ($i ~ /[^[:space:]]/) c++ } END { print c+0 }'
+          }
+          update_count=$(count_csv "${UPDATE_TARGETS:-}")
+          fresh_count=$(count_csv "${ONBOARD_TARGETS:-}")
+          skipped_count=$(count_csv "${SKIPPED:-}")
+          processed=$((update_count + fresh_count))
+
+          # A batch counts as "failed" only when actually executed and failed —
+          # 'skipped' (empty targets) and '' (not run) are not failures.
+          failed=0
+          [[ "${UPDATE_RESULT:-}" == "failure" ]] && failed=$((failed + 1))
+          [[ "${FRESH_RESULT:-}" == "failure" ]] && failed=$((failed + 1))
+
+          if [[ "$failed" == "0" ]]; then
+            result="✓ ${processed} targets swept"
+          else
+            result="▲ ${processed} swept, ${failed} batch(es) failed"
+          fi
+          {
+            echo "## onboard-sweep"
+            echo ""
+            echo "**Tool:** onboard-sweep cron"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Targets processed | ${processed} |"
+            echo "| Update batch | ${update_count} (${UPDATE_RESULT:-skipped}) |"
+            echo "| Fresh batch | ${fresh_count} (${FRESH_RESULT:-skipped}) |"
+            echo "| Skipped | ${skipped_count} |"
+            echo "| Batches failed | ${failed} |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
