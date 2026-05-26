@@ -122,3 +122,39 @@ diff_branch_protection() {
     echo "reason=drift fields=$(echo "$diff_keys" | tr -d '"')"
   fi
 }
+
+# _diff_flat_object <current-json> <target-json>
+#   Internal helper: compares two flat objects on the target's keyset only.
+#   Echoes "fields=<csv>" if any differ, empty otherwise.
+_diff_flat_object() {
+  local current="$1"
+  local target="$2"
+  local diff_keys
+  diff_keys=$(jq -nc \
+    --argjson c "$current" \
+    --argjson t "$target" \
+    '[($t | keys_unsorted)[] | select(($c[.]) != ($t[.]))] | join(",")')
+  if [[ "$diff_keys" == "" || "$diff_keys" == '""' ]]; then
+    echo ""
+  else
+    echo "fields=$(echo "$diff_keys" | tr -d '"')"
+  fi
+}
+
+# diff_repo_settings <current-json> <target-json>
+#   → echoes diff summary line ("fields=<csv>"), or empty if equivalent.
+#
+# Fields: has_wiki, has_projects, has_issues, has_discussions.
+diff_repo_settings() {
+  _diff_flat_object "$1" "$2"
+}
+
+# diff_merge_hygiene <current-json> <target-json>
+#   → echoes diff summary line ("fields=<csv>"), or empty if equivalent.
+#
+# Fields: allow_squash_merge, allow_merge_commit, allow_rebase_merge,
+#         allow_auto_merge, delete_branch_on_merge,
+#         squash_merge_commit_title, squash_merge_commit_message.
+diff_merge_hygiene() {
+  _diff_flat_object "$1" "$2"
+}

@@ -88,3 +88,35 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *enforce_admins* ]]
 }
+
+@test "diff_repo_settings: identical → empty" {
+  current='{"has_wiki":false,"has_projects":false,"has_issues":true,"has_discussions":false}'
+  target='{"has_wiki":false,"has_projects":false,"has_issues":true,"has_discussions":false}'
+  run diff_repo_settings "$current" "$target"
+  [ "$status" -eq 0 ]
+  [ "$output" = "" ]
+}
+
+@test "diff_repo_settings: has_wiki drift → reports field" {
+  current='{"has_wiki":true,"has_projects":false,"has_issues":true,"has_discussions":false}'
+  target='{"has_wiki":false,"has_projects":false,"has_issues":true,"has_discussions":false}'
+  run diff_repo_settings "$current" "$target"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *has_wiki* ]]
+}
+
+@test "diff_merge_hygiene: identical → empty" {
+  current='{"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false,"delete_branch_on_merge":true,"allow_auto_merge":true,"squash_merge_commit_title":"PR_TITLE","squash_merge_commit_message":"PR_BODY"}'
+  target="$current"
+  run diff_merge_hygiene "$current" "$target"
+  [ "$status" -eq 0 ]
+  [ "$output" = "" ]
+}
+
+@test "diff_merge_hygiene: allow_merge_commit drift → reports field" {
+  current='{"allow_squash_merge":true,"allow_merge_commit":true,"allow_rebase_merge":false,"delete_branch_on_merge":true,"allow_auto_merge":true,"squash_merge_commit_title":"PR_TITLE","squash_merge_commit_message":"PR_BODY"}'
+  target='{"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false,"delete_branch_on_merge":true,"allow_auto_merge":true,"squash_merge_commit_title":"PR_TITLE","squash_merge_commit_message":"PR_BODY"}'
+  run diff_merge_hygiene "$current" "$target"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *allow_merge_commit* ]]
+}
