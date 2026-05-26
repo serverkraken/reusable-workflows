@@ -34,7 +34,7 @@ jobs:
       matrix: ${{ steps.enum.outputs.matrix }}
       current_version: ${{ steps.ver.outputs.current_version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0  # need full tag history for git describe
 
@@ -96,7 +96,7 @@ jobs:
     steps:
       - name: Mint App token scoped to target
         id: target-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
@@ -104,14 +104,14 @@ jobs:
           repositories: ${{ matrix.target.name }}
 
       - name: Checkout target repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: ${{ matrix.target.target }}
           token: ${{ steps.target-token.outputs.token }}
           path: target
 
       - name: Checkout catalog at this workflow's SHA
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ github.workflow_sha }}
@@ -151,7 +151,7 @@ jobs:
 
       - name: Upload drift result
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: drift-${{ matrix.target.owner }}-${{ matrix.target.name }}
           path: result/
@@ -165,7 +165,7 @@ jobs:
     steps:
       - name: Mint App token for catalog repo
         id: cat-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
@@ -174,7 +174,7 @@ jobs:
 
       - name: Download all drift results
         if: needs.check.result == 'success' || needs.check.result == 'failure'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: results
           pattern: drift-*

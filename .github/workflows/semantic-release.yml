@@ -65,18 +65,18 @@ jobs:
       minor_tag: ${{ steps.float.outputs.minor_tag }}
     steps:
       - name: Mint GitHub App installation token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app-token
         with:
           client-id: ${{ secrets.release_please_app_client_id }}
           private-key: ${{ secrets.release_please_app_private_key }}
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         id: release
         with:
           token: ${{ steps.app-token.outputs.token }}

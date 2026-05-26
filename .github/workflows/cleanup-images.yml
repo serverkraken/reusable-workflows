@@ -88,7 +88,7 @@ jobs:
 
       - name: Delete stale prerelease versions
         if: steps.stale.outputs.ids != ''
-        uses: actions/delete-package-versions@v5
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5
         with:
           # package-name + package-type are required by the action.yml schema
           # (actionlint enforces this) even when using package-version-ids,
@@ -98,7 +98,7 @@ jobs:
           package-version-ids: ${{ steps.stale.outputs.ids }}
 
       - name: Prune oldest stable versions over keep threshold
-        uses: actions/delete-package-versions@v5
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5
         with:
           package-name: ${{ steps.pkg.outputs.name }}
           package-type: container
