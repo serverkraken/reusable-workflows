@@ -28,7 +28,7 @@ contract and operator-facing knobs.
 ### What gets rendered
 
 The onboarding renders 4 workflows in `.github/workflows/` of the target
-repo, pinned to `@v3` (the current catalog major). The skeleton sources are
+repo, pinned to `@v4` (the current catalog major). The skeleton sources are
 the canonical reference for what each contains:
 
 - [`ci.yml.tmpl`](docs/adopter-templates/skeletons/ci.yml.tmpl) — lint + test + trivy-fs (pull_request)

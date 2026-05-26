@@ -24,7 +24,7 @@ setup() {
   TARGET=$(mktemp -d)
   profile=$("$DETECT" --profile-json "$FIX/go-repo")
   echo "$profile" > "$TARGET/profile.json"
-  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v3"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
   rm "$TARGET/profile.json"
   # Copy fixture source into target so detect could re-run there if a future
   # test needs it. Drift script itself only reads lock + file hashes.
@@ -36,14 +36,14 @@ teardown() {
 }
 
 @test "drift: clean state reports clean" {
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"status=clean"* ]]
 }
 
 @test "drift: hand-edit on ci.yml reports modified" {
   echo "# tampered" >> "$TARGET/.github/workflows/ci.yml"
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"status=modified"* ]]
   [[ "$output" == *"ci.yml"* ]]
@@ -52,7 +52,7 @@ teardown() {
 @test "drift: lock.catalog_version < current reports behind" {
   jq '.catalog_version = "v1"' "$TARGET/.github/onboard.lock.json" > "$TARGET/.github/onboard.lock.json.new"
   mv "$TARGET/.github/onboard.lock.json.new" "$TARGET/.github/onboard.lock.json"
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"status=behind"* ]]
 }
@@ -61,7 +61,7 @@ teardown() {
   jq '.catalog_version = "v1"' "$TARGET/.github/onboard.lock.json" > "$TARGET/.github/onboard.lock.json.new"
   mv "$TARGET/.github/onboard.lock.json.new" "$TARGET/.github/onboard.lock.json"
   echo "# tampered" >> "$TARGET/.github/workflows/release.yml"
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"status=behind+modified"* ]]
   [[ "$output" == *"release.yml"* ]]
@@ -69,7 +69,7 @@ teardown() {
 
 @test "drift: missing rendered file is reported as modified with (missing) suffix" {
   rm "$TARGET/.github/workflows/cleanup.yml"
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"status=modified"* ]]
   [[ "$output" == *"cleanup.yml(missing)"* ]]
@@ -77,7 +77,7 @@ teardown() {
 
 @test "drift: missing lock file reports no-lock" {
   rm "$TARGET/.github/onboard.lock.json"
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"status=no-lock"* ]]
 }
@@ -86,7 +86,7 @@ teardown() {
   before=$(jq -r '.files' "$TARGET/.github/onboard.lock.json")
   re=$(mktemp -d)
   "$DETECT" --profile-json "$FIX/go-repo" > "$re/profile.json"
-  "$RENDER" "$REPO_ROOT" "$re" "$re/profile.json" "v3"
+  "$RENDER" "$REPO_ROOT" "$re" "$re/profile.json" "v4"
   for f in $(jq -r 'keys[]' <<< "$before"); do
     expected=$(jq -r --arg k "$f" '.[$k]' <<< "$before")
     actual="sha256:$(sha256_of "$re/$f")"
@@ -96,13 +96,13 @@ teardown() {
 }
 
 @test "drift: missing TARGET dir errors out cleanly" {
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "/nonexistent/path" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "/nonexistent/path" "$REPO_ROOT"
   [ "$status" -ne 0 ]
   [[ "$output" == *"usage"* ]]
 }
 
 @test "drift: clean state stays clean when re-render matches lock files" {
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"status=clean"* ]]
   # render_error field is present and empty
@@ -121,7 +121,7 @@ teardown() {
   # Append a benign marker to ci.yml.tmpl so the rendered ci.yml diverges.
   echo "# stale-lock-test marker $(date +%s%N)" \
     >> "$scratch_catalog/docs/adopter-templates/skeletons/ci.yml.tmpl"
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$scratch_catalog"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$scratch_catalog"
   rm -rf "$scratch_catalog"
   [ "$status" -eq 0 ]
   [[ "$output" == *"status=stale-lock"* ]]
@@ -141,7 +141,7 @@ teardown() {
     cmd=$(command -v "$tool" 2>/dev/null) || continue
     ln -s "$cmd" "$fake_path/$tool"
   done
-  CATALOG_CURRENT_VERSION=v3 PATH="$fake_path" run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 PATH="$fake_path" run "$DRIFT" "$TARGET" "$REPO_ROOT"
   rm -rf "$fake_path"
   [ "$status" -eq 0 ]
   # Status stays clean (no false-positive stale-lock when render fails).
@@ -153,7 +153,7 @@ teardown() {
 @test "drift: mutated .release-please-manifest.json does NOT count as modified" {
   # Simulate release-please updating the manifest after a release.
   echo '{".":"0.32.0"}' > "$TARGET/.release-please-manifest.json"
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
   [ "$status" -eq 0 ]
   # Should still report clean — manifest is skipped from the lock-compare loop.
   [[ "$output" == *"status=clean"* ]]
@@ -173,7 +173,7 @@ teardown() {
     "$TARGET/.github/onboard.lock.json" > "$TARGET/.github/onboard.lock.json.new"
   mv "$TARGET/.github/onboard.lock.json.new" "$TARGET/.github/onboard.lock.json"
 
-  CATALOG_CURRENT_VERSION=v3 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"status=clean"* ]]
   [[ "$output" != *"release-please-manifest"* ]]

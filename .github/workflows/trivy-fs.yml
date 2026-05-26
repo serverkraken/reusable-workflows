@@ -88,8 +88,8 @@ jobs:
         #
         # Self-CI (caller == catalog): use the caller's SHA — it IS a catalog
         # commit and exercises any feature-branch composite-action changes.
-        # Cross-repo (adopters): pin to the floating major tag `v3` so
-        # adopters at @v3.x.y always get coherent v3 composite actions.
+        # Cross-repo (adopters): pin to the floating major tag `v4` so
+        # adopters at @v4.x.y always get coherent v4 composite actions.
         # Bump the hardcoded major in this block when a new major releases.
         id: catalog-ref
         env:
@@ -101,8 +101,8 @@ jobs:
             echo "Self-CI: catalog ref = $SELF_SHA"
           else
             # renovate-marker: catalog-major-ref
-            echo "ref=v3" >> "$GITHUB_OUTPUT"
-            echo "Cross-repo: catalog ref = v3 (floating)"
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+            echo "Cross-repo: catalog ref = v4 (floating)"
           fi
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6

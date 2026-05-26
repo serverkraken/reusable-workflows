@@ -4,7 +4,7 @@ on:
 
 jobs:
   secscan:
-    uses: serverkraken/reusable-workflows/.github/workflows/trivy-fs.yml@v3
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-fs.yml@v4
     permissions:
       contents: read
       security-events: write

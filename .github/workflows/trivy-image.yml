@@ -77,7 +77,7 @@ jobs:
           owner: serverkraken
           repositories: reusable-workflows
       - name: Resolve catalog ref
-        # See trivy-fs.yml for rationale. Self-CI: caller's SHA. Cross-repo: floating v3.
+        # See trivy-fs.yml for rationale. Self-CI: caller's SHA. Cross-repo: floating v4.
         id: catalog-ref
         env:
           IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
@@ -88,8 +88,8 @@ jobs:
             echo "Self-CI: catalog ref = $SELF_SHA"
           else
             # renovate-marker: catalog-major-ref
-            echo "ref=v3" >> "$GITHUB_OUTPUT"
-            echo "Cross-repo: catalog ref = v3 (floating)"
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+            echo "Cross-repo: catalog ref = v4 (floating)"
           fi
       - name: Checkout catalog for composite actions
         uses: actions/checkout@v6
