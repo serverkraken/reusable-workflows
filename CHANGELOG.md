@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.1](https://github.com/serverkraken/reusable-workflows/compare/v4.0.0...v4.0.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* **summaries:** replace emoji with glyphs across step-summaries and bot comment ([#125](https://github.com/serverkraken/reusable-workflows/issues/125)) ([5bf4d0b](https://github.com/serverkraken/reusable-workflows/commit/5bf4d0b47a45876ce815c9a99a33c3c87da4224a))
+
 ## [4.0.0](https://github.com/serverkraken/reusable-workflows/compare/v3.14.2...v4.0.0) (2026-05-25)
 
 
