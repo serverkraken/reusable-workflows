@@ -1,4 +1,5 @@
 # .github/workflows/semantic-release.yml
+# Summary convention: docs/conventions/step-summary.md
 name: semantic-release
 on:
   workflow_call:

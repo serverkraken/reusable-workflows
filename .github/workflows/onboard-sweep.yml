@@ -9,6 +9,7 @@
 # drift report Issue already exists when sweep posts its summary comment.
 #
 # Operational tool — not a public reusable workflow.
+# Summary convention: docs/conventions/step-summary.md
 name: onboard-sweep
 on:
   schedule:

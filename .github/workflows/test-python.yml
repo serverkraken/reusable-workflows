@@ -4,6 +4,7 @@
 #
 # Auth: callers MUST pass `secrets: inherit` so the catalog-scoped App
 # token can be minted. See lint-python.yml for the full explanation.
+# Summary convention: docs/conventions/step-summary.md
 name: test-python
 on:
   workflow_call:

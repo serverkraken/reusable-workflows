@@ -1,4 +1,5 @@
 # .github/workflows/trivy-image.yml
+# Summary convention: docs/conventions/step-summary.md
 name: trivy-image
 on:
   workflow_call:

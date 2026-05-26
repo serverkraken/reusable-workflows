@@ -1,4 +1,5 @@
 # .github/workflows/cleanup-images.yml
+# Summary convention: docs/conventions/step-summary.md
 name: cleanup-images
 on:
   workflow_call:

@@ -1,5 +1,6 @@
 # .github/workflows/test-rust.yml
 # Reusable workflow: run cargo test + cargo-llvm-cov coverage gate.
+# Summary convention: docs/conventions/step-summary.md
 name: test-rust
 on:
   workflow_call:

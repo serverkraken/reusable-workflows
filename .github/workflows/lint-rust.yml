@@ -1,5 +1,6 @@
 # .github/workflows/lint-rust.yml
 # Reusable workflow: lint Rust with cargo fmt --check + cargo clippy -D warnings.
+# Summary convention: docs/conventions/step-summary.md
 name: lint-rust
 on:
   workflow_call:

@@ -3,6 +3,7 @@
 #
 # Stability surface: the shape of `inputs` below is the contract.
 # Exit non-zero when measured line coverage < `coverage_threshold`.
+# Summary convention: docs/conventions/step-summary.md
 name: test-go
 on:
   workflow_call:

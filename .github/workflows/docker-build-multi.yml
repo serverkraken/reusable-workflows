@@ -18,6 +18,7 @@
 # (`release_please_app_client_id`, `release_please_app_private_key`) are forwarded
 # unchanged to the nested docker-build.yml so it can mint a GitHub App
 # token for tag-based builds.
+# Summary convention: docs/conventions/step-summary.md
 name: docker-build-multi
 on:
   workflow_call:

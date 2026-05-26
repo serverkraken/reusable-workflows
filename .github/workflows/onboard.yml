@@ -2,6 +2,7 @@
 # Operational tool: dispatches per-target onboarding PRs into serverkraken/* repos.
 # Not a public reusable workflow's API surface — input contract may evolve without semver bump.
 # See docs/superpowers/specs/2026-05-16-onboarding-workflow-design.md.
+# Summary convention: docs/conventions/step-summary.md
 name: onboard
 on:
   workflow_dispatch:

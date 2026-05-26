@@ -12,6 +12,7 @@
 #
 # Auth: `secrets: inherit` is REQUIRED on callers. The atom uses the
 # automatic `GITHUB_TOKEN`; no explicit `secrets:` block is declared.
+# Summary convention: docs/conventions/step-summary.md
 name: goreleaser
 on:
   workflow_call:

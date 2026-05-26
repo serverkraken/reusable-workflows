@@ -6,6 +6,7 @@
 # token can be minted. The catalog repo is private; the implicit
 # adopter-scoped `github.token` cannot clone it, so we mint a separate
 # token whose only permission is `contents:read` on reusable-workflows.
+# Summary convention: docs/conventions/step-summary.md
 name: lint-python
 on:
   workflow_call:

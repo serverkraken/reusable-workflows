@@ -7,6 +7,7 @@
 #
 # Auto-detect: when `go_version` is the empty string (default),
 # actions/setup-go reads <working_directory>/go.mod.
+# Summary convention: docs/conventions/step-summary.md
 name: lint-go
 on:
   workflow_call:

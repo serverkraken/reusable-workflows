@@ -6,6 +6,7 @@
 #
 # Operational tool — not a public reusable workflow's surface; input contract
 # may evolve without semver bump.
+# Summary convention: docs/conventions/step-summary.md
 name: drift-check
 on:
   schedule:

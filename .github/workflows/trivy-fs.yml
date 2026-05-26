@@ -1,4 +1,5 @@
 # .github/workflows/trivy-fs.yml
+# Summary convention: docs/conventions/step-summary.md
 name: trivy-fs
 on:
   workflow_call:

@@ -7,6 +7,7 @@
 # stored as OCI sidecar at <image>@<digest>, verified with
 # `cosign verify-attestation --type slsaprovenance`),
 # optionally generate an SBOM artifact.
+# Summary convention: docs/conventions/step-summary.md
 name: docker-build
 on:
   workflow_call:
