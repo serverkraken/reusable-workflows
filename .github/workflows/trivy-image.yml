@@ -68,10 +68,10 @@ jobs:
     outputs:
       findings_count: ${{ steps.count.outputs.findings_count }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Mint catalog-scoped App token
         id: catalog-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.release_please_app_client_id }}
           private-key: ${{ secrets.release_please_app_private_key }}
@@ -93,7 +93,7 @@ jobs:
             echo "Cross-repo: catalog ref = v4 (floating)"
           fi
       - name: Checkout catalog for composite actions
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ steps.catalog-ref.outputs.ref }}
@@ -141,13 +141,13 @@ jobs:
 
       - name: Upload SARIF to code-scanning
         if: inputs.upload_sarif && github.event.pull_request.head.repo.full_name == github.repository
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
 
       - name: Upload SARIF as artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: trivy-image-sarif
           path: trivy-image.sarif

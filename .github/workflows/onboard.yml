@@ -149,7 +149,7 @@ jobs:
 
       - name: Mint App token scoped to target
         id: target-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
@@ -185,7 +185,7 @@ jobs:
             | gh api --method PATCH "/repos/$TARGET" --input - > /dev/null
 
       - name: Checkout target repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: ${{ matrix.target.target }}
           token: ${{ steps.target-token.outputs.token }}
@@ -193,7 +193,7 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout catalog at this workflow's SHA
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ github.workflow_sha }}
@@ -480,7 +480,7 @@ jobs:
 
       - name: Upload result artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: onboard-result-${{ matrix.target.owner }}-${{ matrix.target.name }}
           path: result/
@@ -498,7 +498,7 @@ jobs:
       - name: Mint App token for catalog repo
         id: catalog-token
         if: ${{ !inputs.dry_run }}
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
@@ -507,7 +507,7 @@ jobs:
 
       - name: Checkout catalog on main
         if: ${{ !inputs.dry_run }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: main
@@ -515,7 +515,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download all result artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: results
           pattern: onboard-result-*

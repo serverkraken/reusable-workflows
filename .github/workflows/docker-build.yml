@@ -108,10 +108,10 @@ jobs:
       moving_tag: ${{ steps.resolve.outputs.moving_tag }}
       image_name: ${{ steps.resolve.outputs.image_name }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Mint catalog-scoped App token
         id: catalog-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.release_please_app_client_id }}
           private-key: ${{ secrets.release_please_app_private_key }}
@@ -131,7 +131,7 @@ jobs:
             echo "ref=v4" >> "$GITHUB_OUTPUT"
           fi
       - name: Checkout catalog for composite actions
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ steps.catalog-ref.outputs.ref }}
@@ -204,11 +204,11 @@ jobs:
           fi
 
       - if: steps.check.outputs.selected == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Mint catalog-scoped App token
         if: steps.check.outputs.selected == 'true'
         id: catalog-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.release_please_app_client_id }}
           private-key: ${{ secrets.release_please_app_private_key }}
@@ -230,7 +230,7 @@ jobs:
           fi
       - name: Checkout catalog for composite actions
         if: steps.check.outputs.selected == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ steps.catalog-ref.outputs.ref }}
@@ -276,7 +276,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - if: steps.check.outputs.selected == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           # Arch FIRST, then image-suffix — keeps the merge job's download
           # pattern unambiguous. Putting suffix first allowed "test-fixture-*"
@@ -296,10 +296,10 @@ jobs:
       image_ref: ${{ steps.compose.outputs.image_ref }}
       digest: ${{ steps.merge_step.outputs.digest }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Mint catalog-scoped App token
         id: catalog-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.release_please_app_client_id }}
           private-key: ${{ secrets.release_please_app_private_key }}
@@ -319,7 +319,7 @@ jobs:
             echo "ref=v4" >> "$GITHUB_OUTPUT"
           fi
       - name: Checkout catalog for composite actions
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ steps.catalog-ref.outputs.ref }}
@@ -339,13 +339,13 @@ jobs:
         run: rm -rf /tmp/digests && mkdir -p /tmp/digests
 
       - name: Download amd64 digest
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: /tmp/digests
           name: digests-amd64-${{ steps.suffix.outputs.value }}
 
       - name: Download arm64 digest
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: /tmp/digests
           name: digests-arm64-${{ steps.suffix.outputs.value }}
@@ -455,7 +455,7 @@ jobs:
 
       - name: Upload SBOM artifact
         if: inputs.sbom
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sbom-spdx
           path: sbom.spdx.json
@@ -501,7 +501,7 @@ jobs:
     steps:
       - name: Mint catalog-scoped App token
         id: catalog-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.release_please_app_client_id }}
           private-key: ${{ secrets.release_please_app_private_key }}
@@ -520,7 +520,7 @@ jobs:
             # renovate-marker: catalog-major-ref
             echo "ref=v4" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ steps.catalog-ref.outputs.ref }}
