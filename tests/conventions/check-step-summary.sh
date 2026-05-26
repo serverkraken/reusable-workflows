@@ -10,7 +10,8 @@
 #      (e.g., lint-go.yml must contain a line writing "## lint-go").
 #
 # Bats fixtures invoke this from a temp dir; CI invokes from repo root.
-# Both cases work because we glob `.github/workflows/*.yml` relative to CWD.
+# Both cases work because we glob .github/workflows/*.{yml,yaml} relative
+# to CWD; nullglob keeps the loop empty when one extension is unused.
 
 set -euo pipefail
 
@@ -26,7 +27,7 @@ FAILED=0
 CHECKED=0
 
 shopt -s nullglob
-for file in .github/workflows/*.yml; do
+for file in .github/workflows/*.yml .github/workflows/*.yaml; do
   basename=$(basename "$file")
   atom_name="${basename%.yml}"
 
