@@ -73,12 +73,20 @@ jobs:
           THRESHOLD: ${{ inputs.coverage_threshold }}
         run: |
           set -o pipefail
-          cargo llvm-cov --summary-only --fail-under-lines "$THRESHOLD" | tee llvm-cov.out
-          # `--summary-only` prints a table; the `TOTAL` row's last field is the
-          # line-coverage percentage (e.g., `85.42%`). awk strips the trailing %.
-          pct=$(awk '/^TOTAL/ {gsub("%","",$NF); print $NF}' llvm-cov.out)
+          rc=0
+          cargo llvm-cov --summary-only --fail-under-lines "$THRESHOLD" | tee llvm-cov.out || rc=$?
+          # Re-run with --json to extract line-coverage precisely (text TOTAL row's last % is branch, not line).
+          cargo llvm-cov report --json --output-path llvm-cov.json >/dev/null 2>&1 || true
+          if [[ -f llvm-cov.json ]] && command -v jq >/dev/null 2>&1; then
+            pct=$(jq -r '.data[0].totals.lines.percent | tostring | .[0:5]' llvm-cov.json 2>/dev/null)
+          else
+            # Fallback: position-based parse of the TOTAL row. cargo-llvm-cov's --summary-only
+            # currently emits 13 columns; line coverage is the 10th field (after Lines / Missed Lines).
+            pct=$(awk '/^TOTAL/ {gsub("%","",$10); print $10}' llvm-cov.out)
+          fi
           echo "coverage_pct=${pct:-N/A}" >> "$GITHUB_OUTPUT"
           echo "threshold=${THRESHOLD}" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
       - name: Summary
         if: always()
@@ -98,7 +106,7 @@ jobs:
           {
             echo "## test-rust"
             echo ""
-            echo "**Tool:** cargo test, cargo-llvm-cov"
+            echo "**Tool:** cargo-llvm-cov"
             echo "**Working dir:** \`${WD}\`"
             echo "**Result:** ${result}"
             echo ""

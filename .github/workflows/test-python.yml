@@ -92,10 +92,12 @@ jobs:
           THRESHOLD: ${{ inputs.coverage_threshold }}
         run: |
           set -o pipefail
-          ${{ steps.setup.outputs.run_prefix }} pytest --ignore=.catalog --cov --cov-report=term --cov-fail-under="$THRESHOLD" | tee pytest.out
+          rc=0
+          ${{ steps.setup.outputs.run_prefix }} pytest --ignore=.catalog --cov --cov-report=term --cov-fail-under="$THRESHOLD" | tee pytest.out || rc=$?
           pct=$(awk '/^TOTAL/ {gsub("%","",$NF); print $NF}' pytest.out)
           echo "coverage_pct=${pct:-N/A}" >> "$GITHUB_OUTPUT"
           echo "threshold=${THRESHOLD}" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
       - name: Summary
         if: always()
