@@ -342,7 +342,9 @@ jobs:
           )
 
           if [[ -n "$existing_pr_num" ]]; then
-            gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" --body "$body"
+            gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" \
+              --title "chore: onboard serverkraken/reusable-workflows@${PIN}" \
+              --body "$body"
             pr_url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url)
           else
             gh pr create --repo "$TARGET_REPO" \
@@ -434,7 +436,9 @@ jobs:
           )
 
           if [[ -n "$existing_pr_num" ]]; then
-            gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" --body "$body"
+            gh pr edit "$existing_pr_num" --repo "$TARGET_REPO" \
+              --title "chore: remove legacy workflows superseded by reusable-workflows@${PIN}" \
+              --body "$body"
             pr_url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url)
           else
             gh pr create --repo "$TARGET_REPO" \
