@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.3](https://github.com/serverkraken/reusable-workflows/compare/v4.0.2...v4.0.3) (2026-05-26)
+
+
+### Bug Fixes
+
+* **onboard-sweep:** legible digest format with details + tables ([#129](https://github.com/serverkraken/reusable-workflows/issues/129)) ([1c9c1c0](https://github.com/serverkraken/reusable-workflows/commit/1c9c1c01fb76e07adbf39b2930bc249d5463c37f))
+
 ## [4.0.2](https://github.com/serverkraken/reusable-workflows/compare/v4.0.1...v4.0.2) (2026-05-26)
 
 
