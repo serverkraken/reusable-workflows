@@ -104,13 +104,17 @@ jobs:
             name=$(echo "$r" | jq -r '.name')
             full="serverkraken/$name"
 
-            # Duplicate-PR guard: skip if an open bot PR already exists.
-            open_pr=$(gh api -X GET "/repos/$full/pulls" \
+            # Duplicate-PR guard: skip ONLY if an open bot PR already targets
+            # the current catalog version. Stale-version PRs (e.g. @v3 left over
+            # after a major-bump cutover) are allowed through — onboard.yml
+            # force-pushes the branch and edits the existing PR in-place.
+            existing_current=$(gh api -X GET "/repos/$full/pulls" \
               -f state=open \
               -q '[.[] | select(.user.login == "serverkraken-release-bot[bot]")
                         | select(.head.ref | test("^chore/(onboard-reusable-workflows|remove-legacy-workflows)$"))
+                        | select(.title | test("@" + env.CURRENT + "\\b"))
                   ] | length' 2>/dev/null || echo "0")
-            if [[ "$open_pr" -gt 0 ]]; then
+            if [[ "$existing_current" -gt 0 ]]; then
               skipped_csv+="${full}:open-pr,"
               continue
             fi
