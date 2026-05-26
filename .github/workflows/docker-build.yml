@@ -461,18 +461,33 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Job summary
+      - name: Summary
+        env:
+          IMAGE_NAME: ${{ needs.version.outputs.image_name }}
+          TAG: ${{ needs.version.outputs.tag }}
+          DIGEST: ${{ steps.merge_step.outputs.digest }}
+          PLATFORMS: ${{ inputs.platforms }}
+          SIGN: ${{ inputs.sign }}
+          ATTEST: ${{ inputs.attest }}
+          SBOM: ${{ inputs.sbom }}
         run: |
+          glyph_bool() { [[ "$1" == "true" ]] && echo "✓" || echo "−"; }
           {
-            echo "## Multi-arch image published"
+            echo "## docker-build"
             echo ""
-            echo "**Image:** \`ghcr.io/${{ needs.version.outputs.image_name }}:${{ needs.version.outputs.tag }}\`"
-            echo "**Digest:** \`${{ steps.merge_step.outputs.digest }}\`"
-            echo "**Platforms:** \`${{ inputs.platforms }}\`"
-            echo "**Signed:** ${{ inputs.sign }}"
-            echo "**Attested:** ${{ inputs.attest }}"
-            echo "**SBOM:** ${{ inputs.sbom }}"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "**Tool:** Buildx (distributed multi-arch)"
+            echo "**Result:** ✓ pushed"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Image | \`ghcr.io/${IMAGE_NAME}\` |"
+            echo "| Tag | \`${TAG}\` |"
+            echo "| Digest | \`${DIGEST}\` |"
+            echo "| Platforms | \`${PLATFORMS}\` |"
+            echo "| Sign | $(glyph_bool "$SIGN") cosign keyless |"
+            echo "| Attest | $(glyph_bool "$ATTEST") SLSA provenance |"
+            echo "| SBOM | $(glyph_bool "$SBOM") SPDX-JSON |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
 
   post-comment:
     if: inputs.prerelease && github.event_name == 'pull_request'
