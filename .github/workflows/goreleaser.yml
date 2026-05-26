@@ -82,7 +82,7 @@ jobs:
           GR_VERSION: ${{ inputs.goreleaser_version }}
         run: |
           {
-            echo "## 📦 goreleaser ($MODE)"
+            echo "## goreleaser ($MODE)"
             echo ""
             echo "**Working directory:** \`$WORKDIR\`"
             echo "**goreleaser version:** \`$GR_VERSION\`"

@@ -214,13 +214,13 @@ jobs:
                   ver="$lv → $cv"
                 fi
                 case "$s" in
-                  clean) icon="✅" ;;
-                  modified) icon="✏️" ;;
-                  behind) icon="↩️" ;;
-                  behind+modified) icon="↩️✏️" ;;
-                  no-lock) icon="❓" ;;
-                  stale-lock) icon="⚠️" ;;
-                  *) icon="🔥" ;;
+                  clean) icon="✓" ;;
+                  modified) icon="~" ;;
+                  behind) icon="←" ;;
+                  behind+modified) icon="←~" ;;
+                  no-lock) icon="?" ;;
+                  stale-lock) icon="⚠" ;;
+                  *) icon="⚑" ;;
                 esac
                 echo "| $t | $icon $s | $ver | $mods | $re |"
               done

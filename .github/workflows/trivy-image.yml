@@ -159,7 +159,7 @@ jobs:
           COUNT: ${{ steps.count.outputs.findings_count }}
         run: |
           {
-            echo "## 🛡️ Trivy image scan"
+            echo "## Trivy image scan"
             echo ""
             echo "**Image:** \`${{ inputs.image_ref }}\`"
             echo "**Scanners:** \`${{ inputs.scanners }}\`"

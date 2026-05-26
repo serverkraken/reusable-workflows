@@ -12,7 +12,7 @@ inputs:
     description: 'PR number to post the comment on.'
     required: true
   trivy_status:
-    description: 'Optional Trivy result line (e.g. "✅ no HIGH/CRITICAL").'
+    description: 'Optional Trivy result line (e.g. "✓ no HIGH/CRITICAL").'
     required: false
     default: ''
   commit_sha:
@@ -51,7 +51,7 @@ runs:
         fi
         BODY=$(cat <<EOF
         <!-- prerelease-image-comment -->
-        🐳 **Prerelease image ready**
+        **Prerelease image ready**
 
         \`\`\`
         docker pull $IMAGE_REF

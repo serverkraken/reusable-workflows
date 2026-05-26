@@ -195,7 +195,7 @@ jobs:
           COUNT: ${{ steps.count.outputs.findings_count }}
         run: |
           {
-            echo "## 🛡️ Trivy filesystem scan"
+            echo "## Trivy filesystem scan"
             echo ""
             echo "**Scanners:** \`${{ inputs.scanners }}\`"
             echo "**Severity:** \`${{ inputs.severity }}\`"
