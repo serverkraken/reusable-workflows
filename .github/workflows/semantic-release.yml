@@ -119,7 +119,7 @@ jobs:
           MIN: ${{ steps.float.outputs.minor_tag }}
         run: |
           {
-            echo "## 🎉 Released $TAG"
+            echo "## Released $TAG"
             echo ""
             if [[ -n "${MAJ:-}" ]]; then
               echo "**Floating tags updated:** \`$MAJ\` · \`$MIN\`"

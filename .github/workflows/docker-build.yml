@@ -464,7 +464,7 @@ jobs:
       - name: Job summary
         run: |
           {
-            echo "## 🐳 Multi-arch image published"
+            echo "## Multi-arch image published"
             echo ""
             echo "**Image:** \`ghcr.io/${{ needs.version.outputs.image_name }}:${{ needs.version.outputs.tag }}\`"
             echo "**Digest:** \`${{ steps.merge_step.outputs.digest }}\`"
