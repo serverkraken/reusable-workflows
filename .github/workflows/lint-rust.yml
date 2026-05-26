@@ -57,9 +57,44 @@ jobs:
           workspaces: ${{ inputs.working_directory }}
 
       - name: cargo fmt --check
+        id: fmt
         working-directory: ${{ inputs.working_directory }}
         run: cargo fmt --check
 
       - name: cargo clippy
+        id: clippy
         working-directory: ${{ inputs.working_directory }}
         run: cargo clippy --no-deps -- ${{ inputs.clippy_args }}
+
+      - name: Summary
+        if: always()
+        env:
+          WD: ${{ inputs.working_directory }}
+          FMT_OUTCOME: ${{ steps.fmt.outcome }}
+          CLIPPY_OUTCOME: ${{ steps.clippy.outcome }}
+        run: |
+          glyph() {
+            case "$1" in
+              success) echo "✓" ;;
+              failure) echo "✗" ;;
+              skipped) echo "−" ;;
+              *)       echo "?" ;;
+            esac
+          }
+          if [[ "$FMT_OUTCOME" == "success" && "$CLIPPY_OUTCOME" == "success" ]]; then
+            result="✓ passed"
+          else
+            result="✗ failed"
+          fi
+          {
+            echo "## lint-rust"
+            echo ""
+            echo "**Tools:** cargo fmt, cargo clippy"
+            echo "**Working dir:** \`${WD}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|---|---|"
+            echo "| cargo fmt --check | $(glyph "$FMT_OUTCOME") |"
+            echo "| cargo clippy | $(glyph "$CLIPPY_OUTCOME") |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

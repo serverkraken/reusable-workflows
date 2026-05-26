@@ -57,6 +57,7 @@ jobs:
           version: ${{ inputs.ct_version }}
 
       - name: helm lint (all charts)
+        id: helm_lint
         working-directory: ${{ inputs.working_directory }}
         env:
           CHARTS_DIR: ${{ inputs.charts_dir }}
@@ -81,8 +82,44 @@ jobs:
           fi
 
       - name: ct lint
+        id: ct_lint
         working-directory: ${{ inputs.working_directory }}
         run: |
           ct lint --all --validate-maintainers=false \
             --chart-dirs="${{ inputs.charts_dir }}" \
             --target-branch="${{ github.base_ref || 'main' }}"
+
+      - name: Summary
+        if: always()
+        env:
+          WD: ${{ inputs.working_directory }}
+          CHARTS_DIR: ${{ inputs.charts_dir }}
+          HELM_LINT_OUTCOME: ${{ steps.helm_lint.outcome }}
+          CT_LINT_OUTCOME: ${{ steps.ct_lint.outcome }}
+        run: |
+          glyph() {
+            case "$1" in
+              success) echo "✓" ;;
+              failure) echo "✗" ;;
+              skipped) echo "−" ;;
+              *)       echo "?" ;;
+            esac
+          }
+          if [[ "$HELM_LINT_OUTCOME" == "success" && "$CT_LINT_OUTCOME" == "success" ]]; then
+            result="✓ passed"
+          else
+            result="✗ failed"
+          fi
+          {
+            echo "## lint-helm"
+            echo ""
+            echo "**Tools:** helm lint, chart-testing"
+            echo "**Working dir:** \`${WD}\`"
+            echo "**Charts dir:** \`${CHARTS_DIR}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|---|---|"
+            echo "| helm lint | $(glyph "$HELM_LINT_OUTCOME") |"
+            echo "| ct lint | $(glyph "$CT_LINT_OUTCOME") |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
