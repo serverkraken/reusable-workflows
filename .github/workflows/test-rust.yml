@@ -67,5 +67,43 @@ jobs:
           tool: cargo-llvm-cov@${{ inputs.cargo_llvm_cov_version }}
 
       - name: cargo llvm-cov with threshold
+        id: coverage
         working-directory: ${{ inputs.working_directory }}
-        run: cargo llvm-cov --summary-only --fail-under-lines ${{ inputs.coverage_threshold }}
+        env:
+          THRESHOLD: ${{ inputs.coverage_threshold }}
+        run: |
+          set -o pipefail
+          cargo llvm-cov --summary-only --fail-under-lines "$THRESHOLD" | tee llvm-cov.out
+          # `--summary-only` prints a table; the `TOTAL` row's last field is the
+          # line-coverage percentage (e.g., `85.42%`). awk strips the trailing %.
+          pct=$(awk '/^TOTAL/ {gsub("%","",$NF); print $NF}' llvm-cov.out)
+          echo "coverage_pct=${pct:-N/A}" >> "$GITHUB_OUTPUT"
+          echo "threshold=${THRESHOLD}" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        env:
+          WD: ${{ inputs.working_directory }}
+          COVERAGE_OUTCOME: ${{ steps.coverage.outcome }}
+          PCT: ${{ steps.coverage.outputs.coverage_pct }}
+          THRESHOLD: ${{ steps.coverage.outputs.threshold }}
+        run: |
+          if [[ "$COVERAGE_OUTCOME" == "success" ]]; then
+            result="✓ coverage ${PCT}% ≥ threshold ${THRESHOLD}%"
+          elif [[ -n "$PCT" && "$PCT" != "N/A" ]]; then
+            result="✗ coverage ${PCT}% < threshold ${THRESHOLD}% (or tests failed)"
+          else
+            result="✗ tests failed"
+          fi
+          {
+            echo "## test-rust"
+            echo ""
+            echo "**Tool:** cargo test, cargo-llvm-cov"
+            echo "**Working dir:** \`${WD}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Coverage | ${PCT:-N/A}% |"
+            echo "| Threshold | ${THRESHOLD}% |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

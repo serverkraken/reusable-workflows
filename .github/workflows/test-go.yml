@@ -77,12 +77,14 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc libc6-dev
 
       - name: go test with coverage
+        id: test
         working-directory: ${{ inputs.working_directory }}
         env:
           CGO_ENABLED: ${{ inputs.cgo_enabled && '1' || '0' }}
         run: go test -coverprofile=cover.out -covermode=atomic ./...
 
       - name: Coverage gate
+        id: coverage
         working-directory: ${{ inputs.working_directory }}
         env:
           THRESHOLD: ${{ inputs.coverage_threshold }}
@@ -92,8 +94,39 @@ jobs:
           # awk is universal across runner images; bc is not (missing on the
           # serverkraken self-hosted pool), so we keep all arithmetic in awk.
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {sub("%","",$3); print $3}')
+          echo "coverage_pct=${pct}" >> "$GITHUB_OUTPUT"
+          echo "threshold=${THRESHOLD}" >> "$GITHUB_OUTPUT"
           echo "coverage: ${pct}% (threshold: ${THRESHOLD}%)"
           awk -v pct="$pct" -v thr="$THRESHOLD" 'BEGIN { exit (pct + 0 < thr + 0) ? 1 : 0 }' || {
             echo "::error::coverage ${pct}% < threshold ${THRESHOLD}%"
             exit 1
           }
+
+      - name: Summary
+        if: always()
+        env:
+          WD: ${{ inputs.working_directory }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+          COVERAGE_OUTCOME: ${{ steps.coverage.outcome }}
+          PCT: ${{ steps.coverage.outputs.coverage_pct }}
+          THRESHOLD: ${{ steps.coverage.outputs.threshold }}
+        run: |
+          if [[ "$TEST_OUTCOME" != "success" ]]; then
+            result="✗ tests failed"
+          elif [[ "$COVERAGE_OUTCOME" != "success" ]]; then
+            result="✗ coverage ${PCT}% < threshold ${THRESHOLD}%"
+          else
+            result="✓ coverage ${PCT}% ≥ threshold ${THRESHOLD}%"
+          fi
+          {
+            echo "## test-go"
+            echo ""
+            echo "**Tool:** go test"
+            echo "**Working dir:** \`${WD}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Coverage | ${PCT:-N/A}% |"
+            echo "| Threshold | ${THRESHOLD}% |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
