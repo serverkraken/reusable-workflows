@@ -171,3 +171,45 @@ jobs:
       runs_on_amd64: ${{ inputs.runs_on_amd64 }}
       runs_on_arm64: ${{ inputs.runs_on_arm64 }}
       runs_on_merge: ${{ inputs.runs_on_merge }}
+
+  # Per-image digests/tags are not surfaced by the matrix call to
+  # docker-build.yml — adopters needing per-image refs invoke docker-build.yml
+  # directly. This summary therefore captures dispatch metadata + matrix shape;
+  # detailed per-image summaries are written by each nested docker-build run.
+  summary:
+    needs: [parse, build]
+    runs-on: ${{ fromJSON(inputs.runs_on_parse) }}
+    timeout-minutes: 5
+    steps:
+      - name: Summary
+        env:
+          IMAGES_JSON: ${{ inputs.images }}
+          TAG: ${{ inputs.tag }}
+          PLATFORMS: ${{ inputs.platforms }}
+          SIGN: ${{ inputs.sign }}
+          ATTEST: ${{ inputs.attest }}
+          SBOM: ${{ inputs.sbom }}
+        run: |
+          glyph_bool() { [[ "$1" == "true" ]] && echo "✓" || echo "−"; }
+          image_count=$(echo "$IMAGES_JSON" | jq 'length')
+          image_list=$(echo "$IMAGES_JSON" | jq -r '.[] | "| `" + .image_name + "` | `" + .dockerfile + "` |"')
+          tag_display="${TAG:-<auto-computed>}"
+          {
+            echo "## docker-build-multi"
+            echo ""
+            echo "**Tool:** Buildx (distributed multi-arch)"
+            echo "**Result:** ✓ pushed"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Images | ${image_count} |"
+            echo "| Tag | \`${tag_display}\` |"
+            echo "| Platforms | \`${PLATFORMS}\` |"
+            echo "| Sign | $(glyph_bool "$SIGN") cosign keyless |"
+            echo "| Attest | $(glyph_bool "$ATTEST") SLSA provenance |"
+            echo "| SBOM | $(glyph_bool "$SBOM") SPDX-JSON |"
+            echo ""
+            echo "| Image | Dockerfile |"
+            echo "|---|---|"
+            echo "${image_list}"
+          } >> "$GITHUB_STEP_SUMMARY" || true
