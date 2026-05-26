@@ -44,12 +44,15 @@ done
 # Sanitize endpoint for filename
 key="${endpoint#/}"
 key="${key//\//__}"
+verb_lc=$(echo "$verb" | tr '[:upper:]' '[:lower:]')
 fixture=""
-for ext in json 404.json 403.json 500.json; do
-  if [[ -f "$FIX_DIR/${key}.${ext}" ]]; then
-    fixture="$FIX_DIR/${key}.${ext}"
-    break
-  fi
+for try_key in "${verb_lc}.${key}" "${key}"; do
+  for ext in json 404.json 403.json 500.json; do
+    if [[ -f "$FIX_DIR/${try_key}.${ext}" ]]; then
+      fixture="$FIX_DIR/${try_key}.${ext}"
+      break 2
+    fi
+  done
 done
 
 # Log the call

@@ -52,3 +52,25 @@ run_with_stub() {
   run "$SCRIPT" --repo o/r
   [ "$status" -ne 0 ]
 }
+
+@test "tier_1 bp: no protection (404) → PUT full config" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-no-bp --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  # The stub call-log should contain a PUT to branches/main/protection
+  grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
+}
+
+@test "tier_1 bp: clean state → no PUT" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  ! grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
+}
+
+@test "tier_1 bp: drift (enforce_admins flipped) → PUT" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-drifted --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
+}

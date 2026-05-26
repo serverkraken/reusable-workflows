@@ -88,7 +88,33 @@ fi
 
 MODIFIED_CATEGORIES=()
 
-# --- Tier 1 + Tier 2 logic implemented in later tasks ---
+# --- Tier 1: Branch Protection (always) ---
+
+# Fetch repo metadata to know the default branch
+REPO_META=$(gh api "/repos/$REPO" 2>/dev/null) || {
+  echo "::error::failed to fetch /repos/$REPO" >&2
+  exit 2
+}
+DEFAULT_BRANCH=$(echo "$REPO_META" | jq -r '.default_branch')
+
+# Fetch existing branch protection, or "missing" on 404.
+BP_CURRENT=$(gh api "/repos/$REPO/branches/$DEFAULT_BRANCH/protection" 2>/dev/null || echo "missing")
+
+# Target shape from config (drop the _target hint).
+BP_TARGET=$(jq -c '.branch_protection | del(._target)' "$CONFIG")
+
+BP_DIFF=$(diff_branch_protection "$BP_CURRENT" "$BP_TARGET")
+
+if [[ -n "$BP_DIFF" ]]; then
+  if (( DRY_RUN )); then
+    echo "::notice::dry-run: would PUT branch protection ($BP_DIFF)"
+  else
+    echo "$BP_TARGET" | gh api -X PUT \
+      "/repos/$REPO/branches/$DEFAULT_BRANCH/protection" \
+      --input - > /dev/null
+  fi
+  MODIFIED_CATEGORIES+=("branch_protection")
+fi
 
 # --- Lock mutation implemented in Task 12 ---
 
