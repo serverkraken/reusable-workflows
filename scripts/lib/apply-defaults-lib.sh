@@ -23,3 +23,15 @@ classify_tier() {
       ;;
   esac
 }
+
+# compute_topics_union <current-json-array> <additive-json-array>
+#   → echoes JSON array: current ∪ additive, preserving current order,
+#     appending missing additives in their input order.
+compute_topics_union() {
+  local current="$1"
+  local additive="$2"
+  jq -nc \
+    --argjson current "$current" \
+    --argjson additive "$additive" \
+    '$current + ($additive - $current)'
+}

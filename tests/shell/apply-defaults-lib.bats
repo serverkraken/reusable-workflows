@@ -41,3 +41,27 @@ setup() {
   [ "$status" -eq 0 ]
   [ "$output" = "unknown" ]
 }
+
+@test "compute_topics_union: empty current + one new → just the new" {
+  run compute_topics_union "[]" '["serverkraken-onboarded"]'
+  [ "$status" -eq 0 ]
+  [ "$output" = '["serverkraken-onboarded"]' ]
+}
+
+@test "compute_topics_union: existing without target → appended at end" {
+  run compute_topics_union '["go","backend"]' '["serverkraken-onboarded"]'
+  [ "$status" -eq 0 ]
+  [ "$output" = '["go","backend","serverkraken-onboarded"]' ]
+}
+
+@test "compute_topics_union: existing already contains target → unchanged" {
+  run compute_topics_union '["serverkraken-onboarded","go"]' '["serverkraken-onboarded"]'
+  [ "$status" -eq 0 ]
+  [ "$output" = '["serverkraken-onboarded","go"]' ]
+}
+
+@test "compute_topics_union: multiple new, some already present → only missing appended" {
+  run compute_topics_union '["a","b"]' '["b","c"]'
+  [ "$status" -eq 0 ]
+  [ "$output" = '["a","b","c"]' ]
+}
