@@ -164,10 +164,10 @@ jobs:
         run: |
           trivy_version=$(trivy --version 2>/dev/null | awk '/^Version:/ {print $2}' || echo unknown)
           if [[ -f "$REPORT" ]]; then
-            crit=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' "$REPORT")
-            high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' "$REPORT")
-            med=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")] | length' "$REPORT")
-            low=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="LOW")] | length' "$REPORT")
+            crit=$(jq '[.Results[]? | (.Vulnerabilities // [], .Secrets // [], .Misconfigurations // [])[] | select(.Severity=="CRITICAL")] | length' "$REPORT")
+            high=$(jq '[.Results[]? | (.Vulnerabilities // [], .Secrets // [], .Misconfigurations // [])[] | select(.Severity=="HIGH")] | length' "$REPORT")
+            med=$(jq '[.Results[]? | (.Vulnerabilities // [], .Secrets // [], .Misconfigurations // [])[] | select(.Severity=="MEDIUM")] | length' "$REPORT")
+            low=$(jq '[.Results[]? | (.Vulnerabilities // [], .Secrets // [], .Misconfigurations // [])[] | select(.Severity=="LOW")] | length' "$REPORT")
           else
             crit=0; high=0; med=0; low=0
           fi
