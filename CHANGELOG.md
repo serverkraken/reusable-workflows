@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.1](https://github.com/serverkraken/reusable-workflows/compare/v4.1.0...v4.1.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* **onboard-sweep:** allow re-rendering over stale-version bot PRs ([#137](https://github.com/serverkraken/reusable-workflows/issues/137)) ([53a39a6](https://github.com/serverkraken/reusable-workflows/commit/53a39a665cbedd633926b46270138b147f1b6acc))
+
 ## [4.1.0](https://github.com/serverkraken/reusable-workflows/compare/v4.0.3...v4.1.0) (2026-05-26)
 
 
