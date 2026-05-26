@@ -65,3 +65,26 @@ setup() {
   [ "$status" -eq 0 ]
   [ "$output" = '["a","b","c"]' ]
 }
+
+@test "diff_branch_protection: missing target → diff with reason=missing" {
+  target='{"enforce_admins":false,"required_linear_history":true}'
+  run diff_branch_protection "missing" "$target"
+  [ "$status" -eq 0 ]
+  [[ "$output" == reason=missing* ]]
+}
+
+@test "diff_branch_protection: identical state → empty" {
+  current='{"enforce_admins":{"enabled":false},"required_linear_history":{"enabled":true}}'
+  target='{"enforce_admins":false,"required_linear_history":true}'
+  run diff_branch_protection "$current" "$target"
+  [ "$status" -eq 0 ]
+  [ "$output" = "" ]
+}
+
+@test "diff_branch_protection: enforce_admins flipped → drift" {
+  current='{"enforce_admins":{"enabled":true},"required_linear_history":{"enabled":true}}'
+  target='{"enforce_admins":false,"required_linear_history":true}'
+  run diff_branch_protection "$current" "$target"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *enforce_admins* ]]
+}
