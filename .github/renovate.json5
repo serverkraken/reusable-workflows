@@ -5,6 +5,7 @@
     ':dependencyDashboard',
     ':semanticCommits',
     'group:allNonMajor',
+    'helpers:pinGitHubActionDigests',
   ],
   timezone: 'Europe/Berlin',
   schedule: [
@@ -55,6 +56,21 @@
       labels: [
         'dependencies',
         'major',
+      ],
+    },
+    {
+      description: 'Initial SHA-pin: bundle all pin updates into one PR',
+      matchManagers: [
+        'github-actions',
+      ],
+      matchUpdateTypes: [
+        'pin',
+      ],
+      groupName: 'Pin all GitHub Actions to SHA',
+      automerge: false,
+      labels: [
+        'dependencies',
+        'security',
       ],
     },
   ],
