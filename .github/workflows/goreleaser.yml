@@ -75,15 +75,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Job summary
+      - name: Summary
         env:
           MODE: ${{ inputs.snapshot && 'snapshot' || 'release' }}
           WORKDIR: ${{ inputs.working_directory }}
           GR_VERSION: ${{ inputs.goreleaser_version }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
+          if [[ "$MODE" == "snapshot" ]]; then
+            result="✓ snapshot built (no publish)"
+            url_cell="—"
+          else
+            result="✓ released"
+            url_cell="https://github.com/${REPO}/releases/tag/${TAG}"
+          fi
           {
-            echo "## goreleaser ($MODE)"
+            echo "## goreleaser"
             echo ""
-            echo "**Working directory:** \`$WORKDIR\`"
-            echo "**goreleaser version:** \`$GR_VERSION\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "**Tool:** goreleaser ${GR_VERSION}"
+            echo "**Working dir:** \`${WORKDIR}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Mode | \`${MODE}\` |"
+            echo "| Tag | \`${TAG}\` |"
+            echo "| Release URL | ${url_cell} |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

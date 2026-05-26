@@ -109,19 +109,42 @@ jobs:
             echo "minor_tag=$MINOR_TAG"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Job summary
-        if: |
-          inputs.dry_run == false &&
-          steps.release.outputs.release_created == 'true'
+      - name: Summary
+        if: inputs.dry_run == false
         env:
+          RELEASED: ${{ steps.release.outputs.release_created }}
           TAG: ${{ steps.release.outputs.tag_name }}
+          HTML_URL: ${{ steps.release.outputs.html_url }}
           MAJ: ${{ steps.float.outputs.major_tag }}
           MIN: ${{ steps.float.outputs.minor_tag }}
+          REPO: ${{ github.repository }}
         run: |
-          {
-            echo "## Released $TAG"
-            echo ""
-            if [[ -n "${MAJ:-}" ]]; then
-              echo "**Floating tags updated:** \`$MAJ\` · \`$MIN\`"
+          if [[ "$RELEASED" == "true" ]]; then
+            result="✓ released ${TAG}"
+            if [[ -n "${HTML_URL:-}" ]]; then
+              url_cell="[${HTML_URL}](${HTML_URL})"
+            else
+              url_cell="https://github.com/${REPO}/releases/tag/${TAG}"
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+            if [[ -n "${MAJ:-}" ]]; then
+              float_cell="\`${MAJ}\` · \`${MIN}\`"
+            else
+              float_cell="—"
+            fi
+          else
+            result="✓ no release (nothing to bump)"
+            url_cell="—"
+            float_cell="—"
+          fi
+          {
+            echo "## semantic-release"
+            echo ""
+            echo "**Tool:** release-please"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| New version | \`${TAG:-none}\` |"
+            echo "| Floating tags | ${float_cell} |"
+            echo "| Release URL | ${url_cell} |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

@@ -109,15 +109,34 @@ jobs:
           REG: ${{ inputs.oci_registry }}
         run: helm push "$FILE" "oci://$REG"
 
-      - name: Job summary
+      - name: Summary
         env:
           MODE: ${{ inputs.dry_run && 'dry-run' || 'publish' }}
           FILE: ${{ steps.pkg.outputs.file }}
           REG: ${{ inputs.oci_registry }}
+          HELM_VERSION: ${{ inputs.helm_version }}
         run: |
+          # Derive chart name + version from the packaged filename:
+          # /tmp/charts/<name>-<version>.tgz → name, version
+          base=$(basename "${FILE:-}" .tgz)
+          CHART_VERSION="${base##*-}"
+          CHART_NAME="${base%-*}"
+          if [[ "$MODE" == "dry-run" ]]; then
+            result="✓ packaged (dry-run, no push)"
+            oci_ref="oci://${REG}/${CHART_NAME:-<unknown>} (not pushed)"
+          else
+            result="✓ pushed"
+            oci_ref="oci://${REG}/${CHART_NAME:-<unknown>}:${CHART_VERSION:-<unknown>}"
+          fi
           {
-            echo "## ⎈ helm-publish ($MODE)"
+            echo "## helm-publish"
             echo ""
-            echo "**Chart package:** \`$FILE\`"
-            echo "**Registry:** \`oci://$REG\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "**Tool:** helm ${HELM_VERSION} (OCI push)"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Chart | \`${CHART_NAME:-<unknown>}\` |"
+            echo "| Version | \`${CHART_VERSION:-<unknown>}\` |"
+            echo "| OCI Ref | \`${oci_ref}\` |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

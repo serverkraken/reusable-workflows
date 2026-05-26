@@ -105,12 +105,31 @@ jobs:
           delete-only-untagged-versions: false
 
       - name: Summary
+        env:
+          PACKAGE: ${{ steps.pkg.outputs.name }}
+          KEEP_STABLE: ${{ inputs.keep_stable_versions }}
+          PRE_AGE: ${{ inputs.prerelease_age_days }}
+          STALE_IDS: ${{ steps.stale.outputs.ids }}
         run: |
+          # Derive prerelease-deleted count from the comma-joined ids list.
+          # The 'stable' step uses delete-package-versions@v5 directly with no
+          # separate outputs — accurate kept/deleted counts for stable versions
+          # would require another API call; report '?' to stay truthful.
+          if [[ -z "${STALE_IDS:-}" ]]; then
+            pre_deleted=0
+          else
+            pre_deleted=$(echo "$STALE_IDS" | awk -F',' '{print NF}')
+          fi
           {
-            echo "## 🧹 Cleanup complete"
+            echo "## cleanup-images"
             echo ""
-            echo "**Package:** \`${{ steps.pkg.outputs.name }}\`"
-            echo "**Kept stable versions:** ${{ inputs.keep_stable_versions }}"
-            echo "**Prerelease deleted if older than:** ${{ inputs.prerelease_age_days }} days"
-            echo "**Stale prerelease IDs deleted:** \`${{ steps.stale.outputs.ids || '<none>' }}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "**Tool:** GitHub Packages API"
+            echo "**Result:** ✓ cleaned"
+            echo ""
+            echo "**Package:** \`${PACKAGE}\`"
+            echo ""
+            echo "| Rule | Kept | Deleted |"
+            echo "|---|---|---|"
+            echo "| Stable (keep last ${KEEP_STABLE}) | ${KEEP_STABLE} (min) | ? |"
+            echo "| Prerelease (older than ${PRE_AGE} days) | ? | ${pre_deleted} |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
