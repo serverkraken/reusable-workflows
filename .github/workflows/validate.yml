@@ -45,6 +45,8 @@ jobs:
         run: pipx install yamllint
       - name: Run yamllint
         run: yamllint .github/ actions/ tests/
+      - name: Check step-summary convention
+        run: bash tests/conventions/check-step-summary.sh
 
   renovate-config-check:
     runs-on: ubuntu-latest
