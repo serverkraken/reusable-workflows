@@ -196,7 +196,7 @@ render_ci_for_profile() {
   printf '%s' "$profile_json" > "$profile"
   mkdir -p "$target"
   bash "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
-    "$BATS_TEST_DIRNAME/../.." "$target" "$profile" "v3" >&2
+    "$BATS_TEST_DIRNAME/../.." "$target" "$profile" "v4" >&2
   echo "$target/.github/workflows/ci.yml"
 }
 
@@ -206,7 +206,7 @@ render_release_for_profile() {
   mkdir -p "$target"
   printf '%s' "$profile" > "$target/_profile.json"
   "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
-    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v3" >&2
+    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v4" >&2
   echo "$target/.github/workflows/release.yml"
 }
 
@@ -216,7 +216,7 @@ render_prerelease_for_profile() {
   mkdir -p "$target"
   printf '%s' "$profile" > "$target/_profile.json"
   "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
-    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v3" >&2
+    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v4" >&2
   echo "$target/.github/workflows/prerelease.yml"
 }
 
