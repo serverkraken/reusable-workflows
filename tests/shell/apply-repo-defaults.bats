@@ -117,3 +117,28 @@ run_with_stub() {
   [ "$status" -eq 0 ]
   grep -q "has_wiki" "$GH_STUB_CALL_LOG"
 }
+
+@test "lock mutation: prev empty → writes now() to defaults_applied_at, bumps schema to 2" {
+  tgt=$(prepare_target "lock-v1-no-marker.json")
+  run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker ""
+  [ "$status" -eq 0 ]
+  sv=$(jq -r '.schema_version' "$tgt/.github/onboard.lock.json")
+  [ "$sv" = "2" ]
+  marker=$(jq -r '.defaults_applied_at' "$tgt/.github/onboard.lock.json")
+  [[ "$marker" =~ ^2[0-9]{3}- ]]
+}
+
+@test "lock mutation: prev non-empty → preserves prev marker" {
+  tgt=$(prepare_target "lock-v1-no-marker.json")
+  run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker "2026-04-01T00:00:00Z"
+  [ "$status" -eq 0 ]
+  marker=$(jq -r '.defaults_applied_at' "$tgt/.github/onboard.lock.json")
+  [ "$marker" = "2026-04-01T00:00:00Z" ]
+}
+
+@test "lock mutation: no prior lock → script still runs, writes nothing if no lock" {
+  tgt=$(prepare_target "")
+  run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker ""
+  [ "$status" -eq 0 ]
+  [ ! -f "$tgt/.github/onboard.lock.json" ]
+}

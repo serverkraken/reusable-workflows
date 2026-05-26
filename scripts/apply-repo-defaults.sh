@@ -175,7 +175,27 @@ if (( APPLY_TIER_2 )); then
   fi
 fi
 
-# --- Lock mutation implemented in Task 12 ---
+# --- Lock mutation ---
+
+LOCK_PATH="$TARGET_PATH/.github/onboard.lock.json"
+if [[ -f "$LOCK_PATH" ]]; then
+  # Decide marker value: preserve prev, or write now().
+  if [[ -n "$PREV_MARKER" ]]; then
+    MARKER="$PREV_MARKER"
+  else
+    MARKER=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  fi
+
+  if (( DRY_RUN )); then
+    echo "::notice::dry-run: would mutate lock — schema_version=2, defaults_applied_at=$MARKER"
+  else
+    tmp=$(mktemp)
+    jq --arg ts "$MARKER" \
+       '.schema_version = 2 | .defaults_applied_at = $ts' \
+       "$LOCK_PATH" > "$tmp"
+    mv "$tmp" "$LOCK_PATH"
+  fi
+fi
 
 # Outputs
 modified_csv=$(IFS=,; echo "${MODIFIED_CATEGORIES[*]:-}")
