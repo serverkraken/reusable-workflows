@@ -75,6 +75,15 @@ run_with_stub() {
   grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
 }
 
+@test "tier_1 delete_branch_on_merge: drift (false) → PATCH" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-no-topics --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  # api-no-topics has delete_branch_on_merge=false → should PATCH /repos/o/r
+  grep -qE $'^PATCH\t/repos/o/r\t' "$GH_STUB_CALL_LOG"
+  grep -q "delete_branch_on_merge" "$GH_STUB_CALL_LOG"
+}
+
 @test "tier_1 delete_branch_on_merge: clean (already true) → no PATCH" {
   tgt=$(prepare_target "lock-v2-with-marker.json")
   run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
@@ -173,4 +182,58 @@ run_with_stub() {
   [ -f "$summary_file" ]
   grep -q "apply-repo-defaults" "$summary_file"
   grep -q "dry-run" "$summary_file"
+}
+
+@test "fail-loud: 403 on /repos GET → exits non-zero" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  # Create a fresh fixture dir with just a 403 response for the initial GET.
+  fix403="$WORK/fix-403"
+  mkdir -p "$fix403"
+  echo '{"message":"forbidden"}' > "$fix403/repos__o__r.403.json"
+  export GH_STUB_FIXTURE_DIR="$fix403"
+  mkdir -p "$WORK/bin"
+  ln -sf "$STUB" "$WORK/bin/gh"
+  PATH="$WORK/bin:$PATH" run "$SCRIPT" --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -ne 0 ]
+}
+
+@test "fail-mid-tier-1: 500 on BP PUT → exits non-zero, lock not mutated" {
+  tgt=$(prepare_target "lock-v1-no-marker.json")
+  before_sha=$(jq -S . "$tgt/.github/onboard.lock.json" | sha256sum | awk '{print $1}')
+
+  # Build a fixture dir cloned from api-no-bp but with a 500 on PUT.
+  fix500="$WORK/fix-500"
+  cp -R "$FIX/api-no-bp" "$fix500"
+  # Replace the PUT success fixture with a 500 error.
+  rm -f "$fix500/put.repos__o__r__branches__main__protection.json"
+  echo '{"message":"server error"}' > "$fix500/put.repos__o__r__branches__main__protection.500.json"
+
+  export GH_STUB_FIXTURE_DIR="$fix500"
+  mkdir -p "$WORK/bin"
+  ln -sf "$STUB" "$WORK/bin/gh"
+  PATH="$WORK/bin:$PATH" run "$SCRIPT" --repo o/r --target-path "$tgt" --prev-marker ""
+  [ "$status" -ne 0 ]
+
+  # Lock must not have been mutated (script aborts before lock-mutation step).
+  after_sha=$(jq -S . "$tgt/.github/onboard.lock.json" | sha256sum | awk '{print $1}')
+  [ "$before_sha" = "$after_sha" ]
+}
+
+@test "invalid JSON in config: exits 1 with parse error" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  # Temporarily corrupt the config.
+  cfg="$REPO_ROOT/catalog/onboard-defaults.json"
+  cp "$cfg" "$cfg.bak"
+  echo "not json" > "$cfg"
+
+  mkdir -p "$WORK/bin"
+  ln -sf "$STUB" "$WORK/bin/gh"
+  PATH="$WORK/bin:$PATH" run "$SCRIPT" --repo o/r --target-path "$tgt" --prev-marker ""
+  local rc=$status
+
+  # Restore even if assertions fail.
+  mv "$cfg.bak" "$cfg"
+
+  [ "$rc" -eq 1 ]
+  [[ "$output" == *invalid* || "$output" == *JSON* ]]
 }
