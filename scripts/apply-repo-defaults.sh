@@ -148,6 +148,33 @@ if [[ "$NEW_TOPICS" != "$CURRENT_TOPICS" ]]; then
   MODIFIED_CATEGORIES+=("topics")
 fi
 
+# --- Tier 2: merge_hygiene + repo_settings (first-onboard-only) ---
+
+if (( APPLY_TIER_2 )); then
+  MERGE_TARGET=$(jq -c '.merge_hygiene | del(.delete_branch_on_merge)' "$CONFIG")
+  REPO_SETTINGS_TARGET=$(jq -c '.repo_settings' "$CONFIG")
+
+  CURRENT_MERGE=$(echo "$REPO_META" | jq -c '{allow_squash_merge,allow_merge_commit,allow_rebase_merge,allow_auto_merge,squash_merge_commit_title,squash_merge_commit_message}')
+  CURRENT_REPO_SETTINGS=$(echo "$REPO_META" | jq -c '{has_wiki,has_projects,has_issues,has_discussions}')
+
+  MERGE_DIFF=$(diff_merge_hygiene "$CURRENT_MERGE" "$MERGE_TARGET")
+  RS_DIFF=$(diff_repo_settings "$CURRENT_REPO_SETTINGS" "$REPO_SETTINGS_TARGET")
+
+  if [[ -n "$MERGE_DIFF" || -n "$RS_DIFF" ]]; then
+    PATCH_PAYLOAD=$(jq -nc \
+      --argjson mh "$MERGE_TARGET" \
+      --argjson rs "$REPO_SETTINGS_TARGET" \
+      '$mh + $rs')
+    if (( DRY_RUN )); then
+      echo "::notice::dry-run: would PATCH /repos/$REPO with $PATCH_PAYLOAD"
+    else
+      echo "$PATCH_PAYLOAD" | gh api -X PATCH "/repos/$REPO" --input - > /dev/null
+    fi
+    [[ -n "$MERGE_DIFF" ]] && MODIFIED_CATEGORIES+=("merge_hygiene")
+    [[ -n "$RS_DIFF" ]] && MODIFIED_CATEGORIES+=("repo_settings")
+  fi
+fi
+
 # --- Lock mutation implemented in Task 12 ---
 
 # Outputs

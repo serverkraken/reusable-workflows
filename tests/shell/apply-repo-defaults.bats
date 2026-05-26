@@ -96,3 +96,24 @@ run_with_stub() {
   [ "$status" -eq 0 ]
   ! grep -q $'^PUT\t/repos/o/r/topics' "$GH_STUB_CALL_LOG"
 }
+
+@test "tier_2: marker present → no merge_hygiene/repo_settings PATCH" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-drifted-tier2 --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  ! grep -q "has_wiki" "$GH_STUB_CALL_LOG"
+}
+
+@test "tier_2: marker empty + drift → PATCH" {
+  tgt=$(prepare_target "lock-v2-empty-marker.json")
+  run_with_stub api-drifted-tier2 --repo o/r --target-path "$tgt" --prev-marker ""
+  [ "$status" -eq 0 ]
+  grep -q "has_wiki" "$GH_STUB_CALL_LOG"
+}
+
+@test "tier_2: no prev lock → both tiers apply" {
+  tgt=$(prepare_target "")
+  run_with_stub api-drifted-tier2 --repo o/r --target-path "$tgt" --prev-marker ""
+  [ "$status" -eq 0 ]
+  grep -q "has_wiki" "$GH_STUB_CALL_LOG"
+}
