@@ -269,7 +269,7 @@ jobs:
   #       test-trivy-image-cve) stay here — they exit 0 with fail_on_findings:false
   #       and the assert-* siblings check the count, not the job result. -----
   summary:
-    name: summary
+    name: "integration / summary"
     needs:
       - test-docker-build
       - assert-attestation-verifies

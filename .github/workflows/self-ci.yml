@@ -161,7 +161,7 @@ jobs:
   #       Branch-protection will require ONLY this check. Failure-path tests
   #       moved to failure-paths-nightly.yml (Phase 9.5) — not exercised here.
   summary:
-    name: summary
+    name: "self-ci / summary"
     needs:
       - lint-go-happy
       - lint-helm-happy
