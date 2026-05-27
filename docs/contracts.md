@@ -186,7 +186,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input | `working_directory`     | string | no       | `'.'`                             | Crate root directory. |
 | input | `rust_toolchain`        | string | no       | `''`                              | rustup toolchain. Empty → rustup defaults. |
 | input | `coverage_threshold`    | number | no       | `80`                              | Minimum line coverage percentage (integer 0-100). |
-| input | `cargo_llvm_cov_version`| string | no       | `'v0.6.16'`                       | cargo-llvm-cov release tag. |
+| input | `cargo_llvm_cov_version`| string | no       | `'0.6.16'`                        | cargo-llvm-cov release version (bare semver — `taiki-e/install-action` rejects a leading `v`). |
 
 ---
 

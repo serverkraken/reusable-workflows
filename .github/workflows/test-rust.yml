@@ -25,12 +25,12 @@ on:
         required: false
         type: number
         default: 80
-      # renovate: datasource=github-releases depName=taiki-e/cargo-llvm-cov
+      # renovate: datasource=github-releases depName=taiki-e/cargo-llvm-cov extractVersion=^v(?<version>.+)$
       cargo_llvm_cov_version:
-        description: 'cargo-llvm-cov release tag.'
+        description: 'cargo-llvm-cov release version (bare semver — taiki-e/install-action rejects a leading v).'
         required: false
         type: string
-        default: 'v0.6.16'
+        default: '0.6.16'
 
 permissions:
   contents: read
