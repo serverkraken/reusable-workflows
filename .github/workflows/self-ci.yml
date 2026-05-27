@@ -1,11 +1,11 @@
 # .github/workflows/self-ci.yml
 # Aggregate self-CI wrapper: exercises every code-inspection atom (lint-*,
-# test-*, vars-coercion, onboard-drift) against catalog fixtures. Each atom
-# gets at least one happy-path job and (where applicable) a failure-path
-# job with an assert-* sibling that uses if: always() to verify failure
-# occurred. The summary job aggregates all must-pass children into a single
-# status — designed-red `test-*-fail` jobs are EXCLUDED from summary needs,
-# only their assert-* siblings are included.
+# test-*, vars-coercion, onboard-drift) against catalog fixtures via
+# happy-path jobs only. The summary job aggregates all children into a
+# single status — branch-protection requires only this check.
+#
+# Failure-path tests (designed-red + assert-* pairs) moved to
+# failure-paths-nightly.yml (Phase 9.5) and run on a nightly cron.
 #
 # Sibling workflow: integration.yml (side-effects atoms: docker-build,
 # trivy-*, semantic-release, onboard, goreleaser, helm-publish, etc.).
@@ -23,35 +23,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ----- lint-go: happy + fail -----
+  # ----- lint-go: happy -----
   lint-go-happy:
     uses: ./.github/workflows/lint-go.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/go-happy
 
-  test-lint-go-fail:
-    uses: ./.github/workflows/lint-go.yml
-    secrets: inherit
-    with:
-      working_directory: tests/fixtures/lint-test/go-lint-fail
-
-  assert-lint-go-fail:
-    needs: test-lint-go-fail
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Assert lint job failed
-        env:
-          RESULT: ${{ needs.test-lint-go-fail.result }}
-        run: |
-          if [[ "$RESULT" != "failure" ]]; then
-            echo "::error::expected lint job to fail, got: $RESULT"
-            exit 1
-          fi
-          echo "lint-go-fail: correctly observed failure"
-
-  # ----- lint-helm: happy + fail -----
+  # ----- lint-helm: happy -----
   lint-helm-happy:
     uses: ./.github/workflows/lint-helm.yml
     secrets: inherit
@@ -59,29 +38,7 @@ jobs:
       working_directory: tests/fixtures
       charts_dir: helm-only
 
-  test-lint-helm-fail:
-    uses: ./.github/workflows/lint-helm.yml
-    secrets: inherit
-    with:
-      working_directory: tests/fixtures/lint-test
-      charts_dir: helm-lint-fail
-
-  assert-lint-helm-fail:
-    needs: test-lint-helm-fail
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Assert lint job failed
-        env:
-          RESULT: ${{ needs.test-lint-helm-fail.result }}
-        run: |
-          if [[ "$RESULT" != "failure" ]]; then
-            echo "::error::expected lint job to fail, got: $RESULT"
-            exit 1
-          fi
-          echo "lint-helm-fail: correctly observed failure"
-
-  # ----- lint-python: 3 happy paths (poetry/uv/pip) + fail -----
+  # ----- lint-python: 3 happy paths (poetry/uv/pip) -----
   lint-python-poetry-happy:
     uses: ./.github/workflows/lint-python.yml
     secrets: inherit
@@ -106,56 +63,14 @@ jobs:
     with:
       working_directory: tests/fixtures/lint-test/python-pip-happy
 
-  test-lint-python-fail:
-    uses: ./.github/workflows/lint-python.yml
-    secrets: inherit
-    with:
-      working_directory: tests/fixtures/lint-test/python-lint-fail
-
-  assert-lint-python-fail:
-    needs: test-lint-python-fail
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Assert lint job failed
-        env:
-          RESULT: ${{ needs.test-lint-python-fail.result }}
-        run: |
-          if [[ "$RESULT" != "failure" ]]; then
-            echo "::error::expected lint job to fail, got: $RESULT"
-            exit 1
-          fi
-          echo "lint-python-fail: correctly observed failure"
-
-  # ----- lint-rust: happy + fail -----
+  # ----- lint-rust: happy -----
   lint-rust-happy:
     uses: ./.github/workflows/lint-rust.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/rust-happy
 
-  test-lint-rust-fail:
-    uses: ./.github/workflows/lint-rust.yml
-    secrets: inherit
-    with:
-      working_directory: tests/fixtures/lint-test/rust-lint-fail
-
-  assert-lint-rust-fail:
-    needs: test-lint-rust-fail
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Assert lint job failed
-        env:
-          RESULT: ${{ needs.test-lint-rust-fail.result }}
-        run: |
-          if [[ "$RESULT" != "failure" ]]; then
-            echo "::error::expected lint job to fail, got: $RESULT"
-            exit 1
-          fi
-          echo "lint-rust-fail: correctly observed failure"
-
-  # ----- test-go: happy + cov-fail -----
+  # ----- test-go: happy -----
   test-go-happy:
     uses: ./.github/workflows/test-go.yml
     secrets: inherit
@@ -163,29 +78,7 @@ jobs:
       working_directory: tests/fixtures/lint-test/go-happy
       coverage_threshold: 90
 
-  test-test-go-cov-fail:
-    uses: ./.github/workflows/test-go.yml
-    secrets: inherit
-    with:
-      working_directory: tests/fixtures/lint-test/go-cov-fail
-      coverage_threshold: 90
-
-  assert-test-go-cov-fail:
-    needs: test-test-go-cov-fail
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Assert test job failed
-        env:
-          RESULT: ${{ needs.test-test-go-cov-fail.result }}
-        run: |
-          if [[ "$RESULT" != "failure" ]]; then
-            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
-            exit 1
-          fi
-          echo "test-go-cov-fail: correctly observed failure"
-
-  # ----- test-python: 3 happy paths (poetry/uv/pip) + cov-fail -----
+  # ----- test-python: 3 happy paths (poetry/uv/pip) -----
   test-python-poetry-happy:
     uses: ./.github/workflows/test-python.yml
     secrets: inherit
@@ -210,57 +103,13 @@ jobs:
       working_directory: tests/fixtures/lint-test/python-pip-happy
       coverage_threshold: 90
 
-  test-test-python-cov-fail:
-    uses: ./.github/workflows/test-python.yml
-    secrets: inherit
-    with:
-      working_directory: tests/fixtures/lint-test/python-cov-fail
-      coverage_threshold: 90
-
-  assert-test-python-cov-fail:
-    needs: test-test-python-cov-fail
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Assert test job failed
-        env:
-          RESULT: ${{ needs.test-test-python-cov-fail.result }}
-        run: |
-          if [[ "$RESULT" != "failure" ]]; then
-            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
-            exit 1
-          fi
-          echo "test-python-cov-fail: correctly observed failure"
-
-  # ----- test-rust: happy + cov-fail -----
+  # ----- test-rust: happy -----
   test-rust-happy:
     uses: ./.github/workflows/test-rust.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/rust-happy
       coverage_threshold: 90
-
-  test-test-rust-cov-fail:
-    uses: ./.github/workflows/test-rust.yml
-    secrets: inherit
-    with:
-      working_directory: tests/fixtures/lint-test/rust-cov-fail
-      coverage_threshold: 90
-
-  assert-test-rust-cov-fail:
-    needs: test-test-rust-cov-fail
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Assert test job failed
-        env:
-          RESULT: ${{ needs.test-test-rust-cov-fail.result }}
-        run: |
-          if [[ "$RESULT" != "failure" ]]; then
-            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
-            exit 1
-          fi
-          echo "test-rust-cov-fail: correctly observed failure"
 
   # ----- vars coercion: verify type=number + type=boolean inputs accept
   #       string-valued GHA expressions WRAPPED IN fromJSON(), which is
@@ -308,30 +157,23 @@ jobs:
           fi
           echo "onboard-drift wrapper returned status=clean"
 
-  # ----- Summary: aggregates ALL must-pass children into a single status.
-  #       Branch-protection will require ONLY this check. Designed-red
-  #       `test-*-fail` jobs are NOT in needs — only their assert-* siblings.
+  # ----- Summary: aggregates ALL happy-path children into a single status.
+  #       Branch-protection will require ONLY this check. Failure-path tests
+  #       moved to failure-paths-nightly.yml (Phase 9.5) — not exercised here.
   summary:
     name: summary
     needs:
       - lint-go-happy
-      - assert-lint-go-fail
       - lint-helm-happy
-      - assert-lint-helm-fail
       - lint-python-poetry-happy
       - lint-python-uv-happy
       - lint-python-pip-happy
-      - assert-lint-python-fail
       - lint-rust-happy
-      - assert-lint-rust-fail
       - test-go-happy
-      - assert-test-go-cov-fail
       - test-python-poetry-happy
       - test-python-uv-happy
       - test-python-pip-happy
-      - assert-test-python-cov-fail
       - test-rust-happy
-      - assert-test-rust-cov-fail
       - test-vars-coercion
       - onboard-drift-happy
     if: always()
