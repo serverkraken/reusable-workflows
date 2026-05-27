@@ -83,6 +83,46 @@ jobs:
           fi
           echo "lint-helm-fail: correctly observed failure"
 
+  # ----- lint-python: 3 happy paths (poetry/uv/pip) + fail -----
+  lint-python-poetry-happy:
+    uses: ./.github/workflows/lint-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-poetry-happy
+
+  lint-python-uv-happy:
+    uses: ./.github/workflows/lint-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-uv-happy
+
+  lint-python-pip-happy:
+    uses: ./.github/workflows/lint-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-pip-happy
+
+  test-lint-python-fail:
+    uses: ./.github/workflows/lint-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-lint-fail
+
+  assert-lint-python-fail:
+    needs: test-lint-python-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-python-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-python-fail: correctly observed failure"
+
   # Jobs filled in Tasks 10-19.
   placeholder:
     if: false
