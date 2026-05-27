@@ -1,5 +1,26 @@
 # Changelog
 
+## [4.4.0](https://github.com/serverkraken/reusable-workflows/compare/v4.3.0...v4.4.0) (2026-05-27)
+
+
+### Features
+
+* **self-ci:** move failure-paths to nightly cron (phase 9.5) ([#146](https://github.com/serverkraken/reusable-workflows/issues/146)) ([308a274](https://github.com/serverkraken/reusable-workflows/commit/308a274e92155e40ca7867c4b072b4f2ae85500e))
+
+
+### Bug Fixes
+
+* **ci:** rename summary jobs to match required check contexts ([#148](https://github.com/serverkraken/reusable-workflows/issues/148)) ([332e666](https://github.com/serverkraken/reusable-workflows/commit/332e66653d7b960c33e6bc9b57e4f83f1588fbdf))
+* **nightly:** gate report-regressions in bash, not workflow-level if ([f580202](https://github.com/serverkraken/reusable-workflows/commit/f580202d24578150d7f7087f254d681ba29ee761))
+
+
+### Documentation
+
+* **operations:** add Repo Defaults section (phase-8 follow-up) ([cf0eb41](https://github.com/serverkraken/reusable-workflows/commit/cf0eb41e6514ded2f3a33f19983b43abcdcb41bf))
+* **phase-9.5:** correct spec — phase 9b already merged in PR [#143](https://github.com/serverkraken/reusable-workflows/issues/143) ([98920a5](https://github.com/serverkraken/reusable-workflows/commit/98920a57fc56e51f6005b21e0ab9dbdab3e61a9c))
+* **phase-9.5:** implementation plan ([a506f51](https://github.com/serverkraken/reusable-workflows/commit/a506f5165e6f5e129bc071a6a98027da2f6029c9))
+* **phase-9.5:** spec for failure-paths nightly cron ([40d0cce](https://github.com/serverkraken/reusable-workflows/commit/40d0cce93b3e7165f8a360af951e84588274a6c2))
+
 ## [4.3.0](https://github.com/serverkraken/reusable-workflows/compare/v4.2.1...v4.3.0) (2026-05-27)
 
 
