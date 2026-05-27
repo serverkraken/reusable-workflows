@@ -338,6 +338,102 @@ EOF
   rm -rf "$tmpdir"
 }
 
+@test "profile-json: legacy_ci detects cargo-llvm-cov and recommends test-rust" {
+  tmpdir=$(mktemp -d)
+  echo '[package]' > "$tmpdir/Cargo.toml"
+  echo 'name = "x"' >> "$tmpdir/Cargo.toml"
+  echo 'version = "0.1.0"' >> "$tmpdir/Cargo.toml"
+  mkdir -p "$tmpdir/.github/workflows"
+  cat > "$tmpdir/.github/workflows/test.yml" <<'EOF'
+name: test
+on: [push]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - run: cargo llvm-cov --fail-under-lines 90
+EOF
+  run "$DETECT" --profile-json "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.legacy_ci | length == 1'
+  echo "$output" | jq -e '.legacy_ci[0].replaced_by == ["test-rust.yml"]'
+  rm -rf "$tmpdir"
+}
+
+@test "profile-json: legacy_ci detects pytest and recommends test-python" {
+  tmpdir=$(mktemp -d)
+  cat > "$tmpdir/pyproject.toml" <<'EOF'
+[tool.poetry]
+name = "x"
+version = "0.1.0"
+EOF
+  mkdir -p "$tmpdir/.github/workflows"
+  cat > "$tmpdir/.github/workflows/test-coverage.yml" <<'EOF'
+name: test
+on: [push]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: poetry run pytest --cov
+EOF
+  run "$DETECT" --profile-json "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.legacy_ci | length == 1'
+  echo "$output" | jq -e '.legacy_ci[0].replaced_by == ["test-python.yml"]'
+  rm -rf "$tmpdir"
+}
+
+@test "profile-json: legacy_ci detects go test -cover and recommends test-go" {
+  tmpdir=$(mktemp -d)
+  echo "module example.com/x" > "$tmpdir/go.mod"
+  echo "go 1.22" >> "$tmpdir/go.mod"
+  mkdir -p "$tmpdir/.github/workflows"
+  cat > "$tmpdir/.github/workflows/test.yml" <<'EOF'
+name: test
+on: [push]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: go test -race -coverprofile=cover.out ./...
+EOF
+  run "$DETECT" --profile-json "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.legacy_ci | length == 1'
+  echo "$output" | jq -e '.legacy_ci[0].replaced_by == ["test-go.yml"]'
+  rm -rf "$tmpdir"
+}
+
+@test "profile-json: legacy_ci docker push pattern wins over cargo signal in same file" {
+  # Regression guard: a release workflow that does `docker push` plus a
+  # transient `cargo test` step is a docker-build replacement, NOT test-rust.
+  tmpdir=$(mktemp -d)
+  echo '[package]' > "$tmpdir/Cargo.toml"
+  echo 'name = "x"' >> "$tmpdir/Cargo.toml"
+  echo 'version = "0.1.0"' >> "$tmpdir/Cargo.toml"
+  mkdir -p "$tmpdir/.github/workflows"
+  cat > "$tmpdir/.github/workflows/release.yml" <<'EOF'
+name: release
+on: [push]
+jobs:
+  r:
+    runs-on: ubuntu-latest
+    steps:
+      - run: cargo test
+      - run: docker buildx build --push -t ghcr.io/x/y:latest .
+EOF
+  # 'release.yml' is OWNED — pick a non-OWNED filename to exercise classification.
+  mv "$tmpdir/.github/workflows/release.yml" "$tmpdir/.github/workflows/publish.yml"
+  run "$DETECT" --profile-json "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.legacy_ci[0].replaced_by == ["docker-build.yml"]'
+  rm -rf "$tmpdir"
+}
+
 # === Task 10: warn on unsupported primary_language ===
 
 @test "profile.json warns when primary_language has no lint/test atom" {

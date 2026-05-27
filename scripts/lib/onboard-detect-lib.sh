@@ -586,6 +586,10 @@ detect_legacy_ci() {
     done
     [[ $owned -eq 1 ]] && continue
 
+    # Pattern order matters: stronger/more-specific signals first. A workflow
+    # that does docker push + cargo test is a docker-build replacement (the
+    # cargo step is incidental). Conversely, cargo-llvm-cov is a near-certain
+    # test-rust signal regardless of what else the file does.
     local summary="" replacements='[]'
     if grep -q 'aquasecurity/trivy-action' "$f" 2>/dev/null; then
       summary="trivy-action (deprecated); replace with trivy-fs.yml or trivy-image.yml"
@@ -596,6 +600,15 @@ detect_legacy_ci() {
     elif grep -qE 'docker (build|buildx).*--push|docker push ' "$f" 2>/dev/null; then
       summary="ad-hoc docker buildx + push; replaced by docker-build.yml"
       replacements='["docker-build.yml"]'
+    elif grep -q 'cargo-llvm-cov' "$f" 2>/dev/null; then
+      summary="cargo-llvm-cov test pipeline; replaced by test-rust.yml"
+      replacements='["test-rust.yml"]'
+    elif grep -qE 'pytest|coverage run' "$f" 2>/dev/null; then
+      summary="python test pipeline (pytest/coverage); replaced by test-python.yml"
+      replacements='["test-python.yml"]'
+    elif grep -qE 'go test.*(-cover|-coverprofile|-race)' "$f" 2>/dev/null; then
+      summary="go test pipeline; replaced by test-go.yml"
+      replacements='["test-go.yml"]'
     elif grep -q 'semantic-release' "$f" 2>/dev/null; then
       summary="hand-rolled semantic-release; replaced by release-please.yml"
       replacements='["release-please.yml"]'
