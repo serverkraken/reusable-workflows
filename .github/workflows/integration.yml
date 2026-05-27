@@ -196,6 +196,149 @@ jobs:
       prerelease_age_days: 365
       runs_on: '["ubuntu-latest"]'
 
+  # ----- cleanup-images failure path: empty runs_on array forces atom-level
+  #       validation failure (matrix evaluation requires non-empty input). -----
+  test-cleanup-images-fail:
+    uses: ./.github/workflows/cleanup-images.yml
+    secrets: inherit
+    with:
+      runs_on: '[]'
+
+  assert-cleanup-images-fail:
+    needs: test-cleanup-images-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-cleanup-images-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected cleanup-images to fail for empty runs_on, got result=$RESULT"
+            exit 1
+          fi
+          echo "cleanup-images correctly failed for empty runs_on"
+
+  # ----- docker-build-multi happy path: matrix build of 2 images from
+  #       the multi-image fixture, manifest stitched, push by digest. -----
+  test-docker-build-multi:
+    uses: ./.github/workflows/docker-build-multi.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/multi-image
+      images: >-
+        [
+          {"dockerfile": "tests/fixtures/multi-image/Dockerfile",
+           "image_name": "serverkraken/reusable-workflows/test-multi-api"},
+          {"dockerfile": "tests/fixtures/multi-image/Dockerfile.worker",
+           "image_name": "serverkraken/reusable-workflows/test-multi-worker"}
+        ]
+      sign: true
+      attest: true
+      sbom: true
+      caller_id: happy
+
+  # ----- docker-build-multi failure path: empty images array must
+  #       fail at input validation, before any runner work begins. -----
+  test-docker-build-multi-fail:
+    uses: ./.github/workflows/docker-build-multi.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/multi-image
+      images: '[]'
+      sign: false
+      attest: false
+      sbom: false
+      caller_id: fail
+
+  assert-docker-build-multi-fail:
+    needs: test-docker-build-multi-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-docker-build-multi-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected docker-build-multi to fail for empty images array, got result=$RESULT"
+            exit 1
+          fi
+          echo "docker-build-multi correctly failed for empty images array"
+
+  # ----- goreleaser happy path: snapshot build against the cli-go fixture
+  #       with a valid .goreleaser.yaml. No artifacts published. -----
+  test-goreleaser:
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/cli-go-with-goreleaser
+      snapshot: true
+
+  # ----- goreleaser failure path: fixture has a deliberately broken
+  #       .goreleaser.yaml (version: 99, invalid build targets). The atom
+  #       must exit non-zero at config validation before any build runs. -----
+  test-goreleaser-fail:
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/cli-go-no-config
+      snapshot: true
+
+  assert-goreleaser-fail:
+    needs: test-goreleaser-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-goreleaser-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected goreleaser to fail for broken .goreleaser.yaml, got result=$RESULT"
+            exit 1
+          fi
+          echo "goreleaser correctly failed for broken .goreleaser.yaml"
+
+  # ----- helm-publish happy path: dry-run publish of the helm-only fixture
+  #       to a test OCI registry path. No actual push (dry_run: true). -----
+  test-helm-publish:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      chart_path: tests/fixtures/helm-only
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+
+  # ----- helm-publish failure path: fixture has a broken Chart.yaml. Atom
+  #       must fail at helm lint / package step before any push attempt. -----
+  test-helm-publish-fail:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      chart_path: tests/fixtures/helm-broken
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+
+  assert-helm-publish-fail:
+    needs: test-helm-publish-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-helm-publish-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected helm-publish to fail for broken Chart.yaml, got result=$RESULT"
+            exit 1
+          fi
+          echo "helm-publish correctly failed for broken Chart.yaml"
+
   # ----- semantic-release dry-run: exercise the atom against the catalog's
   #       own release-please configs WITHOUT mutating remote state.
   #       skip-github-release + skip-github-pull-request flags on the
@@ -220,26 +363,58 @@ jobs:
       pin_version: v1
     secrets: inherit
 
-  # ----- vars coercion: verify type=number + type=boolean inputs accept
-  #       string-valued GHA expressions WRAPPED IN fromJSON(), which is
-  #       what the SK_* override pattern emits in adopter ci.yml. The
-  #       proof is structural: GHA's pre-flight schema check silently
-  #       drops `uses:` jobs whose `with:` block assigns an unwrappable
-  #       string expression to a typed input (empirically confirmed on
-  #       PR #80 before the fromJSON wrap was introduced). So a passing
-  #       `test-vars-coercion / test` job here IS the proof — if coercion
-  #       were broken, this job wouldn't appear in the run at all.
+  # ----- Summary: aggregates ALL must-pass children into a single status.
+  #       Branch-protection will require ONLY this check.
   #
-  #       The vars.NONEXISTENT_*_FOR_COERCION_TEST references intentionally
-  #       point at variables that don't exist — the || fallback always
-  #       fires, evaluating to a literal string ('70', 'false') which
-  #       fromJSON() then coerces into the typed value the atom expects.
-  #
-  test-vars-coercion:
-    uses: ./.github/workflows/test-go.yml
-    secrets: inherit
-    with:
-      working_directory: tests/fixtures/minimal-go
-      go_version: '1.22'
-      coverage_threshold: ${{ fromJSON(vars.NONEXISTENT_NUMBER_FOR_COERCION_TEST || '70') }}
-      cgo_enabled: ${{ fromJSON(vars.NONEXISTENT_BOOL_FOR_COERCION_TEST || 'false') }}
+  #       Rule for inclusion: jobs that are EXPECTED to exit 0 belong in needs.
+  #       - test-cleanup-images-fail, test-docker-build-multi-fail,
+  #         test-helm-publish-fail: NOT in needs (designed to exit non-zero).
+  #       - test-trivy-fs-failure, test-docker-build-cve, test-trivy-image-cve:
+  #         IN needs (run with fail_on_findings:false and exit 0; their
+  #         assert-* siblings check the count, not the job result).
+  #       - goreleaser-fail siblings: excluded until Phase 9b unlocks the gate. -----
+  summary:
+    name: summary
+    needs:
+      - test-docker-build
+      - assert-attestation-verifies
+      - test-trivy-image-happy
+      - assert-trivy-image-clean
+      - test-trivy-fs-happy
+      - test-trivy-fs-failure
+      - assert-trivy-fs-finds-secrets
+      - test-docker-build-cve
+      - test-trivy-image-cve
+      - assert-trivy-image-cve-finds-vulns
+      - test-cleanup-images
+      - assert-cleanup-images-fail
+      - test-semantic-release-dry-run
+      - test-onboard-dry-run
+      - test-docker-build-multi
+      - assert-docker-build-multi-fail
+      - test-goreleaser
+      - assert-goreleaser-fail
+      - test-helm-publish
+      - assert-helm-publish-fail
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate child statuses
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          set -euo pipefail
+          failed=$(echo "$NEEDS_JSON" | jq -r '
+            to_entries
+            | map(select(.value.result != "success"))
+            | .[].key
+          ')
+          if [[ -n "$failed" ]]; then
+            echo "::error::Failing summary children:"
+            while IFS= read -r line; do
+              echo "  - $line"
+            done <<< "$failed"
+            exit 1
+          fi
+          echo "All required children passed (count=$(echo "$NEEDS_JSON" | jq 'keys | length'))."

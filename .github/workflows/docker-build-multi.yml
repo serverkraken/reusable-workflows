@@ -84,6 +84,16 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux","low-performance"]'
+      caller_id:
+        description: >-
+          Optional caller-side identifier appended to the concurrency group.
+          Use when multiple jobs in the same workflow call this atom in
+          parallel (e.g. happy + fail callers in an aggregate self-CI
+          workflow). Default empty: backward-compatible with single-caller
+          workflows where github.workflow alone disambiguates.
+        required: false
+        type: string
+        default: ''
     secrets:
       release_please_app_client_id:
         required: true
@@ -108,8 +118,10 @@ concurrency:
   # Group all builds for a given ref together so a second push cancels the
   # first prerelease run (matches docker-build.yml semantics). The
   # `github.workflow` qualifier keeps happy/fail caller workflows that hit
-  # the same atom from cancelling each other on the same PR.
-  group: docker-build-multi-${{ github.workflow }}-${{ github.repository }}-${{ inputs.tag || github.ref }}
+  # the same atom from cancelling each other on the same PR. When happy +
+  # fail callers share the SAME workflow (e.g. aggregate self-CI wrappers),
+  # callers must pass distinct `caller_id` values to avoid the same collision.
+  group: docker-build-multi-${{ github.workflow }}-${{ inputs.caller_id }}-${{ github.repository }}-${{ inputs.tag || github.ref }}
   cancel-in-progress: ${{ inputs.prerelease }}
 
 jobs:

@@ -44,8 +44,11 @@ permissions:
 
 concurrency:
   # `github.workflow` qualifier prevents happy/fail caller workflows that hit
-  # this atom on the same PR from cancelling each other.
-  group: goreleaser-${{ github.workflow }}-${{ github.repository }}-${{ github.ref }}
+  # this atom on the same PR from cancelling each other. `working_directory`
+  # is included so happy + fail callers SHARING the same github.workflow
+  # (aggregate self-CI wrappers) but pointing at different fixtures don't
+  # collide either.
+  group: goreleaser-${{ github.workflow }}-${{ github.repository }}-${{ github.ref }}-${{ inputs.working_directory }}
   cancel-in-progress: ${{ inputs.snapshot }}
 
 jobs:

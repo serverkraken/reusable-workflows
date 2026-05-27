@@ -85,6 +85,22 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "skips Self-CI atoms (self-ci.yml)" {
+  # self-ci.yml is the aggregate wrapper for code-inspection atoms.
+  # Like integration.yml, it orchestrates other atoms (which write their
+  # own summaries); it has no atom-content of its own to summarize.
+  cat > .github/workflows/self-ci.yml <<'EOF'
+name: self-ci
+on:
+  pull_request:
+jobs:
+  lint-go-happy:
+    uses: ./.github/workflows/lint-go.yml
+EOF
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+}
+
 @test "skips caller-*.yml test wrappers" {
   # Caller test wrappers `uses:` the atom they exercise; the atom writes
   # the step summary, so the wrapper itself has no business doing so.

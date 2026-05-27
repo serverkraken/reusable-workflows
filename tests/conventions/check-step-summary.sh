@@ -18,6 +18,7 @@ set -euo pipefail
 SELF_CI_ALLOWLIST=(
   "validate.yml"
   "integration.yml"
+  "self-ci.yml"
   "release.yml"
   "catalog-release.yml"
 )
