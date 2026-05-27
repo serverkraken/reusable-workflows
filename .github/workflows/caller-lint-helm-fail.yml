@@ -1,4 +1,4 @@
-# tests/callers/lint-helm-fail.yml
+# .github/workflows/caller-lint-helm-fail.yml
 # Failure-path caller for lint-helm.yml. The helm-lint-fail fixture has a
 # Chart.yaml missing the required `name` field, so `helm lint` exits
 # non-zero. The assert-failed job uses `if: always()` to run even when
@@ -9,7 +9,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/lint-helm.yml'
-      - 'tests/callers/lint-helm-fail.yml'
+      - '.github/workflows/caller-lint-helm-fail.yml'
       - 'tests/fixtures/lint-test/helm-lint-fail/**'
 
 jobs:

@@ -1,4 +1,4 @@
-# tests/callers/onboard-drift-happy.yml
+# .github/workflows/caller-onboard-drift-happy.yml
 # Happy-path caller for the onboard-drift composite action. Exercises the
 # GHA wrapper layer (env passthrough, GITHUB_OUTPUT capture, GITHUB_ACTION_PATH
 # resolution) against the pre-rendered drift-clean fixture. The script-level
@@ -11,7 +11,7 @@ on:
       - 'actions/onboard-drift/**'
       - 'scripts/onboard-drift.sh'
       - 'scripts/lib/hash-lib.sh'
-      - 'tests/callers/onboard-drift-happy.yml'
+      - '.github/workflows/caller-onboard-drift-happy.yml'
       - 'tests/fixtures/onboard/drift-clean/**'
 
 jobs:

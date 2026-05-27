@@ -1,4 +1,4 @@
-# tests/callers/lint-go-fail.yml
+# .github/workflows/caller-lint-go-fail.yml
 # Failure-path caller for lint-go.yml. The lint-fail fixture has gofmt
 # violations + unused vars; the atom MUST exit non-zero. The assert-failed
 # job uses `if: always()` to run even when the lint job fails, then checks
@@ -9,7 +9,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/lint-go.yml'
-      - 'tests/callers/lint-go-fail.yml'
+      - '.github/workflows/caller-lint-go-fail.yml'
       - 'tests/fixtures/lint-test/go-lint-fail/**'
 
 jobs:

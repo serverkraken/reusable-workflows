@@ -1,4 +1,4 @@
-# tests/callers/helm-publish-happy.yml
+# .github/workflows/caller-helm-publish-happy.yml
 # Happy-path caller for helm-publish.yml. Runs in dry-run mode against the
 # helm-only fixture so nothing is pushed to GHCR. This file exists primarily
 # so the atom's contract has a stable, lintable usage example; integration.yml
@@ -9,7 +9,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/helm-publish.yml'
-      - 'tests/callers/helm-publish-happy.yml'
+      - '.github/workflows/caller-helm-publish-happy.yml'
       - 'tests/fixtures/helm-only/**'
 
 jobs:

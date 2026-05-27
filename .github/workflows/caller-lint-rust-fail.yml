@@ -1,4 +1,4 @@
-# tests/callers/lint-rust-fail.yml
+# .github/workflows/caller-lint-rust-fail.yml
 # Failure-path caller for lint-rust.yml. The lint-fail fixture has bad
 # formatting + clippy warnings (needless_return, unused_variables); the
 # atom MUST exit non-zero. The assert-failed job uses `if: always()` to
@@ -10,7 +10,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/lint-rust.yml'
-      - 'tests/callers/lint-rust-fail.yml'
+      - '.github/workflows/caller-lint-rust-fail.yml'
       - 'tests/fixtures/lint-test/rust-lint-fail/**'
 
 jobs:

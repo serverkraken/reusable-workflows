@@ -1,4 +1,4 @@
-# tests/callers/test-python-cov-fail.yml
+# .github/workflows/caller-test-python-cov-fail.yml
 # Failure-path caller for test-python.yml. The cov-fail fixture ships
 # library code with no tests, so pytest's --cov-fail-under gate trips
 # and the atom MUST exit non-zero. The assert-failed job uses
@@ -11,7 +11,7 @@ on:
     paths:
       - '.github/workflows/test-python.yml'
       - 'actions/setup-python-deps/**'
-      - 'tests/callers/test-python-cov-fail.yml'
+      - '.github/workflows/caller-test-python-cov-fail.yml'
       - 'tests/fixtures/lint-test/python-cov-fail/**'
 
 jobs:

@@ -1,11 +1,11 @@
-# tests/callers/lint-rust-happy.yml
+# .github/workflows/caller-lint-rust-happy.yml
 name: caller-lint-rust-happy
 on:
   workflow_dispatch:
   pull_request:
     paths:
       - '.github/workflows/lint-rust.yml'
-      - 'tests/callers/lint-rust-happy.yml'
+      - '.github/workflows/caller-lint-rust-happy.yml'
       - 'tests/fixtures/lint-test/rust-happy/**'
 
 jobs:
