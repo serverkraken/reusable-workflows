@@ -125,11 +125,19 @@ jobs:
             if echo "$onboarded" | grep -qx "$name"; then
               # Bucket A: existing onboarded. Compute drift.
               status=$(scripts/onboard-sweep-drift-status.sh "$full" "$CURRENT") || status="error"
+              # Status mapping. Special note on no-lock: a repo in
+              # docs/onboarding-status.md with no lock on its default branch
+              # typically means an earlier onboard PR was never merged. The
+              # sweep's onboard atom is idempotent — it re-renders, force-
+              # pushes the bot branch, and edits the existing PR (if any) to
+              # the current catalog version. So no-lock belongs in the update
+              # bucket. behind+modified stays skipped: those repos have local
+              # manual edits that the sweep must not silently overwrite.
               case "$status" in
-                behind|stale-lock)
+                behind|stale-lock|no-lock)
                   update_csv+="${full},"
                   ;;
-                clean|modified|behind+modified|no-lock|error|*)
+                clean|modified|behind+modified|error|*)
                   skipped_csv+="${full}:${status},"
                   ;;
               esac
