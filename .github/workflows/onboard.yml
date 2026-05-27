@@ -211,6 +211,18 @@ jobs:
       - name: Install gomplate (needed by onboard-render)
         run: sudo ${{ github.workspace }}/.catalog/scripts/install-gomplate.sh
 
+      - name: Snapshot previous defaults marker
+        id: snap_defaults
+        working-directory: target
+        run: |
+          set -euo pipefail
+          if [[ -f .github/onboard.lock.json ]]; then
+            prev=$(jq -r '.defaults_applied_at // ""' .github/onboard.lock.json)
+          else
+            prev=""
+          fi
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+
       - name: Render templates into target
         uses: ./.catalog/actions/onboard-render
         with:
@@ -218,6 +230,15 @@ jobs:
           target_path: target
           profile_json: ${{ steps.detect.outputs.profile_json }}
           pin_version: ${{ inputs.pin_version }}
+
+      - name: Apply repo defaults
+        uses: ./.catalog/actions/onboard-apply-defaults
+        with:
+          token: ${{ steps.target-token.outputs.token }}
+          target_repo: ${{ matrix.target.target }}
+          target_path: target
+          prev_defaults_applied_at: ${{ steps.snap_defaults.outputs.prev }}
+          dry_run: ${{ inputs.dry_run }}
 
       - name: Stage rendered files and log diff
         working-directory: target

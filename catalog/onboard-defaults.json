@@ -1,0 +1,42 @@
+{
+  "_schema_version": 1,
+  "_doc": "Source of truth for serverkraken adopter defaults. Modify here, sweep propagates. See docs/superpowers/specs/2026-05-26-onboard-repo-defaults-design.md.",
+
+  "branch_protection": {
+    "_target": "default_branch",
+    "required_pull_request_reviews": {
+      "required_approving_review_count": 0,
+      "dismiss_stale_reviews": false,
+      "require_code_owner_reviews": false,
+      "require_last_push_approval": false
+    },
+    "required_status_checks": null,
+    "enforce_admins": false,
+    "required_linear_history": true,
+    "allow_force_pushes": false,
+    "allow_deletions": false,
+    "required_conversation_resolution": false,
+    "lock_branch": false,
+    "block_creations": false,
+    "restrictions": null
+  },
+
+  "merge_hygiene": {
+    "allow_squash_merge": true,
+    "allow_merge_commit": false,
+    "allow_rebase_merge": false,
+    "delete_branch_on_merge": true,
+    "allow_auto_merge": true,
+    "squash_merge_commit_title": "PR_TITLE",
+    "squash_merge_commit_message": "PR_BODY"
+  },
+
+  "repo_settings": {
+    "has_wiki": false,
+    "has_projects": false,
+    "has_issues": true,
+    "has_discussions": false
+  },
+
+  "topics_additive": ["serverkraken-onboarded"]
+}

@@ -1,0 +1,53 @@
+name: 'Onboard: apply repo defaults'
+description: 'Apply catalog repo-level defaults to a target. Wraps scripts/apply-repo-defaults.sh.'
+inputs:
+  token:
+    description: 'GitHub token with administration:write on the target repo'
+    required: true
+  target_repo:
+    description: 'owner/repo of the target adopter'
+    required: true
+  target_path:
+    description: 'Path to the checked-out adopter repo on the runner'
+    required: true
+  prev_defaults_applied_at:
+    description: 'Snapshot of the target lock''s defaults_applied_at field BEFORE render. Empty string means first-onboard or re-baseline.'
+    required: false
+    default: ''
+  dry_run:
+    description: 'When true, no API mutations and no lock write — only diff summary.'
+    required: false
+    default: 'false'
+outputs:
+  defaults_applied:
+    description: 'true if script ran end-to-end in live mode; false in dry-run'
+    value: ${{ steps.apply.outputs.defaults_applied }}
+  tier_2_applied:
+    description: 'true if Tier 2 (comfort) fields were processed this run (live mode only)'
+    value: ${{ steps.apply.outputs.tier_2_applied }}
+  modified:
+    description: 'Live mode only: csv of mutated field-categories (branch_protection,delete_branch_on_merge,topics,merge_hygiene,repo_settings)'
+    value: ${{ steps.apply.outputs.modified }}
+  would_change:
+    description: 'Dry-run only: csv of field-categories that would be mutated'
+    value: ${{ steps.apply.outputs.would_change }}
+runs:
+  using: composite
+  steps:
+    - id: apply
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        catalog="$GITHUB_ACTION_PATH/../.."
+        flags=()
+        if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+          flags+=("--dry-run")
+        fi
+        "$catalog/scripts/apply-repo-defaults.sh" \
+          --repo "${{ inputs.target_repo }}" \
+          --target-path "${{ inputs.target_path }}" \
+          --prev-marker "${{ inputs.prev_defaults_applied_at }}" \
+          "${flags[@]}" \
+          >> "$GITHUB_OUTPUT"
