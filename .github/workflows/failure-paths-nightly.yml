@@ -195,6 +195,115 @@ jobs:
           fi
           echo "test-rust-cov-fail: correctly observed failure"
 
+  # ----- cleanup-images: fail-path -----
+  # Empty runs_on array forces atom-level input-validation failure (matrix
+  # evaluation requires non-empty input).
+  test-cleanup-images-fail:
+    uses: ./.github/workflows/cleanup-images.yml
+    secrets: inherit
+    with:
+      runs_on: '[]'
+
+  assert-cleanup-images-fail:
+    needs: test-cleanup-images-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-cleanup-images-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected cleanup-images to fail for empty runs_on, got result=$RESULT"
+            exit 1
+          fi
+          echo "cleanup-images correctly failed for empty runs_on"
+
+  # ----- docker-build-multi: fail-path -----
+  # Empty images array must fail at input validation before any runner
+  # work begins. caller_id disambiguates concurrency from any happy-path
+  # docker-build-multi caller running on the same ref (none today in
+  # nightly, but defensive).
+  test-docker-build-multi-fail:
+    uses: ./.github/workflows/docker-build-multi.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/multi-image
+      images: '[]'
+      sign: false
+      attest: false
+      sbom: false
+      caller_id: fail
+
+  assert-docker-build-multi-fail:
+    needs: test-docker-build-multi-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-docker-build-multi-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected docker-build-multi to fail for empty images array, got result=$RESULT"
+            exit 1
+          fi
+          echo "docker-build-multi correctly failed for empty images array"
+
+  # ----- goreleaser: fail-path -----
+  # Fixture has a deliberately broken .goreleaser.yaml (version: 99,
+  # unknown top-level key, invalid build targets). Atom exits non-zero
+  # at config validation.
+  test-goreleaser-fail:
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/cli-go-no-config
+      snapshot: true
+
+  assert-goreleaser-fail:
+    needs: test-goreleaser-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-goreleaser-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected goreleaser to fail for broken .goreleaser.yaml, got result=$RESULT"
+            exit 1
+          fi
+          echo "goreleaser correctly failed for broken .goreleaser.yaml"
+
+  # ----- helm-publish: fail-path -----
+  # Fixture has a broken Chart.yaml. Atom must fail at helm lint /
+  # package step before any push attempt.
+  test-helm-publish-fail:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      chart_path: tests/fixtures/helm-broken
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+
+  assert-helm-publish-fail:
+    needs: test-helm-publish-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-helm-publish-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected helm-publish to fail for broken Chart.yaml, got result=$RESULT"
+            exit 1
+          fi
+          echo "helm-publish correctly failed for broken Chart.yaml"
+
   # Placeholder removed in Task 15. Exists so actionlint accepts the
   # skeleton during incremental task execution.
   placeholder:
