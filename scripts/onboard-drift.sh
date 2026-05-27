@@ -88,6 +88,23 @@ if [[ "$status" == "clean" ]]; then
   scratch=$(mktemp -d)
   trap 'rm -rf "$scratch"' EXIT
 
+  # Derive TARGET_REPO from the adopter's git origin when callers don't set
+  # it explicitly. Without target_repo in the profile, onboard-render.sh falls
+  # back to ${TARGET##*/} (a tmpdir basename like "rendered") for $REPO
+  # substitution in release.yml/prerelease.yml, producing files that byte-
+  # diverge from the adopter's real lock-tracked output — surfacing every
+  # Docker-atom adopter as false-positive stale-lock. drift-check.yml and
+  # onboard-sweep-drift-status.sh both hit this path; deriving here fixes
+  # both callers and keeps fixture-based callers (no origin) untouched.
+  if [[ -z "${TARGET_REPO:-}" ]]; then
+    origin=$(git -C "$TARGET" config --get remote.origin.url 2>/dev/null || true)
+    if [[ -n "$origin" ]]; then
+      norm="${origin#*github.com[:/]}"
+      norm="${norm%.git}"
+      [[ -n "$norm" ]] && export TARGET_REPO="$norm"
+    fi
+  fi
+
   # Step 1: re-detect the adopter's profile from its source files.
   if ! "$CATALOG/scripts/onboard-detect.sh" --profile-json "$TARGET" \
        > "$scratch/profile.json" 2>"$scratch/detect.err"; then
