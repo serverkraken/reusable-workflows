@@ -305,10 +305,16 @@ jobs:
           echo "helm-publish correctly failed for broken Chart.yaml"
 
   # ----- Regression Reporter -----
-  # Runs after all 11 assert-* jobs. Activates only when at least one
-  # assert returned non-success. Opens a new issue with label
-  # `failure-path-regression` OR comments on an existing open one,
-  # whichever is appropriate (single-issue pattern keeps the inbox clean).
+  # Runs after all 11 assert-* jobs. The job always runs (if: always()),
+  # but the bash step short-circuits when no asserts failed — gating in
+  # bash rather than via the workflow-level `if:` expression. An earlier
+  # smoke-test (issue #147) showed that `if: always() && contains(needs.*.result,
+  # 'failure')` lets the job through even when all needs returned success,
+  # which created a false-positive issue. Bash-level gate is robust against
+  # any GHA expression-evaluation quirks.
+  #
+  # Opens a new issue with label `failure-path-regression` OR comments on
+  # an existing open one — single-issue-pattern keeps the inbox clean.
   report-regressions:
     needs:
       - assert-lint-go-fail
@@ -322,7 +328,7 @@ jobs:
       - assert-docker-build-multi-fail
       - assert-goreleaser-fail
       - assert-helm-publish-fail
-    if: always() && contains(needs.*.result, 'failure')
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -341,6 +347,12 @@ jobs:
             | map(select(.value.result != "success"))
             | .[].key
           ' | paste -sd ',' -)
+
+          if [[ -z "$failed" ]]; then
+            echo "All 11 assert-*-fail jobs returned success — no regression to report."
+            exit 0
+          fi
+
           today=$(date -u +%Y-%m-%d)
 
           existing=$(gh issue list \
