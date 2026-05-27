@@ -279,13 +279,10 @@ jobs:
       working_directory: tests/fixtures/cli-go-with-goreleaser
       snapshot: true
 
-  # ----- goreleaser failure path: fixture has no .goreleaser.yaml. Modern
-  #       goreleaser-action auto-generates a default from go.mod, so this
-  #       caller currently observes success. Gated with `if: false` in
-  #       Phase 9a — Phase 9b adds a deliberately broken .goreleaser.yaml
-  #       to the fixture (or renames the fixture) and removes the gate. -----
+  # ----- goreleaser failure path: fixture has a deliberately broken
+  #       .goreleaser.yaml (version: 99, invalid build targets). The atom
+  #       must exit non-zero at config validation before any build runs. -----
   test-goreleaser-fail:
-    if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX
     uses: ./.github/workflows/goreleaser.yml
     secrets: inherit
     with:
@@ -294,9 +291,7 @@ jobs:
 
   assert-goreleaser-fail:
     needs: test-goreleaser-fail
-    # Phase 9b: replace `if: false` with `if: always()` (required so the assert
-    # runs when test-goreleaser-fail fails-by-design once the fixture is fixed).
-    if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify atom failed as expected
@@ -304,10 +299,10 @@ jobs:
           RESULT: ${{ needs.test-goreleaser-fail.result }}
         run: |
           if [[ "$RESULT" != "failure" ]]; then
-            echo "::error::expected goreleaser to fail for missing config, got result=$RESULT"
+            echo "::error::expected goreleaser to fail for broken .goreleaser.yaml, got result=$RESULT"
             exit 1
           fi
-          echo "goreleaser correctly failed for missing .goreleaser.yaml"
+          echo "goreleaser correctly failed for broken .goreleaser.yaml"
 
   # ----- helm-publish happy path: dry-run publish of the helm-only fixture
   #       to a test OCI registry path. No actual push (dry_run: true). -----
@@ -398,7 +393,7 @@ jobs:
       - test-docker-build-multi
       - assert-docker-build-multi-fail
       - test-goreleaser
-      # assert-goreleaser-fail: deliberately excluded — gated with `if: false` in PR1, re-added in PR2
+      - assert-goreleaser-fail
       - test-helm-publish
       - assert-helm-publish-fail
     if: always()
