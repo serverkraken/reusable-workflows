@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.1](https://github.com/serverkraken/reusable-workflows/compare/v4.2.0...v4.2.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **onboard:** four bugs surfaced by today's adopter sweep ([#141](https://github.com/serverkraken/reusable-workflows/issues/141)) ([85a287c](https://github.com/serverkraken/reusable-workflows/commit/85a287c9f5d520e11a4d0cad34637069349589c5))
+
 ## [4.2.0](https://github.com/serverkraken/reusable-workflows/compare/v4.1.1...v4.2.0) (2026-05-27)
 
 
