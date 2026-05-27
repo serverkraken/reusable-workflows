@@ -37,6 +37,95 @@ concurrency:
   cancel-in-progress: false   # never cancel a running nightly mid-flight
 
 jobs:
+  # ----- lint-go: fail-path -----
+  test-lint-go-fail:
+    uses: ./.github/workflows/lint-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-lint-fail
+
+  assert-lint-go-fail:
+    needs: test-lint-go-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-go-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-go-fail: correctly observed failure"
+
+  # ----- lint-helm: fail-path -----
+  test-lint-helm-fail:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test
+      charts_dir: helm-lint-fail
+
+  assert-lint-helm-fail:
+    needs: test-lint-helm-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-helm-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-helm-fail: correctly observed failure"
+
+  # ----- lint-python: fail-path -----
+  test-lint-python-fail:
+    uses: ./.github/workflows/lint-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-lint-fail
+
+  assert-lint-python-fail:
+    needs: test-lint-python-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-python-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-python-fail: correctly observed failure"
+
+  # ----- lint-rust: fail-path -----
+  test-lint-rust-fail:
+    uses: ./.github/workflows/lint-rust.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/rust-lint-fail
+
+  assert-lint-rust-fail:
+    needs: test-lint-rust-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-rust-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-rust-fail: correctly observed failure"
+
   # Placeholder removed in Task 15. Exists so actionlint accepts the
   # skeleton during incremental task execution.
   placeholder:
