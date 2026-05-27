@@ -1,0 +1,46 @@
+# .github/workflows/failure-paths-nightly.yml
+# Nightly cron exercising all designed-failure-path tests of the catalog
+# against the broken fixtures. Runs at 04:00 UTC daily and on
+# workflow_dispatch. Does NOT run on pull_request — that's the whole
+# point: keeps the 11 designed-red test-*-fail jobs out of the PR check
+# rollup so the PR top-level badge stays green.
+#
+# Each test-X-fail job calls the atom workflow with a fixture engineered
+# to fail. Its assert-X-fail sibling uses `if: always()` + result-check
+# to verify failure occurred. If any assert observes anything other than
+# `failure`, the report-regressions job opens (or comments on) an issue
+# with label `failure-path-regression`.
+#
+# Sibling workflows: self-ci.yml + integration.yml (PR-time happy-paths).
+name: failure-paths-nightly
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # Daily 04:00 UTC
+  workflow_dispatch:
+
+# Atoms inherit secrets and declare their own permission caps. This
+# top-level block must mirror the union of nested atom permissions.
+# The integration.yml block is the closest reference and is reproduced
+# here (minus security-events:write — no SARIF uploads in nightly,
+# upload_sarif: false on all trivy-* callers below).
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+concurrency:
+  group: failure-paths-nightly
+  cancel-in-progress: false   # never cancel a running nightly mid-flight
+
+jobs:
+  # Placeholder removed in Task 15. Exists so actionlint accepts the
+  # skeleton during incremental task execution.
+  placeholder:
+    if: ${{ github.event_name == 'workflow_dispatch' && false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "placeholder — replaced by Tasks 4-15"
