@@ -53,6 +53,36 @@ jobs:
           fi
           echo "lint-go-fail: correctly observed failure"
 
+  # ----- lint-helm: happy + fail -----
+  lint-helm-happy:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures
+      charts_dir: helm-only
+
+  test-lint-helm-fail:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test
+      charts_dir: helm-lint-fail
+
+  assert-lint-helm-fail:
+    needs: test-lint-helm-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-helm-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-helm-fail: correctly observed failure"
+
   # Jobs filled in Tasks 10-19.
   placeholder:
     if: false
