@@ -250,6 +250,16 @@ Trigger via `workflow_dispatch` with `dry_run: true` to see what would be
 dispatched without opening PRs. Useful before the first scheduled run after
 a major catalog change.
 
+### `no-lock` semantics
+
+When sweep enumerate computes a drift status of `no-lock` for a repo listed in `docs/onboarding-status.md`, the repo is bucketed as **update**, not skipped. Background: a repo lands in the status-doc once the onboard atom runs against it, but the actual lock file (`.github/onboard.lock.json`) only lands on the default branch when the atom's PR-A is merged. If PR-A is never merged — common across a catalog major bump where the initial PR's version pin became stale — the repo stays in `no-lock` indefinitely. The sweep's atom is idempotent: it re-renders templates at the current catalog version, force-pushes the existing bot branch, and edits the existing PR (if any) to the current pin. Bucketing `no-lock` as update unblocks that flow.
+
+The `behind+modified` status remains skipped: those repos have local modifications on top of an older lock, and the sweep must not silently overwrite hand edits. Owners of `behind+modified` repos must re-onboard manually or accept the modifications first.
+
+### gomplate is installed in enumerate
+
+The `enumerate` job installs gomplate before the bucketing loop. Gomplate is required by the `stale-lock` render-and-compare detection path inside `scripts/onboard-drift.sh`. Without gomplate, that path is conservative-on-failure and silently returns `clean`, causing stale-lock adopters to be falsely classified and skipped. Installation is idempotent and shared by all per-repo drift-status calls in the same enumerate step.
+
 ---
 
 ## Repo Defaults
