@@ -305,6 +305,41 @@ jobs:
           fi
           echo "goreleaser correctly failed for missing .goreleaser.yaml"
 
+  # ----- helm-publish happy path: dry-run publish of the helm-only fixture
+  #       to a test OCI registry path. No actual push (dry_run: true). -----
+  test-helm-publish:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      chart_path: tests/fixtures/helm-only
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+
+  # ----- helm-publish failure path: fixture has a broken Chart.yaml. Atom
+  #       must fail at helm lint / package step before any push attempt. -----
+  test-helm-publish-fail:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      chart_path: tests/fixtures/helm-broken
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+
+  assert-helm-publish-fail:
+    needs: test-helm-publish-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-helm-publish-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected helm-publish to fail for broken Chart.yaml, got result=$RESULT"
+            exit 1
+          fi
+          echo "helm-publish correctly failed for broken Chart.yaml"
+
   # ----- semantic-release dry-run: exercise the atom against the catalog's
   #       own release-please configs WITHOUT mutating remote state.
   #       skip-github-release + skip-github-pull-request flags on the
