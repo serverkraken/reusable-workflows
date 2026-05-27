@@ -15,10 +15,8 @@ on:
   pull_request:
 
 # All atoms here are code-inspection only. No write permissions needed.
-# packages:read is in case a test-* atom pulls a GHCR-hosted toolchain image.
 permissions:
   contents: read
-  packages: read
 
 concurrency:
   group: self-ci-${{ github.ref }}
