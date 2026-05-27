@@ -173,6 +173,39 @@ run_with_stub() {
   ! [[ "$output" == *modified=* ]]
 }
 
+@test "stdout regression: dry-run emits only key=value lines (no workflow commands)" {
+  # The composite action redirects script stdout to $GITHUB_OUTPUT via
+  # `>> "$GITHUB_OUTPUT"`. Anything other than `key=value` lines on stdout
+  # breaks GHA's output-file parser. Diagnostic notices must go to stderr.
+  tgt=$(prepare_target "lock-v1-no-marker.json")
+  export GH_STUB_FIXTURE_DIR="$FIX/api-drifted"
+  mkdir -p "$WORK/bin"
+  ln -sf "$STUB" "$WORK/bin/gh"
+  stdout_only=$(PATH="$WORK/bin:$PATH" "$SCRIPT" --repo o/r --target-path "$tgt" --prev-marker "" --dry-run 2>/dev/null)
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[a-z][a-z_0-9]*= ]] || {
+      echo "stdout pollution: '$line'"
+      false
+    }
+  done <<< "$stdout_only"
+}
+
+@test "stdout regression: live mode emits only key=value lines" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  export GH_STUB_FIXTURE_DIR="$FIX/api-clean"
+  mkdir -p "$WORK/bin"
+  ln -sf "$STUB" "$WORK/bin/gh"
+  stdout_only=$(PATH="$WORK/bin:$PATH" "$SCRIPT" --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z 2>/dev/null)
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[a-z][a-z_0-9]*= ]] || {
+      echo "stdout pollution: '$line'"
+      false
+    }
+  done <<< "$stdout_only"
+}
+
 @test "dry-run: writes markdown diff to GITHUB_STEP_SUMMARY if set" {
   tgt=$(prepare_target "lock-v1-no-marker.json")
   summary_file="$WORK/step_summary.md"

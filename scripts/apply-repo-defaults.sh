@@ -107,7 +107,7 @@ BP_DIFF=$(diff_branch_protection "$BP_CURRENT" "$BP_TARGET")
 
 if [[ -n "$BP_DIFF" ]]; then
   if (( DRY_RUN )); then
-    echo "::notice::dry-run: would PUT branch protection ($BP_DIFF)"
+    echo "::notice::dry-run: would PUT branch protection ($BP_DIFF)" >&2
   else
     echo "$BP_TARGET" | gh api -X PUT \
       "/repos/$REPO/branches/$DEFAULT_BRANCH/protection" \
@@ -123,7 +123,7 @@ DEL_BRANCH_CURRENT=$(echo "$REPO_META" | jq -r '.delete_branch_on_merge')
 
 if [[ "$DEL_BRANCH_CURRENT" != "$DEL_BRANCH_TARGET" ]]; then
   if (( DRY_RUN )); then
-    echo "::notice::dry-run: would PATCH delete_branch_on_merge=$DEL_BRANCH_TARGET"
+    echo "::notice::dry-run: would PATCH delete_branch_on_merge=$DEL_BRANCH_TARGET" >&2
   else
     jq -nc --argjson v "$DEL_BRANCH_TARGET" '{delete_branch_on_merge:$v}' \
       | gh api -X PATCH "/repos/$REPO" --input - > /dev/null
@@ -140,7 +140,7 @@ NEW_TOPICS=$(compute_topics_union "$CURRENT_TOPICS" "$ADDITIVE")
 
 if [[ "$NEW_TOPICS" != "$CURRENT_TOPICS" ]]; then
   if (( DRY_RUN )); then
-    echo "::notice::dry-run: would PUT topics=$NEW_TOPICS"
+    echo "::notice::dry-run: would PUT topics=$NEW_TOPICS" >&2
   else
     jq -nc --argjson n "$NEW_TOPICS" '{names:$n}' \
       | gh api -X PUT "/repos/$REPO/topics" --input - > /dev/null
@@ -166,7 +166,7 @@ if (( APPLY_TIER_2 )); then
       --argjson rs "$REPO_SETTINGS_TARGET" \
       '$mh + $rs')
     if (( DRY_RUN )); then
-      echo "::notice::dry-run: would PATCH /repos/$REPO with $PATCH_PAYLOAD"
+      echo "::notice::dry-run: would PATCH /repos/$REPO with $PATCH_PAYLOAD" >&2
     else
       echo "$PATCH_PAYLOAD" | gh api -X PATCH "/repos/$REPO" --input - > /dev/null
     fi
@@ -187,7 +187,7 @@ if [[ -f "$LOCK_PATH" ]]; then
   fi
 
   if (( DRY_RUN )); then
-    echo "::notice::dry-run: would mutate lock — schema_version=2, defaults_applied_at=$MARKER"
+    echo "::notice::dry-run: would mutate lock — schema_version=2, defaults_applied_at=$MARKER" >&2
   else
     tmp=$(mktemp)
     jq --arg ts "$MARKER" \
