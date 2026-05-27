@@ -151,6 +151,36 @@ jobs:
           fi
           echo "lint-rust-fail: correctly observed failure"
 
+  # ----- test-go: happy + cov-fail -----
+  test-go-happy:
+    uses: ./.github/workflows/test-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-happy
+      coverage_threshold: 90
+
+  test-test-go-cov-fail:
+    uses: ./.github/workflows/test-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-cov-fail
+      coverage_threshold: 90
+
+  assert-test-go-cov-fail:
+    needs: test-test-go-cov-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert test job failed
+        env:
+          RESULT: ${{ needs.test-test-go-cov-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
+            exit 1
+          fi
+          echo "test-go-cov-fail: correctly observed failure"
+
   # Jobs filled in Tasks 10-19.
   placeholder:
     if: false
