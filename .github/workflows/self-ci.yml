@@ -1,0 +1,33 @@
+# .github/workflows/self-ci.yml
+# Aggregate self-CI wrapper: exercises every code-inspection atom (lint-*,
+# test-*, vars-coercion, onboard-drift) against catalog fixtures. Each atom
+# gets at least one happy-path job and (where applicable) a failure-path
+# job with an assert-* sibling that uses if: always() to verify failure
+# occurred. The summary job aggregates all must-pass children into a single
+# status — designed-red `test-*-fail` jobs are EXCLUDED from summary needs,
+# only their assert-* siblings are included.
+#
+# Sibling workflow: integration.yml (side-effects atoms: docker-build,
+# trivy-*, semantic-release, onboard, goreleaser, helm-publish, etc.).
+name: self-ci
+
+on:
+  pull_request:
+
+# All atoms here are code-inspection only. No write permissions needed.
+# packages:read is in case a test-* atom pulls a GHCR-hosted toolchain image.
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: self-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Jobs filled in Tasks 10-19.
+  placeholder:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "placeholder — replaced by Tasks 10-19"
