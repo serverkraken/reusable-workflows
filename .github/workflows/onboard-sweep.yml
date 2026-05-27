@@ -81,6 +81,9 @@ jobs:
           count=$(jq -s 'length' all-repos.json)
           echo "Total in-scope repos (before opt-out filter): $count"
 
+      - name: Install gomplate (needed for stale-lock render-and-compare)
+        run: sudo ./scripts/install-gomplate.sh
+
       - id: bucket
         name: Bucket repos into update vs fresh-onboard vs skip
         env:
