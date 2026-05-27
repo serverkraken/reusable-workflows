@@ -123,6 +123,34 @@ jobs:
           fi
           echo "lint-python-fail: correctly observed failure"
 
+  # ----- lint-rust: happy + fail -----
+  lint-rust-happy:
+    uses: ./.github/workflows/lint-rust.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/rust-happy
+
+  test-lint-rust-fail:
+    uses: ./.github/workflows/lint-rust.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/rust-lint-fail
+
+  assert-lint-rust-fail:
+    needs: test-lint-rust-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-rust-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-rust-fail: correctly observed failure"
+
   # Jobs filled in Tasks 10-19.
   placeholder:
     if: false
