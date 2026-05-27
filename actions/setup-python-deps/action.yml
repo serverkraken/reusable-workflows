@@ -117,10 +117,14 @@ runs:
     - name: uv sync
       # No --frozen: detection accepts uv projects without a committed
       # uv.lock; in that case uv creates the lock at install time.
+      # --all-extras: install [project.optional-dependencies] so dev tools
+      # (ruff, mypy, pytest) declared as PEP 621 extras are present. Without
+      # this, `uv sync` only resolves required dependencies and the
+      # downstream `uv run ruff/pytest` calls fail with "no such file".
       if: steps.detect.outputs.pm == 'uv'
       shell: bash
       working-directory: ${{ inputs.working_directory }}
-      run: uv sync
+      run: uv sync --all-extras
 
     - name: pip install -e ".[dev]"
       if: steps.detect.outputs.pm == 'pip-dev'
