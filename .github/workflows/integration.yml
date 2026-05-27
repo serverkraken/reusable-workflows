@@ -268,6 +268,43 @@ jobs:
           fi
           echo "docker-build-multi correctly failed for empty images array"
 
+  # ----- goreleaser happy path: snapshot build against the cli-go fixture
+  #       with a valid .goreleaser.yaml. No artifacts published. -----
+  test-goreleaser:
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/cli-go-with-goreleaser
+      snapshot: true
+
+  # ----- goreleaser failure path: fixture has no .goreleaser.yaml. Modern
+  #       goreleaser-action auto-generates a default from go.mod, so this
+  #       caller currently observes success. Gated with `if: false` in
+  #       Phase 9a — Phase 9b adds a deliberately broken .goreleaser.yaml
+  #       to the fixture (or renames the fixture) and removes the gate. -----
+  test-goreleaser-fail:
+    if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/cli-go-no-config
+      snapshot: true
+
+  assert-goreleaser-fail:
+    if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX
+    needs: test-goreleaser-fail
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-goreleaser-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected goreleaser to fail for missing config, got result=$RESULT"
+            exit 1
+          fi
+          echo "goreleaser correctly failed for missing .goreleaser.yaml"
+
   # ----- semantic-release dry-run: exercise the atom against the catalog's
   #       own release-please configs WITHOUT mutating remote state.
   #       skip-github-release + skip-github-pull-request flags on the
