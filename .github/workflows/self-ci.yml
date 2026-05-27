@@ -181,6 +181,50 @@ jobs:
           fi
           echo "test-go-cov-fail: correctly observed failure"
 
+  # ----- test-python: 3 happy paths (poetry/uv/pip) + cov-fail -----
+  test-python-poetry-happy:
+    uses: ./.github/workflows/test-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-poetry-happy
+      coverage_threshold: 90
+
+  test-python-uv-happy:
+    uses: ./.github/workflows/test-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-uv-happy
+      coverage_threshold: 90
+
+  test-python-pip-happy:
+    uses: ./.github/workflows/test-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-pip-happy
+      coverage_threshold: 90
+
+  test-test-python-cov-fail:
+    uses: ./.github/workflows/test-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-cov-fail
+      coverage_threshold: 90
+
+  assert-test-python-cov-fail:
+    needs: test-test-python-cov-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert test job failed
+        env:
+          RESULT: ${{ needs.test-test-python-cov-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
+            exit 1
+          fi
+          echo "test-python-cov-fail: correctly observed failure"
+
   # Jobs filled in Tasks 10-19.
   placeholder:
     if: false
