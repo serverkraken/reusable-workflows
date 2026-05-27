@@ -101,6 +101,24 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "skips Self-CI atoms (failure-paths-nightly.yml)" {
+  # failure-paths-nightly.yml is the cron-triggered aggregate wrapper for
+  # designed-failure-path tests. Like self-ci.yml + integration.yml, it
+  # orchestrates other atoms (which write their own summaries); it has no
+  # atom-content of its own to summarize.
+  cat > .github/workflows/failure-paths-nightly.yml <<'EOF'
+name: failure-paths-nightly
+on:
+  schedule:
+    - cron: '0 4 * * *'
+jobs:
+  test-lint-go-fail:
+    uses: ./.github/workflows/lint-go.yml
+EOF
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+}
+
 @test "skips caller-*.yml test wrappers" {
   # Caller test wrappers `uses:` the atom they exercise; the atom writes
   # the step summary, so the wrapper itself has no business doing so.
