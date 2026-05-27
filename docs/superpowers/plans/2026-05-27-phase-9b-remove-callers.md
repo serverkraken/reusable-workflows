@@ -161,8 +161,10 @@ Ersetzen mit:
 Suche im File:
 ```yaml
   assert-goreleaser-fail:
-    if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX
     needs: test-goreleaser-fail
+    # Phase 9b: replace `if: false` with `if: always()` (required so the assert
+    # runs when test-goreleaser-fail fails-by-design once the fixture is fixed).
+    if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX
     runs-on: ubuntu-latest
 ```
 
@@ -173,6 +175,8 @@ Ersetzen mit:
     if: always()
     runs-on: ubuntu-latest
 ```
+
+Die zwei Kommentar-Zeilen werden mit dem `if: false` zusammen entfernt — die Phase-9a-Anweisung an Phase 9b ist erfüllt, sobald `if: always()` an seiner Stelle steht.
 
 - [ ] **Step 4: `assert-goreleaser-fail` zu `summary.needs` hinzufügen**
 

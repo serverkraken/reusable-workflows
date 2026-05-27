@@ -267,8 +267,10 @@ Direkt nach `assert-docker-build-multi-fail:` (Task 4 Ende):
       snapshot: true
 
   assert-goreleaser-fail:
-    if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX
     needs: test-goreleaser-fail
+    # Phase 9b: replace `if: false` with `if: always()` (required so the assert
+    # runs when test-goreleaser-fail fails-by-design once the fixture is fixed).
+    if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX
     runs-on: ubuntu-latest
     steps:
       - name: Verify atom failed as expected
@@ -377,9 +379,15 @@ Direkt nach `assert-helm-publish-fail:` (Task 6 Ende), als letzter Job in der Da
 
 ```yaml
   # ----- Summary: aggregates ALL must-pass children into a single status.
-  #       Branch-protection will require ONLY this check. Designed-red
-  #       `test-*-fail` jobs are NOT in needs — only their assert-* siblings.
-  #       goreleaser-fail siblings are excluded until Phase 9b unlocks them. -----
+  #       Branch-protection will require ONLY this check.
+  #
+  #       Rule for inclusion: jobs that are EXPECTED to exit 0 belong in needs.
+  #       - test-cleanup-images-fail, test-docker-build-multi-fail,
+  #         test-helm-publish-fail: NOT in needs (designed to exit non-zero).
+  #       - test-trivy-fs-failure, test-docker-build-cve, test-trivy-image-cve:
+  #         IN needs (run with fail_on_findings:false and exit 0; their
+  #         assert-* siblings check the count, not the job result).
+  #       - goreleaser-fail siblings: excluded until Phase 9b unlocks the gate. -----
   summary:
     name: summary
     needs:
