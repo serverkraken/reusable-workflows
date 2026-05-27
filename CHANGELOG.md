@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.0](https://github.com/serverkraken/reusable-workflows/compare/v4.1.1...v4.2.0) (2026-05-27)
+
+
+### Features
+
+* **onboard:** apply repo defaults contract (phase 8) ([#139](https://github.com/serverkraken/reusable-workflows/issues/139)) ([a690bad](https://github.com/serverkraken/reusable-workflows/commit/a690bad6ff652b9f9f6ffbc6e9308b75d4d59494))
+
 ## [4.1.1](https://github.com/serverkraken/reusable-workflows/compare/v4.1.0...v4.1.1) (2026-05-26)
 
 
