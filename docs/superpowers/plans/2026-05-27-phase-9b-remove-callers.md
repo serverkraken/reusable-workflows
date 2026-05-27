@@ -129,7 +129,7 @@ git commit -m "fix(fixtures): break cli-go-no-config goreleaser config for fail-
 ## Task 3: goreleaser-fail `if: false` Gate aus integration.yml entfernen
 
 **Files:**
-- Modify: `.github/workflows/integration.yml` (drei `if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX` Stellen)
+- Modify: `.github/workflows/integration.yml` (zwei `if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX` Stellen)
 
 - [ ] **Step 1: Marker im File finden**
 
