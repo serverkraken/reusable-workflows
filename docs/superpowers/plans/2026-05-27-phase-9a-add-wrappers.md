@@ -707,10 +707,16 @@ Direkt nach `assert-lint-helm-fail:` (Task 11 Ende):
       working_directory: tests/fixtures/lint-test/python-poetry-happy
 
   lint-python-uv-happy:
+    # Pinned to X64: uv's reflink/CoW clone hits EAGAIN reliably on the
+    # serverkraken-runner-arm64 pool (Oracle Cloud Ampere; observed in
+    # PR #143). Other Python managers (poetry, pip) and other languages
+    # don't trip the same path. Investigate arm64 runner FS limits as a
+    # separate task; for now keep self-CI deterministic by pinning.
     uses: ./.github/workflows/lint-python.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/python-uv-happy
+      runs_on: '["self-hosted","Linux","X64"]'
 
   lint-python-pip-happy:
     uses: ./.github/workflows/lint-python.yml
@@ -890,11 +896,14 @@ Direkt nach `assert-test-go-cov-fail:` (Task 14 Ende):
       coverage_threshold: 90
 
   test-python-uv-happy:
+    # Pinned to X64: same arm64-pool EAGAIN as lint-python-uv-happy.
+    # See comment there for context.
     uses: ./.github/workflows/test-python.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/python-uv-happy
       coverage_threshold: 90
+      runs_on: '["self-hosted","Linux","X64"]'
 
   test-python-pip-happy:
     uses: ./.github/workflows/test-python.yml
