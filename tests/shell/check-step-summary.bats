@@ -84,3 +84,19 @@ EOF
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
 }
+
+@test "skips caller-*.yml test wrappers" {
+  # Caller test wrappers `uses:` the atom they exercise; the atom writes
+  # the step summary, so the wrapper itself has no business doing so.
+  cat > .github/workflows/caller-lint-go-happy.yml <<'EOF'
+name: caller-lint-go-happy
+on:
+  pull_request:
+    paths: ['.github/workflows/lint-go.yml']
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+EOF
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+}
