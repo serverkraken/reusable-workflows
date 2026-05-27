@@ -185,6 +185,7 @@ Direkt nach `assert-cleanup-images-fail:` (Task 3 Ende) einfügen:
       sign: true
       attest: true
       sbom: true
+      caller_id: happy
 
   # ----- docker-build-multi failure path: empty images array must
   #       fail at input validation, before any runner work begins. -----
@@ -199,6 +200,7 @@ Direkt nach `assert-cleanup-images-fail:` (Task 3 Ende) einfügen:
       sign: false
       attest: false
       sbom: false
+      caller_id: fail
 
   assert-docker-build-multi-fail:
     needs: test-docker-build-multi-fail
