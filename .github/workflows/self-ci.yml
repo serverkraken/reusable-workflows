@@ -25,6 +25,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ----- lint-go: happy + fail -----
+  lint-go-happy:
+    uses: ./.github/workflows/lint-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-happy
+
+  test-lint-go-fail:
+    uses: ./.github/workflows/lint-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-lint-fail
+
+  assert-lint-go-fail:
+    needs: test-lint-go-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-go-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-go-fail: correctly observed failure"
+
   # Jobs filled in Tasks 10-19.
   placeholder:
     if: false
