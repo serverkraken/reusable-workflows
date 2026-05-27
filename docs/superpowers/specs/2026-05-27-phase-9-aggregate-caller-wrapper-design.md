@@ -8,6 +8,10 @@
 
 ---
 
+> **Note (executed 2026-05-27):** Spec describes a 2-PR plan (PR1 additiv + PR2 cleanup). During execution it became clear that the "Doppel-Validierung" mechanism in PR1 generated exactly the visual mess Phase 9 was supposed to eliminate (old caller-*.yml ran alongside new wrappers, collided on atom concurrency-groups, produced ~20 failing/cancelled checks). Plans 9a + 9b were collapsed into a single PR (#143): wrappers added + summary jobs + caller-* deleted + goreleaser fixture repaired all-in-one. Branch-protection setup still happens out-of-band after merge.
+
+---
+
 ## 1. Goal
 
 Die PR-Page eines Catalog-PRs zeigt heute ~22 Top-Level-Workflow-Suites (eine pro `caller-*.yml`), davon ~9 absichtlich rot (Failure-Path-Caller, die per Design fehlschlagen, damit das `assert-X-fail` Sibling-Job die Failure-Erwartung verifizieren kann). Der menschliche Reviewer kann auf einen Blick nicht unterscheiden zwischen "designed-red" und "real-red" und muss in jeden Check hineinklicken.
