@@ -219,6 +219,55 @@ jobs:
           fi
           echo "cleanup-images correctly failed for empty runs_on"
 
+  # ----- docker-build-multi happy path: matrix build of 2 images from
+  #       the multi-image fixture, manifest stitched, push by digest. -----
+  test-docker-build-multi:
+    uses: ./.github/workflows/docker-build-multi.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/multi-image
+      images: >-
+        [
+          {"dockerfile": "tests/fixtures/multi-image/Dockerfile",
+           "image_name": "serverkraken/reusable-workflows/test-multi-api"},
+          {"dockerfile": "tests/fixtures/multi-image/Dockerfile.worker",
+           "image_name": "serverkraken/reusable-workflows/test-multi-worker"}
+        ]
+      sign: true
+      attest: true
+      sbom: true
+
+  # ----- docker-build-multi failure path: empty images array must
+  #       fail at input validation, before any runner work begins. -----
+  test-docker-build-multi-fail:
+    uses: ./.github/workflows/docker-build-multi.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/multi-image
+      images: '[]'
+      sign: false
+      attest: false
+      sbom: false
+
+  assert-docker-build-multi-fail:
+    needs: test-docker-build-multi-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-docker-build-multi-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected docker-build-multi to fail for empty images array, got result=$RESULT"
+            exit 1
+          fi
+          echo "docker-build-multi correctly failed for empty images array"
+
   # ----- semantic-release dry-run: exercise the atom against the catalog's
   #       own release-please configs WITHOUT mutating remote state.
   #       skip-github-release + skip-github-pull-request flags on the
