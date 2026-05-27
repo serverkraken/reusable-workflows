@@ -301,9 +301,51 @@ jobs:
           fi
           echo "onboard-drift wrapper returned status=clean"
 
-  # Jobs filled in Tasks 10-19.
-  placeholder:
-    if: false
+  # ----- Summary: aggregates ALL must-pass children into a single status.
+  #       Branch-protection will require ONLY this check. Designed-red
+  #       `test-*-fail` jobs are NOT in needs — only their assert-* siblings.
+  summary:
+    name: summary
+    needs:
+      - lint-go-happy
+      - assert-lint-go-fail
+      - lint-helm-happy
+      - assert-lint-helm-fail
+      - lint-python-poetry-happy
+      - lint-python-uv-happy
+      - lint-python-pip-happy
+      - assert-lint-python-fail
+      - lint-rust-happy
+      - assert-lint-rust-fail
+      - test-go-happy
+      - assert-test-go-cov-fail
+      - test-python-poetry-happy
+      - test-python-uv-happy
+      - test-python-pip-happy
+      - assert-test-python-cov-fail
+      - test-rust-happy
+      - assert-test-rust-cov-fail
+      - test-vars-coercion
+      - onboard-drift-happy
+    if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - run: echo "placeholder — replaced by Tasks 10-19"
+      - name: Aggregate child statuses
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          set -euo pipefail
+          failed=$(echo "$NEEDS_JSON" | jq -r '
+            to_entries
+            | map(select(.value.result != "success"))
+            | .[].key
+          ')
+          if [[ -n "$failed" ]]; then
+            echo "::error::Failing summary children:"
+            while IFS= read -r line; do
+              echo "  - $line"
+            done <<< "$failed"
+            exit 1
+          fi
+          echo "All required children passed (count=$(echo "$NEEDS_JSON" | jq 'keys | length'))."
