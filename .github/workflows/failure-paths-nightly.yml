@@ -304,10 +304,74 @@ jobs:
           fi
           echo "helm-publish correctly failed for broken Chart.yaml"
 
-  # Placeholder removed in Task 15. Exists so actionlint accepts the
-  # skeleton during incremental task execution.
-  placeholder:
-    if: ${{ github.event_name == 'workflow_dispatch' && false }}
+  # ----- Regression Reporter -----
+  # Runs after all 11 assert-* jobs. Activates only when at least one
+  # assert returned non-success. Opens a new issue with label
+  # `failure-path-regression` OR comments on an existing open one,
+  # whichever is appropriate (single-issue pattern keeps the inbox clean).
+  report-regressions:
+    needs:
+      - assert-lint-go-fail
+      - assert-lint-helm-fail
+      - assert-lint-python-fail
+      - assert-lint-rust-fail
+      - assert-test-go-cov-fail
+      - assert-test-python-cov-fail
+      - assert-test-rust-cov-fail
+      - assert-cleanup-images-fail
+      - assert-docker-build-multi-fail
+      - assert-goreleaser-fail
+      - assert-helm-publish-fail
+    if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
     steps:
-      - run: echo "placeholder — replaced by Tasks 4-15"
+      - name: Open or comment on regression issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NEEDS_JSON: ${{ toJson(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          failed=$(echo "$NEEDS_JSON" | jq -r '
+            to_entries
+            | map(select(.value.result != "success"))
+            | .[].key
+          ' | paste -sd ',' -)
+          today=$(date -u +%Y-%m-%d)
+
+          existing=$(gh issue list \
+            --label failure-path-regression \
+            --state open \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body "Nightly $today — failed asserts: \`$failed\`. Run: $RUN_URL"
+            echo "Commented on existing regression issue #$existing"
+          else
+            gh issue create \
+              --label failure-path-regression \
+              --title "[failure-path-regression] nightly $today: $failed" \
+              --body "Nightly \`failure-paths-nightly.yml\` ran on $today and one or more failure-path asserts did not observe the expected failure.
+
+          **Failed asserts:** \`$failed\`
+          **Run:** $RUN_URL
+
+          **Likely causes:**
+          - Atom logic was refactored and no longer fails on the broken fixture
+          - Fixture is stale (action version updated, behavior changed)
+          - Action version drift (e.g., goreleaser-action auto-generates default config)
+
+          **Triage checklist:**
+          - [ ] Identify which atom/fixture pair regressed (see failed-asserts list above)
+          - [ ] Inspect recent commits to the named atom workflow
+          - [ ] Verify the fixture still triggers the failure mode under the current atom logic
+          - [ ] Repair atom OR fixture OR remove the failure-path test if obsolete
+          - [ ] Close this issue with a link to the fixing PR"
+            echo "Created new regression issue"
+          fi
