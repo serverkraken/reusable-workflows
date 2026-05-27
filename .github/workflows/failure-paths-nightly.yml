@@ -126,6 +126,75 @@ jobs:
           fi
           echo "lint-rust-fail: correctly observed failure"
 
+  # ----- test-go: cov-fail-path -----
+  test-test-go-cov-fail:
+    uses: ./.github/workflows/test-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-cov-fail
+      coverage_threshold: 90
+
+  assert-test-go-cov-fail:
+    needs: test-test-go-cov-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert test job failed
+        env:
+          RESULT: ${{ needs.test-test-go-cov-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
+            exit 1
+          fi
+          echo "test-go-cov-fail: correctly observed failure"
+
+  # ----- test-python: cov-fail-path -----
+  test-test-python-cov-fail:
+    uses: ./.github/workflows/test-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-cov-fail
+      coverage_threshold: 90
+
+  assert-test-python-cov-fail:
+    needs: test-test-python-cov-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert test job failed
+        env:
+          RESULT: ${{ needs.test-test-python-cov-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
+            exit 1
+          fi
+          echo "test-python-cov-fail: correctly observed failure"
+
+  # ----- test-rust: cov-fail-path -----
+  test-test-rust-cov-fail:
+    uses: ./.github/workflows/test-rust.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/rust-cov-fail
+      coverage_threshold: 90
+
+  assert-test-rust-cov-fail:
+    needs: test-test-rust-cov-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert test job failed
+        env:
+          RESULT: ${{ needs.test-test-rust-cov-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
+            exit 1
+          fi
+          echo "test-rust-cov-fail: correctly observed failure"
+
   # Placeholder removed in Task 15. Exists so actionlint accepts the
   # skeleton during incremental task execution.
   placeholder:
