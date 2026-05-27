@@ -419,7 +419,9 @@ Direkt nach `assert-helm-publish-fail:` (Task 6 Ende), als letzter Job in der Da
           ')
           if [[ -n "$failed" ]]; then
             echo "::error::Failing summary children:"
-            echo "$failed" | sed 's/^/  - /'
+            while IFS= read -r line; do
+              echo "  - $line"
+            done <<< "$failed"
             exit 1
           fi
           echo "All required children passed (count=$(echo "$NEEDS_JSON" | jq 'keys | length'))."
@@ -1143,7 +1145,9 @@ Direkt nach `onboard-drift-happy:` (Task 18 Ende):
           ')
           if [[ -n "$failed" ]]; then
             echo "::error::Failing summary children:"
-            echo "$failed" | sed 's/^/  - /'
+            while IFS= read -r line; do
+              echo "  - $line"
+            done <<< "$failed"
             exit 1
           fi
           echo "All required children passed (count=$(echo "$NEEDS_JSON" | jq 'keys | length'))."

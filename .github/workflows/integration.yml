@@ -407,7 +407,9 @@ jobs:
           ')
           if [[ -n "$failed" ]]; then
             echo "::error::Failing summary children:"
-            echo "$failed" | sed 's/^/  - /'
+            while IFS= read -r line; do
+              echo "  - $line"
+            done <<< "$failed"
             exit 1
           fi
           echo "All required children passed (count=$(echo "$NEEDS_JSON" | jq 'keys | length'))."

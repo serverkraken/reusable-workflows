@@ -19,22 +19,26 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Install actionlint
-        # Install via official script so we can pass -ignore flags. actionlint
-        # has a baked-in `popular-actions` data table that v1.7.12 does not
-        # yet know about `client-id` on actions/create-github-app-token@v3
-        # (only `app-id`). Ignore the two specific messages until upstream
-        # refreshes — runtime is fine, only the lint metadata is stale.
+        # Install via official script so we can pass -ignore flags.
         #
-        # Per-path ignores for the type-coercion smoke caller and integration.yml's
-        # `continue-on-error` on a reusable-workflow `uses:` job live in
-        # .github/actionlint.yaml so they only apply to those specific files.
+        # client-id / app-id: actionlint v1.7.12 has a baked-in `popular-actions`
+        # data table that does not yet know about `client-id` on
+        # actions/create-github-app-token@v3 (only `app-id`). Runtime is fine,
+        # only the lint metadata is stale.
+        #
+        # constant expression "false": Phase 9a (PR1) gates goreleaser-fail jobs
+        # in integration.yml with `if: false   # PHASE-9B-ENABLES-AFTER-FIXTURE-FIX`
+        # until the broken-fixture lands in PR2 (Phase 9b). Then those `if:` lines
+        # are removed entirely. The ignore stays harmless after — if no other
+        # workflow uses `if: false`, nothing matches the pattern.
         run: |
           bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
       - name: Run actionlint
         run: |
           ./actionlint \
             -ignore 'input "client-id" is not defined in action "actions/create-github-app-token@v3"' \
-            -ignore 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
+            -ignore 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"' \
+            -ignore 'constant expression "false" in condition'
 
   yamllint:
     runs-on: ubuntu-latest
