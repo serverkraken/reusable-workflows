@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-05-27T10:20:03Z_
+_Last updated by the onboarding workflow: 2026-05-27T10:29:44Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -38,4 +38,4 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/strassenfuchs | 2026-05-25 | v3 | — | — | error (error / error) |
 | serverkraken/tshock-kraken-mapservice | 2026-05-27 | v4 | [PR](https://github.com/serverkraken/tshock-kraken-mapservice/pull/56) | [PR](https://github.com/serverkraken/tshock-kraken-mapservice/pull/57) | add-open, cleanup-open |
 | serverkraken/tshock-kraken-plugin | 2026-05-25 | v3 | — | — | error (error / error) |
-| serverkraken/tshock-kraken-webui | 2026-05-27 | v4 | [PR](https://github.com/serverkraken/tshock-kraken-webui/pull/40) | [PR](https://github.com/serverkraken/tshock-kraken-webui/pull/41) | add-open, cleanup-open |
+| serverkraken/tshock-kraken-webui | 2026-05-27 | v4 | [PR](https://github.com/serverkraken/tshock-kraken-webui/pull/42) | [PR](https://github.com/serverkraken/tshock-kraken-webui/pull/41) | add-open, cleanup-open |
