@@ -136,7 +136,7 @@ No emoji. Only the glyphs above.
 
 ## Adding a New Atom
 
-When you add a workflow to `.github/workflows/` that is not in the Self-CI exemption list (`validate.yml`, `integration.yml`, `release.yml`, `catalog-release.yml`), you MUST:
+When you add a workflow to `.github/workflows/` that is not in the Self-CI exemption list (`validate.yml`, `integration.yml`, `self-ci.yml`, `release.yml`, `catalog-release.yml`), you MUST:
 
 1. Add a summary step matching this schema.
 2. Add the file-header line at the top of your atom: `# Summary convention: docs/conventions/step-summary.md`
