@@ -1,4 +1,4 @@
-# tests/callers/goreleaser-happy.yml
+# .github/workflows/caller-goreleaser-happy.yml
 # Happy-path caller for goreleaser.yml. Runs in --snapshot mode against the
 # cli-go-with-goreleaser fixture so nothing is published. This file exists
 # primarily so the atom's contract has a stable, lintable usage example;
@@ -9,7 +9,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/goreleaser.yml'
-      - 'tests/callers/goreleaser-happy.yml'
+      - '.github/workflows/caller-goreleaser-happy.yml'
       - 'tests/fixtures/cli-go-with-goreleaser/**'
 
 jobs:

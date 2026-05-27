@@ -320,7 +320,7 @@ render_prerelease_for_profile() {
   # so a regression that drops it from one block fails the test.
   grep -cF "rust_toolchain: \${{ vars.SK_RUST_TOOLCHAIN || '' }}" "$rendered" | grep -qx 2
   # Other three SK_* vars appear in exactly one job each — presence check is sufficient.
-  grep -qF "cargo_llvm_cov_version: \${{ vars.SK_CARGO_LLVM_COV_VERSION || 'v0.6.16' }}" "$rendered"
+  grep -qF "cargo_llvm_cov_version: \${{ vars.SK_CARGO_LLVM_COV_VERSION || '0.6.16' }}" "$rendered"
   grep -qF "clippy_args: \${{ vars.SK_CLIPPY_ARGS || '-D warnings' }}" "$rendered"
   grep -qF "coverage_threshold: \${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}" "$rendered"
 }

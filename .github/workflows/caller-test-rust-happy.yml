@@ -1,4 +1,4 @@
-# tests/callers/test-rust-happy.yml
+# .github/workflows/caller-test-rust-happy.yml
 # Happy-path caller for test-rust.yml. Reuses the rust-happy fixture, which
 # carries unit tests covering the public surface, so cargo-llvm-cov clears
 # the 90 % line-coverage gate.
@@ -8,7 +8,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/test-rust.yml'
-      - 'tests/callers/test-rust-happy.yml'
+      - '.github/workflows/caller-test-rust-happy.yml'
       - 'tests/fixtures/lint-test/rust-happy/**'
 
 jobs:

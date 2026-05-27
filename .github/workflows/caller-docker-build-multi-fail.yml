@@ -1,4 +1,4 @@
-# tests/callers/docker-build-multi-fail.yml
+# .github/workflows/caller-docker-build-multi-fail.yml
 # Failure-path caller for docker-build-multi.yml. Passes an empty JSON
 # array as `images`; the reusable workflow's `parse` job must reject it
 # (exit 1). The assert-docker-build-multi-fail sibling job verifies the
@@ -10,7 +10,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/docker-build-multi.yml'
-      - 'tests/callers/docker-build-multi-fail.yml'
+      - '.github/workflows/caller-docker-build-multi-fail.yml'
       - 'tests/fixtures/multi-image/**'
 
 jobs:

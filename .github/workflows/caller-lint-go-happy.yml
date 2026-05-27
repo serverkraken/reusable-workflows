@@ -1,4 +1,4 @@
-# tests/callers/lint-go-happy.yml
+# .github/workflows/caller-lint-go-happy.yml
 # Happy-path caller for lint-go.yml. Runs go vet + golangci-lint against
 # the clean go fixture. Triggered by workflow_dispatch + paths-filtered PR.
 name: caller-lint-go-happy
@@ -7,7 +7,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/lint-go.yml'
-      - 'tests/callers/lint-go-happy.yml'
+      - '.github/workflows/caller-lint-go-happy.yml'
       - 'tests/fixtures/lint-test/go-happy/**'
 
 jobs:

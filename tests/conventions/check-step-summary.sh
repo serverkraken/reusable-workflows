@@ -39,6 +39,11 @@ for file in .github/workflows/*.yml .github/workflows/*.yaml; do
       break
     fi
   done
+  # Skip caller-*.yml test wrappers — they call atoms via `uses:` and the
+  # called atom writes the step summary. Wrapping it again would be noise.
+  if [[ "$basename" == caller-*.yml ]]; then
+    skip=1
+  fi
   if [[ $skip -eq 1 ]]; then
     continue
   fi

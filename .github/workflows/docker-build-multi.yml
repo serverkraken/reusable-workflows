@@ -106,8 +106,10 @@ permissions:
 
 concurrency:
   # Group all builds for a given ref together so a second push cancels the
-  # first prerelease run (matches docker-build.yml semantics).
-  group: docker-build-multi-${{ github.repository }}-${{ inputs.tag || github.ref }}
+  # first prerelease run (matches docker-build.yml semantics). The
+  # `github.workflow` qualifier keeps happy/fail caller workflows that hit
+  # the same atom from cancelling each other on the same PR.
+  group: docker-build-multi-${{ github.workflow }}-${{ github.repository }}-${{ inputs.tag || github.ref }}
   cancel-in-progress: ${{ inputs.prerelease }}
 
 jobs:

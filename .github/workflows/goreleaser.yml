@@ -43,7 +43,9 @@ permissions:
   packages: write
 
 concurrency:
-  group: goreleaser-${{ github.repository }}-${{ github.ref }}
+  # `github.workflow` qualifier prevents happy/fail caller workflows that hit
+  # this atom on the same PR from cancelling each other.
+  group: goreleaser-${{ github.workflow }}-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: ${{ inputs.snapshot }}
 
 jobs:

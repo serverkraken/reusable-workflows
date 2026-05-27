@@ -1,33 +1,35 @@
-# tests/callers/lint-python-happy.yml
-# Happy-path caller for lint-python.yml. Exercises all three package
-# managers (poetry, uv, pip-dev) against the three happy fixtures.
-name: caller-lint-python-happy
+# .github/workflows/caller-test-python-happy.yml
+# Happy-path caller for test-python.yml. Exercises all three package managers.
+name: caller-test-python-happy
 on:
   workflow_dispatch:
   pull_request:
     paths:
-      - '.github/workflows/lint-python.yml'
+      - '.github/workflows/test-python.yml'
       - 'actions/setup-python-deps/**'
-      - 'tests/callers/lint-python-happy.yml'
+      - '.github/workflows/caller-test-python-happy.yml'
       - 'tests/fixtures/lint-test/python-poetry-happy/**'
       - 'tests/fixtures/lint-test/python-uv-happy/**'
       - 'tests/fixtures/lint-test/python-pip-happy/**'
 
 jobs:
-  lint-poetry:
-    uses: ./.github/workflows/lint-python.yml
+  test-poetry:
+    uses: ./.github/workflows/test-python.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/python-poetry-happy
+      coverage_threshold: 90
 
-  lint-uv:
-    uses: ./.github/workflows/lint-python.yml
+  test-uv:
+    uses: ./.github/workflows/test-python.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/python-uv-happy
+      coverage_threshold: 90
 
-  lint-pip:
-    uses: ./.github/workflows/lint-python.yml
+  test-pip:
+    uses: ./.github/workflows/test-python.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/python-pip-happy
+      coverage_threshold: 90

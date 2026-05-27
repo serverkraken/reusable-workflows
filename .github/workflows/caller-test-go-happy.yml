@@ -1,4 +1,4 @@
-# tests/callers/test-go-happy.yml
+# .github/workflows/caller-test-go-happy.yml
 # Happy-path caller for test-go.yml against the clean fixture.
 name: caller-test-go-happy
 on:
@@ -6,7 +6,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/test-go.yml'
-      - 'tests/callers/test-go-happy.yml'
+      - '.github/workflows/caller-test-go-happy.yml'
       - 'tests/fixtures/lint-test/go-happy/**'
 
 jobs:

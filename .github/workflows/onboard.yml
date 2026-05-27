@@ -332,9 +332,21 @@ jobs:
           # Warnings are objects {code, path, message} from emit_*_warnings in
           # onboard-detect-lib.sh — extract human-readable fields for the PR body.
           warnings_md=$(echo "$PROFILE" | jq -r '.warnings // [] | map("- `\(.code)` at `\(.path)` — \(.message)") | join("\n")')
-          legacy_md=$(echo "$PROFILE" | jq -r '
+          # legacy_ci entries split into "PR-B will remove" (non-empty
+          # replaced_by — confident replacement exists) vs "manual review"
+          # (empty replaced_by — unrecognized; PR-B leaves them alone).
+          # This mirrors PR-B's actual deletion logic so the body never
+          # promises a removal that doesn't happen.
+          to_remove_md=$(echo "$PROFILE" | jq -r '
             .legacy_ci // [] |
-            map("- `\(.path)` — \(.summary) → replaced by \(.replaced_by|join(", "))") |
+            map(select(.replaced_by | length > 0)) |
+            map("- `\(.path)` — \(.summary)") |
+            join("\n")
+          ')
+          manual_review_md=$(echo "$PROFILE" | jq -r '
+            .legacy_ci // [] |
+            map(select(.replaced_by | length == 0)) |
+            map("- `\(.path)` — \(.summary)") |
             join("\n")
           ')
 
@@ -350,8 +362,12 @@ jobs:
           ${warnings_md:+#### Warnings
           ${warnings_md}
           }
-          ${legacy_md:+#### Legacy CI to retire (companion PR B)
-          ${legacy_md}
+          ${to_remove_md:+#### Legacy CI removed by companion PR B
+          ${to_remove_md}
+          }
+          ${manual_review_md:+#### Legacy CI needing manual review
+          These workflows were detected but have no catalog replacement yet; PR B leaves them in place.
+          ${manual_review_md}
           }
           After merging:
           1. Push a \`feat:\` / \`fix:\` commit to \`${DEFAULT_BRANCH}\` — \`release.yml\` should open a release-please PR.
@@ -388,6 +404,7 @@ jobs:
           TARGET_REPO: ${{ matrix.target.target }}
           PIN: ${{ inputs.pin_version }}
           PR_A_URL: ${{ steps.pr_a.outputs.pr_a_url }}
+          PROFILE: ${{ steps.detect.outputs.profile_json }}
         run: |
           set -euo pipefail
           # Hard reset to default branch HEAD to discard rendered files from prior step;
@@ -397,21 +414,27 @@ jobs:
           git reset --hard "origin/$DEFAULT_BRANCH"
           git clean -fd
 
-          LEGACY=(
-            ".github/workflows/semantic-release.yml"
-            ".github/workflows/docker-build.yml"
-            ".github/workflows/trivy.yml"
-            ".github/workflows/trivy.yaml"
-            ".github/workflows/build.yml"
-            ".github/workflows/publish.yml"
+          # Source of truth for what to delete: profile.legacy_ci from
+          # detect_legacy_ci (scripts/lib/onboard-detect-lib.sh). Only entries
+          # with non-empty replaced_by are removed — those are workflows where
+          # a confident catalog replacement exists. "Unrecognized" legacy
+          # (empty replaced_by) is left in place; the user reviews manually.
+          # Prior to v4.2.1 this step used a hardcoded 6-name whitelist that
+          # missed test-coverage.yml, docker-manual.yml, test.yml, etc.
+          mapfile -t matched < <(
+            echo "$PROFILE" | jq -r '
+              .legacy_ci // [] |
+              map(select(.replaced_by | length > 0)) |
+              .[].path
+            '
           )
-
-          matched=()
-          for f in "${LEGACY[@]}"; do
-            if [[ -f "$f" ]]; then
-              matched+=("$f")
-            fi
+          # Defensive: jq returns paths verbatim from detection; verify each
+          # exists on the default branch before staging the deletion.
+          present=()
+          for f in "${matched[@]}"; do
+            [[ -n "$f" && -f "$f" ]] && present+=("$f")
           done
+          matched=("${present[@]+"${present[@]}"}")
 
           existing_pr_num=$(gh pr list --repo "$TARGET_REPO" --head "$CLEANUP_BRANCH" --state open --json number -q '.[0].number' || echo "")
 

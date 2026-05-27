@@ -1,6 +1,6 @@
 # drift-clean fixture
 
-Pre-rendered v3 onboarding output. Used by `tests/callers/onboard-drift-happy.yml`
+Pre-rendered v3 onboarding output. Used by `.github/workflows/caller-onboard-drift-happy.yml`
 to verify the `actions/onboard-drift` composite-action wrapper layer
 (env passthrough, GITHUB_OUTPUT capture, GITHUB_ACTION_PATH resolution).
 

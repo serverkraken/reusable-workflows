@@ -1,4 +1,4 @@
-# tests/callers/cleanup-images-fail.yml
+# .github/workflows/caller-cleanup-images-fail.yml
 # Failure-path caller for cleanup-images.yml. Passes runs_on as an empty
 # JSON array; fromJSON yields [], and GHA rejects an empty runner-labels
 # array at runner allocation. The assert-cleanup-images-fail sibling job
@@ -9,7 +9,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/cleanup-images.yml'
-      - 'tests/callers/cleanup-images-fail.yml'
+      - '.github/workflows/caller-cleanup-images-fail.yml'
 
 jobs:
   test-cleanup-images-fail:

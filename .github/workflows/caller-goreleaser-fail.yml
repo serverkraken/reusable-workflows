@@ -1,4 +1,4 @@
-# tests/callers/goreleaser-fail.yml
+# .github/workflows/caller-goreleaser-fail.yml
 # Failure-path caller for goreleaser.yml. Points the atom at a fixture
 # with no .goreleaser.yaml, forcing config-load failure. The
 # assert-goreleaser-fail sibling job verifies the atom failed as
@@ -9,7 +9,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/goreleaser.yml'
-      - 'tests/callers/goreleaser-fail.yml'
+      - '.github/workflows/caller-goreleaser-fail.yml'
       - 'tests/fixtures/cli-go-no-config/**'
 
 jobs:

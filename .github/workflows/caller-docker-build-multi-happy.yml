@@ -1,4 +1,4 @@
-# tests/callers/docker-build-multi-happy.yml
+# .github/workflows/caller-docker-build-multi-happy.yml
 # Happy-path caller for docker-build-multi.yml. Builds two images
 # (api + worker) from the multi-image fixture in a single matrix call.
 # Run by the self-CI `integration.yml` workflow (added in a later task) —
@@ -10,7 +10,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/docker-build-multi.yml'
-      - 'tests/callers/docker-build-multi-happy.yml'
+      - '.github/workflows/caller-docker-build-multi-happy.yml'
       - 'tests/fixtures/multi-image/**'
 
 jobs:

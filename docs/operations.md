@@ -335,7 +335,7 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 | `SK_RUST_TOOLCHAIN` | `rust_toolchain` | lint-rust, test-rust | (rustup default) | string |
 | `SK_GOLANGCI_LINT_VERSION` | `golangci_lint_version` | lint-go | `v2.12.2` | string |
 | `SK_CLIPPY_ARGS` | `clippy_args` | lint-rust | `-D warnings` | string |
-| `SK_CARGO_LLVM_COV_VERSION` | `cargo_llvm_cov_version` | test-rust | `v0.6.16` | string |
+| `SK_CARGO_LLVM_COV_VERSION` | `cargo_llvm_cov_version` | test-rust | `0.6.16` | string |
 | `SK_SIGN` | `sign` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
 | `SK_ATTEST` | `attest` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
 | `SK_SBOM` | `sbom` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
