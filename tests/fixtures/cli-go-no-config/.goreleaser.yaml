@@ -1,0 +1,21 @@
+# Deliberately broken: this fixture exists to verify the goreleaser atom
+# fails when given an unparseable / schema-invalid config. `version: 99`
+# is a non-existent schema version that goreleaser rejects at config load;
+# the bogus `definitely_not_a_valid_top_level_key` covers the case where a
+# future goreleaser starts tolerating unknown version numbers. Modern
+# goreleaser-action will refuse to proceed past config validation, so the
+# atom exits non-zero before any build step runs.
+#
+# Fixture is intentionally named cli-go-no-config (legacy name from the era
+# when it had no .goreleaser.yaml at all). Renaming would change the
+# fixture-path contract for the goreleaser-fail caller; leaving the name
+# preserves the contract while the actual content now triggers the
+# failure deterministically.
+version: 99
+definitely_not_a_valid_top_level_key: true
+builds:
+  - id: cli-broken-fixture
+    binary: cli
+    main: ./does-not-exist.go
+    targets:
+      - this/is/not/a/valid/goreleaser/target
