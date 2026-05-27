@@ -19,6 +19,7 @@ SELF_CI_ALLOWLIST=(
   "validate.yml"
   "integration.yml"
   "self-ci.yml"
+  "failure-paths-nightly.yml"
   "release.yml"
   "catalog-release.yml"
 )

@@ -1,0 +1,377 @@
+# .github/workflows/failure-paths-nightly.yml
+# Nightly cron exercising all designed-failure-path tests of the catalog
+# against the broken fixtures. Runs at 04:00 UTC daily and on
+# workflow_dispatch. Does NOT run on pull_request — that's the whole
+# point: keeps the 11 designed-red test-*-fail jobs out of the PR check
+# rollup so the PR top-level badge stays green.
+#
+# Each test-X-fail job calls the atom workflow with a fixture engineered
+# to fail. Its assert-X-fail sibling uses `if: always()` + result-check
+# to verify failure occurred. If any assert observes anything other than
+# `failure`, the report-regressions job opens (or comments on) an issue
+# with label `failure-path-regression`.
+#
+# Sibling workflows: self-ci.yml + integration.yml (PR-time happy-paths).
+name: failure-paths-nightly
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # Daily 04:00 UTC
+  workflow_dispatch:
+
+# Atoms inherit secrets and declare their own permission caps. This
+# top-level block must mirror the union of nested atom permissions.
+# The integration.yml block is the closest reference and is reproduced
+# here (minus security-events:write — no SARIF uploads in nightly,
+# upload_sarif: false on all trivy-* callers below).
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+concurrency:
+  group: failure-paths-nightly
+  cancel-in-progress: false   # never cancel a running nightly mid-flight
+
+jobs:
+  # ----- lint-go: fail-path -----
+  test-lint-go-fail:
+    uses: ./.github/workflows/lint-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-lint-fail
+
+  assert-lint-go-fail:
+    needs: test-lint-go-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-go-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-go-fail: correctly observed failure"
+
+  # ----- lint-helm: fail-path -----
+  test-lint-helm-fail:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test
+      charts_dir: helm-lint-fail
+
+  assert-lint-helm-fail:
+    needs: test-lint-helm-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-helm-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-helm-fail: correctly observed failure"
+
+  # ----- lint-python: fail-path -----
+  test-lint-python-fail:
+    uses: ./.github/workflows/lint-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-lint-fail
+
+  assert-lint-python-fail:
+    needs: test-lint-python-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-python-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-python-fail: correctly observed failure"
+
+  # ----- lint-rust: fail-path -----
+  test-lint-rust-fail:
+    uses: ./.github/workflows/lint-rust.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/rust-lint-fail
+
+  assert-lint-rust-fail:
+    needs: test-lint-rust-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-rust-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-rust-fail: correctly observed failure"
+
+  # ----- test-go: cov-fail-path -----
+  test-test-go-cov-fail:
+    uses: ./.github/workflows/test-go.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/go-cov-fail
+      coverage_threshold: 90
+
+  assert-test-go-cov-fail:
+    needs: test-test-go-cov-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert test job failed
+        env:
+          RESULT: ${{ needs.test-test-go-cov-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
+            exit 1
+          fi
+          echo "test-go-cov-fail: correctly observed failure"
+
+  # ----- test-python: cov-fail-path -----
+  test-test-python-cov-fail:
+    uses: ./.github/workflows/test-python.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/python-cov-fail
+      coverage_threshold: 90
+
+  assert-test-python-cov-fail:
+    needs: test-test-python-cov-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert test job failed
+        env:
+          RESULT: ${{ needs.test-test-python-cov-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
+            exit 1
+          fi
+          echo "test-python-cov-fail: correctly observed failure"
+
+  # ----- test-rust: cov-fail-path -----
+  test-test-rust-cov-fail:
+    uses: ./.github/workflows/test-rust.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test/rust-cov-fail
+      coverage_threshold: 90
+
+  assert-test-rust-cov-fail:
+    needs: test-test-rust-cov-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert test job failed
+        env:
+          RESULT: ${{ needs.test-test-rust-cov-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test job to fail (coverage gate), got: $RESULT"
+            exit 1
+          fi
+          echo "test-rust-cov-fail: correctly observed failure"
+
+  # ----- cleanup-images: fail-path -----
+  # Empty runs_on array forces atom-level input-validation failure (matrix
+  # evaluation requires non-empty input).
+  test-cleanup-images-fail:
+    uses: ./.github/workflows/cleanup-images.yml
+    secrets: inherit
+    with:
+      runs_on: '[]'
+
+  assert-cleanup-images-fail:
+    needs: test-cleanup-images-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-cleanup-images-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected cleanup-images to fail for empty runs_on, got result=$RESULT"
+            exit 1
+          fi
+          echo "cleanup-images correctly failed for empty runs_on"
+
+  # ----- docker-build-multi: fail-path -----
+  # Empty images array must fail at input validation before any runner
+  # work begins. caller_id disambiguates concurrency from any happy-path
+  # docker-build-multi caller running on the same ref (none today in
+  # nightly, but defensive).
+  test-docker-build-multi-fail:
+    uses: ./.github/workflows/docker-build-multi.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/multi-image
+      images: '[]'
+      sign: false
+      attest: false
+      sbom: false
+      caller_id: fail
+
+  assert-docker-build-multi-fail:
+    needs: test-docker-build-multi-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-docker-build-multi-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected docker-build-multi to fail for empty images array, got result=$RESULT"
+            exit 1
+          fi
+          echo "docker-build-multi correctly failed for empty images array"
+
+  # ----- goreleaser: fail-path -----
+  # Fixture has a deliberately broken .goreleaser.yaml (version: 99,
+  # unknown top-level key, invalid build targets). Atom exits non-zero
+  # at config validation.
+  test-goreleaser-fail:
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/cli-go-no-config
+      snapshot: true
+
+  assert-goreleaser-fail:
+    needs: test-goreleaser-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-goreleaser-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected goreleaser to fail for broken .goreleaser.yaml, got result=$RESULT"
+            exit 1
+          fi
+          echo "goreleaser correctly failed for broken .goreleaser.yaml"
+
+  # ----- helm-publish: fail-path -----
+  # Fixture has a broken Chart.yaml. Atom must fail at helm lint /
+  # package step before any push attempt.
+  test-helm-publish-fail:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      chart_path: tests/fixtures/helm-broken
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+
+  assert-helm-publish-fail:
+    needs: test-helm-publish-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-helm-publish-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected helm-publish to fail for broken Chart.yaml, got result=$RESULT"
+            exit 1
+          fi
+          echo "helm-publish correctly failed for broken Chart.yaml"
+
+  # ----- Regression Reporter -----
+  # Runs after all 11 assert-* jobs. Activates only when at least one
+  # assert returned non-success. Opens a new issue with label
+  # `failure-path-regression` OR comments on an existing open one,
+  # whichever is appropriate (single-issue pattern keeps the inbox clean).
+  report-regressions:
+    needs:
+      - assert-lint-go-fail
+      - assert-lint-helm-fail
+      - assert-lint-python-fail
+      - assert-lint-rust-fail
+      - assert-test-go-cov-fail
+      - assert-test-python-cov-fail
+      - assert-test-rust-cov-fail
+      - assert-cleanup-images-fail
+      - assert-docker-build-multi-fail
+      - assert-goreleaser-fail
+      - assert-helm-publish-fail
+    if: always() && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or comment on regression issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NEEDS_JSON: ${{ toJson(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          failed=$(echo "$NEEDS_JSON" | jq -r '
+            to_entries
+            | map(select(.value.result != "success"))
+            | .[].key
+          ' | paste -sd ',' -)
+          today=$(date -u +%Y-%m-%d)
+
+          existing=$(gh issue list \
+            --label failure-path-regression \
+            --state open \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body "Nightly $today — failed asserts: \`$failed\`. Run: $RUN_URL"
+            echo "Commented on existing regression issue #$existing"
+          else
+            gh issue create \
+              --label failure-path-regression \
+              --title "[failure-path-regression] nightly $today: $failed" \
+              --body "Nightly \`failure-paths-nightly.yml\` ran on $today and one or more failure-path asserts did not observe the expected failure.
+
+          **Failed asserts:** \`$failed\`
+          **Run:** $RUN_URL
+
+          **Likely causes:**
+          - Atom logic was refactored and no longer fails on the broken fixture
+          - Fixture is stale (action version updated, behavior changed)
+          - Action version drift (e.g., goreleaser-action auto-generates default config)
+
+          **Triage checklist:**
+          - [ ] Identify which atom/fixture pair regressed (see failed-asserts list above)
+          - [ ] Inspect recent commits to the named atom workflow
+          - [ ] Verify the fixture still triggers the failure mode under the current atom logic
+          - [ ] Repair atom OR fixture OR remove the failure-path test if obsolete
+          - [ ] Close this issue with a link to the fixing PR"
+            echo "Created new regression issue"
+          fi
