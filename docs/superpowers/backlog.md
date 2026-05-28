@@ -31,3 +31,12 @@ Geordneter Rückzug eines Adopter-Repos aus dem Reusable-Catalog (gerenderte Dat
 - **Scope eines Folge-Specs:** inverser Renderer; löscht gerenderte Dateien, signalisiert Legacy-Restore aus Git-History.
 - **Abhängigkeiten:** Keine.
 - **Referenz:** `2026-05-16-onboarding-workflow-design.md` § "Out of scope (future)".
+
+## cosign Rekor-409 idempotent behandeln (Image-Signing)
+
+Der cosign-Signing-Step im Multi-Arch-Image-Pfad (`docker-build-multi.yml` merge-Job, ggf. auch `docker-build.yml`) behandelt einen Rekor-`409 createLogEntryConflict` ("an equivalent entry already exists in the transparency log") als harten Fehler. Auslöser: ein Netzwerk-Hänger (`Failed to restore: Premature close`) zwingt cosign zu einem internen Retry — der erste Versuch schreibt den Transparency-Log-Eintrag, die Antwort geht verloren, der Retry kollidiert mit dem bereits existierenden Eintrag → 409 → Job rot, obwohl das Image korrekt signiert ist.
+
+- **Warum ausgeklammert:** Reines Flake-Hardening, kein Feature. Tritt selten auf (1× in ~5 integration-Runs am 2026-05-28). Aktueller Workaround: Job re-runnen (lief sofort grün).
+- **Scope eines Folge-Specs:** Im Signing-Pfad den cosign-Fehler auf `409`/`createLogEntryConflict` prüfen und idempotent als Erfolg werten (der Eintrag IST signiert). Entweder cosign-eigene Retry/Idempotenz-Optionen nutzen oder den Step in einen Wrapper fassen, der einen 409 abfängt und `exit 0` macht. **Betrifft alle Adopter, die Images signieren — Catalog-weit, nicht PR-lokal.**
+- **Abhängigkeiten:** Keine. Gegen ein deterministisch reproduzierbares Fixture-Image testen (denselben Digest mehrfach signieren, 409 erzwingen).
+- **Referenz:** Fehlerlauf `actions/runs/26575638022/job/78300930257` (2026-05-28, `test-docker-build-multi` merge-Job); cosign-attest-swap-Kontext in `2026-05-25-cosign-attest-swap-design.md`.
