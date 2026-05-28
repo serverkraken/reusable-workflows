@@ -180,6 +180,12 @@ jobs:
           # base64'd on Windows, or git autocrlf) would otherwise fail with
           # "base64: invalid input". Stripping whitespace is safe — none of it
           # is significant in base64.
+          # Written to <working_directory>/android/release.keystore. The build
+          # steps pass ANDROID_KEYSTORE_PATH=../release.keystore, which Gradle's
+          # file() resolves from the :app module (android/app/) back to this same
+          # file. This assumes the standard Flutter layout (android/app two levels
+          # under the project root); a non-standard Gradle module depth would need
+          # a different ANDROID_KEYSTORE_PATH.
           echo "$KS" | tr -d '[:space:]' | base64 -d > android/release.keystore
           test -s android/release.keystore
 

@@ -114,6 +114,13 @@ jobs:
           for d in lib test bin integration_test tool; do
             [[ -d "$d" ]] && dirs+=("$d")
           done
+          # Guard: with zero positional paths `dart format` defaults to `.`,
+          # which at an adopter root would sweep the `.catalog/` checkout. A
+          # project with none of the standard dirs has nothing to check.
+          if [[ ${#dirs[@]} -eq 0 ]]; then
+            echo "::warning::no standard Flutter source dirs (lib/test/bin/integration_test/tool) under '$PWD'; skipping dart format check"
+            exit 0
+          fi
           dart format --output=none --set-exit-if-changed "${dirs[@]}"
 
       - name: flutter analyze
