@@ -1,0 +1,162 @@
+# .github/workflows/lint-flutter.yml
+# Reusable workflow: lint a Flutter project with dart format + flutter analyze.
+#
+# Auth: callers MUST pass `secrets: inherit` so the catalog-scoped App
+# token can be minted. The catalog repo is private; the implicit
+# adopter-scoped `github.token` cannot clone it, so we mint a separate
+# token whose only permission is `contents:read` on reusable-workflows.
+# Summary convention: docs/conventions/step-summary.md
+name: lint-flutter
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","performance"]'
+      working_directory:
+        description: 'Path to the Flutter project root, relative to the repo root.'
+        required: false
+        type: string
+        default: '.'
+      java_version:
+        description: 'Java major version.'
+        required: false
+        type: string
+        default: '17'
+      flutter_channel:
+        description: 'Flutter release channel.'
+        required: false
+        type: string
+        default: 'stable'
+      flutter_version:
+        description: 'Specific Flutter version (empty = latest on channel).'
+        required: false
+        type: string
+        default: ''
+      use_build_runner:
+        description: 'When true, runs dart run build_runner build after pub get.'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-flutter-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout adopter repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        # Self-CI (caller == catalog): use the caller's SHA so feature-branch
+        # composite-action changes are exercised. Cross-repo (adopters):
+        # pin to the floating major tag `v4`. Bump this hardcoded major when
+        # a new major releases.
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog (for composite actions)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+      - name: Setup Flutter toolchain
+        uses: ./.catalog/actions/setup-flutter-toolchain
+        with:
+          java-version: ${{ inputs.java_version }}
+          flutter-channel: ${{ inputs.flutter_channel }}
+          flutter-version: ${{ inputs.flutter_version }}
+          use-build-runner: ${{ inputs.use_build_runner }}
+          working-directory: ${{ inputs.working_directory }}
+
+      # dart format does not support an --exclude flag; instead we enumerate
+      # only the standard Flutter project directories (lib, test, bin,
+      # integration_test, tool). This naturally excludes .catalog/ and any
+      # other non-project paths regardless of working_directory depth.
+      - name: dart format
+        id: dart_format
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          dirs=()
+          for d in lib test bin integration_test tool; do
+            [[ -d "$d" ]] && dirs+=("$d")
+          done
+          # Guard: with zero positional paths `dart format` defaults to `.`,
+          # which at an adopter root would sweep the `.catalog/` checkout. A
+          # project with none of the standard dirs has nothing to check.
+          if [[ ${#dirs[@]} -eq 0 ]]; then
+            echo "::warning::no standard Flutter source dirs (lib/test/bin/integration_test/tool) under '$PWD'; skipping dart format check"
+            exit 0
+          fi
+          dart format --output=none --set-exit-if-changed "${dirs[@]}"
+
+      - name: flutter analyze
+        id: analyze
+        working-directory: ${{ inputs.working_directory }}
+        run: flutter analyze
+
+      - name: Summary
+        if: always()
+        env:
+          WD: ${{ inputs.working_directory }}
+          DART_FORMAT_OUTCOME: ${{ steps.dart_format.outcome }}
+          ANALYZE_OUTCOME: ${{ steps.analyze.outcome }}
+        run: |
+          glyph() {
+            case "$1" in
+              success) echo "✓" ;;
+              failure) echo "✗" ;;
+              skipped) echo "−" ;;
+              *)       echo "?" ;;
+            esac
+          }
+          if [[ "$DART_FORMAT_OUTCOME" == "success" && "$ANALYZE_OUTCOME" == "success" ]]; then
+            result="✓ passed"
+          else
+            result="✗ failed"
+          fi
+          {
+            echo "## lint-flutter"
+            echo ""
+            echo "**Tools:** dart format, flutter analyze"
+            echo "**Working dir:** \`${WD}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|---|---|"
+            echo "| dart format | $(glyph "$DART_FORMAT_OUTCOME") |"
+            echo "| flutter analyze | $(glyph "$ANALYZE_OUTCOME") |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

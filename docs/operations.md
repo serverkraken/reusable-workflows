@@ -431,3 +431,51 @@ Only the first 5 lines of the file are scanned. Override wins over convention. T
 ### If no Dockerfile is release-eligible
 
 The rendered `release.yml` simply omits the docker-build job. release-please + any other release-signal jobs (goreleaser, helm-publish) continue to run. `onboard-detect` emits a `no_release_eligible` warning into the onboard run's step summary so this isn't a silent surprise.
+
+---
+
+## 9. Flutter Atom Set (v4.x+)
+
+Three Flutter `workflow_call` atoms plus a shared composite action:
+
+| Reusable workflow | Purpose |
+|---|---|
+| `lint-flutter.yml`            | `dart format --set-exit-if-changed` (over `lib test bin integration_test tool`) + `flutter analyze` |
+| `test-flutter.yml`            | `flutter test --coverage` + LCOV line-coverage gate (default 80) |
+| `release-flutter-android.yml` | pubspec-version sync → APK and/or AAB build → keystore sign → attach to existing GitHub Release |
+
+The shared toolchain (Java + Android SDK + Flutter + `pub get` + optional `build_runner`) lives in `actions/setup-flutter-toolchain/action.yml`. Because that composite is catalog-local, all three atoms mint a catalog-scoped App token and check the catalog out into `.catalog/` first — the same pattern as `lint-python.yml`. Callers therefore MUST pass `secrets: inherit`.
+
+### 9.1 Adopter integration (current)
+
+Until the onboard renderer learns to detect Flutter components, adopters wire the atoms by hand. Reference:
+
+```yaml
+jobs:
+  release-please:
+    uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v4
+    secrets: inherit
+
+  android-build:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@v4
+    with:
+      version: ${{ needs.release-please.outputs.tag_name }}    # vX.Y.Z; atom strips the leading v
+      dart_define_secret_names: "SUPABASE_URL,SUPABASE_ANON_KEY"
+      prerelease: true
+    secrets: inherit
+```
+
+The adopter sets the four keystore secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) at org or repo level. `dart_define_secret_names` is a comma-list of secret names forwarded as `--dart-define=NAME=$VALUE`; the values must be free of shell-splitting whitespace (URLs, tokens, JWTs are fine).
+
+### 9.2 Self-CI
+
+`self-ci.yml` runs `lint-flutter-happy` + `test-flutter-happy` against `tests/fixtures/flutter-app`. `integration.yml` runs a `prepare-flutter-release → test-release-flutter-android → cleanup-flutter-release` lifecycle: it mints a throwaway prerelease on the catalog repo, builds+signs the fixture APK, attaches it, then deletes the release (`--cleanup-tag`). The fixture's `android/release.keystore.b64` is a throwaway keystore; the catalog repo holds matching `ANDROID_*` + `GREETING` secrets (alias `catalogtest`, store/key password `catalog-fixture-storepw` — JDK PKCS12 keystores use the store password as the key password).
+
+### 9.3 Out of scope (Phase-2)
+
+- iOS build.
+- Play-Store upload — atom gains `upload_to_play_store` + `play_store_track` inputs; the renderer gains a repo-topic-detection branch so adopters opt in via a topic.
+- onboard renderer Flutter component detection (`scripts/onboard-detect.sh` probing `pubspec.yaml`) + `release.yml.tmpl` Flutter branch.
+- pubspec.yaml commit-back — adopters wire release-please `extra-files` if they want the bump persisted on `main`.
