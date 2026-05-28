@@ -175,7 +175,12 @@ jobs:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          echo "$KS" | base64 -d > android/release.keystore
+          # Strip all whitespace first: GNU base64 -d tolerates LF wrapping but
+          # rejects CR (\r). Secrets set from a CRLF-terminated .b64 file (e.g.
+          # base64'd on Windows, or git autocrlf) would otherwise fail with
+          # "base64: invalid input". Stripping whitespace is safe — none of it
+          # is significant in base64.
+          echo "$KS" | tr -d '[:space:]' | base64 -d > android/release.keystore
           test -s android/release.keystore
 
       - name: Build dart-define flags
