@@ -277,7 +277,7 @@ Every onboard run applies a tier of repository-level defaults beyond the rendere
 **Tier 2 — first-onboard-only, gated by lock marker:**
 
 - Merge-strategy flags: `allow_squash_merge=true`, `allow_merge_commit=false`, `allow_rebase_merge=false`, `allow_auto_merge=true`.
-- Squash-commit title/message format set to `PR_TITLE` / `PR_BODY`.
+- Squash-commit title/message format set to `PR_TITLE` / `BLANK`. (`PR_BODY` was the original default; it caused release-please's conventional-commits parser to fail on Renovate PRs whose body contained markdown code blocks with unbalanced parens.)
 - Repository toggles: `has_wiki=false`, `has_projects=false`, `has_issues=true`, `has_discussions=false`.
 
 ### Marker mechanic
@@ -319,7 +319,7 @@ Every onboard run applies a tier of repository-level defaults beyond the rendere
 **Tier 2 — first-onboard-only, gated by lock marker:**
 
 - Merge-strategy flags: `allow_squash_merge=true`, `allow_merge_commit=false`, `allow_rebase_merge=false`, `allow_auto_merge=true`.
-- Squash-commit title/message format set to `PR_TITLE` / `PR_BODY`.
+- Squash-commit title/message format set to `PR_TITLE` / `BLANK`. (`PR_BODY` was the original default; it caused release-please's conventional-commits parser to fail on Renovate PRs whose body contained markdown code blocks with unbalanced parens.)
 - Repository toggles: `has_wiki=false`, `has_projects=false`, `has_issues=true`, `has_discussions=false`.
 
 ### Marker mechanic

@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.4.2](https://github.com/serverkraken/reusable-workflows/compare/v4.4.1...v4.4.2) (2026-05-28)
+
+
+### Bug Fixes
+
+* **onboard-defaults:** default squash_merge_commit_message to BLANK ([#151](https://github.com/serverkraken/reusable-workflows/issues/151)) ([93a554a](https://github.com/serverkraken/reusable-workflows/commit/93a554a54da5b89e5f187c81a82a34fb06949798))
+
+## [4.4.1](https://github.com/serverkraken/reusable-workflows/compare/v4.4.0...v4.4.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **drift:** derive TARGET_REPO from git origin to prevent false-positive stale-lock ([#149](https://github.com/serverkraken/reusable-workflows/issues/149)) ([a519173](https://github.com/serverkraken/reusable-workflows/commit/a519173655fac59cc187aae03bcdd61680b6e306))
+
 ## [4.4.0](https://github.com/serverkraken/reusable-workflows/compare/v4.3.0...v4.4.0) (2026-05-27)
 
 
