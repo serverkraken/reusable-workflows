@@ -260,6 +260,53 @@ jobs:
       pin_version: v1
     secrets: inherit
 
+  # ----- release-flutter-android: happy. Mint a throwaway prerelease on the
+  #       catalog repo, build+sign the fixture APK and attach it, then delete
+  #       the release. The atom does not create releases (release-please does
+  #       in adopters), so the fixture test provides the upload target. -----
+  prepare-flutter-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
+    steps:
+      - id: tag
+        run: echo "name=v0.0.1-fixture-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+      - name: Create throwaway prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.name }}" \
+            --repo "${{ github.repository }}" \
+            --title "Fixture release (run ${{ github.run_id }})" \
+            --notes "Throwaway release for the release-flutter-android integration test. Auto-deleted." \
+            --prerelease \
+            --target "${{ github.sha }}"
+
+  test-release-flutter-android:
+    needs: prepare-flutter-release
+    uses: ./.github/workflows/release-flutter-android.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/flutter-app
+      version: ${{ needs.prepare-flutter-release.outputs.tag }}
+      use_build_runner: false
+      build_apk: true
+      build_aab: false
+      prerelease: true
+      dart_define_secret_names: "GREETING"
+      artefact_name_prefix: catalog-test-flutter-app
+
+  cleanup-flutter-release:
+    needs: [prepare-flutter-release, test-release-flutter-android]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete fixture release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare-flutter-release.outputs.tag }}
+        run: gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag || true
+
   # ----- Summary: aggregates ALL happy-path children into a single status.
   #       Branch-protection will require ONLY this check. Atom-failure-path
   #       tests (cleanup-images-fail, docker-build-multi-fail, goreleaser-fail,
@@ -287,6 +334,7 @@ jobs:
       - test-docker-build-multi
       - test-goreleaser
       - test-helm-publish
+      - test-release-flutter-android
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

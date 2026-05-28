@@ -157,6 +157,22 @@ jobs:
           fi
           echo "onboard-drift wrapper returned status=clean"
 
+  # ----- lint-flutter / test-flutter: happy -----
+  lint-flutter-happy:
+    uses: ./.github/workflows/lint-flutter.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/flutter-app
+      use_build_runner: false
+
+  test-flutter-happy:
+    uses: ./.github/workflows/test-flutter.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/flutter-app
+      use_build_runner: false
+      coverage_threshold: 80
+
   # ----- Summary: aggregates ALL happy-path children into a single status.
   #       Branch-protection will require ONLY this check. Failure-path tests
   #       moved to failure-paths-nightly.yml (Phase 9.5) — not exercised here.
@@ -176,6 +192,8 @@ jobs:
       - test-rust-happy
       - test-vars-coercion
       - onboard-drift-happy
+      - lint-flutter-happy
+      - test-flutter-happy
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
