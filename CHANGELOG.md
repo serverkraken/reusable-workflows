@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.4.1](https://github.com/serverkraken/reusable-workflows/compare/v4.4.0...v4.4.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **drift:** derive TARGET_REPO from git origin to prevent false-positive stale-lock ([#149](https://github.com/serverkraken/reusable-workflows/issues/149)) ([a519173](https://github.com/serverkraken/reusable-workflows/commit/a519173655fac59cc187aae03bcdd61680b6e306))
+
 ## [4.4.0](https://github.com/serverkraken/reusable-workflows/compare/v4.3.0...v4.4.0) (2026-05-27)
 
 
