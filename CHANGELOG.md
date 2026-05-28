@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.5.0](https://github.com/serverkraken/reusable-workflows/compare/v4.4.2...v4.5.0) (2026-05-28)
+
+
+### Features
+
+* **flutter:** lint+test+release-android atoms + setup composite (Phase 8) ([#152](https://github.com/serverkraken/reusable-workflows/issues/152)) ([133f399](https://github.com/serverkraken/reusable-workflows/commit/133f3998a7c578d67cf93c0b8f5f4f59c2afaf46))
+* **flutter:** release-flutter-android create_release + auto-rc-version for manual builds ([#156](https://github.com/serverkraken/reusable-workflows/issues/156)) ([3413d87](https://github.com/serverkraken/reusable-workflows/commit/3413d87c9eaff4090ae911a57263a4b2c91839b0))
+
 ## [4.4.2](https://github.com/serverkraken/reusable-workflows/compare/v4.4.1...v4.4.2) (2026-05-28)
 
 
