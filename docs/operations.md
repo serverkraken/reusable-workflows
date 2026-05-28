@@ -469,11 +469,44 @@ jobs:
 
 The adopter sets the four keystore secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) at org or repo level. `dart_define_secret_names` is a comma-list of secret names forwarded as `--dart-define=NAME=$VALUE`; the values must be free of shell-splitting whitespace (URLs, tokens, JWTs are fine).
 
-### 9.2 Self-CI
+### 9.2 Manual / ad-hoc (pre)release builds
 
-`self-ci.yml` runs `lint-flutter-happy` + `test-flutter-happy` against `tests/fixtures/flutter-app`. `integration.yml` runs a `prepare-flutter-release → test-release-flutter-android → cleanup-flutter-release` lifecycle: it mints a throwaway prerelease on the catalog repo, builds+signs the fixture APK, attaches it, then deletes the release (`--cleanup-tag`). The fixture's `android/release.keystore.b64` is a throwaway keystore; the catalog repo holds matching `ANDROID_*` + `GREETING` secrets (alias `catalogtest`, store/key password `catalog-fixture-storepw` — JDK PKCS12 keystores use the store password as the key password).
+The `release-flutter-android.yml` atom carries a `create_release` input. When `true`, the atom creates the GitHub Release at the resolved tag itself (instead of expecting release-please to have made it) and marks it prerelease when `prerelease: true`. With an empty `version`, the atom derives `<latest-tag>-rc.<run_number>` via `git describe`. A `workflow_call` atom can't be triggered by `workflow_dispatch` directly, so adopters add a thin manual caller:
 
-### 9.3 Out of scope (Phase-2)
+```yaml
+# .github/workflows/manual-release.yml
+name: manual-release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag to build (empty → auto <latest>-rc.<run_number>)'
+        required: false
+        type: string
+        default: ''
+      prerelease:
+        type: boolean
+        default: true
+permissions:
+  contents: write
+jobs:
+  build:
+    uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@v4
+    with:
+      version: ${{ inputs.version }}
+      create_release: true
+      prerelease: ${{ inputs.prerelease }}
+      dart_define_secret_names: "SUPABASE_URL,SUPABASE_ANON_KEY"
+    secrets: inherit
+```
+
+This replaces the per-adopter hand-rolled `manual-apk-build.yml` pattern. Available since v4.x (additive input — `create_release` defaults `false`, so existing release-please callers are unaffected).
+
+### 9.3 Self-CI
+
+`self-ci.yml` runs `lint-flutter-happy` + `test-flutter-happy` against `tests/fixtures/flutter-app`. `integration.yml` runs `test-release-flutter-android` (with `create_release: true` + an explicit fixture tag) → `cleanup-flutter-release`: the atom self-creates a throwaway prerelease on the catalog repo, builds+signs the fixture APK, attaches it, then cleanup deletes the release (`--cleanup-tag`). An explicit fixture version is passed so CI never touches the catalog's real `vX` tag namespace; the auto-derive path is exercised by real adopters. The fixture's `android/release.keystore.b64` is a throwaway keystore; the catalog repo holds matching `ANDROID_*` + `GREETING` secrets (alias `catalogtest`, store/key password `catalog-fixture-storepw` — JDK PKCS12 keystores use the store password as the key password).
+
+### 9.4 Out of scope (Phase-2)
 
 - iOS build.
 - Play-Store upload — atom gains `upload_to_play_store` + `play_store_track` inputs; the renderer gains a repo-topic-detection branch so adopters opt in via a topic.
