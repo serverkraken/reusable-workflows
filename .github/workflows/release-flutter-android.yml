@@ -26,9 +26,15 @@ on:
         type: string
         default: '.'
       version:
-        description: 'Semver with or without leading v; atom strips leading v.'
-        required: true
+        description: 'Semver (leading v optional, stripped). Empty only with create_release=true → atom derives <latest-tag>-rc.<run_number> via git describe.'
+        required: false
         type: string
+        default: ''
+      create_release:
+        description: 'Atom creates the Release at the resolved tag (honoring prerelease) before upload, instead of needing release-please. Enables manual/ad-hoc builds.'
+        required: false
+        type: boolean
+        default: false
       java_version:
         description: 'Java major version.'
         required: false
@@ -113,6 +119,10 @@ jobs:
     steps:
       - name: Checkout adopter repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Full history + tags so the create_release auto-version path can
+          # `git describe` the latest tag.
+          fetch-depth: 0
       - name: Mint catalog-scoped App token
         id: catalog-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -158,11 +168,25 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          CREATE_RELEASE: ${{ inputs.create_release }}
         run: |
           set -euo pipefail
           V="${INPUT_VERSION#v}"
+          if [[ -z "$V" ]]; then
+            if [[ "$CREATE_RELEASE" != "true" ]]; then
+              echo "::error::version is required unless create_release=true"
+              exit 1
+            fi
+            # Manual/ad-hoc build: derive <latest-tag>-rc.<run_number>. Strip a
+            # leading v and any +build / -prerelease suffix from the latest tag
+            # first so the rc identifier attaches to a clean X.Y.Z core.
+            LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+            LATEST="${LATEST#v}"; LATEST="${LATEST%%+*}"; LATEST="${LATEST%%-*}"
+            V="${LATEST}-rc.${GITHUB_RUN_NUMBER}"
+            echo "Auto-derived manual build version: $V"
+          fi
           if [[ ! "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "::error::version input does not look like semver: $INPUT_VERSION"
+            echo "::error::resolved version does not look like semver: $V"
             exit 1
           fi
           sed -i -E "s/^version: .*/version: ${V}+${GITHUB_RUN_NUMBER}/" pubspec.yaml
@@ -273,8 +297,17 @@ jobs:
           TAG: ${{ steps.ver.outputs.tag }}
           FILES: ${{ steps.artefacts.outputs.files }}
           PRE: ${{ inputs.prerelease }}
+          CREATE_RELEASE: ${{ inputs.create_release }}
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # Manual/ad-hoc flow: create the release if it doesn't exist yet.
+          # release-please flow (create_release=false) expects it to exist.
+          if [[ "$CREATE_RELEASE" == "true" ]] && ! gh release view "$TAG" >/dev/null 2>&1; then
+            pre_flag=""; [[ "$PRE" == "true" ]] && pre_flag="--prerelease"
+            # shellcheck disable=SC2086
+            gh release create "$TAG" --title "$TAG" --notes "Automated build for $TAG" --target "$SHA" $pre_flag
+          fi
           # shellcheck disable=SC2086
           gh release upload "$TAG" $FILES --clobber
           if [[ "$PRE" == "true" ]]; then
