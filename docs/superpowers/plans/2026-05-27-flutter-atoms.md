@@ -95,6 +95,15 @@ The simplified atom drafts in Tasks 5/7/9 below show `uses: ./.catalog/actions/s
 
 Implementer subagents: treat this section as overriding the simplified drafts in Tasks 5/7/9 wherever they conflict. Read `.github/workflows/lint-python.yml` start-to-finish before writing the first atom.
 
+### Second correction: callers are inline jobs, not separate files (Phase-9 pattern)
+
+Tasks 6/8/10 describe creating separate `caller-flutter-*-happy.yml` files. **That is the pre-Phase-9 pattern and is wrong for the current catalog.** Phase 9 (memory `reference_phase9_aggregate_caller_wrapper`) replaced all 22 `caller-*.yml` files with inline jobs in `self-ci.yml` and `integration.yml`, gated by the `self-ci / summary` / `integration / summary` branch-protection contexts. Implement the happy-path callers as inline jobs instead:
+
+- **`self-ci.yml`**: add `lint-flutter-happy` (`uses: ./.github/workflows/lint-flutter.yml`, `secrets: inherit`, `with: { working_directory: tests/fixtures/flutter-app, use_build_runner: false }`) and `test-flutter-happy` (same + `coverage_threshold: 80`). Append both to the `self-ci / summary` job's `needs:` list.
+- **`integration.yml`**: add a `prepare-flutter-release → test-release-flutter-android → cleanup-flutter-release` trio (the release atom needs a real release to upload to; prepare mints a throwaway prerelease, cleanup deletes it with `--cleanup-tag` under `if: always()`). Append `test-release-flutter-android` to the `integration / summary` `needs:` list.
+
+No `caller-flutter-*.yml` files are created.
+
 ---
 
 ## Task 1: Branch + worktree setup
