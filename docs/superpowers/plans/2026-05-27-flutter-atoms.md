@@ -35,6 +35,68 @@
 
 ---
 
+## PATTERN CORRECTION (discovered at execution time, 2026-05-28)
+
+The simplified atom drafts in Tasks 5/7/9 below show `uses: ./.catalog/actions/setup-flutter-toolchain` without the preamble that makes it work. **`lint-python.yml` is the authoritative reference**, not `lint-go.yml`. Because `setup-flutter-toolchain` is a catalog-local composite (not a published marketplace action), every atom that uses it MUST first mint a catalog-scoped App token and check the catalog out into `.catalog/`. `lint-go.yml` does NOT do this only because `setup-go` is a published action; it is the wrong template here.
+
+**Every Flutter atom (lint, test, release) MUST include this preamble before the composite step:**
+
+```yaml
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+      # release-flutter-android.yml ALSO declares the four ANDROID_* keystore secrets (see Task 9).
+
+# ...in the job steps, before the composite:
+      - name: Checkout adopter repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog (for composite actions)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+      - name: Setup Flutter toolchain
+        uses: ./.catalog/actions/setup-flutter-toolchain
+        with: { ... }
+```
+
+**Consequences for each atom:**
+- `lint-flutter.yml` / `test-flutter.yml`: add the two `release_please_app_*` secrets (required). The `permissions: contents: read` stays.
+- `release-flutter-android.yml`: declare BOTH the two `release_please_app_*` secrets AND the four `ANDROID_*` keystore secrets. `permissions: contents: write`.
+- **`.catalog` exclusion:** the catalog checkout lands at the adopter workspace root. `flutter analyze` respects package boundaries (won't descend into `.catalog/tests/fixtures/flutter-app` — separate package), but `dart format .` walks all `.dart` files. Run `dart format --set-exit-if-changed --exclude .catalog .` (dart format supports `--exclude`). For `flutter analyze`, scope by running in `working_directory`; if `working_directory == '.'` the analyzer's package boundary already protects it, but add an `analysis_options.yaml` `analyzer: exclude: [.catalog/**]` note in the adopter if needed (out of scope for the atom — the fixture's working_directory is `tests/fixtures/flutter-app`, so `.catalog` at root is never in scope during self-CI).
+- **Caller wrappers**: must pass `secrets: inherit` (they currently only set `with:`). Update Tasks 6/8/10 callers to add `secrets: inherit`.
+- **Self-CI nuance:** in self-CI the catalog checkout into `.catalog/` duplicates the repo. The fixture lives at `tests/fixtures/flutter-app` (working_directory), and `.catalog/tests/fixtures/flutter-app` is a duplicate — harmless because analysis is scoped to working_directory. Confirm `dart format`'s `--exclude .catalog` keeps it clean.
+
+Implementer subagents: treat this section as overriding the simplified drafts in Tasks 5/7/9 wherever they conflict. Read `.github/workflows/lint-python.yml` start-to-finish before writing the first atom.
+
+---
+
 ## Task 1: Branch + worktree setup
 
 **Files:**
