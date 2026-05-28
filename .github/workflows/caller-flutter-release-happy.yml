@@ -1,0 +1,57 @@
+# .github/workflows/caller-flutter-release-happy.yml
+# Self-CI caller: creates a throwaway GitHub Release on this repo, exercises
+# release-flutter-android against the flutter-app fixture to upload an APK,
+# then deletes the release + tag unconditionally.
+name: caller-flutter-release-happy
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-flutter-android.yml'
+      - '.github/workflows/caller-flutter-release-happy.yml'
+      - 'actions/setup-flutter-toolchain/**'
+      - 'tests/fixtures/flutter-app/**'
+permissions:
+  contents: write
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
+    steps:
+      - id: tag
+        run: echo "name=v0.0.1-fixture-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+      - name: Create throwaway release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.name }}" \
+            --repo "${{ github.repository }}" \
+            --title "Fixture release (PR #${{ github.event.pull_request.number }})" \
+            --notes "Throwaway release for caller-flutter-release-happy. Auto-deleted." \
+            --prerelease \
+            --target "${{ github.event.pull_request.head.sha }}"
+  release:
+    needs: prepare-release
+    uses: ./.github/workflows/release-flutter-android.yml
+    with:
+      working_directory: tests/fixtures/flutter-app
+      version: ${{ needs.prepare-release.outputs.tag }}
+      use_build_runner: false
+      build_apk: true
+      build_aab: false
+      prerelease: true
+      dart_define_secret_names: "GREETING"
+      artefact_name_prefix: catalog-test-flutter-app
+    secrets: inherit
+  cleanup-release:
+    needs: [prepare-release, release]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete fixture release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag || true
