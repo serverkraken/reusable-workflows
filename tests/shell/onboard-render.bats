@@ -537,3 +537,12 @@ render_prerelease_for_profile() {
   "$RENDER" "$REPO_ROOT" "$target" "$target/_profile.json" "v4" >&2
   jq -e '.packages["."]["release-type"] == "dart"' "$target/release-please-config.json"
 }
+
+@test "integration: rendered flutter-app ci.yml + release.yml pass actionlint and yamllint" {
+  command -v actionlint >/dev/null 2>&1 || skip "actionlint not installed"
+  command -v yamllint  >/dev/null 2>&1 || skip "yamllint not installed"
+  seed_profile "flutter-app"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4" >&2
+  yamllint -d relaxed "$TARGET/.github/workflows/ci.yml" "$TARGET/.github/workflows/release.yml"
+  actionlint "$TARGET/.github/workflows/ci.yml" "$TARGET/.github/workflows/release.yml"
+}
