@@ -746,3 +746,23 @@ GHEOF
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '[.warnings[] | select(.code == "no_lint_test_atom")] | length == 0'
 }
+
+@test "profile-json: flutter-app has flutter_android=true and role=mobile-app" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == true'
+  echo "$output" | jq -e '.components[0].role == "mobile-app"'
+}
+
+@test "profile-json: flutter-package has flutter_android=false and role=library" {
+  run "$DETECT" --profile-json "$FIX/flutter-package"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == false'
+  echo "$output" | jq -e '.components[0].role == "library"'
+}
+
+@test "profile-json: go-repo release_signals gains flutter_android=false (additive)" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == false'
+}

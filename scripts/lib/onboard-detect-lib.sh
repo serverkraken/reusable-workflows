@@ -516,6 +516,10 @@ detect_role() {
     echo "helm-app"; return
   fi
 
+  if _component_is_flutter "$p" && [[ -d "$p/android" ]]; then
+    echo "mobile-app"; return
+  fi
+
   echo "library"
 }
 
@@ -565,10 +569,20 @@ detect_release_signals() {
     chart=$(jq -nc --arg s "$rel" '$s')
   fi
 
+  # Flutter Android release signal: a Flutter component (pubspec declares the
+  # flutter SDK) that also has an android/ dir is an Android app and gets a
+  # release-flutter-android job. A Flutter *package* (no android/) is linted
+  # and tested but not released here.
+  local flutter_android=false
+  if _component_is_flutter "$p" && [[ -d "$p/android" ]]; then
+    flutter_android=true
+  fi
+
   jq -nc \
     --argjson goreleaser_config "$gorel" \
     --argjson chart_yaml "$chart" \
-    '{goreleaser_config: $goreleaser_config, chart_yaml: $chart_yaml}'
+    --argjson flutter_android "$flutter_android" \
+    '{goreleaser_config: $goreleaser_config, chart_yaml: $chart_yaml, flutter_android: $flutter_android}'
 }
 
 # Scan .github/workflows/*.{yml,yaml} (non-recursive) for legacy CI patterns,
