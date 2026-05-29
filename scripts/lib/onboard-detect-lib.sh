@@ -55,6 +55,17 @@ emit_profile_json() {
     [[ -n "$tag" && "$tag" != "null" ]] && current_version="${tag#v}"
   fi
 
+  # Repo topics — a general signal consumed by the renderer (e.g. the
+  # `sk-prerelease-on-push` opt-in). gh prints the HTTP error body to STDOUT on
+  # failure, so the fallback MUST be outside the substitution (see
+  # troubleshooting: gh-api-leaks-error-body-to-stdout); -q '.names' emits the
+  # array as compact JSON.
+  local topics='[]'
+  if [[ -n "$target_repo" ]]; then
+    topics=$(gh api "/repos/$target_repo/topics" -q '.names' 2>/dev/null) || topics='[]'
+    [[ -z "$topics" || "$topics" == "null" ]] && topics='[]'
+  fi
+
   local components
   components=$(detect_components "$repo")
   local legacy_ci
@@ -69,6 +80,7 @@ emit_profile_json() {
     --argjson monorepo "$(echo "$components" | jq 'length > 1')" \
     --argjson components "$components" \
     --argjson legacy_ci "$legacy_ci" \
+    --argjson topics "$topics" \
     --argjson warnings '[]' \
     '{
       schema_version: $schema_version,
@@ -78,6 +90,7 @@ emit_profile_json() {
       monorepo: $monorepo,
       components: $components,
       legacy_ci: $legacy_ci,
+      topics: $topics,
       warnings: $warnings
     }')
 
