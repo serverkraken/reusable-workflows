@@ -671,3 +671,18 @@ render_target_for_profile() {
   ! grep -q "release-flutter-android" "$tgt/.github/workflows/prerelease-on-push.yml"
   grep -qF "docker-build.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
 }
+
+@test "integration: rendered prerelease + prerelease-on-push pass actionlint and yamllint" {
+  command -v actionlint >/dev/null 2>&1 || skip "actionlint not installed"
+  command -v yamllint  >/dev/null 2>&1 || skip "yamllint not installed"
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  yamllint -d relaxed "$tgt/.github/workflows/prerelease.yml" "$tgt/.github/workflows/prerelease-on-push.yml"
+  actionlint "$tgt/.github/workflows/prerelease.yml" "$tgt/.github/workflows/prerelease-on-push.yml"
+}
