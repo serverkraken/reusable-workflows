@@ -59,6 +59,7 @@ if [[ "${1:-}" == "--emit-both" ]]; then
     [[ -f "$REPO_PATH/pyproject.toml" ]] && matches+=(python)
     [[ -f "$REPO_PATH/Cargo.toml" ]]     && matches+=(rust)
     [[ -f "$REPO_PATH/Chart.yaml" ]]     && matches+=(helm)
+    _component_is_flutter "$REPO_PATH"   && matches+=(flutter)
     [[ -f "$REPO_PATH/package.json" ]]   && matches+=(node)
     if (( ${#matches[@]} == 0 )); then
       language=simple
@@ -138,6 +139,7 @@ else
   [[ -f "$REPO_PATH/pyproject.toml" ]] && matches+=(python)
   [[ -f "$REPO_PATH/Cargo.toml" ]]     && matches+=(rust)
   [[ -f "$REPO_PATH/Chart.yaml" ]]     && matches+=(helm)
+  { [[ -f "$REPO_PATH/pubspec.yaml" ]] && grep -qE 'sdk:[[:space:]]*flutter' "$REPO_PATH/pubspec.yaml"; } && matches+=(flutter)
   [[ -f "$REPO_PATH/package.json" ]]   && matches+=(node)
 
   if (( ${#matches[@]} == 0 )); then

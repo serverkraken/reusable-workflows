@@ -713,3 +713,24 @@ GHEOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"\"svc\""* ]]
 }
+
+# === Flutter detection ===
+
+@test "detects flutter from pubspec sdk: flutter (legacy key=value)" {
+  run "$DETECT" "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=flutter"* ]]
+}
+
+@test "profile-json: flutter-app primary_language=flutter" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "flutter"'
+  echo "$output" | jq -e '.components[0].languages == ["flutter"]'
+}
+
+@test "profile-json: flutter-package is still detected as flutter" {
+  run "$DETECT" --profile-json "$FIX/flutter-package"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "flutter"'
+}

@@ -27,6 +27,15 @@ set -euo pipefail
 # (Task 11 rewrites that template to consume these warnings).
 SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm'
 
+# Flutter detection helper. Arg: absolute component directory.
+# True when pubspec.yaml exists AND declares the Flutter SDK dependency
+# (`sdk: flutter`) — every Flutter app/package has it; a pure-Dart package
+# does not.
+_component_is_flutter() {
+  local dir="$1"
+  [[ -f "$dir/pubspec.yaml" ]] && grep -qE 'sdk:[[:space:]]*flutter' "$dir/pubspec.yaml"
+}
+
 emit_profile_json() {
   local repo="$1"
   local target_repo="${TARGET_REPO:-}"
@@ -349,6 +358,7 @@ detect_languages() {
   [[ -f "$p/pyproject.toml" ]] && langs+=(python)
   [[ -f "$p/Cargo.toml" ]]     && langs+=(rust)
   [[ -f "$p/Chart.yaml" ]]     && langs+=(helm)
+  _component_is_flutter "$p"   && langs+=(flutter)
   [[ -f "$p/package.json" ]]   && langs+=(node)
   if (( ${#langs[@]} == 0 )); then
     echo '[]'
