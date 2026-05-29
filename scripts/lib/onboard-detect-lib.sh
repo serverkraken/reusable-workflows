@@ -609,7 +609,7 @@ detect_legacy_ci() {
   fi
 
   # Filenames OWNED by the catalog renderer — skip classification.
-  local OWNED=(ci.yml release.yml prerelease.yml cleanup.yml)
+  local OWNED=(ci.yml release.yml prerelease.yml prerelease-on-push.yml cleanup.yml)
 
   local entries=()
   local f
