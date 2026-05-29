@@ -672,6 +672,25 @@ render_target_for_profile() {
   grep -qF "docker-build.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
 }
 
+@test "prerelease-on-push.yml multi-docker variant renders docker-build-multi reference" {
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [
+        {"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true},
+        {"path":"Dockerfile.worker","image_name":"serverkraken/svc-worker","image_name_source":"derived","release_eligible":true}
+      ],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
+  grep -qF "docker-build-multi.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
+  ! grep -qE "docker-build\.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
+  grep -qF "prerelease: true" "$tgt/.github/workflows/prerelease-on-push.yml"
+}
+
 @test "integration: rendered prerelease + prerelease-on-push pass actionlint and yamllint" {
   command -v actionlint >/dev/null 2>&1 || skip "actionlint not installed"
   command -v yamllint  >/dev/null 2>&1 || skip "yamllint not installed"
