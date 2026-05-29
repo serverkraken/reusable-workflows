@@ -116,4 +116,18 @@ jobs:
       oci_registry: ghcr.io/{{ $.profile.target_repo }}/charts
     secrets: inherit
 {{- end }}
+
+{{- if and (has $c.release_signals "flutter_android") $c.release_signals.flutter_android }}
+  release-flutter-android{{ $suffix }}:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@{{ $pin }}
+    with:
+    {{- if not $isRoot }}
+      working_directory: {{ $ctxPath }}
+    {{- end }}
+      version: {{`${{ needs.release-please.outputs.tag_name }}`}}
+      dart_define_secret_names: {{`${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}`}}
+    secrets: inherit
+{{- end }}
 {{ end }}

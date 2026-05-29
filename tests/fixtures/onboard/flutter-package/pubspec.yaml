@@ -1,0 +1,15 @@
+name: catalog_test_flutter_package
+description: "Onboard-detect fixture: Flutter package (no android/ → flutter_android=false)."
+publish_to: 'none'
+version: 0.0.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

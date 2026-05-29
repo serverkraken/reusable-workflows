@@ -5,7 +5,7 @@ inputs:
     description: 'Path to the checked-out target repo on the runner'
     required: true
   language_override:
-    description: 'auto | go | python | rust | helm | node | simple (auto = file-signal detection)'
+    description: 'auto | go | python | rust | helm | flutter | node | simple (auto = file-signal detection)'
     required: false
     default: 'auto'
   target_repo:

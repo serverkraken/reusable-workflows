@@ -97,5 +97,17 @@ jobs:
     with:
       working_directory: {{ $c.path }}
     secrets: inherit
+{{- else if eq $c.primary_language "flutter" }}
+  lint-flutter-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-flutter.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+    secrets: inherit
+  test-flutter-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/test-flutter.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+      coverage_threshold: {{`${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}`}}
+    secrets: inherit
 {{- end }}
 {{- end }}

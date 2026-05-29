@@ -25,7 +25,16 @@ set -euo pipefail
 # Anything outside this set triggers a `no_lint_test_atom` warning in profile.json.
 # IMPORTANT: keep this list in sync with docs/adopter-templates/skeletons/ci.yml.tmpl
 # (Task 11 rewrites that template to consume these warnings).
-SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm'
+SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm|flutter'
+
+# Flutter detection helper. Arg: absolute component directory.
+# True when pubspec.yaml exists AND declares the Flutter SDK dependency
+# (`sdk: flutter`) — every Flutter app/package has it; a pure-Dart package
+# does not.
+_component_is_flutter() {
+  local dir="$1"
+  [[ -f "$dir/pubspec.yaml" ]] && grep -qE 'sdk:[[:space:]]*flutter' "$dir/pubspec.yaml"
+}
 
 emit_profile_json() {
   local repo="$1"
@@ -206,7 +215,7 @@ detect_components() {
   local root_has_marker=false
   if [[ -f "$repo/go.mod" || -f "$repo/pyproject.toml" || -f "$repo/Cargo.toml" \
         || -f "$repo/Chart.yaml" || -f "$repo/Dockerfile" || -f "$repo/Containerfile" \
-        || -f "$repo/package.json" ]]; then
+        || -f "$repo/package.json" || -f "$repo/pubspec.yaml" ]]; then
     root_has_marker=true
   fi
   if [[ ${#paths[@]} -eq 0 && "$root_has_marker" == "false" ]]; then
@@ -265,6 +274,7 @@ detect_components() {
     # one, the consumer can override release-please-config.json after onboard.
     case "$primary" in
       generic) release_type="simple" ;;
+      flutter) release_type="dart" ;;
       *)       release_type="$primary" ;;
     esac
     signals=$(detect_release_signals "$repo" "$p")
@@ -349,6 +359,7 @@ detect_languages() {
   [[ -f "$p/pyproject.toml" ]] && langs+=(python)
   [[ -f "$p/Cargo.toml" ]]     && langs+=(rust)
   [[ -f "$p/Chart.yaml" ]]     && langs+=(helm)
+  _component_is_flutter "$p"   && langs+=(flutter)
   [[ -f "$p/package.json" ]]   && langs+=(node)
   if (( ${#langs[@]} == 0 )); then
     echo '[]'
@@ -505,6 +516,10 @@ detect_role() {
     echo "helm-app"; return
   fi
 
+  if _component_is_flutter "$p" && [[ -d "$p/android" ]]; then
+    echo "mobile-app"; return
+  fi
+
   echo "library"
 }
 
@@ -554,10 +569,20 @@ detect_release_signals() {
     chart=$(jq -nc --arg s "$rel" '$s')
   fi
 
+  # Flutter Android release signal: a Flutter component (pubspec declares the
+  # flutter SDK) that also has an android/ dir is an Android app and gets a
+  # release-flutter-android job. A Flutter *package* (no android/) is linted
+  # and tested but not released here.
+  local flutter_android=false
+  if _component_is_flutter "$p" && [[ -d "$p/android" ]]; then
+    flutter_android=true
+  fi
+
   jq -nc \
     --argjson goreleaser_config "$gorel" \
     --argjson chart_yaml "$chart" \
-    '{goreleaser_config: $goreleaser_config, chart_yaml: $chart_yaml}'
+    --argjson flutter_android "$flutter_android" \
+    '{goreleaser_config: $goreleaser_config, chart_yaml: $chart_yaml, flutter_android: $flutter_android}'
 }
 
 # Scan .github/workflows/*.{yml,yaml} (non-recursive) for legacy CI patterns,

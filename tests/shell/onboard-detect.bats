@@ -713,3 +713,81 @@ GHEOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"\"svc\""* ]]
 }
+
+# === Flutter detection ===
+
+@test "detects flutter from pubspec sdk: flutter (legacy key=value)" {
+  run "$DETECT" "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=flutter"* ]]
+}
+
+@test "profile-json: flutter-app primary_language=flutter" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "flutter"'
+  echo "$output" | jq -e '.components[0].languages == ["flutter"]'
+}
+
+@test "profile-json: flutter-package is still detected as flutter" {
+  run "$DETECT" --profile-json "$FIX/flutter-package"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "flutter"'
+}
+
+@test "profile-json: flutter-app release_please_type=dart" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_please_type == "dart"'
+}
+
+@test "profile-json: flutter emits no no_lint_test_atom warning" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.warnings[] | select(.code == "no_lint_test_atom")] | length == 0'
+}
+
+@test "profile-json: flutter-app has flutter_android=true and role=mobile-app" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == true'
+  echo "$output" | jq -e '.components[0].role == "mobile-app"'
+}
+
+@test "profile-json: flutter-package has flutter_android=false and role=library" {
+  run "$DETECT" --profile-json "$FIX/flutter-package"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == false'
+  echo "$output" | jq -e '.components[0].role == "library"'
+}
+
+@test "profile-json: go-repo release_signals gains flutter_android=false (additive)" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == false'
+}
+
+@test "legacy key=value: flutter emits release_type=dart" {
+  run "$DETECT" "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"release_type=dart"* ]]
+}
+
+@test "--emit-both: flutter emits release_type=dart" {
+  run "$DETECT" --emit-both "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"release_type=dart"* ]]
+}
+
+@test "profile-json: flutter app with nested sub-chart stays a single root component" {
+  run "$DETECT" --profile-json "$FIX/flutter-app-subchart"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components | length == 1'
+  echo "$output" | jq -e '.components[0].path == "."'
+  echo "$output" | jq -e '.components[0].primary_language == "flutter"'
+  # the nested chart is reported as a release signal of the root component,
+  # not split into a sibling component
+  echo "$output" | jq -e '.components[0].release_signals.chart_yaml != null'
+  # the root is still an Android Flutter app (has android/) → flutter_android stays true
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == true'
+}

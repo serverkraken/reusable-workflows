@@ -181,6 +181,7 @@ golden_check() {
 @test "golden: monorepo-go"            { golden_check "monorepo-go"; }
 @test "golden: release-eligibility-mixed" { golden_check "release-eligibility-mixed"; }
 @test "golden: containerfile-only"     { golden_check "containerfile-only"; }
+@test "golden: flutter-app"            { golden_check "flutter-app"; }
 
 # ---- ci.yml lint+test atom golden tests (Task 11) ----
 #
@@ -384,6 +385,34 @@ render_prerelease_for_profile() {
   grep -qF "trivy_version: \${{ vars.SK_TRIVY_VERSION || '' }}" "$rendered"
 }
 
+# === Flutter ci.yml ===
+
+@test "ci.yml renders lint+test jobs for a single flutter component" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-flutter.yml" "$rendered"
+}
+
+@test "ci.yml flutter test job carries the coverage SK_ override" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "lint-flutter.yml@v4" "$rendered"
+  grep -qF "test-flutter.yml@v4" "$rendered"
+  grep -qF "coverage_threshold: \${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}" "$rendered"
+}
+
 # ---- release.yml SK_SIGN/SK_ATTEST/SK_SBOM threading (Task 6) ----
 
 @test "release.yml emits SK_SIGN/SK_ATTEST/SK_SBOM expressions on single-Dockerfile case" {
@@ -447,4 +476,74 @@ render_prerelease_for_profile() {
   grep -qF "sign: \${{ fromJSON(vars.SK_SIGN || 'true') }}" "$rendered"
   grep -qF "attest: \${{ fromJSON(vars.SK_ATTEST || 'true') }}" "$rendered"
   grep -qF "sbom: \${{ fromJSON(vars.SK_SBOM || 'true') }}" "$rendered"
+}
+
+# === Flutter release.yml ===
+
+@test "release.yml renders release-flutter-android when flutter_android=true" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "release-flutter-android.yml@v4" "$rendered"
+  grep -qF "version: \${{ needs.release-please.outputs.tag_name }}" "$rendered"
+  grep -qF "dart_define_secret_names: \${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}" "$rendered"
+}
+
+@test "release.yml omits release-flutter-android when flutter_android=false" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/pkg",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "library", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  ! grep -q "release-flutter-android" "$rendered"
+}
+
+@test "release.yml does not error when release_signals lacks the flutter_android key" {
+  # Guards the missing-key-safe `has` check in release.yml.tmpl: a profile
+  # whose release_signals omits flutter_android entirely (e.g. a non-Flutter
+  # repo, or a legacy profile) must still render without a gomplate error and
+  # emit no release-flutter-android job.
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  [ -f "$rendered" ]
+  ! grep -q "release-flutter-android" "$rendered"
+}
+
+@test "release-please-config renders release-type dart for flutter" {
+  local target="$BATS_TEST_TMPDIR/rp-flutter-$$"
+  mkdir -p "$target"
+  printf '%s' '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "warnings": []
+  }' > "$target/_profile.json"
+  "$RENDER" "$REPO_ROOT" "$target" "$target/_profile.json" "v4" >&2
+  jq -e '.packages["."]["release-type"] == "dart"' "$target/release-please-config.json"
+}
+
+@test "integration: rendered flutter-app ci.yml + release.yml pass actionlint and yamllint" {
+  command -v actionlint >/dev/null 2>&1 || skip "actionlint not installed"
+  command -v yamllint  >/dev/null 2>&1 || skip "yamllint not installed"
+  seed_profile "flutter-app"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4" >&2
+  yamllint -d relaxed "$TARGET/.github/workflows/ci.yml" "$TARGET/.github/workflows/release.yml"
+  actionlint "$TARGET/.github/workflows/ci.yml" "$TARGET/.github/workflows/release.yml"
 }
