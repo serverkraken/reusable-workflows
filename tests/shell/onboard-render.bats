@@ -476,3 +476,31 @@ render_prerelease_for_profile() {
   grep -qF "attest: \${{ fromJSON(vars.SK_ATTEST || 'true') }}" "$rendered"
   grep -qF "sbom: \${{ fromJSON(vars.SK_SBOM || 'true') }}" "$rendered"
 }
+
+# === Flutter release.yml ===
+
+@test "release.yml renders release-flutter-android when flutter_android=true" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "release-flutter-android.yml@v4" "$rendered"
+  grep -qF "version: \${{ needs.release-please.outputs.tag_name }}" "$rendered"
+  grep -qF "dart_define_secret_names: \${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}" "$rendered"
+}
+
+@test "release.yml omits release-flutter-android when flutter_android=false" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/pkg",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "library", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  ! grep -q "release-flutter-android" "$rendered"
+}
