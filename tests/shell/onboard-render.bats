@@ -578,3 +578,20 @@ render_prerelease_for_profile() {
   grep -q "noop" "$rendered"
   ! grep -q "release-flutter-android" "$rendered"
 }
+
+@test "prerelease.yml does not error when release_signals lacks the flutter_android key" {
+  # Guards the missing-key-safe `has` check in prerelease.yml.tmpl (mirrors the
+  # release.yml guard test): a non-Flutter profile omits flutter_android, which
+  # gomplate would error on with a bare `.flutter_android` access.
+  rendered=$(render_prerelease_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  [ -f "$rendered" ]
+  ! grep -q "release-flutter-android" "$rendered"
+}
