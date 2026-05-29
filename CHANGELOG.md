@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.5.1](https://github.com/serverkraken/reusable-workflows/compare/v4.5.0...v4.5.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **onboard:** discard gh-api error body so 404 branch protection applies ([#158](https://github.com/serverkraken/reusable-workflows/issues/158)) ([0038a6e](https://github.com/serverkraken/reusable-workflows/commit/0038a6e3aacebd1d9a06d7d7e10e56d740c12c22))
+
 ## [4.5.0](https://github.com/serverkraken/reusable-workflows/compare/v4.4.2...v4.5.0) (2026-05-28)
 
 
