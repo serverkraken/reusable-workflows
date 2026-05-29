@@ -504,3 +504,18 @@ render_prerelease_for_profile() {
   }')
   ! grep -q "release-flutter-android" "$rendered"
 }
+
+@test "release-please-config renders release-type dart for flutter" {
+  local target="$BATS_TEST_TMPDIR/rp-flutter-$$"
+  mkdir -p "$target"
+  printf '%s' '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "warnings": []
+  }' > "$target/_profile.json"
+  "$RENDER" "$REPO_ROOT" "$target" "$target/_profile.json" "v4" >&2
+  jq -e '.packages["."]["release-type"] == "dart"' "$target/release-please-config.json"
+}
