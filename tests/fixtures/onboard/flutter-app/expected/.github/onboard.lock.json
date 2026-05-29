@@ -4,7 +4,7 @@
   "files": {
     ".github/workflows/ci.yml": "sha256:8fe96f75a8105c18195a620200f81d9131980667eca665c72d69ced412115c96",
     ".github/workflows/release.yml": "sha256:c93e3ebf55e05f347ab7e4a85ff8ae63b94716165aded96be68b4df89be31dfb",
-    ".github/workflows/prerelease.yml": "sha256:6168c2ca745ecf357a665273f0628a825cd336b2c7da54beaa22e7a767134e35",
+    ".github/workflows/prerelease.yml": "sha256:9f6a2d20a49212b521019502a7fba1ad20c29300b11fe8bb8cfeaa569a28def3",
     ".github/workflows/cleanup.yml": "sha256:43f599b4827f8fdeceaae67d7b7db1174d0cc68b5f482a24364b75990edec0db",
     "release-please-config.json": "sha256:c0d16025b5d1e0ac9b13d83a38b1d0f6ff65a03138d119c13c72b07fd2aa6aa2",
     ".release-please-manifest.json": "sha256:b9c66e0126774ab9fa34536f15972438356e7035724a2c0f0ca3b125967e6399"

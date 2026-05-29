@@ -8,10 +8,33 @@
 {{- $c := index .profile.components 0 -}}
 name: prerelease
 on:
+{{- if and (has $c.release_signals "flutter_android") $c.release_signals.flutter_android }}
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag to build (empty → auto <latest>-rc.<run_number>)'
+        required: false
+        type: string
+        default: ''
+      prerelease:
+        description: 'Mark the GitHub Release as prerelease.'
+        type: boolean
+        default: true
+{{- else }}
   workflow_dispatch: {}
+{{- end }}
 
 jobs:
-{{- if eq (len $c.dockerfiles) 1 }}
+{{- if and (has $c.release_signals "flutter_android") $c.release_signals.flutter_android }}
+  build:
+    uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@{{ $pin }}
+    secrets: inherit
+    with:
+      version: {{`${{ inputs.version }}`}}
+      create_release: true
+      prerelease: {{`${{ inputs.prerelease }}`}}
+      dart_define_secret_names: {{`${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}`}}
+{{- else if eq (len $c.dockerfiles) 1 }}
 {{- $df := index $c.dockerfiles 0 }}
   build:
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}

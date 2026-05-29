@@ -547,3 +547,34 @@ render_prerelease_for_profile() {
   yamllint -d relaxed "$TARGET/.github/workflows/ci.yml" "$TARGET/.github/workflows/release.yml"
   actionlint "$TARGET/.github/workflows/ci.yml" "$TARGET/.github/workflows/release.yml"
 }
+
+# === Flutter manual prerelease.yml ===
+
+@test "prerelease.yml renders release-flutter-android create_release for a flutter app" {
+  rendered=$(render_prerelease_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  grep -qF "release-flutter-android.yml@v4" "$rendered"
+  grep -qF "create_release: true" "$rendered"
+  grep -qF "version: \${{ inputs.version }}" "$rendered"
+  grep -qF "dart_define_secret_names: \${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}" "$rendered"
+  ! grep -q "noop" "$rendered"
+}
+
+@test "prerelease.yml keeps noop for a flutter package (no android/)" {
+  rendered=$(render_prerelease_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/pkg",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "library", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  grep -q "noop" "$rendered"
+  ! grep -q "release-flutter-android" "$rendered"
+}
