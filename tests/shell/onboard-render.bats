@@ -384,6 +384,34 @@ render_prerelease_for_profile() {
   grep -qF "trivy_version: \${{ vars.SK_TRIVY_VERSION || '' }}" "$rendered"
 }
 
+# === Flutter ci.yml ===
+
+@test "ci.yml renders lint+test jobs for a single flutter component" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-flutter.yml" "$rendered"
+}
+
+@test "ci.yml flutter test job carries the coverage SK_ override" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "lint-flutter.yml@v4" "$rendered"
+  grep -qF "test-flutter.yml@v4" "$rendered"
+  grep -qF "coverage_threshold: \${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}" "$rendered"
+}
+
 # ---- release.yml SK_SIGN/SK_ATTEST/SK_SBOM threading (Task 6) ----
 
 @test "release.yml emits SK_SIGN/SK_ATTEST/SK_SBOM expressions on single-Dockerfile case" {
