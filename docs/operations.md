@@ -383,10 +383,13 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 | `SK_SBOM` | `sbom` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
 | `SK_TRIVY_SEVERITY` | `severity` | trivy-fs (ci.yml secscan), trivy-image (prerelease scan) | `HIGH,CRITICAL` | string |
 | `SK_TRIVY_VERSION` | `trivy_version` | trivy-fs, trivy-image | (install-trivy default) | string |
+| `SK_FLUTTER_DART_DEFINE_SECRETS` | `dart_define_secret_names` | release-flutter-android (release.yml) | (empty) | string (comma-list of secret names) |
 
 **Org-level layering** (catalog maintainers): set a variable at the organization level (`https://github.com/organizations/serverkraken/settings/variables/actions`) to provide an org-wide default. Repo-level values override org-level. A change to the org var propagates to every non-overriding adopter on the next CI run, no re-rendering required.
 
 **`SK_CGO_ENABLED` override-wins semantic:** the onboard render uses an auto-detected boolean from the adopter's Go source / `go.mod` as the template default. Setting `SK_CGO_ENABLED = true` forces cgo on (auto-detect missed a transitive dep); setting `= false` forces it off (false-positive). Either value wins over the profile-derived default.
+
+**`SK_FLUTTER_DART_DEFINE_SECRETS`:** a comma-separated list of *secret names* (not values) that the rendered `release.yml` forwards to `release-flutter-android`'s `dart_define_secret_names`, which injects each as `--dart-define=NAME=$VALUE` at build time. The secrets themselves must exist at org or repo level; `secrets: inherit` makes them available. Example value: `SUPABASE_URL,SUPABASE_ANON_KEY`. Empty (default) means no dart-defines.
 
 **What's not in this list and why:**
 
