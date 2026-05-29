@@ -605,7 +605,7 @@ render_target_for_profile() {
   rm -rf "$target"; mkdir -p "$target"
   printf '%s' "$profile" > "$target/_profile.json"
   "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
-    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v4" >&2
+    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v4" >&2 || return 1
   echo "$target"
 }
 
@@ -651,4 +651,23 @@ render_target_for_profile() {
   [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
   grep -qF "docker-build.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
   grep -qF "prerelease: true" "$tgt/.github/workflows/prerelease-on-push.yml"
+}
+
+@test "prerelease-on-push.yml does not error when release_signals lacks the flutter_android key" {
+  # Mirrors the equivalent guards on release.yml and prerelease.yml: a docker
+  # profile whose release_signals omits flutter_android must still render the
+  # on-push template (when opted in via topic) without a gomplate error and
+  # take the docker arm, not the Flutter arm.
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
+  ! grep -q "release-flutter-android" "$tgt/.github/workflows/prerelease-on-push.yml"
+  grep -qF "docker-build.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
 }
