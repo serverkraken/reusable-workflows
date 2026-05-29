@@ -274,6 +274,7 @@ detect_components() {
     # one, the consumer can override release-please-config.json after onboard.
     case "$primary" in
       generic) release_type="simple" ;;
+      flutter) release_type="dart" ;;
       *)       release_type="$primary" ;;
     esac
     signals=$(detect_release_signals "$repo" "$p")

@@ -734,3 +734,9 @@ GHEOF
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.components[0].primary_language == "flutter"'
 }
+
+@test "profile-json: flutter-app release_please_type=dart" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_please_type == "dart"'
+}
