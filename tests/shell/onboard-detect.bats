@@ -740,3 +740,9 @@ GHEOF
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.components[0].release_please_type == "dart"'
 }
+
+@test "profile-json: flutter emits no no_lint_test_atom warning" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.warnings[] | select(.code == "no_lint_test_atom")] | length == 0'
+}

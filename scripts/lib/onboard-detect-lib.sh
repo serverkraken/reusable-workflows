@@ -25,7 +25,7 @@ set -euo pipefail
 # Anything outside this set triggers a `no_lint_test_atom` warning in profile.json.
 # IMPORTANT: keep this list in sync with docs/adopter-templates/skeletons/ci.yml.tmpl
 # (Task 11 rewrites that template to consume these warnings).
-SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm'
+SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm|flutter'
 
 # Flutter detection helper. Arg: absolute component directory.
 # True when pubspec.yaml exists AND declares the Flutter SDK dependency
