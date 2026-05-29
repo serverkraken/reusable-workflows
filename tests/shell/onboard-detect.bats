@@ -766,3 +766,26 @@ GHEOF
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.components[0].release_signals.flutter_android == false'
 }
+
+@test "legacy key=value: flutter emits release_type=dart" {
+  run "$DETECT" "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"release_type=dart"* ]]
+}
+
+@test "--emit-both: flutter emits release_type=dart" {
+  run "$DETECT" --emit-both "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"release_type=dart"* ]]
+}
+
+@test "profile-json: flutter app with nested sub-chart stays a single root component" {
+  run "$DETECT" --profile-json "$FIX/flutter-app-subchart"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components | length == 1'
+  echo "$output" | jq -e '.components[0].path == "."'
+  echo "$output" | jq -e '.components[0].primary_language == "flutter"'
+  # the nested chart is reported as a release signal of the root component,
+  # not split into a sibling component
+  echo "$output" | jq -e '.components[0].release_signals.chart_yaml != null'
+}

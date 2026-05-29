@@ -70,7 +70,10 @@ if [[ "${1:-}" == "--emit-both" ]]; then
       exit 1
     fi
   fi
-  release_type="$language"
+  case "$language" in
+    flutter) release_type="dart" ;;
+    *)       release_type="$language" ;;
+  esac
 
   current_version="0.0.0"
   default_branch="main"
@@ -152,7 +155,10 @@ else
   fi
 fi
 
-release_type="$language"
+case "$language" in
+  flutter) release_type="dart" ;;
+  *)       release_type="$language" ;;
+esac
 
 current_version="0.0.0"
 default_branch="main"

@@ -215,7 +215,7 @@ detect_components() {
   local root_has_marker=false
   if [[ -f "$repo/go.mod" || -f "$repo/pyproject.toml" || -f "$repo/Cargo.toml" \
         || -f "$repo/Chart.yaml" || -f "$repo/Dockerfile" || -f "$repo/Containerfile" \
-        || -f "$repo/package.json" ]]; then
+        || -f "$repo/package.json" || -f "$repo/pubspec.yaml" ]]; then
     root_has_marker=true
   fi
   if [[ ${#paths[@]} -eq 0 && "$root_has_marker" == "false" ]]; then
