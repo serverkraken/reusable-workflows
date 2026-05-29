@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.6.0](https://github.com/serverkraken/reusable-workflows/compare/v4.5.1...v4.6.0) (2026-05-29)
+
+
+### Features
+
+* **onboard:** detect Flutter and render ci/release ([#157](https://github.com/serverkraken/reusable-workflows/issues/157)) ([81ba2d1](https://github.com/serverkraken/reusable-workflows/commit/81ba2d1e631f41a8de83b5ec312ded5ef2e3d398))
+
 ## [4.5.1](https://github.com/serverkraken/reusable-workflows/compare/v4.5.0...v4.5.1) (2026-05-29)
 
 
