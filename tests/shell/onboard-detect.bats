@@ -788,4 +788,6 @@ GHEOF
   # the nested chart is reported as a release signal of the root component,
   # not split into a sibling component
   echo "$output" | jq -e '.components[0].release_signals.chart_yaml != null'
+  # the root is still an Android Flutter app (has android/) → flutter_android stays true
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == true'
 }

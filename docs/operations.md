@@ -449,9 +449,9 @@ Three Flutter `workflow_call` atoms plus a shared composite action:
 
 The shared toolchain (Java + Android SDK + Flutter + `pub get` + optional `build_runner`) lives in `actions/setup-flutter-toolchain/action.yml`. Because that composite is catalog-local, all three atoms mint a catalog-scoped App token and check the catalog out into `.catalog/` first — the same pattern as `lint-python.yml`. Callers therefore MUST pass `secrets: inherit`.
 
-### 9.1 Adopter integration (current)
+### 9.1 Adopter integration
 
-Until the onboard renderer learns to detect Flutter components, adopters wire the atoms by hand. Reference:
+The onboard renderer auto-detects Flutter components (a `pubspec.yaml` declaring the Flutter SDK) and emits `lint-flutter` + `test-flutter` in `ci.yml`; when the component also has an `android/` dir it emits `release-flutter-android` in `release.yml` and sets release-please `release-type: dart`. Adopters thread dart-defines by setting the `SK_FLUTTER_DART_DEFINE_SECRETS` repo variable (comma-list of secret names — see §Per-Adopter Overrides). The rendered `release.yml` looks like the block below, which also serves as the reference for hand-wiring a repo the renderer has not onboarded:
 
 ```yaml
 jobs:
@@ -513,5 +513,4 @@ This replaces the per-adopter hand-rolled `manual-apk-build.yml` pattern. Availa
 
 - iOS build.
 - Play-Store upload — atom gains `upload_to_play_store` + `play_store_track` inputs; the renderer gains a repo-topic-detection branch so adopters opt in via a topic.
-- onboard renderer Flutter component detection (`scripts/onboard-detect.sh` probing `pubspec.yaml`) + `release.yml.tmpl` Flutter branch.
 - pubspec.yaml commit-back — adopters wire release-please `extra-files` if they want the bump persisted on `main`.

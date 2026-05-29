@@ -181,6 +181,7 @@ golden_check() {
 @test "golden: monorepo-go"            { golden_check "monorepo-go"; }
 @test "golden: release-eligibility-mixed" { golden_check "release-eligibility-mixed"; }
 @test "golden: containerfile-only"     { golden_check "containerfile-only"; }
+@test "golden: flutter-app"            { golden_check "flutter-app"; }
 
 # ---- ci.yml lint+test atom golden tests (Task 11) ----
 #
