@@ -505,6 +505,24 @@ render_prerelease_for_profile() {
   ! grep -q "release-flutter-android" "$rendered"
 }
 
+@test "release.yml does not error when release_signals lacks the flutter_android key" {
+  # Guards the missing-key-safe `has` check in release.yml.tmpl: a profile
+  # whose release_signals omits flutter_android entirely (e.g. a non-Flutter
+  # repo, or a legacy profile) must still render without a gomplate error and
+  # emit no release-flutter-android job.
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  [ -f "$rendered" ]
+  ! grep -q "release-flutter-android" "$rendered"
+}
+
 @test "release-please-config renders release-type dart for flutter" {
   local target="$BATS_TEST_TMPDIR/rp-flutter-$$"
   mkdir -p "$target"
