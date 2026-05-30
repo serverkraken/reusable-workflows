@@ -1,0 +1,35 @@
+name: install-gitleaks
+description: |
+  Install the gitleaks CLI at a pinned version (direct binary install,
+  Renovate-managed). Empty `version` → pinned default.
+
+inputs:
+  version:
+    description: 'gitleaks version (with or without leading v). Empty → pinned default.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install gitleaks CLI
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=gitleaks/gitleaks
+        GITLEAKS_VERSION: '8.24.3'
+        REQUESTED: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$GITLEAKS_VERSION}"
+        VERSION="${VERSION#v}"
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=x64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT; cd "$TMP"
+        curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_${A}.tar.gz" -o gl.tar.gz
+        tar -xzf gl.tar.gz gitleaks
+        sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+        gitleaks version
