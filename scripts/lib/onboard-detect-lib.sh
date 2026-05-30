@@ -8,6 +8,8 @@
 #
 # Internal helpers:
 #   detect_components       — enumerate sub-components for monorepos, else single root
+#   detect_gitops_kubernetes — true when the repo matches the Talos/cluster-template fingerprint
+#   _gitops_manifests_paths — enumerate kubernetes/<workload> roots (excludes bootstrap/components/flux-system)
 #   detect_languages        — per-component language marker inventory
 #   inventory_dockerfiles   — per-component Dockerfile inventory + image-name override
 #   read_image_override     — read `# onboard:image=<name>` from a Dockerfile

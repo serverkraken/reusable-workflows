@@ -11,6 +11,9 @@
 #   .github/onboard.lock.json      (schema_version=1, sha256 of each file)
 #
 # The lock file is the contract drift-check (Phase 5) compares against.
+#
+# Variant: a gitops profile (.gitops present) renders `ci.yml` ONLY — no
+# release-please / prerelease / cleanup — and the lock lists just ci.yml.
 
 set -euo pipefail
 
