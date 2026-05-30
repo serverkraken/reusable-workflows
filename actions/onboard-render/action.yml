@@ -18,6 +18,13 @@ inputs:
     description: 'Catalog @version to pin the rendered templates to'
     required: false
     default: 'v1'
+  rendered_against:
+    description: >-
+      Full catalog tag (vX.Y.Z) recorded in the lock as rendered_against.
+      Defaults to empty; the script falls back to pin_version. The sweep
+      passes its `git describe --tags --abbrev=0` output here.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -29,6 +36,7 @@ runs:
         TARGET_PATH: ${{ inputs.target_path }}
         PROFILE_JSON: ${{ inputs.profile_json }}
         PIN_VERSION: ${{ inputs.pin_version }}
+        RENDERED_AGAINST: ${{ inputs.rendered_against }}
       run: |
         set -euo pipefail
         # Inputs are passed via env so the shell never re-parses them. printf
