@@ -115,6 +115,7 @@ jobs:
       paths_ignore: |
         tests/fixtures/with-secret
         tests/fixtures/lint-test/helm-lint-fail
+        tests/fixtures/gitops-planted-secret
       fail_on_findings: false
       upload_sarif: false
 
@@ -125,6 +126,7 @@ jobs:
     with:
       paths_ignore: |
         tests/fixtures/lint-test/helm-lint-fail
+        tests/fixtures/gitops-planted-secret
       upload_sarif: false
       fail_on_findings: false   # don't fail the job; we assert on findings_count below
 
@@ -236,6 +238,113 @@ jobs:
       oci_registry: ghcr.io/serverkraken/test
       dry_run: true
 
+  # ----- kube-validate happy path: valid fixture tree must succeed -----
+  test-kube-validate-happy:
+    uses: ./.github/workflows/kube-validate.yml
+    secrets: inherit
+    with:
+      manifests_paths: |-
+        tests/fixtures/gitops-cluster/kubernetes/apps
+        tests/fixtures/gitops-cluster/kubernetes/argo
+      sops: false
+
+  # ----- kube-lint happy path: clean fixture + permissive config → 0 -----
+  test-kube-lint-happy:
+    uses: ./.github/workflows/kube-lint.yml
+    secrets: inherit
+    with:
+      manifests_path: tests/fixtures/gitops-cluster/kubernetes/apps
+      config_path: tests/fixtures/gitops-cluster/.kube-linter.yaml
+      fail_on_findings: false
+      upload_sarif: false
+
+  assert-kube-lint-clean:
+    needs: test-kube-lint-happy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify findings_count == 0
+        env:
+          COUNT: ${{ needs.test-kube-lint-happy.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" != "0" ]]; then
+            echo "::error::Expected 0 kube-linter findings on clean fixture, got $COUNT"
+            exit 1
+          fi
+
+  # ----- kube-lint find-something: violation fixture + baseline config → >0 -----
+  test-kube-lint-findings:
+    uses: ./.github/workflows/kube-lint.yml
+    secrets: inherit
+    with:
+      manifests_path: tests/fixtures/gitops-lint-violation/kubernetes/apps
+      fail_on_findings: false
+      upload_sarif: false
+
+  assert-kube-lint-finds:
+    needs: test-kube-lint-findings
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify findings_count > 0
+        env:
+          COUNT: ${{ needs.test-kube-lint-findings.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" == "0" ]]; then
+            echo "::error::Expected kube-linter findings on violation fixture, got 0"
+            exit 1
+          fi
+          echo "kube-lint correctly detected $COUNT finding(s)"
+
+  # ----- secret-scan happy path: clean fixture, no-git mode → 0 -----
+  test-secret-scan-happy:
+    uses: ./.github/workflows/secret-scan.yml
+    secrets: inherit
+    with:
+      no_git: true
+      scan_path: tests/fixtures/gitops-cluster
+      fail_on_findings: false
+      upload_sarif: false
+
+  assert-secret-scan-clean:
+    needs: test-secret-scan-happy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify findings_count == 0
+        env:
+          COUNT: ${{ needs.test-secret-scan-happy.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" != "0" ]]; then
+            echo "::error::Expected 0 secrets on clean fixture, got $COUNT"
+            exit 1
+          fi
+
+  # ----- secret-scan find-something: planted secret, no-git mode → >0 -----
+  test-secret-scan-findings:
+    uses: ./.github/workflows/secret-scan.yml
+    secrets: inherit
+    with:
+      no_git: true
+      scan_path: tests/fixtures/gitops-planted-secret
+      fail_on_findings: false
+      upload_sarif: false
+
+  assert-secret-scan-finds:
+    needs: test-secret-scan-findings
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify findings_count > 0
+        env:
+          COUNT: ${{ needs.test-secret-scan-findings.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" == "0" ]]; then
+            echo "::error::Expected secret findings on planted-secret fixture, got 0"
+            exit 1
+          fi
+          echo "secret-scan correctly detected $COUNT secret(s)"
+
   # ----- semantic-release dry-run: exercise the atom against the catalog's
   #       own release-please configs WITHOUT mutating remote state.
   #       skip-github-release + skip-github-pull-request flags on the
@@ -319,6 +428,15 @@ jobs:
       - test-goreleaser
       - test-helm-publish
       - test-release-flutter-android
+      - test-kube-validate-happy
+      - test-kube-lint-happy
+      - assert-kube-lint-clean
+      - test-kube-lint-findings
+      - assert-kube-lint-finds
+      - test-secret-scan-happy
+      - assert-secret-scan-clean
+      - test-secret-scan-findings
+      - assert-secret-scan-finds
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

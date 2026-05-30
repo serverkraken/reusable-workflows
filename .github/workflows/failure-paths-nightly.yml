@@ -2,7 +2,7 @@
 # Nightly cron exercising all designed-failure-path tests of the catalog
 # against the broken fixtures. Runs at 04:00 UTC daily and on
 # workflow_dispatch. Does NOT run on pull_request — that's the whole
-# point: keeps the 11 designed-red test-*-fail jobs out of the PR check
+# point: keeps the 12 designed-red test-*-fail jobs out of the PR check
 # rollup so the PR top-level badge stays green.
 #
 # Each test-X-fail job calls the atom workflow with a fixture engineered
@@ -304,8 +304,33 @@ jobs:
           fi
           echo "helm-publish correctly failed for broken Chart.yaml"
 
+  # ----- kube-validate: fail-path -----
+  # Invalid manifest (additional property under a known schema) → kubeconform
+  # -strict rejects → atom exits non-zero.
+  test-kube-validate-fail:
+    uses: ./.github/workflows/kube-validate.yml
+    secrets: inherit
+    with:
+      manifests_paths: tests/fixtures/gitops-invalid-manifest/kubernetes/apps
+      sops: false
+
+  assert-kube-validate-fail:
+    needs: test-kube-validate-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert validate job failed
+        env:
+          RESULT: ${{ needs.test-kube-validate-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected kube-validate to fail on invalid manifest, got: $RESULT"
+            exit 1
+          fi
+          echo "kube-validate-fail: correctly observed failure"
+
   # ----- Regression Reporter -----
-  # Runs after all 11 assert-* jobs. The job always runs (if: always()),
+  # Runs after all 12 assert-* jobs. The job always runs (if: always()),
   # but the bash step short-circuits when no asserts failed — gating in
   # bash rather than via the workflow-level `if:` expression. An earlier
   # smoke-test (issue #147) showed that `if: always() && contains(needs.*.result,
@@ -328,6 +353,7 @@ jobs:
       - assert-docker-build-multi-fail
       - assert-goreleaser-fail
       - assert-helm-publish-fail
+      - assert-kube-validate-fail
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -349,7 +375,7 @@ jobs:
           ' | paste -sd ',' -)
 
           if [[ -z "$failed" ]]; then
-            echo "All 11 assert-*-fail jobs returned success — no regression to report."
+            echo "All 12 assert-*-fail jobs returned success — no regression to report."
             exit 0
           fi
 
