@@ -36,6 +36,43 @@ _component_is_flutter() {
   [[ -f "$dir/pubspec.yaml" ]] && grep -qE 'sdk:[[:space:]]*flutter' "$dir/pubspec.yaml"
 }
 
+# GitOps cluster-template detection. Arg: repo root.
+# True only when all three legs hold: a kubernetes/ dir (workloads), a
+# .sops.yaml (SOPS encryption config), and a cluster-template generator marker
+# (makejinja.toml OR bootstrap/templates/). The .sops.yaml + template
+# conjunction prevents a false positive on a service repo that merely ships a
+# kubernetes/ deploy dir.
+detect_gitops_kubernetes() {
+  local repo="$1"
+  [[ -d "$repo/kubernetes" ]] || return 1
+  [[ -f "$repo/.sops.yaml" ]] || return 1
+  [[ -f "$repo/makejinja.toml" || -d "$repo/bootstrap/templates" ]] || return 1
+  return 0
+}
+
+# Enumerate kubernetes/<dir> workload roots for a gitops repo, excluding the
+# non-workload control dirs: bootstrap (Talos bootstrap), components (shared
+# kustomize components), flux-system (Flux controllers). Emits a compact JSON
+# array (e.g. ["kubernetes/apps","kubernetes/argo"]) or [] when none.
+_gitops_manifests_paths() {
+  local repo="$1"
+  local dirs=()
+  local d base
+  while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    base=$(basename "$d")
+    case "$base" in
+      bootstrap|components|flux-system) continue ;;
+    esac
+    dirs+=("kubernetes/$base")
+  done < <(find "$repo/kubernetes" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+  if (( ${#dirs[@]} == 0 )); then
+    echo '[]'
+  else
+    printf '%s\n' "${dirs[@]}" | jq -R . | jq -cs .
+  fi
+}
+
 emit_profile_json() {
   local repo="$1"
   local target_repo="${TARGET_REPO:-}"

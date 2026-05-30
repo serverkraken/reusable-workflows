@@ -818,3 +818,78 @@ SH
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '(.topics | index("sk-prerelease-on-push")) != null'
 }
+
+# ---- gitops detection helpers (Task 1) ----
+
+# Source the lib directly to unit-test the helper functions.
+load_lib() { source "$REPO_ROOT/scripts/lib/onboard-detect-lib.sh"; }
+
+@test "detect_gitops_kubernetes: true on full cluster-template fingerprint" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps" "$d/bootstrap/templates"
+  touch "$d/.sops.yaml"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -eq 0 ]
+}
+
+@test "detect_gitops_kubernetes: true via makejinja.toml marker" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps"
+  touch "$d/.sops.yaml" "$d/makejinja.toml"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -eq 0 ]
+}
+
+@test "detect_gitops_kubernetes: false when .sops.yaml missing" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps" "$d/bootstrap/templates"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -ne 0 ]
+}
+
+@test "detect_gitops_kubernetes: false when kubernetes/ missing" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/bootstrap/templates"
+  touch "$d/.sops.yaml"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -ne 0 ]
+}
+
+@test "detect_gitops_kubernetes: false when no cluster-template marker" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps"
+  touch "$d/.sops.yaml"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -ne 0 ]
+}
+
+@test "_gitops_manifests_paths: enumerates workload dirs, excludes control dirs" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps" "$d/kubernetes/argo" \
+           "$d/kubernetes/bootstrap" "$d/kubernetes/components" "$d/kubernetes/flux-system"
+  load_lib
+  run _gitops_manifests_paths "$d"
+  rm -rf "$d"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq -c .)" = '["kubernetes/apps","kubernetes/argo"]' ]
+}
+
+@test "_gitops_manifests_paths: empty array when no workload dirs" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/bootstrap"
+  load_lib
+  run _gitops_manifests_paths "$d"
+  rm -rf "$d"
+  [ "$status" -eq 0 ]
+  [ "$output" = '[]' ]
+}
