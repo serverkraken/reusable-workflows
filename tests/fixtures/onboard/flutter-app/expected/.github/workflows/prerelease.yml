@@ -1,10 +1,23 @@
 name: prerelease
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag to build (empty → auto <latest>-rc.<run_number>)'
+        required: false
+        type: string
+        default: ''
+      prerelease:
+        description: 'Mark the GitHub Release as prerelease.'
+        type: boolean
+        default: true
 
 jobs:
-  # No Dockerfiles detected for this component.
-  noop:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "No prerelease build artifacts for this repo (no Dockerfiles)."
+  build:
+    uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@v2
+    secrets: inherit
+    with:
+      version: ${{ inputs.version }}
+      create_release: true
+      prerelease: ${{ inputs.prerelease }}
+      dart_define_secret_names: ${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}

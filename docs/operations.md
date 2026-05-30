@@ -383,7 +383,7 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 | `SK_SBOM` | `sbom` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
 | `SK_TRIVY_SEVERITY` | `severity` | trivy-fs (ci.yml secscan), trivy-image (prerelease scan) | `HIGH,CRITICAL` | string |
 | `SK_TRIVY_VERSION` | `trivy_version` | trivy-fs, trivy-image | (install-trivy default) | string |
-| `SK_FLUTTER_DART_DEFINE_SECRETS` | `dart_define_secret_names` | release-flutter-android (release.yml) | (empty) | string (comma-list of secret names) |
+| `SK_FLUTTER_DART_DEFINE_SECRETS` | `dart_define_secret_names` | release-flutter-android (release.yml, prerelease.yml, prerelease-on-push.yml) | (empty) | string (comma-list of secret names) |
 
 **Org-level layering** (catalog maintainers): set a variable at the organization level (`https://github.com/organizations/serverkraken/settings/variables/actions`) to provide an org-wide default. Repo-level values override org-level. A change to the org var propagates to every non-overriding adopter on the next CI run, no re-rendering required.
 
@@ -401,6 +401,11 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 ## Release-Eligibility per Dockerfile
 
 By default, `release.yml` ships **only the bare `Dockerfile` (or `Containerfile`)** to GHCR on release-please-driven releases. Any `Dockerfile.*` / `Containerfile.*` variant (e.g. `Dockerfile.dev`, `Dockerfile.debug`) is **excluded** from release builds and only ships via the manual `prerelease.yml` workflow_dispatch path.
+
+**Prerelease callers (stack-aware).** The renderer emits up to two prerelease workflows:
+
+- `prerelease.yml` — **manual** (`workflow_dispatch`). For docker components it builds a prerelease image (+ trivy scan). For a Flutter app it calls `release-flutter-android` with `create_release: true` and `workflow_dispatch` inputs `version` (empty → auto `<latest>-rc.<run_number>`) and `prerelease` (default `true`); dart-defines come from `vars.SK_FLUTTER_DART_DEFINE_SECRETS`. A Flutter package (no `android/`) renders a no-op.
+- `prerelease-on-push.yml` — **automatic** on push to `develop`. Rendered **only** when the repo carries the `sk-prerelease-on-push` topic. Same stack-aware build jobs as `prerelease.yml`, with no manual inputs (Flutter uses the auto-rc version). The trigger branch is baked at render time (`develop`) because GitHub does not evaluate expressions in `on:`.
 
 ### Convention
 

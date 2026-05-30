@@ -547,3 +547,161 @@ render_prerelease_for_profile() {
   yamllint -d relaxed "$TARGET/.github/workflows/ci.yml" "$TARGET/.github/workflows/release.yml"
   actionlint "$TARGET/.github/workflows/ci.yml" "$TARGET/.github/workflows/release.yml"
 }
+
+# === Flutter manual prerelease.yml ===
+
+@test "prerelease.yml renders release-flutter-android create_release for a flutter app" {
+  rendered=$(render_prerelease_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  grep -qF "release-flutter-android.yml@v4" "$rendered"
+  grep -qF "create_release: true" "$rendered"
+  grep -qF "version: \${{ inputs.version }}" "$rendered"
+  grep -qF "dart_define_secret_names: \${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}" "$rendered"
+  ! grep -q "noop" "$rendered"
+}
+
+@test "prerelease.yml keeps noop for a flutter package (no android/)" {
+  rendered=$(render_prerelease_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/pkg",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "library", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  grep -q "noop" "$rendered"
+  ! grep -q "release-flutter-android" "$rendered"
+}
+
+@test "prerelease.yml does not error when release_signals lacks the flutter_android key" {
+  # Guards the missing-key-safe `has` check in prerelease.yml.tmpl (mirrors the
+  # release.yml guard test): a non-Flutter profile omits flutter_android, which
+  # gomplate would error on with a bare `.flutter_android` access.
+  rendered=$(render_prerelease_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  [ -f "$rendered" ]
+  ! grep -q "release-flutter-android" "$rendered"
+}
+
+# === prerelease-on-push.yml (opt-in topic) ===
+
+# Render the full set for an inline profile; echo the target dir.
+render_target_for_profile() {
+  local profile="$1"
+  local target="$BATS_TEST_TMPDIR/render-onpush-$$"
+  rm -rf "$target"; mkdir -p "$target"
+  printf '%s' "$profile" > "$target/_profile.json"
+  "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
+    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v4" >&2 || return 1
+  echo "$target"
+}
+
+@test "prerelease-on-push.yml is rendered + locked when topic present (flutter)" {
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
+  grep -qF "on:" "$tgt/.github/workflows/prerelease-on-push.yml"
+  grep -qF "branches: [develop]" "$tgt/.github/workflows/prerelease-on-push.yml"
+  grep -qF "release-flutter-android.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
+  jq -e '.files[".github/workflows/prerelease-on-push.yml"]' "$tgt/.github/onboard.lock.json"
+}
+
+@test "prerelease-on-push.yml is NOT rendered when topic absent" {
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  [ ! -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
+  ! jq -e '.files[".github/workflows/prerelease-on-push.yml"]' "$tgt/.github/onboard.lock.json"
+}
+
+@test "prerelease-on-push.yml docker variant builds prerelease image" {
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
+  grep -qF "docker-build.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
+  grep -qF "prerelease: true" "$tgt/.github/workflows/prerelease-on-push.yml"
+}
+
+@test "prerelease-on-push.yml does not error when release_signals lacks the flutter_android key" {
+  # Mirrors the equivalent guards on release.yml and prerelease.yml: a docker
+  # profile whose release_signals omits flutter_android must still render the
+  # on-push template (when opted in via topic) without a gomplate error and
+  # take the docker arm, not the Flutter arm.
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
+  ! grep -q "release-flutter-android" "$tgt/.github/workflows/prerelease-on-push.yml"
+  grep -qF "docker-build.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
+}
+
+@test "prerelease-on-push.yml multi-docker variant renders docker-build-multi reference" {
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [
+        {"path":"Dockerfile","image_name":"serverkraken/svc","image_name_source":"derived","release_eligible":true},
+        {"path":"Dockerfile.worker","image_name":"serverkraken/svc-worker","image_name_source":"derived","release_eligible":true}
+      ],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
+  grep -qF "docker-build-multi.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
+  ! grep -qE "docker-build\.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
+  grep -qF "prerelease: true" "$tgt/.github/workflows/prerelease-on-push.yml"
+}
+
+@test "integration: rendered prerelease + prerelease-on-push pass actionlint and yamllint" {
+  command -v actionlint >/dev/null 2>&1 || skip "actionlint not installed"
+  command -v yamllint  >/dev/null 2>&1 || skip "yamllint not installed"
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  yamllint -d relaxed "$tgt/.github/workflows/prerelease.yml" "$tgt/.github/workflows/prerelease-on-push.yml"
+  actionlint "$tgt/.github/workflows/prerelease.yml" "$tgt/.github/workflows/prerelease-on-push.yml"
+}

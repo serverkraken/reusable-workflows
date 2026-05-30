@@ -791,3 +791,30 @@ GHEOF
   # the root is still an Android Flutter app (has android/) → flutter_android stays true
   echo "$output" | jq -e '.components[0].release_signals.flutter_android == true'
 }
+
+# === topics ===
+
+@test "profile-json: topics defaults to [] when TARGET_REPO unset" {
+  unset TARGET_REPO
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.topics == []'
+}
+
+@test "profile-json: topics populated from gh api /repos/<repo>/topics" {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  cat > "$BATS_TEST_TMPDIR/bin/gh" <<'SH'
+#!/usr/bin/env bash
+# Minimal gh mock honoring the calls emit_profile_json makes with -q.
+case "$*" in
+  *"/topics"*)       echo '["sk-prerelease-on-push","serverkraken-onboarded"]' ;;
+  *"release list"*)  echo '' ;;
+  *"/repos/o/r"*)    echo 'main' ;;
+  *)                 echo '' ;;
+esac
+SH
+  chmod +x "$BATS_TEST_TMPDIR/bin/gh"
+  TARGET_REPO=o/r PATH="$BATS_TEST_TMPDIR/bin:$PATH" run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '(.topics | index("sk-prerelease-on-push")) != null'
+}

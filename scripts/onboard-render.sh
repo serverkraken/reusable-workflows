@@ -97,6 +97,15 @@ render "$SKELETONS/release.yml.tmpl"    "$TARGET/.github/workflows/release.yml"
 render "$SKELETONS/prerelease.yml.tmpl" "$TARGET/.github/workflows/prerelease.yml"
 render "$SKELETONS/cleanup.yml.tmpl"    "$TARGET/.github/workflows/cleanup.yml"
 
+# prerelease-on-push.yml — opt-in: rendered only when the repo carries the
+# `sk-prerelease-on-push` topic. Tracked in the lock + $REPO loop below only
+# when actually rendered.
+RENDER_ON_PUSH=0
+if jq -e '(.topics // []) | index("sk-prerelease-on-push")' "$PROFILE" >/dev/null 2>&1; then
+  render "$SKELETONS/prerelease-on-push.yml.tmpl" "$TARGET/.github/workflows/prerelease-on-push.yml"
+  RENDER_ON_PUSH=1
+fi
+
 # release-please config: single vs monorepo.
 if [[ "$MONOREPO" == "true" ]]; then
   render "$CONFIGS/release-please-config.monorepo.json.tmpl" "$TARGET/release-please-config.json"
@@ -125,7 +134,7 @@ if [[ -z "$REPO_FULL" || "$REPO_FULL" == "null" ]]; then
     REPO_FULL="$(basename "$(pwd)")"
   fi
 fi
-for f in "$TARGET/.github/workflows/release.yml" "$TARGET/.github/workflows/prerelease.yml"; do
+for f in "$TARGET/.github/workflows/release.yml" "$TARGET/.github/workflows/prerelease.yml" "$TARGET/.github/workflows/prerelease-on-push.yml"; do
   if [[ -f "$f" ]] && grep -q '\$REPO' "$f" 2>/dev/null; then
     # macOS/BSD sed -i needs an explicit backup suffix; we delete it after.
     # $REPO_FULL contains a forward-slash (`owner/name`); use a sed delimiter
@@ -144,6 +153,9 @@ RENDERED=(
   "release-please-config.json"
   ".release-please-manifest.json"
 )
+if [[ "$RENDER_ON_PUSH" == "1" ]]; then
+  RENDERED+=(".github/workflows/prerelease-on-push.yml")
+fi
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
