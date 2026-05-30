@@ -728,6 +728,18 @@ detect_legacy_ci() {
     elif grep -q 'semantic-release' "$f" 2>/dev/null; then
       summary="hand-rolled semantic-release; replaced by release-please.yml"
       replacements='["release-please.yml"]'
+    elif grep -q 'kubeconform' "$f" 2>/dev/null; then
+      summary="kubeconform manifest validation; replaced by kube-validate.yml"
+      replacements='["kube-validate.yml"]'
+    elif grep -qE 'kube-linter|stackrox/kube-linter' "$f" 2>/dev/null; then
+      summary="kube-linter; replaced by kube-lint.yml"
+      replacements='["kube-lint.yml"]'
+    elif grep -q 'gitleaks' "$f" 2>/dev/null; then
+      summary="gitleaks secret scan; replaced by secret-scan.yml"
+      replacements='["secret-scan.yml"]'
+    elif grep -qE 'trivy (fs|filesystem|rootfs)' "$f" 2>/dev/null; then
+      summary="trivy filesystem scan (CLI); replaced by trivy-fs.yml"
+      replacements='["trivy-fs.yml"]'
     else
       summary="unrecognized legacy workflow; manual review needed"
     fi

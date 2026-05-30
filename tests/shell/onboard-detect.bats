@@ -929,3 +929,36 @@ load_lib() { source "$REPO_ROOT/scripts/lib/onboard-detect-lib.sh"; }
   run "$DETECT" --profile-json "$FIX/go-repo"
   echo "$output" | jq -e 'has("gitops") | not'
 }
+
+# ---- gitops legacy_ci recognition (Task 3) ----
+
+# Build a tmp repo with a single legacy workflow file containing $2, assert the
+# detected replaced_by equals $3 (a JSON array literal).
+_legacy_one() {
+  local fname="$1" body="$2"
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/.github/workflows"
+  printf '%s\n' "$body" > "$d/.github/workflows/$fname"
+  "$DETECT" --profile-json "$d"
+  rm -rf "$d"
+}
+
+@test "legacy_ci: kubeconform.yaml → kube-validate.yml" {
+  out=$(_legacy_one "kubeconform.yaml" "run: kubeconform -strict")
+  echo "$out" | jq -e '[.legacy_ci[] | select(.path | endswith("kubeconform.yaml")) | .replaced_by] | flatten == ["kube-validate.yml"]'
+}
+
+@test "legacy_ci: kube-linter.yaml → kube-lint.yml" {
+  out=$(_legacy_one "kube-linter.yaml" "uses: stackrox/kube-linter-action@v1")
+  echo "$out" | jq -e '[.legacy_ci[] | select(.path | endswith("kube-linter.yaml")) | .replaced_by] | flatten == ["kube-lint.yml"]'
+}
+
+@test "legacy_ci: gitleaks.yaml → secret-scan.yml" {
+  out=$(_legacy_one "gitleaks.yaml" "run: gitleaks detect --source .")
+  echo "$out" | jq -e '[.legacy_ci[] | select(.path | endswith("gitleaks.yaml")) | .replaced_by] | flatten == ["secret-scan.yml"]'
+}
+
+@test "legacy_ci: trivy.yaml (CLI fs scan) → trivy-fs.yml" {
+  out=$(_legacy_one "trivy.yaml" "run: trivy fs --scanners vuln .")
+  echo "$out" | jq -e '[.legacy_ci[] | select(.path | endswith("trivy.yaml")) | .replaced_by] | flatten == ["trivy-fs.yml"]'
+}
