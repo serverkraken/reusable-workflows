@@ -177,7 +177,12 @@ fi
 jq -n \
   --argjson schema_version 1 \
   --arg catalog_version "$PIN" \
+  --arg rendered_against "${RENDERED_AGAINST:-$PIN}" \
   --arg rendered_at "$NOW" \
   --argjson files "$files_json" \
-  '{schema_version: $schema_version, catalog_version: $catalog_version, rendered_at: $rendered_at, files: $files}' \
+  '{schema_version: $schema_version,
+    catalog_version: $catalog_version,
+    rendered_against: $rendered_against,
+    rendered_at: $rendered_at,
+    files: $files}' \
   > "$LOCK"

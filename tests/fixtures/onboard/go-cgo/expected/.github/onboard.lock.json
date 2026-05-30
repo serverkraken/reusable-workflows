@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "catalog_version": "v2",
+  "rendered_against": "v2",
   "files": {
     ".github/workflows/ci.yml": "sha256:07ed98a032cda58f70e53cc008f9f9d26f0f99b5eb503da8abe47d0f60012f6f",
     ".github/workflows/release.yml": "sha256:b8c81e106e1026701a8be2e942430229f7b750b8d2ec5fb545c223610ee7ac3a",

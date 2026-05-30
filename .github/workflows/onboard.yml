@@ -31,6 +31,11 @@ on:
         required: false
         type: string
         default: v4
+      rendered_against:
+        description: 'Full catalog tag for the lock file. Empty → fall back to pin_version.'
+        required: false
+        type: string
+        default: ''
       add_branch_name:
         description: 'Branch for PR A (add new workflows)'
         required: false
@@ -58,6 +63,11 @@ on:
         required: false
         type: string
         default: v4
+      rendered_against:
+        description: 'Full catalog tag for the lock file. Empty → fall back to pin_version.'
+        required: false
+        type: string
+        default: ''
       add_branch_name:
         required: false
         type: string
@@ -230,6 +240,7 @@ jobs:
           target_path: target
           profile_json: ${{ steps.detect.outputs.profile_json }}
           pin_version: ${{ inputs.pin_version }}
+          rendered_against: ${{ inputs.rendered_against }}
 
       - name: Apply repo defaults
         uses: ./.catalog/actions/onboard-apply-defaults
