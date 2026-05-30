@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.7.0](https://github.com/serverkraken/reusable-workflows/compare/v4.6.0...v4.7.0) (2026-05-30)
+
+
+### Features
+
+* **onboard:** render manual + auto-on-push prerelease callers ([#161](https://github.com/serverkraken/reusable-workflows/issues/161)) ([6e73b1e](https://github.com/serverkraken/reusable-workflows/commit/6e73b1e8e4102342290a07088b1889097c373530))
+
+
+### Documentation
+
+* **superpowers:** flutter renderer detection design + plan [skip ci] ([65837c9](https://github.com/serverkraken/reusable-workflows/commit/65837c9f039051b67686057b26a23fd7a95d5dca))
+
 ## [4.6.0](https://github.com/serverkraken/reusable-workflows/compare/v4.5.1...v4.6.0) (2026-05-29)
 
 
