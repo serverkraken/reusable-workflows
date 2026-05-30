@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.8.0](https://github.com/serverkraken/reusable-workflows/compare/v4.7.1...v4.8.0) (2026-05-30)
+
+
+### Features
+
+* **onboard:** detect gitops_kubernetes and render kube-validation ci ([#166](https://github.com/serverkraken/reusable-workflows/issues/166)) ([903d56e](https://github.com/serverkraken/reusable-workflows/commit/903d56ed97b70a3fd2b1304606908ed079834cc9))
+
 ## [4.7.1](https://github.com/serverkraken/reusable-workflows/compare/v4.7.0...v4.7.1) (2026-05-30)
 
 
