@@ -15,6 +15,11 @@ exit "${KUBECONFORM_EXIT:-0}"
 EOF
   cat > "$BINDIR/kustomize" <<'EOF'
 #!/usr/bin/env bash
+# Ignore SIGPIPE: the kubeconform stub exits without draining stdin, so when
+# piped (kustomize build | kubeconform) it may close the read end before this
+# producer finishes writing. Real kubeconform reads stdin fully, so this race
+# is a test-double artifact — without the trap it flakes under `pipefail`.
+trap '' PIPE
 echo "kustomize $*" >> "$ARGLOG"
 printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n'
 exit "${KUSTOMIZE_EXIT:-0}"
