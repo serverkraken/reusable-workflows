@@ -182,6 +182,7 @@ golden_check() {
 @test "golden: release-eligibility-mixed" { golden_check "release-eligibility-mixed"; }
 @test "golden: containerfile-only"     { golden_check "containerfile-only"; }
 @test "golden: flutter-app"            { golden_check "flutter-app"; }
+@test "golden: gitops-cluster"         { golden_check "gitops-cluster"; }
 
 # ---- ci.yml lint+test atom golden tests (Task 11) ----
 #
