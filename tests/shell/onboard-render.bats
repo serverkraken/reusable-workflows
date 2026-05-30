@@ -705,3 +705,18 @@ render_target_for_profile() {
   yamllint -d relaxed "$tgt/.github/workflows/prerelease.yml" "$tgt/.github/workflows/prerelease-on-push.yml"
   actionlint "$tgt/.github/workflows/prerelease.yml" "$tgt/.github/workflows/prerelease-on-push.yml"
 }
+
+@test "render: lock rendered_against defaults to pin when env unset" {
+  seed_profile "go-repo"
+  unset RENDERED_AGAINST
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v3.1.4"
+  v=$(jq -r '.rendered_against' "$TARGET/.github/onboard.lock.json")
+  [ "$v" = "v3.1.4" ]
+}
+
+@test "render: lock rendered_against uses RENDERED_AGAINST env when set" {
+  seed_profile "go-repo"
+  RENDERED_AGAINST="v4.7.0" "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
+  v=$(jq -r '.rendered_against' "$TARGET/.github/onboard.lock.json")
+  [ "$v" = "v4.7.0" ]
+}
