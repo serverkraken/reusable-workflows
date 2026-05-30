@@ -1,0 +1,35 @@
+name: install-kube-linter
+description: |
+  Install the kube-linter CLI at a pinned version (direct binary install,
+  Renovate-managed). Empty `version` → pinned default.
+
+inputs:
+  version:
+    description: 'kube-linter version (with or without leading v). Empty → pinned default.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install kube-linter CLI
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=stackrox/kube-linter
+        KUBE_LINTER_VERSION: 'v0.8.3'
+        REQUESTED: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$KUBE_LINTER_VERSION}"
+        case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) ASSET=kube-linter-linux.tar.gz ;;
+          aarch64|arm64) ASSET=kube-linter-linux_arm64.tar.gz ;;
+          *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT; cd "$TMP"
+        curl -fsSL "https://github.com/stackrox/kube-linter/releases/download/${VERSION}/${ASSET}" -o kl.tar.gz
+        tar -xzf kl.tar.gz kube-linter
+        sudo install -m 0755 kube-linter /usr/local/bin/kube-linter
+        kube-linter version

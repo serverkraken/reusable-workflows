@@ -1,0 +1,167 @@
+# .github/workflows/kube-lint.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  manifests_path, config_path, kube_linter_version,
+#            fail_on_findings, upload_sarif, runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key
+#   outputs: findings_count
+name: kube-lint
+on:
+  workflow_call:
+    inputs:
+      manifests_path:
+        description: 'Path to lint (passed to kube-linter lint).'
+        required: false
+        type: string
+        default: 'kubernetes/apps'
+      config_path:
+        description: 'Path to a .kube-linter.yaml. Empty → catalog baseline.'
+        required: false
+        type: string
+        default: ''
+      kube_linter_version:
+        description: 'Override kube-linter version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      fail_on_findings:
+        description: 'Exit non-zero when kube-linter reports findings.'
+        required: false
+        type: boolean
+        default: true
+      upload_sarif:
+        description: 'Upload SARIF to GitHub code-scanning. Auto-skipped on forks.'
+        required: false
+        type: boolean
+        default: true
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      findings_count:
+        description: 'Number of kube-linter findings.'
+        value: ${{ jobs.lint.outputs.findings_count }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: kube-lint-${{ github.workflow }}-${{ github.ref }}-${{ inputs.manifests_path }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 15
+    outputs:
+      findings_count: ${{ steps.count.outputs.findings_count }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+      - name: Install kube-linter
+        uses: ./.catalog/actions/install-kube-linter
+        with:
+          version: ${{ inputs.kube_linter_version }}
+      - name: Resolve config args
+        id: cfg
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: |
+          if [[ -n "$CONFIG_PATH" ]]; then
+            echo "args=--config $CONFIG_PATH" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=--config .catalog/configs/kube-linter.yaml" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run kube-linter (SARIF)
+        env:
+          MANIFESTS_PATH: ${{ inputs.manifests_path }}
+          CFG_ARGS: ${{ steps.cfg.outputs.args }}
+        # kube-linter exits non-zero on findings; `|| true` keeps the job alive
+        # so SARIF can upload and the count/gate steps run deterministically.
+        run: |
+          # shellcheck disable=SC2086
+          kube-linter lint $CFG_ARGS --format sarif "$MANIFESTS_PATH" > kube-linter.sarif || true
+      - name: Count findings
+        id: count
+        # kube-linter writes a 0-byte file when there are no findings; jq on an
+        # empty file yields no output (exit 0), so guard on a non-empty file and
+        # coerce a blank result to 0 — otherwise findings_count is "" not "0".
+        run: |
+          COUNT=0
+          if [[ -s kube-linter.sarif ]]; then
+            COUNT=$(jq '[.runs[].results[]] | length' kube-linter.sarif 2>/dev/null || echo 0)
+          fi
+          COUNT=${COUNT:-0}
+          echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "kube-linter findings: $COUNT"
+      - name: Upload SARIF to code-scanning
+        if: inputs.upload_sarif && github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
+        with:
+          sarif_file: kube-linter.sarif
+          category: kube-lint
+      - name: Summary
+        if: always()
+        env:
+          MANIFESTS_PATH: ${{ inputs.manifests_path }}
+          COUNT: ${{ steps.count.outputs.findings_count }}
+          FAIL_ON_FINDINGS: ${{ inputs.fail_on_findings }}
+        run: |
+          if [[ "$COUNT" == "0" ]]; then
+            result="✓ no findings"
+          elif [[ "$FAIL_ON_FINDINGS" == "true" ]]; then
+            result="✗ ${COUNT} findings"
+          else
+            result="▲ ${COUNT} findings (gate disabled)"
+          fi
+          {
+            echo "## kube-lint"
+            echo ""
+            echo "**Path:** \`${MANIFESTS_PATH}\`"
+            echo "**Result:** ${result}"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Fail on findings
+        if: inputs.fail_on_findings && steps.count.outputs.findings_count != '0'
+        env:
+          COUNT: ${{ steps.count.outputs.findings_count }}
+        run: |
+          echo "::error::kube-linter found $COUNT issue(s)"
+          exit 1

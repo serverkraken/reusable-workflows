@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bad
+spec:
+  bogusField: not-allowed
+  ports:
+    - port: 80
