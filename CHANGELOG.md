@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.7.1](https://github.com/serverkraken/reusable-workflows/compare/v4.7.0...v4.7.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **onboard-sweep:** minor-version-aware stale-PR guard (v2) ([#163](https://github.com/serverkraken/reusable-workflows/issues/163)) ([3741d94](https://github.com/serverkraken/reusable-workflows/commit/3741d94fd5e77a2fc20ce8e108715b6cff4b786e))
+
 ## [4.7.0](https://github.com/serverkraken/reusable-workflows/compare/v4.6.0...v4.7.0) (2026-05-30)
 
 
