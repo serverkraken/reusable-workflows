@@ -121,8 +121,15 @@ jobs:
           kube-linter lint $CFG_ARGS --format sarif "$MANIFESTS_PATH" > kube-linter.sarif || true
       - name: Count findings
         id: count
+        # kube-linter writes a 0-byte file when there are no findings; jq on an
+        # empty file yields no output (exit 0), so guard on a non-empty file and
+        # coerce a blank result to 0 — otherwise findings_count is "" not "0".
         run: |
-          COUNT=$(jq '[.runs[].results[]] | length' kube-linter.sarif 2>/dev/null || echo 0)
+          COUNT=0
+          if [[ -s kube-linter.sarif ]]; then
+            COUNT=$(jq '[.runs[].results[]] | length' kube-linter.sarif 2>/dev/null || echo 0)
+          fi
+          COUNT=${COUNT:-0}
           echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "kube-linter findings: $COUNT"
       - name: Upload SARIF to code-scanning
