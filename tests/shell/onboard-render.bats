@@ -720,3 +720,25 @@ render_target_for_profile() {
   v=$(jq -r '.rendered_against' "$TARGET/.github/onboard.lock.json")
   [ "$v" = "v4.7.0" ]
 }
+
+# ---- gitops variant render set (Task 5) ----
+
+@test "render: gitops profile produces ci.yml only (no release-please set)" {
+  seed_profile "gitops-cluster"
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
+  [ "$status" -eq 0 ]
+  [ -f "$TARGET/.github/workflows/ci.yml" ]
+  [ ! -f "$TARGET/.github/workflows/release.yml" ]
+  [ ! -f "$TARGET/.github/workflows/prerelease.yml" ]
+  [ ! -f "$TARGET/.github/workflows/cleanup.yml" ]
+  [ ! -f "$TARGET/release-please-config.json" ]
+  [ ! -f "$TARGET/.release-please-manifest.json" ]
+  [ -f "$TARGET/.github/onboard.lock.json" ]
+}
+
+@test "render: gitops lock file lists ci.yml only" {
+  seed_profile "gitops-cluster"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
+  files=$(jq -r '.files | keys[]' "$TARGET/.github/onboard.lock.json")
+  [ "$files" = ".github/workflows/ci.yml" ]
+}
