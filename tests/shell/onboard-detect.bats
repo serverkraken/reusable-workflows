@@ -962,3 +962,20 @@ _legacy_one() {
   out=$(_legacy_one "trivy.yaml" "run: trivy fs --scanners vuln .")
   echo "$out" | jq -e '[.legacy_ci[] | select(.path | endswith("trivy.yaml")) | .replaced_by] | flatten == ["trivy-fs.yml"]'
 }
+
+# ---- gitops legacy key=value path (Task 4) ----
+
+@test "legacy mode: gitops-cluster reports language=gitops" {
+  run "$DETECT" "$FIX/gitops-cluster"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=gitops"* ]]
+  [[ "$output" == *"release_type=simple"* ]]
+}
+
+@test "emit-both: gitops-cluster reports language=gitops + valid profile_json" {
+  run "$DETECT" --emit-both "$FIX/gitops-cluster"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=gitops"* ]]
+  # the profile_json block carries the gitops object
+  echo "$output" | sed -n '/profile_json<</,/^EOF_/p' | sed '1d;$d' | jq -e '.gitops.sops == true'
+}
