@@ -413,6 +413,40 @@ render_prerelease_for_profile() {
   grep -qF "coverage_threshold: \${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}" "$rendered"
 }
 
+# === GitOps ci.yml ===
+
+@test "ci.yml renders kube-validation jobs for a gitops component" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/cluster",
+    "default_branch": "main", "current_version": "0.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": [], "primary_language": "gitops",
+      "release_please_type": "simple", "role": "gitops",
+      "dockerfiles": [], "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": [],
+    "gitops": {"manifests_paths": ["kubernetes/apps","kubernetes/argo"],
+      "has_kube_linter_config": true, "has_gitleaks_config": true, "sops": true}
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/gitops.yml" "$rendered"
+}
+
+@test "ci.yml gitops omits config_path when adopter has no own config" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/cluster",
+    "default_branch": "main", "current_version": "0.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": [], "primary_language": "gitops",
+      "release_please_type": "simple", "role": "gitops",
+      "dockerfiles": [], "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": [],
+    "gitops": {"manifests_paths": ["kubernetes/apps"],
+      "has_kube_linter_config": false, "has_gitleaks_config": false, "sops": false}
+  }')
+  grep -qF "kube-validate.yml@v4" "$rendered"
+  grep -qF "kube-lint.yml@v4" "$rendered"
+  grep -qF "secret-scan.yml@v4" "$rendered"
+  ! grep -q "config_path" "$rendered"
+  grep -qF "sops: false" "$rendered"
+}
+
 # ---- release.yml SK_SIGN/SK_ATTEST/SK_SBOM threading (Task 6) ----
 
 @test "release.yml emits SK_SIGN/SK_ATTEST/SK_SBOM expressions on single-Dockerfile case" {
