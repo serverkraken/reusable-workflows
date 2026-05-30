@@ -448,6 +448,30 @@ render_prerelease_for_profile() {
   grep -qF "sops: false" "$rendered"
 }
 
+# A gitops repo whose kubernetes/ holds only control dirs (bootstrap/components/
+# flux-system) yields manifests_paths: []. The range then emits an empty `|-`
+# block scalar — which must stay valid YAML (sops stays a sibling key, not
+# swallowed). Pins that contract so a future trimming change can't silently
+# break the rendered caller.
+@test "ci.yml gitops with zero workload dirs renders empty manifests_paths and stays valid YAML" {
+  command -v yamllint >/dev/null 2>&1 || skip "yamllint not installed"
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/cluster",
+    "default_branch": "main", "current_version": "0.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": [], "primary_language": "gitops",
+      "release_please_type": "simple", "role": "gitops",
+      "dockerfiles": [], "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": [],
+    "gitops": {"manifests_paths": [],
+      "has_kube_linter_config": false, "has_gitleaks_config": false, "sops": false}
+  }')
+  grep -qF "kube-validate.yml@v4" "$rendered"
+  grep -qF "manifests_paths: |-" "$rendered"
+  ! grep -qE '^[[:space:]]+kubernetes/' "$rendered"
+  grep -qF "sops: false" "$rendered"
+  yamllint -d relaxed "$rendered"
+}
+
 # ---- release.yml SK_SIGN/SK_ATTEST/SK_SBOM threading (Task 6) ----
 
 @test "release.yml emits SK_SIGN/SK_ATTEST/SK_SBOM expressions on single-Dockerfile case" {
