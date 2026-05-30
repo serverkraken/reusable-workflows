@@ -1,0 +1,171 @@
+# .github/workflows/kube-validate.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  manifests_paths, kustomize_args, schema_locations, skip_kinds,
+#            strict, ignore_missing_schemas, sops, kustomize_version,
+#            kubeconform_version, runs_on
+#   secrets: sops_age_key (optional; required when sops: true),
+#            release_please_app_client_id, release_please_app_private_key
+#   outputs: (none — pass/fail validator)
+name: kube-validate
+on:
+  workflow_call:
+    inputs:
+      manifests_paths:
+        description: 'Newline-separated validate roots (e.g. kubernetes/apps).'
+        required: false
+        type: string
+        default: 'kubernetes'
+      kustomize_args:
+        description: 'Args passed verbatim to `kustomize build`.'
+        required: false
+        type: string
+        default: '--load-restrictor=LoadRestrictionsNone --enable-helm --enable-alpha-plugins --enable-exec'
+      schema_locations:
+        description: 'Newline-separated kubeconform -schema-location values.'
+        required: false
+        type: string
+        default: |-
+          default
+          https://kubernetes-schemas.pages.dev/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+      skip_kinds:
+        description: 'Comma-separated kinds passed to kubeconform -skip.'
+        required: false
+        type: string
+        default: 'Secret'
+      strict:
+        description: 'Pass -strict to kubeconform.'
+        required: false
+        type: boolean
+        default: true
+      ignore_missing_schemas:
+        description: 'Pass -ignore-missing-schemas to kubeconform.'
+        required: false
+        type: boolean
+        default: true
+      sops:
+        description: 'Decrypt in-tree SOPS generators via ksops during build. Requires the sops_age_key secret.'
+        required: false
+        type: boolean
+        default: false
+      kustomize_version:
+        description: 'Override kustomize version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      kubeconform_version:
+        description: 'Override kubeconform version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    secrets:
+      sops_age_key:
+        required: false
+        description: 'AGE secret key for SOPS decryption (required only when sops: true).'
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kube-validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+            echo "Self-CI: catalog ref = $SELF_SHA"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+            echo "Cross-repo: catalog ref = v4 (floating)"
+          fi
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+      - name: Setup kube toolchain
+        uses: ./.catalog/actions/setup-kube-toolchain
+        with:
+          kustomize_version: ${{ inputs.kustomize_version }}
+          kubeconform_version: ${{ inputs.kubeconform_version }}
+          sops: ${{ inputs.sops }}
+      - name: Write SOPS age key
+        if: inputs.sops
+        env:
+          SOPS_AGE_KEY: ${{ secrets.sops_age_key }}
+        run: |
+          if [[ -z "${SOPS_AGE_KEY:-}" ]]; then
+            echo "::error::sops: true but secret sops_age_key is empty"
+            exit 1
+          fi
+          echo "$SOPS_AGE_KEY" > age.key
+          chmod 600 age.key
+          echo "SOPS_AGE_KEY_FILE=$GITHUB_WORKSPACE/age.key" >> "$GITHUB_ENV"
+      - name: Validate manifests
+        env:
+          MANIFESTS_PATHS: ${{ inputs.manifests_paths }}
+          KUSTOMIZE_ARGS: ${{ inputs.kustomize_args }}
+          SCHEMA_LOCATIONS: ${{ inputs.schema_locations }}
+          SKIP_KINDS: ${{ inputs.skip_kinds }}
+          STRICT: ${{ inputs.strict }}
+          IGNORE_MISSING_SCHEMAS: ${{ inputs.ignore_missing_schemas }}
+        run: bash .catalog/scripts/kube-validate.sh
+      - name: Cleanup age key
+        if: always() && inputs.sops
+        run: rm -f age.key
+      - name: Summary
+        if: always()
+        env:
+          MANIFESTS_PATHS: ${{ inputs.manifests_paths }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          if [[ "$OUTCOME" == "success" ]]; then
+            result="✓ all manifests valid"
+          else
+            result="✗ validation failed"
+          fi
+          {
+            echo "## kube-validate"
+            echo ""
+            echo "**Result:** ${result}"
+            echo ""
+            echo "**Roots:**"
+            while IFS= read -r r; do
+              [[ -z "$r" ]] && continue
+              echo "- \`${r}\`"
+            done <<< "$MANIFESTS_PATHS"
+          } >> "$GITHUB_STEP_SUMMARY" || true
