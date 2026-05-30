@@ -2,7 +2,7 @@
 # Nightly cron exercising all designed-failure-path tests of the catalog
 # against the broken fixtures. Runs at 04:00 UTC daily and on
 # workflow_dispatch. Does NOT run on pull_request — that's the whole
-# point: keeps the 12 designed-red test-*-fail jobs out of the PR check
+# point: keeps the 14 designed-red test-*-fail jobs out of the PR check
 # rollup so the PR top-level badge stays green.
 #
 # Each test-X-fail job calls the atom workflow with a fixture engineered
@@ -329,8 +329,65 @@ jobs:
           fi
           echo "kube-validate-fail: correctly observed failure"
 
+  # ----- kube-lint: fail-path -----
+  # Violation fixture (nginx:latest, no resource limits, no securityContext)
+  # trips the baseline kube-linter default checks → findings_count > 0 →
+  # with fail_on_findings (default true) the atom's gate step exits non-zero.
+  # No config_path so the catalog baseline (default checks) is used.
+  test-kube-lint-fail:
+    uses: ./.github/workflows/kube-lint.yml
+    secrets: inherit
+    with:
+      manifests_path: tests/fixtures/gitops-lint-violation/kubernetes/apps
+      fail_on_findings: true   # default, but explicit
+      upload_sarif: false
+
+  assert-kube-lint-fail:
+    needs: test-kube-lint-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-kube-lint-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected kube-lint to fail on violation fixture, got: $RESULT"
+            exit 1
+          fi
+          echo "kube-lint-fail: correctly observed failure"
+
+  # ----- secret-scan: fail-path -----
+  # Planted-secret fixture (AWS access key in a tracked file) → gitleaks
+  # detect finds it → findings_count > 0 → with fail_on_findings (default
+  # true) the atom's gate step exits non-zero. no_git scans the directory
+  # tree directly (no commit history needed in the fixture).
+  test-secret-scan-fail:
+    uses: ./.github/workflows/secret-scan.yml
+    secrets: inherit
+    with:
+      no_git: true
+      scan_path: tests/fixtures/gitops-planted-secret
+      fail_on_findings: true
+      upload_sarif: false
+
+  assert-secret-scan-fail:
+    needs: test-secret-scan-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert scan job failed
+        env:
+          RESULT: ${{ needs.test-secret-scan-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected secret-scan to fail on planted-secret fixture, got: $RESULT"
+            exit 1
+          fi
+          echo "secret-scan-fail: correctly observed failure"
+
   # ----- Regression Reporter -----
-  # Runs after all 12 assert-* jobs. The job always runs (if: always()),
+  # Runs after all 14 assert-* jobs. The job always runs (if: always()),
   # but the bash step short-circuits when no asserts failed — gating in
   # bash rather than via the workflow-level `if:` expression. An earlier
   # smoke-test (issue #147) showed that `if: always() && contains(needs.*.result,
@@ -354,6 +411,8 @@ jobs:
       - assert-goreleaser-fail
       - assert-helm-publish-fail
       - assert-kube-validate-fail
+      - assert-kube-lint-fail
+      - assert-secret-scan-fail
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -375,7 +434,7 @@ jobs:
           ' | paste -sd ',' -)
 
           if [[ -z "$failed" ]]; then
-            echo "All 12 assert-*-fail jobs returned success — no regression to report."
+            echo "All 14 assert-*-fail jobs returned success — no regression to report."
             exit 0
           fi
 
