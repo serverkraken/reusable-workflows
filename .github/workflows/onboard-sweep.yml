@@ -44,6 +44,7 @@ jobs:
       onboard_targets: ${{ steps.bucket.outputs.onboard_targets }}
       skipped: ${{ steps.bucket.outputs.skipped }}
       current_version: ${{ steps.ver.outputs.current_version }}
+      current_minor: ${{ steps.ver.outputs.current_minor }}
     permissions:
       contents: read
     steps:
@@ -52,13 +53,14 @@ jobs:
           fetch-depth: 0  # need full tag history for git describe
 
       - id: ver
-        name: Derive current catalog major
+        name: Derive current catalog major + minor
         run: |
           set -euo pipefail
           tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           major=$(echo "$tag" | sed -E 's/^v([0-9]+).*$/v\1/')
           echo "current_version=$major" >> "$GITHUB_OUTPUT"
-          echo "Resolved current major: $major (from tag $tag)"
+          echo "current_minor=$tag" >> "$GITHUB_OUTPUT"
+          echo "Resolved current major: $major / minor: $tag"
 
       - name: Mint App token for org-wide enumerate + drift
         id: app-token
@@ -89,6 +91,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           CURRENT: ${{ steps.ver.outputs.current_version }}
+          CURRENT_MINOR: ${{ steps.ver.outputs.current_minor }}
         run: |
           set -euo pipefail
 
@@ -107,20 +110,19 @@ jobs:
             name=$(echo "$r" | jq -r '.name')
             full="serverkraken/$name"
 
-            # Duplicate-PR guard: skip ONLY if an open bot PR already targets
-            # the current catalog version. Stale-version PRs (e.g. @v3 left over
-            # after a major-bump cutover) are allowed through — onboard.yml
-            # force-pushes the branch and edits the existing PR in-place.
-            existing_current=$(gh api -X GET "/repos/$full/pulls" \
-              -f state=open \
-              -q '[.[] | select(.user.login == "serverkraken-release-bot[bot]")
-                        | select(.head.ref | test("^chore/(onboard-reusable-workflows|remove-legacy-workflows)$"))
-                        | select(.title | test("@" + env.CURRENT + "\\b"))
-                  ] | length' 2>/dev/null || echo "0")
-            if [[ "$existing_current" -gt 0 ]]; then
-              skipped_csv+="${full}:open-pr,"
-              continue
-            fi
+            # Duplicate-PR guard: skip ONLY if the bot's open onboard PR
+            # already renders against the current catalog minor. Stale-minor
+            # PRs (rendered against an older minor of the same major) and
+            # legacy PRs without rendered_against fall through — onboard.yml
+            # force-pushes the branch and edits the existing PR.
+            case "$(scripts/onboard-sweep-stale-pr-check.sh "$full" "$CURRENT_MINOR")" in
+              skip)
+                skipped_csv+="${full}:open-pr,"
+                continue
+                ;;
+              stale|no-pr|*)
+                ;;  # fall through to drift / fresh-onboard
+            esac
 
             if echo "$onboarded" | grep -qx "$name"; then
               # Bucket A: existing onboarded. Compute drift.
@@ -174,6 +176,7 @@ jobs:
       target_repos: ${{ needs.enumerate.outputs.update_targets }}
       language: auto
       pin_version: ${{ needs.enumerate.outputs.current_version }}
+      rendered_against: ${{ needs.enumerate.outputs.current_minor }}
       # Forward dry_run from the top-level dispatch input (default false for cron).
       # workflow_call inputs require fromJSON wrap for boolean conversion
       # (cf. memory: troubleshooting_gha_type_coercion).
@@ -188,6 +191,7 @@ jobs:
       target_repos: ${{ needs.enumerate.outputs.onboard_targets }}
       language: auto
       pin_version: ${{ needs.enumerate.outputs.current_version }}
+      rendered_against: ${{ needs.enumerate.outputs.current_minor }}
       dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
 
   summary:
