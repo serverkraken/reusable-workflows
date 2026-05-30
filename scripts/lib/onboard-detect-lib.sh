@@ -27,6 +27,11 @@ set -euo pipefail
 # (Task 11 rewrites that template to consume these warnings).
 SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm|flutter'
 
+# Languages that have a catalog atom set and therefore must NOT trigger the
+# no_lint_test_atom warning, even though they are not lint/test-named. gitops
+# is served by kube-validate / kube-lint / secret-scan instead of lint-X/test-X.
+WARNING_EXEMPT_LANGUAGES="${SUPPORTED_LINT_TEST_LANGUAGES}|gitops"
+
 # Flutter detection helper. Arg: absolute component directory.
 # True when pubspec.yaml exists AND declares the Flutter SDK dependency
 # (`sdk: flutter`) — every Flutter app/package has it; a pure-Dart package
@@ -108,6 +113,38 @@ emit_profile_json() {
   local legacy_ci
   legacy_ci=$(detect_legacy_ci "$repo")
 
+  # GitOps post-process: when the repo matches the cluster-template fingerprint
+  # AND no component has a buildable (lint/test) language, reclassify the root
+  # component as primary_language=gitops and attach a top-level .gitops object.
+  # This reuses the component-range + lock machinery (one ci.yml.tmpl arm)
+  # rather than a separate profile_kind axis. Non-gitops profiles are untouched.
+  local gitops_obj="null"
+  if detect_gitops_kubernetes "$repo"; then
+    local has_buildable
+    has_buildable=$(echo "$components" | jq --arg s "$SUPPORTED_LINT_TEST_LANGUAGES" \
+      'any(.[]; .primary_language | test("^(" + $s + ")$"))')
+    if [[ "$has_buildable" == "false" ]]; then
+      components=$(echo "$components" | jq \
+        '.[0].primary_language = "gitops"
+         | .[0].release_please_type = "simple"
+         | .[0].role = "gitops"')
+      local manifests_paths kube_linter_cfg gitleaks_cfg sops_present
+      manifests_paths=$(_gitops_manifests_paths "$repo")
+      kube_linter_cfg=false; [[ -f "$repo/.kube-linter.yaml" ]] && kube_linter_cfg=true
+      gitleaks_cfg=false;     [[ -f "$repo/.gitleaks.toml" ]]   && gitleaks_cfg=true
+      sops_present=false;     [[ -f "$repo/.sops.yaml" ]]       && sops_present=true
+      gitops_obj=$(jq -nc \
+        --argjson manifests_paths "$manifests_paths" \
+        --argjson has_kube_linter_config "$kube_linter_cfg" \
+        --argjson has_gitleaks_config "$gitleaks_cfg" \
+        --argjson sops "$sops_present" \
+        '{manifests_paths: $manifests_paths,
+          has_kube_linter_config: $has_kube_linter_config,
+          has_gitleaks_config: $has_gitleaks_config,
+          sops: $sops}')
+    fi
+  fi
+
   local profile
   profile=$(jq -n \
     --argjson schema_version 1 \
@@ -131,6 +168,10 @@ emit_profile_json() {
       warnings: $warnings
     }')
 
+  if [[ "$gitops_obj" != "null" ]]; then
+    profile=$(echo "$profile" | jq --argjson g "$gitops_obj" '. + {gitops: $g}')
+  fi
+
   profile=$(emit_unsupported_language_warnings "$profile")
   emit_no_release_eligible_warnings "$profile"
 }
@@ -141,7 +182,7 @@ emit_profile_json() {
 # Signature: emit_unsupported_language_warnings <profile-json>
 emit_unsupported_language_warnings() {
   local profile_json="$1"
-  echo "$profile_json" | jq --arg supported "$SUPPORTED_LINT_TEST_LANGUAGES" '
+  echo "$profile_json" | jq --arg supported "$WARNING_EXEMPT_LANGUAGES" '
     . as $root
     | (.components
         | map(.primary_language)

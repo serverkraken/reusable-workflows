@@ -893,3 +893,39 @@ load_lib() { source "$REPO_ROOT/scripts/lib/onboard-detect-lib.sh"; }
   [ "$status" -eq 0 ]
   [ "$output" = '[]' ]
 }
+
+# ---- gitops profile-json (Task 2) ----
+
+@test "profile-json: gitops-cluster sets primary_language=gitops" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "gitops"'
+}
+
+@test "profile-json: gitops-cluster sets role=gitops" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  echo "$output" | jq -e '.components[0].role == "gitops"'
+}
+
+@test "profile-json: gitops-cluster release_please_type is simple" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  echo "$output" | jq -e '.components[0].release_please_type == "simple"'
+}
+
+@test "profile-json: gitops-cluster attaches .gitops object" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  echo "$output" | jq -e '.gitops.manifests_paths == ["kubernetes/apps","kubernetes/argo"]'
+  echo "$output" | jq -e '.gitops.sops == true'
+  echo "$output" | jq -e '.gitops.has_kube_linter_config == true'
+  echo "$output" | jq -e '.gitops.has_gitleaks_config == true'
+}
+
+@test "profile-json: gitops-cluster emits zero warnings" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  echo "$output" | jq -e '.warnings | length == 0'
+}
+
+@test "profile-json: non-gitops profile has no .gitops key" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  echo "$output" | jq -e 'has("gitops") | not'
+}
