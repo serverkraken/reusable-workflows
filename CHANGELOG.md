@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.8.1](https://github.com/serverkraken/reusable-workflows/compare/v4.8.0...v4.8.1) (2026-05-31)
+
+
+### Bug Fixes
+
+* **onboard:** derive Branch A staged-file set from the lock, not a hardcoded array ([#168](https://github.com/serverkraken/reusable-workflows/issues/168)) ([b2deb5e](https://github.com/serverkraken/reusable-workflows/commit/b2deb5e1d6d9cacbfbae4d3a7613628d71ff0639))
+
 ## [4.8.0](https://github.com/serverkraken/reusable-workflows/compare/v4.7.1...v4.8.0) (2026-05-30)
 
 
