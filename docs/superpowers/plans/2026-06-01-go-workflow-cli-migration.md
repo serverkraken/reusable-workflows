@@ -4,6 +4,20 @@
 **Branch:** `feat/go-workflow-cli-plan`  
 **Goal:** Plan an incremental Go implementation for the complex onboarding, rendering, drift, and repository-defaults logic currently implemented in Bash.
 
+## Branching Strategy (Decided)
+
+Use a long-lived `next` branch as the integration stream for this migration, running in parallel to `main`.
+
+- `main` stays the stable production branch.
+- Go migration feature branches (including this one) open PRs into `next`.
+- Validation and rollout hardening happen on `next` first.
+- Merge `next -> main` only after the migration slice is green and intentionally approved.
+
+Operational status on 2026-06-01:
+
+- `origin/next` exists and tracks current `origin/main` baseline.
+- PR #173 has been retargeted from `main` to `next`.
+
 ## Problem Statement
 
 The current Bash implementation is mature and well-tested, but several scripts now behave like full applications: they parse JSON, call GitHub APIs, classify repository structure, render templates, compare lockfiles, and update repository settings. This increases fragility around quoting, `jq` shape changes, shell portability, and test stubbing.
