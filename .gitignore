@@ -10,10 +10,15 @@ REVIEW-*.md
 # Tooling
 *.tmp
 .act/
+.gocache/
 
 # Coverage
 coverage/
 *.bashcov
+coverage.out
+
+# Local Go binaries
+bin/
 
 # OS
 .DS_Store
