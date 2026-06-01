@@ -61,7 +61,12 @@ runs:
             fi
             BUILD_DIR="$(mktemp -d)"
             trap 'rm -rf "$BUILD_DIR"' EXIT
-            GOCACHE="$BUILD_DIR/.gocache" go build -o "$BUILD_DIR/sk-workflows" "$CATALOG_ROOT/cmd/sk-workflows"
+            # Build from the catalog module root so go.mod is always resolved,
+            # including when this action is executed from a nested .catalog/ path.
+            (
+              cd "$CATALOG_ROOT"
+              GOCACHE="$BUILD_DIR/.gocache" go build -o "$BUILD_DIR/sk-workflows" ./cmd/sk-workflows
+            )
             DETECTOR="$BUILD_DIR/sk-workflows"
           fi
           "$DETECTOR" detect --emit-both \
