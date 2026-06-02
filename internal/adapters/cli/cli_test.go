@@ -114,6 +114,72 @@ func TestDetectPositionalCompatibility(t *testing.T) {
 	}
 }
 
+func TestRenderFlagsAndPositionals(t *testing.T) {
+	prependFakeGomplate(t)
+	root := repoRoot(t)
+	profile := `{
+	  "schema_version": 1,
+	  "target_repo": "serverkraken/example",
+	  "default_branch": "main",
+	  "current_version": "1.2.3",
+	  "components": [{
+	    "path": ".",
+	    "primary_language": "go",
+	    "release_please_type": "go",
+	    "dockerfiles": [{"path": "Dockerfile", "image_name": "ghcr.io/$REPO/app", "release_eligible": true}],
+	    "release_signals": {}
+	  }]
+	}`
+
+	target := t.TempDir()
+	profilePath := filepath.Join(target, "profile.json")
+	writeCLIFile(t, profilePath, profile)
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"render",
+		"--catalog-path", root,
+		"--target-path", target,
+		"--profile-json-path", profilePath,
+		"--pin-version", "v4",
+		"--rendered-against", "v4.2.0",
+	}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("flags code=%d stderr=%s", code, errb.String())
+	}
+	release, err := os.ReadFile(filepath.Join(target, ".github/workflows/release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(release), "serverkraken/example") || strings.Contains(string(release), "$REPO") {
+		t.Fatalf("release=%q", release)
+	}
+	assertRenderLock(t, target, "v4.2.0")
+
+	t.Setenv("RENDERED_AGAINST", "v4.3.0")
+	target = t.TempDir()
+	profilePath = filepath.Join(target, "profile.json")
+	writeCLIFile(t, profilePath, profile)
+	out.Reset()
+	errb.Reset()
+	code = Run(context.Background(), []string{"render", root, target, profilePath, "v4"}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("positional code=%d stderr=%s", code, errb.String())
+	}
+	assertRenderLock(t, target, "v4.3.0")
+}
+
+func TestRenderErrors(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := Run(context.Background(), []string{"render", "--unknown"}, &out, &errb); code != 2 {
+		t.Fatalf("flag error code=%d", code)
+	}
+	if code := Run(context.Background(), []string{"render"}, &out, &errb); code != 1 {
+		t.Fatalf("missing args code=%d", code)
+	}
+	if code := Run(context.Background(), []string{"render", t.TempDir(), t.TempDir(), "/profile.json", "v4", "extra"}, &out, &errb); code != 2 {
+		t.Fatalf("too many positional args code=%d", code)
+	}
+}
+
 func TestDriftNoLockAndBehind(t *testing.T) {
 	target := t.TempDir()
 	catalog := t.TempDir()
@@ -179,5 +245,75 @@ func writeCLIFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func prependFakeGomplate(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gomplate")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+template=""
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -f)
+      template="$2"
+      shift 2
+      ;;
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+case "$(basename "$template")" in
+  release.yml.tmpl|prerelease.yml.tmpl|prerelease-on-push.yml.tmpl)
+    printf 'image: ghcr.io/$REPO/app\n\n\n' > "$out"
+    ;;
+  *)
+    printf '%s\n\n' "$(basename "$template")" > "$out"
+    ;;
+esac
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func assertRenderLock(t *testing.T, target, renderedAgainst string) {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(target, ".github/onboard.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock struct {
+		CatalogVersion  string            `json:"catalog_version"`
+		RenderedAgainst string            `json:"rendered_against"`
+		Files           map[string]string `json:"files"`
+	}
+	if err := json.Unmarshal(content, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if lock.CatalogVersion != "v4" || lock.RenderedAgainst != renderedAgainst {
+		t.Fatalf("lock=%+v", lock)
+	}
+	if lock.Files[".github/workflows/ci.yml"] == "" || lock.Files["release-please-config.json"] == "" {
+		t.Fatalf("files=%v", lock.Files)
 	}
 }

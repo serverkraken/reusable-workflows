@@ -13,8 +13,10 @@ import (
 	"github.com/serverkraken/reusable-workflows/internal/adapters/catalogscripts"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/gitcli"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/githubcli"
+	"github.com/serverkraken/reusable-workflows/internal/adapters/gomplate"
 	"github.com/serverkraken/reusable-workflows/internal/app/detect"
 	"github.com/serverkraken/reusable-workflows/internal/app/drift"
+	renderapp "github.com/serverkraken/reusable-workflows/internal/app/render"
 	"github.com/serverkraken/reusable-workflows/internal/domain"
 )
 
@@ -26,6 +28,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "detect":
 		return runDetect(ctx, args[1:], stdout, stderr)
+	case "render":
+		return runRender(ctx, args[1:], stdout, stderr)
 	case "drift":
 		return runDrift(ctx, args[1:], stdout, stderr)
 	default:
@@ -92,6 +96,53 @@ func runDetect(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	default:
 		fmt.Fprintf(stderr, "unsupported format: %s\n", *format)
 		return 2
+	}
+	return 0
+}
+
+func runRender(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	_ = stdout
+	fs := flag.NewFlagSet("render", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	var catalogPath, targetPath, profilePath, pinVersion string
+	fs.StringVar(&catalogPath, "catalog-path", "", "catalog repo path")
+	fs.StringVar(&catalogPath, "catalog", "", "catalog repo path (alias)")
+	fs.StringVar(&targetPath, "target-path", "", "target repo path")
+	fs.StringVar(&targetPath, "target", "", "target repo path (alias)")
+	fs.StringVar(&profilePath, "profile-json-path", "", "profile JSON path")
+	fs.StringVar(&profilePath, "profile", "", "profile JSON path (alias)")
+	fs.StringVar(&pinVersion, "pin-version", "", "catalog pin version")
+	fs.StringVar(&pinVersion, "pin", "", "catalog pin version (alias)")
+	renderedAgainst := fs.String("rendered-against", os.Getenv("RENDERED_AGAINST"), "full catalog tag recorded in lock")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if catalogPath == "" && fs.NArg() > 0 {
+		catalogPath = fs.Arg(0)
+	}
+	if targetPath == "" && fs.NArg() > 1 {
+		targetPath = fs.Arg(1)
+	}
+	if profilePath == "" && fs.NArg() > 2 {
+		profilePath = fs.Arg(2)
+	}
+	if pinVersion == "" && fs.NArg() > 3 {
+		pinVersion = fs.Arg(3)
+	}
+	if fs.NArg() > 4 {
+		fmt.Fprintln(stderr, "too many positional arguments: expected <catalog-path> <target-path> <profile-json-path> <pin-version>")
+		return 2
+	}
+	err := (renderapp.Service{Templates: gomplate.Adapter{}}).Render(ctx, renderapp.Request{
+		CatalogPath:     catalogPath,
+		TargetPath:      targetPath,
+		ProfileJSONPath: profilePath,
+		PinVersion:      pinVersion,
+		RenderedAgainst: *renderedAgainst,
+	})
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
 	}
 	return 0
 }
@@ -170,6 +221,8 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  sk-workflows detect --profile-json <repo-path>")
 	fmt.Fprintln(w, "  sk-workflows detect --emit-both <repo-path> [language-override]")
 	fmt.Fprintln(w, "  sk-workflows detect --repo-path <dir> [--language-override <lang>] [--format legacy|profile-json]")
+	fmt.Fprintln(w, "  sk-workflows render <catalog-path> <target-path> <profile-json-path> <pin-version>")
+	fmt.Fprintln(w, "  sk-workflows render --catalog-path <dir> --target-path <dir> --profile-json-path <file> --pin-version vN")
 	fmt.Fprintln(w, "  sk-workflows drift <target-path> <catalog-path>")
 	fmt.Fprintln(w, "  sk-workflows drift --target-path <dir> --catalog-path <dir> [--current-version vN]")
 }

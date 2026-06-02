@@ -123,6 +123,13 @@ Acceptance:
 
 Port `scripts/onboard-render.sh`.
 
+Implementation status:
+
+- `sk-workflows render` ports render orchestration, template selection, lockfile writing, trailing-newline normalization, and `$REPO` substitution to Go.
+- gomplate remains the template execution adapter, keeping the existing adopter templates authoritative.
+- `actions/onboard-render` can opt into Go with `use_go_cli: true`; Bash remains default.
+- Self-CI exercises the Go render path against an onboarding fixture.
+
 Recommendation:
 
 - Do not replace gomplate immediately.
