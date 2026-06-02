@@ -11,9 +11,11 @@ import (
 	"strings"
 
 	"github.com/serverkraken/reusable-workflows/internal/adapters/catalogscripts"
+	"github.com/serverkraken/reusable-workflows/internal/adapters/defaultsfs"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/gitcli"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/githubcli"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/gomplate"
+	defaultsapp "github.com/serverkraken/reusable-workflows/internal/app/defaults"
 	"github.com/serverkraken/reusable-workflows/internal/app/detect"
 	"github.com/serverkraken/reusable-workflows/internal/app/drift"
 	renderapp "github.com/serverkraken/reusable-workflows/internal/app/render"
@@ -32,6 +34,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runRender(ctx, args[1:], stdout, stderr)
 	case "drift":
 		return runDrift(ctx, args[1:], stdout, stderr)
+	case "apply-defaults":
+		return runApplyDefaults(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		usage(stderr)
@@ -183,6 +187,52 @@ func runDrift(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	return 0
 }
 
+func runApplyDefaults(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("apply-defaults", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	catalogPath := fs.String("catalog-path", ".", "catalog repo path")
+	fs.StringVar(catalogPath, "catalog", ".", "catalog repo path (alias)")
+	repo := fs.String("repo", "", "owner/repo of the target")
+	targetPath := fs.String("target-path", "", "checked-out adopter repo path")
+	prevMarker := fs.String("prev-marker", "", "previous defaults_applied_at marker")
+	dryRun := fs.Bool("dry-run", false, "plan changes without mutating GitHub or the lock")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintln(stderr, "too many positional arguments: use flags for apply-defaults")
+		return 2
+	}
+	res, err := (defaultsapp.Service{
+		GitHub: githubcli.Client{},
+		Store:  defaultsfs.Store{},
+	}).Apply(ctx, defaultsapp.Request{
+		CatalogPath: *catalogPath,
+		Repo:        *repo,
+		TargetPath:  *targetPath,
+		PrevMarker:  *prevMarker,
+		DryRun:      *dryRun,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "::error::%v\n", err)
+		return 1
+	}
+	for _, notice := range res.Notices {
+		fmt.Fprintln(stderr, notice)
+	}
+	if *dryRun {
+		fmt.Fprintln(stdout, "defaults_applied=false")
+		fmt.Fprintln(stdout, "tier_2_applied=false")
+		fmt.Fprintf(stdout, "would_change=%s\n", defaultsapp.CategoriesCSV(res.WouldChange))
+		writeDefaultsSummary(os.Getenv("GITHUB_STEP_SUMMARY"), *repo, res.WouldChange)
+		return 0
+	}
+	fmt.Fprintln(stdout, "defaults_applied=true")
+	fmt.Fprintf(stdout, "tier_2_applied=%t\n", res.Tier2Applied)
+	fmt.Fprintf(stdout, "modified=%s\n", defaultsapp.CategoriesCSV(res.Modified))
+	return 0
+}
+
 func writeLegacy(stdout io.Writer, legacy domain.LegacyOutputs) {
 	fmt.Fprintf(stdout, "language=%s\n", legacy.Language)
 	fmt.Fprintf(stdout, "release_type=%s\n", legacy.ReleaseType)
@@ -225,4 +275,31 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  sk-workflows render --catalog-path <dir> --target-path <dir> --profile-json-path <file> --pin-version vN")
 	fmt.Fprintln(w, "  sk-workflows drift <target-path> <catalog-path>")
 	fmt.Fprintln(w, "  sk-workflows drift --target-path <dir> --catalog-path <dir> [--current-version vN]")
+	fmt.Fprintln(w, "  sk-workflows apply-defaults --repo owner/repo --target-path <dir> [--catalog-path <dir>] [--prev-marker <ts>] [--dry-run]")
+}
+
+func writeDefaultsSummary(path, repo string, categories []string) {
+	if path == "" {
+		return
+	}
+	var b strings.Builder
+	b.WriteString("## apply-repo-defaults (dry-run)\n\n")
+	b.WriteString("**Repo:** `")
+	b.WriteString(repo)
+	b.WriteString("`\n\n")
+	b.WriteString("**Would change:** ")
+	if len(categories) == 0 {
+		b.WriteString("_nothing - already in sync_")
+	} else {
+		b.WriteString("`")
+		b.WriteString(strings.Join(categories, ","))
+		b.WriteString("`")
+	}
+	b.WriteString("\n")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(b.String())
 }

@@ -2,6 +2,7 @@ package githubcli
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -104,6 +105,96 @@ fi
 `)
 	if _, err := (Client{}).Topics(context.Background(), "o/r"); err == nil {
 		t.Fatal("expected invalid JSON error")
+	}
+}
+
+func TestClientRepoDefaultsAPI(t *testing.T) {
+	withFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "api /repos/o/r" ]]; then
+  echo '{"default_branch":"trunk","delete_branch_on_merge":false,"allow_merge_commit":true,"has_issues":true}'
+elif [[ "$*" == "api /repos/o/r/branches/trunk/protection" ]]; then
+  echo '{"enforce_admins":{"enabled":false}}'
+elif [[ "$*" == "api -X PUT /repos/o/r/branches/trunk/protection --input -" ]]; then
+  payload="$(cat)"
+  [[ "$payload" == *required_linear_history* ]]
+  echo '{"ok":true}'
+elif [[ "$*" == "api -X PUT /repos/o/r/topics --input -" ]]; then
+  payload="$(cat)"
+  [[ "$payload" == '{"names":["a","b"]}' ]]
+  echo '{"ok":true}'
+elif [[ "$*" == "api -X PATCH /repos/o/r --input -" ]]; then
+  payload="$(cat)"
+  [[ "$payload" == '{"delete_branch_on_merge":true}' ]]
+  echo '{"ok":true}'
+else
+  echo "unexpected: $*" >&2
+  exit 9
+fi
+`)
+	c := Client{}
+	meta, err := c.RepoMetadata(context.Background(), "o/r")
+	if err != nil || meta.DefaultBranch != "trunk" || !meta.AllowMergeCommit {
+		t.Fatalf("meta=%+v err=%v", meta, err)
+	}
+	raw, missing, err := c.BranchProtection(context.Background(), "o/r", "trunk")
+	if err != nil || missing || !json.Valid(raw) {
+		t.Fatalf("protection raw=%s missing=%v err=%v", raw, missing, err)
+	}
+	if err := c.UpdateBranchProtection(context.Background(), "o/r", "trunk", []byte(`{"required_linear_history":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ReplaceTopics(context.Background(), "o/r", []string{"a", "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PatchRepository(context.Background(), "o/r", []byte(`{"delete_branch_on_merge":true}`)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClientRepoDefaultsFallbacksAndErrors(t *testing.T) {
+	withFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "api /repos/o/r" ]]; then
+  echo "forbidden" >&2
+  exit 7
+elif [[ "$*" == "api /repos/o/r/branches/main/protection" ]]; then
+  echo '{"message":"Branch not protected"}'
+  echo "gh: HTTP 404" >&2
+  exit 1
+elif [[ "$*" == "api -X PATCH /repos/o/r --input -" ]]; then
+  echo "nope" >&2
+  exit 8
+fi
+`)
+	c := Client{}
+	if _, err := c.RepoMetadata(context.Background(), "o/r"); err == nil || !strings.Contains(err.Error(), "forbidden") {
+		t.Fatalf("metadata err=%v", err)
+	}
+	raw, missing, err := c.BranchProtection(context.Background(), "o/r", "main")
+	if err != nil || !missing || raw != nil {
+		t.Fatalf("raw=%s missing=%v err=%v", raw, missing, err)
+	}
+	if err := c.PatchRepository(context.Background(), "o/r", []byte(`{}`)); err == nil || !strings.Contains(err.Error(), "nope") {
+		t.Fatalf("patch err=%v", err)
+	}
+}
+
+func TestClientRepoDefaultsInvalidJSONAndLookupError(t *testing.T) {
+	withFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "api /repos/o/r" ]]; then
+  echo '{'
+else
+  echo '{"ok":true}'
+fi
+`)
+	if _, err := (Client{}).RepoMetadata(context.Background(), "o/r"); err == nil {
+		t.Fatal("expected metadata JSON error")
+	}
+	t.Setenv("PATH", t.TempDir())
+	if err := (Client{}).PatchRepository(context.Background(), "o/r", []byte(`{}`)); err == nil {
+		t.Fatal("expected gh lookup error")
 	}
 }
 
