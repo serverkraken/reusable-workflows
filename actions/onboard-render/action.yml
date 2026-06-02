@@ -51,11 +51,13 @@ runs:
         trap 'rm -rf "$tmp"' EXIT
         printf '%s' "$PROFILE_JSON" > "$tmp/profile.json"
         if [[ "$USE_GO_CLI" == "true" ]]; then
-          if [[ -x "$CATALOG_ROOT/bin/sk-workflows" ]]; then
+          if command -v sk-workflows >/dev/null 2>&1; then
+            RENDERER="$(command -v sk-workflows)"
+          elif [[ -x "$CATALOG_ROOT/bin/sk-workflows" ]]; then
             RENDERER="$CATALOG_ROOT/bin/sk-workflows"
           else
             if ! command -v go >/dev/null 2>&1; then
-              echo "::error::use_go_cli=true but no 'go' toolchain found and no prebuilt bin/sk-workflows present" >&2
+              echo "::error::use_go_cli=true but no 'go' toolchain found and no sk-workflows binary present" >&2
               exit 1
             fi
             BUILD_DIR="$(mktemp -d)"

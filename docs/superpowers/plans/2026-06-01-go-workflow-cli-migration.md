@@ -187,6 +187,13 @@ Acceptance:
 - Bash fallback remains available for one major version.
 - Release notes document the compatibility window.
 
+Implementation status:
+
+- `actions/onboard-detect`, `actions/onboard-render`, `actions/onboard-drift`, and `actions/onboard-apply-defaults` now prefer `sk-workflows` from `PATH` when `use_go_cli: true`.
+- The wrappers still fall back to `bin/sk-workflows` or a source build when no installed binary is present.
+- Self-CI builds `sk-workflows` from source through `actions/setup-sk-workflows` and runs the Go-mode wrapper jobs with that binary on `PATH`.
+- Release-download coverage is deferred to actual catalog releases because release assets do not exist on PR branches.
+
 ## Distribution Strategy
 
 Preferred path:
@@ -197,6 +204,12 @@ Preferred path:
 4. Self-CI can build from source on PRs to exercise feature branches.
 
 Avoid requiring adopter repos to build Go from source during normal workflow runs.
+
+Implementation status:
+
+- `scripts/build-sk-workflows-assets.sh` packages `sk-workflows_<tag>_linux_amd64.tar.gz` and `sk-workflows_<tag>_linux_arm64.tar.gz`.
+- `catalog-release.yml` uploads those tarballs plus `sk-workflows_<tag>_checksums.txt` when release-please creates a release.
+- `actions/setup-sk-workflows` installs either a verified release asset or a source-built binary and exposes the install directory through `GITHUB_PATH`.
 
 ## Test Strategy
 

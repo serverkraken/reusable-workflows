@@ -134,6 +134,37 @@ jobs:
       coverage_threshold: ${{ fromJSON(vars.NONEXISTENT_NUMBER_FOR_COERCION_TEST || '70') }}
       cgo_enabled: ${{ fromJSON(vars.NONEXISTENT_BOOL_FOR_COERCION_TEST || 'false') }}
 
+  # ----- setup-sk-workflows: build the CLI from source and expose it on PATH.
+  #       Release-download coverage happens after catalog releases; PRs use
+  #       build_from_source so feature-branch CLI changes are exercised.
+  setup-sk-workflows-source-happy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - id: setup
+        uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
+      - name: Assert installed CLI
+        env:
+          BINARY: ${{ steps.setup.outputs.path }}
+          SOURCE: ${{ steps.setup.outputs.source }}
+          VERSION: ${{ steps.setup.outputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE" == "source" ]]
+          [[ "$VERSION" == "source" ]]
+          [[ -x "$BINARY" ]]
+          [[ "$(command -v sk-workflows)" == "$BINARY" ]]
+          sk-workflows --help >/dev/null
+          sk-workflows detect --repo-path tests/fixtures/onboard/go-repo --emit-both > "$RUNNER_TEMP/detect.out"
+          grep -q '^language=go$' "$RUNNER_TEMP/detect.out"
+
   # ----- onboard-drift: exercises the composite action ./actions/onboard-drift
   #       against a known-clean fixture. Special-case: not a workflow_call
   #       caller — this is a plain runs-on job with an inline assertion
@@ -163,6 +194,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
       - id: drift
         uses: ./actions/onboard-drift
         with:
@@ -190,6 +228,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
       - name: Install gh stub
         run: |
           set -euo pipefail
@@ -252,6 +297,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
       - name: Install gomplate
         run: sudo ./scripts/install-gomplate.sh
       - id: profile
@@ -296,6 +348,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
       - name: Prepare target fixture
         env:
           TARGET: ${{ runner.temp }}/defaults-target
@@ -392,6 +451,7 @@ jobs:
       - test-python-pip-happy
       - test-rust-happy
       - test-vars-coercion
+      - setup-sk-workflows-source-happy
       - onboard-drift-happy
       - onboard-drift-go-cli-happy
       - onboard-detect-go-cli-happy
