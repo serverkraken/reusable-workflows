@@ -18,6 +18,11 @@ on:
         description: 'Comma-separated owner/repo list (default: all onboarded from status doc)'
         required: false
         type: string
+      use_go_cli:
+        description: 'When true, actions/onboard-drift uses sk-workflows drift (Go) instead of Bash.'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: drift-check-${{ github.ref }}
@@ -123,6 +128,7 @@ jobs:
         with:
           target_path: target
           current_version: ${{ needs.enumerate.outputs.current_version }}
+          use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'false') }}
 
       - name: Emit per-target result
         if: always()

@@ -10,8 +10,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/serverkraken/reusable-workflows/internal/adapters/catalogscripts"
+	"github.com/serverkraken/reusable-workflows/internal/adapters/gitcli"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/githubcli"
 	"github.com/serverkraken/reusable-workflows/internal/app/detect"
+	"github.com/serverkraken/reusable-workflows/internal/app/drift"
 	"github.com/serverkraken/reusable-workflows/internal/domain"
 )
 
@@ -23,6 +26,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "detect":
 		return runDetect(ctx, args[1:], stdout, stderr)
+	case "drift":
+		return runDrift(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		usage(stderr)
@@ -91,11 +96,62 @@ func runDetect(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	return 0
 }
 
+func runDrift(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("drift", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	targetPath := fs.String("target-path", "", "checked-out adopter repo path")
+	catalogPath := fs.String("catalog-path", "", "catalog repo path")
+	currentVersion := fs.String("current-version", os.Getenv("CATALOG_CURRENT_VERSION"), "current catalog major, e.g. v4")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *targetPath == "" && fs.NArg() > 0 {
+		*targetPath = fs.Arg(0)
+	}
+	if *catalogPath == "" && fs.NArg() > 1 {
+		*catalogPath = fs.Arg(1)
+	}
+	if fs.NArg() > 2 {
+		fmt.Fprintln(stderr, "too many positional arguments: expected <target-path> <catalog-path>")
+		return 2
+	}
+	res, err := (drift.Service{
+		Detector: catalogscripts.Adapter{},
+		Renderer: catalogscripts.Adapter{},
+		Git:      gitcli.Client{},
+	}).Drift(ctx, drift.Request{
+		TargetPath:     *targetPath,
+		CatalogPath:    *catalogPath,
+		CurrentVersion: *currentVersion,
+	})
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	writeDrift(stdout, res)
+	return 0
+}
+
 func writeLegacy(stdout io.Writer, legacy domain.LegacyOutputs) {
 	fmt.Fprintf(stdout, "language=%s\n", legacy.Language)
 	fmt.Fprintf(stdout, "release_type=%s\n", legacy.ReleaseType)
 	fmt.Fprintf(stdout, "current_version=%s\n", legacy.CurrentVersion)
 	fmt.Fprintf(stdout, "default_branch=%s\n", legacy.DefaultBranch)
+}
+
+func writeDrift(stdout io.Writer, res domain.DriftResult) {
+	if res.LockVersion != "" {
+		fmt.Fprintf(stdout, "lock_version=%s\n", res.LockVersion)
+	}
+	if res.CurrentVersion != "" {
+		fmt.Fprintf(stdout, "current_version=%s\n", res.CurrentVersion)
+	}
+	fmt.Fprintf(stdout, "status=%s\n", res.Status)
+	if res.Status == domain.DriftNoLock {
+		return
+	}
+	fmt.Fprintf(stdout, "modified=%s\n", strings.Join(res.Modified, ","))
+	fmt.Fprintf(stdout, "render_error=%s\n", res.RenderError)
 }
 
 func delimiter(payload []byte) string {
@@ -114,4 +170,6 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  sk-workflows detect --profile-json <repo-path>")
 	fmt.Fprintln(w, "  sk-workflows detect --emit-both <repo-path> [language-override]")
 	fmt.Fprintln(w, "  sk-workflows detect --repo-path <dir> [--language-override <lang>] [--format legacy|profile-json]")
+	fmt.Fprintln(w, "  sk-workflows drift <target-path> <catalog-path>")
+	fmt.Fprintln(w, "  sk-workflows drift --target-path <dir> --catalog-path <dir> [--current-version vN]")
 }

@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/serverkraken/reusable-workflows/internal/domain"
 )
 
 func repoFixture(t *testing.T, name string) string {
@@ -111,9 +114,70 @@ func TestDetectPositionalCompatibility(t *testing.T) {
 	}
 }
 
+func TestDriftNoLockAndBehind(t *testing.T) {
+	target := t.TempDir()
+	catalog := t.TempDir()
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"drift", target, catalog}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("no-lock code=%d stderr=%s", code, errb.String())
+	}
+	if strings.TrimSpace(out.String()) != "status=no-lock" {
+		t.Fatalf("no-lock output=%q", out.String())
+	}
+
+	writeCLIFile(t, filepath.Join(target, ".github/workflows/ci.yml"), "ci\n")
+	lock := domain.OnboardLock{
+		SchemaVersion:  1,
+		CatalogVersion: "v3",
+		Files: map[string]string{
+			".github/workflows/ci.yml": "sha256:e18cfafbb0c8b7909e7517cceecdddc4dec7b2d3483fd2813015eba3531a56ed",
+		},
+	}
+	content, err := json.Marshal(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeCLIFile(t, filepath.Join(target, ".github/onboard.lock.json"), string(content))
+
+	out.Reset()
+	errb.Reset()
+	code = Run(context.Background(), []string{"drift", "--target-path", target, "--catalog-path", catalog, "--current-version", "v4"}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("behind code=%d stderr=%s", code, errb.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "lock_version=v3") || !strings.Contains(got, "current_version=v4") || !strings.Contains(got, "status=behind") {
+		t.Fatalf("behind output=%q", got)
+	}
+}
+
+func TestDriftErrors(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := Run(context.Background(), []string{"drift", "--unknown"}, &out, &errb); code != 2 {
+		t.Fatalf("flag error code=%d", code)
+	}
+	if code := Run(context.Background(), []string{"drift", "/missing", t.TempDir()}, &out, &errb); code != 1 {
+		t.Fatalf("missing target code=%d", code)
+	}
+	if code := Run(context.Background(), []string{"drift", t.TempDir(), t.TempDir(), "extra"}, &out, &errb); code != 2 {
+		t.Fatalf("too many positional args code=%d", code)
+	}
+}
+
 func TestDelimiterAvoidsPayloadCollision(t *testing.T) {
 	payload := []byte("EOF_MTI_0")
 	if got := delimiter(payload); strings.Contains(string(payload), got) {
 		t.Fatalf("delimiter collides: %s", got)
+	}
+}
+
+func writeCLIFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
