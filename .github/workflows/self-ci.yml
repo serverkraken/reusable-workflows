@@ -1,6 +1,6 @@
 # .github/workflows/self-ci.yml
 # Aggregate self-CI wrapper: exercises every code-inspection atom (lint-*,
-# test-*, vars-coercion, onboard-drift) against catalog fixtures via
+# test-*, vars-coercion, onboard-drift/onboard-detect) against catalog fixtures via
 # happy-path jobs only. The summary job aggregates all children into a
 # single status — branch-protection requires only this check.
 #
@@ -141,7 +141,7 @@ jobs:
   onboard-drift-happy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - id: drift
         uses: ./actions/onboard-drift
         with:
@@ -156,6 +156,70 @@ jobs:
             exit 1
           fi
           echo "onboard-drift wrapper returned status=clean"
+
+  # ----- onboard-detect (Go path): exercises ./actions/onboard-detect with
+  #       use_go_cli=true. Stubs gh CLI responses to keep the test hermetic
+  #       (no network/API auth dependency) while still verifying the wrapper's
+  #       target_repo metadata flow into outputs/profile_json.
+  onboard-detect-go-cli-happy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Install gh stub
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gh-stub"
+          cat > "$RUNNER_TEMP/gh-stub/gh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          case "$*" in
+            "api /repos/serverkraken/example-repo -q .default_branch")
+              echo "main"
+              ;;
+            "release list --repo serverkraken/example-repo --exclude-pre-releases --limit 1 --json tagName -q .[0].tagName")
+              echo "v9.8.7"
+              ;;
+            "api /repos/serverkraken/example-repo/topics -q .names")
+              echo '["sk-prerelease-on-push"]'
+              ;;
+            *)
+              echo "unexpected gh args: $*" >&2
+              exit 99
+              ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/gh-stub/gh"
+          echo "$RUNNER_TEMP/gh-stub" >> "$GITHUB_PATH"
+
+      - id: detect
+        uses: ./actions/onboard-detect
+        with:
+          repo_path: tests/fixtures/onboard/go-repo
+          language_override: auto
+          target_repo: serverkraken/example-repo
+          github_token: fake-token
+          use_go_cli: 'true'
+
+      - name: Assert detect outputs
+        env:
+          LANGUAGE: ${{ steps.detect.outputs.language }}
+          RELEASE_TYPE: ${{ steps.detect.outputs.release_type }}
+          CURRENT_VERSION: ${{ steps.detect.outputs.current_version }}
+          DEFAULT_BRANCH: ${{ steps.detect.outputs.default_branch }}
+          PROFILE_JSON: ${{ steps.detect.outputs.profile_json }}
+        run: |
+          set -euo pipefail
+          [[ "$LANGUAGE" == "go" ]]
+          [[ "$RELEASE_TYPE" == "go" ]]
+          [[ "$CURRENT_VERSION" == "9.8.7" ]]
+          [[ "$DEFAULT_BRANCH" == "main" ]]
+          echo "$PROFILE_JSON" | jq -e '
+            .default_branch == "main"
+            and .current_version == "9.8.7"
+            and .components[0].primary_language == "go"
+            and ((.topics | index("sk-prerelease-on-push")) != null)
+          ' > /dev/null
 
   # ----- lint-flutter / test-flutter: happy -----
   lint-flutter-happy:
@@ -192,6 +256,7 @@ jobs:
       - test-rust-happy
       - test-vars-coercion
       - onboard-drift-happy
+      - onboard-detect-go-cli-happy
       - lint-flutter-happy
       - test-flutter-happy
     if: always()
