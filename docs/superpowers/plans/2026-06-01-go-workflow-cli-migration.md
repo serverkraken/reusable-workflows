@@ -192,6 +192,8 @@ Implementation status:
 - `actions/onboard-detect`, `actions/onboard-render`, `actions/onboard-drift`, and `actions/onboard-apply-defaults` now prefer `sk-workflows` from `PATH` when `use_go_cli: true`.
 - The wrappers still fall back to `bin/sk-workflows` or a source build when no installed binary is present.
 - Self-CI builds `sk-workflows` from source through `actions/setup-sk-workflows` and runs the Go-mode wrapper jobs with that binary on `PATH`.
+- `onboard.yml` and `drift-check.yml` install `sk-workflows` once per job when Go mode is enabled, so the Go wrappers reuse one binary instead of rebuilding in each action.
+- `onboard.yml` forwards `use_go_cli` through detect, render, and repo-default application.
 - Release-download coverage is deferred to actual catalog releases because release assets do not exist on PR branches.
 
 ## Distribution Strategy
