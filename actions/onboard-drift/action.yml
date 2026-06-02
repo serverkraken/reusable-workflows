@@ -7,6 +7,10 @@ inputs:
   current_version:
     description: 'Current catalog major (e.g. "v3") used to compute behind/clean'
     required: true
+  use_go_cli:
+    description: 'When true, run sk-workflows drift (Go) instead of scripts/onboard-drift.sh (Bash).'
+    required: false
+    default: 'false'
 outputs:
   status:
     description: |
@@ -52,12 +56,36 @@ runs:
       shell: bash
       env:
         CATALOG_CURRENT_VERSION: ${{ inputs.current_version }}
+        TARGET_PATH: ${{ inputs.target_path }}
+        USE_GO_CLI: ${{ inputs.use_go_cli }}
       run: |
         set -euo pipefail
         # Resolve catalog root relative to this action (actions/onboard-drift/action.yml)
         # so the caller doesn't need to know the layout — matches onboard-detect.
         catalog="$GITHUB_ACTION_PATH/../.."
-        "$catalog/scripts/onboard-drift.sh" \
-          "${{ inputs.target_path }}" \
-          "$catalog" \
-          >> "$GITHUB_OUTPUT"
+        if [[ "$USE_GO_CLI" == "true" ]]; then
+          if [[ -x "$catalog/bin/sk-workflows" ]]; then
+            DRIFT="$catalog/bin/sk-workflows"
+          else
+            if ! command -v go >/dev/null 2>&1; then
+              echo "::error::use_go_cli=true but no 'go' toolchain found and no prebuilt bin/sk-workflows present" >&2
+              exit 1
+            fi
+            BUILD_DIR="$(mktemp -d)"
+            trap 'rm -rf "$BUILD_DIR"' EXIT
+            (
+              cd "$catalog"
+              GOCACHE="$BUILD_DIR/.gocache" go build -o "$BUILD_DIR/sk-workflows" ./cmd/sk-workflows
+            )
+            DRIFT="$BUILD_DIR/sk-workflows"
+          fi
+          "$DRIFT" drift \
+            --target-path "$TARGET_PATH" \
+            --catalog-path "$catalog" \
+            --current-version "$CATALOG_CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+        else
+          "$catalog/scripts/onboard-drift.sh" \
+            "$TARGET_PATH" \
+            "$catalog" \
+            >> "$GITHUB_OUTPUT"
+        fi

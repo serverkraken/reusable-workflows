@@ -157,6 +157,30 @@ jobs:
           fi
           echo "onboard-drift wrapper returned status=clean"
 
+  # ----- onboard-drift (Go path): same fixture as onboard-drift-happy, but
+  #       forces the composite action through sk-workflows drift.
+  onboard-drift-go-cli-happy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - id: drift
+        uses: ./actions/onboard-drift
+        with:
+          target_path: tests/fixtures/onboard/drift-clean
+          current_version: v3
+          use_go_cli: 'true'
+      - name: Assert clean status
+        env:
+          STATUS: ${{ steps.drift.outputs.status }}
+          MODIFIED: ${{ steps.drift.outputs.modified }}
+          RENDER_ERROR: ${{ steps.drift.outputs.render_error }}
+        run: |
+          set -euo pipefail
+          [[ "$STATUS" == "clean" ]]
+          [[ -z "$MODIFIED" ]]
+          [[ -z "$RENDER_ERROR" ]]
+          echo "onboard-drift Go wrapper returned status=clean"
+
   # ----- onboard-detect (Go path): exercises ./actions/onboard-detect with
   #       use_go_cli=true. Stubs gh CLI responses to keep the test hermetic
   #       (no network/API auth dependency) while still verifying the wrapper's
@@ -256,6 +280,7 @@ jobs:
       - test-rust-happy
       - test-vars-coercion
       - onboard-drift-happy
+      - onboard-drift-go-cli-happy
       - onboard-detect-go-cli-happy
       - lint-flutter-happy
       - test-flutter-happy

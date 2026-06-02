@@ -101,6 +101,13 @@ Acceptance:
 
 Port `scripts/onboard-drift.sh` and `scripts/onboard-sweep-drift-status.sh`.
 
+Implementation status:
+
+- `sk-workflows drift` ports lock comparison and drift status classification to Go.
+- Render-and-compare remains conservative and uses the existing catalog scripts through ports/adapters until rendering is ported.
+- `actions/onboard-drift` can opt into Go with `use_go_cli: true`; Bash remains default.
+- `drift-check.yml` can manually opt into Go via workflow dispatch while scheduled runs stay on Bash.
+
 Implementation details:
 
 - Reuse Go lockfile and profile types.
