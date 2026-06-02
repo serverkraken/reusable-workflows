@@ -325,6 +325,71 @@ fi
 	}
 }
 
+func TestPreviewCLI(t *testing.T) {
+	prependFakeGomplate(t)
+	root := repoRoot(t)
+	source := repoFixture(t, "go-repo")
+	outDir := filepath.Join(t.TempDir(), "preview")
+
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"preview",
+		"--catalog-path", root,
+		"--repo-path", source,
+		"--out", outDir,
+		"--pin", "v4",
+	}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, errb.String())
+	}
+	got := out.String()
+	for _, want := range []string{
+		"preview_out=" + outDir,
+		"profile_json=" + filepath.Join(outDir, "profile.json"),
+		"language=go",
+		"release_type=go",
+		"default_branch=main",
+		"target_repo=go-repo",
+		"rendered_files=.github/workflows/ci.yml",
+		"release-please-config.json",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("preview output missing %q:\n%s", want, got)
+		}
+	}
+	profile, err := os.ReadFile(filepath.Join(outDir, "profile.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(profile), `"target_repo": "go-repo"`) {
+		t.Fatalf("profile=%s", profile)
+	}
+	release, err := os.ReadFile(filepath.Join(outDir, ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(release), "ghcr.io/go-repo/app") || strings.Contains(string(release), "$REPO") {
+		t.Fatalf("release=%q", release)
+	}
+	assertRenderLock(t, outDir, "v4")
+}
+
+func TestPreviewErrors(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := Run(context.Background(), []string{"preview", "--unknown"}, &out, &errb); code != 2 {
+		t.Fatalf("flag error code=%d", code)
+	}
+	if code := Run(context.Background(), []string{"preview"}, &out, &errb); code != 1 {
+		t.Fatalf("missing args code=%d", code)
+	}
+	if code := Run(context.Background(), []string{"preview", repoFixture(t, "go-repo"), t.TempDir(), "extra"}, &out, &errb); code != 2 {
+		t.Fatalf("too many args code=%d", code)
+	}
+	source := repoFixture(t, "go-repo")
+	if code := Run(context.Background(), []string{"preview", "--repo-path", source, "--out", source}, &out, &errb); code != 1 {
+		t.Fatalf("same output code=%d", code)
+	}
+}
+
 func TestDelimiterAvoidsPayloadCollision(t *testing.T) {
 	payload := []byte("EOF_MTI_0")
 	if got := delimiter(payload); strings.Contains(string(payload), got) {

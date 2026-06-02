@@ -132,6 +132,24 @@ Reusable sub-steps used internally by the atoms. Available for advanced consumer
 | `actions/post-prerelease-comment`      | Idempotent PR comment with pull command    |
 | `actions/setup-python-deps`            | Detect Python package manager (poetry/uv/pip-dev/pip-bare) + install deps |
 
+## Local CLI preview
+
+Build the onboarding CLI locally and render the same files the Go pipeline path
+would produce into a scratch directory:
+
+```bash
+go build -o bin/sk-workflows ./cmd/sk-workflows
+bin/sk-workflows preview \
+  --repo-path ../target-repo \
+  --out /tmp/sk-workflows-preview \
+  --pin v4
+```
+
+The command writes `/tmp/sk-workflows-preview/profile.json`, rendered workflow
+files, `.github/onboard.lock.json`, and a `key=value` summary on stdout. Pass
+`--target-repo serverkraken/name` when you want GitHub metadata such as the
+default branch, topics, and latest stable release.
+
 ## Operations
 
 - **Setup, secret rotation, App permissions** — [`docs/operations.md`](docs/operations.md) §§1–6, plus spec [§9](docs/superpowers/specs/2026-05-16-reusable-workflows-design.md#9-operational-setup-org-level-one-time).
