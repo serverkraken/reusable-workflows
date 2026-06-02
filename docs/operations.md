@@ -100,6 +100,7 @@ UI: **Actions → onboard → Run workflow**.
 | `language` | `auto` runs detection. Set explicitly to break detection ambiguity. |
 | `dry_run` | `true` renders + logs diff, no PRs opened. Use for first-time verification. |
 | `pin_version` | What `@version` the rendered templates pin to. Default `v1`. |
+| `use_go_cli` | Default `true`. Uses `sk-workflows` for detection, rendering, and repo defaults. Set `false` only as Bash rollback during a suspected Go regression. |
 | `add_branch_name` / `cleanup_branch_name` | Escape hatches. Default branch names are bot-owned and force-pushed each run. |
 
 ### 5.3 What it produces
@@ -124,6 +125,12 @@ Branches are bot-owned and force-reset to `default_branch` HEAD on every run. Em
 ### 5.6 Failure handling
 
 `fail-fast: false` ensures one target's failure doesn't abort the rest. Each target's status is in the run's step summary and `docs/onboarding-status.md`. Re-running with the same inputs is safe and skips already-applied changes.
+
+### 5.7 Go engine and rollback
+
+On `next`, onboarding uses the Go `sk-workflows` CLI by default for detect, render, and repo-default application. The workflow installs the CLI once per target job via `actions/setup-sk-workflows`; the composite actions still keep Bash implementations as fallback during the v4 rollout window.
+
+If a Go-specific regression is suspected, re-run the same dispatch with `use_go_cli: false`. Keep the failed Go run URL and the Bash rerun URL in the incident or PR so the parity gap can be fixed before rollout continues. Do not remove Bash fallback during v4; removal needs a separate major-version plan.
 
 ---
 
@@ -204,6 +211,12 @@ gh workflow run drift-check.yml --repo serverkraken/reusable-workflows
 gh workflow run drift-check.yml \
   --repo serverkraken/reusable-workflows \
   -f target_repos=serverkraken/blupod-ui,serverkraken/flow
+
+# force Bash fallback for a suspected Go drift regression:
+gh workflow run drift-check.yml \
+  --repo serverkraken/reusable-workflows \
+  -f target_repos=serverkraken/blupod-ui \
+  -f use_go_cli=false
 ```
 
 ### 7.4 What it does NOT do
@@ -249,6 +262,10 @@ rows in `docs/onboarding-status.md` are left intact for history.
 Trigger via `workflow_dispatch` with `dry_run: true` to see what would be
 dispatched without opening PRs. Useful before the first scheduled run after
 a major catalog change.
+
+Sweep dispatches `onboard.yml`, which defaults to the Go CLI on `next`. For
+rollback testing, run the sweep manually with `use_go_cli: false`; scheduled
+runs should stay on Go unless the current release is under incident rollback.
 
 ### `no-lock` semantics
 

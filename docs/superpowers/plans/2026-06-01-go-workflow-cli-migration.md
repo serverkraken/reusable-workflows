@@ -195,6 +195,7 @@ Implementation status:
 - `onboard.yml` and `drift-check.yml` install `sk-workflows` once per job when Go mode is enabled, so the Go wrappers reuse one binary instead of rebuilding in each action.
 - `onboard.yml` forwards `use_go_cli` through detect, render, and repo-default application.
 - `onboard.yml`, `drift-check.yml`, and `onboard-sweep.yml` default to Go mode on `next`; Bash remains available with `use_go_cli: false`.
+- `docs/operations.md` documents the Go default, Bash rollback dispatches, and the v4 compatibility window.
 - Release-download coverage is deferred to actual catalog releases because release assets do not exist on PR branches.
 
 ## Distribution Strategy
@@ -243,7 +244,7 @@ actionlint
 - No change to public workflow `inputs`, `outputs`, or `secrets` during the migration.
 - No change to rendered adopter workflows unless explicitly intended and covered by golden tests.
 - No change to profile JSON keys without a schema version bump.
-- Bash wrappers remain until Go has been proven in CI and at least one catalog release.
+- Bash wrappers remain through the v4 Go rollout; removal requires a separate major-version plan after Go has been proven in CI and at least one catalog release.
 
 ## Risks and Mitigations
 
@@ -277,4 +278,3 @@ Out of scope for the first PR:
 - Should the binary eventually use `go-github`, or should it keep delegating to `gh` to preserve operator auth behavior?
 - Should `preview` be introduced early as a local UX feature, even before workflows use the Go implementation?
 - Should the Go CLI become part of the public catalog contract, or remain an internal implementation detail?
-- How long should Bash fallback remain after Go becomes default: one minor release, one major release, or indefinitely?
