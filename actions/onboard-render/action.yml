@@ -25,6 +25,10 @@ inputs:
       passes its `git describe --tags --abbrev=0` output here.
     required: false
     default: ''
+  use_go_cli:
+    description: 'When true, run sk-workflows render (Go) instead of scripts/onboard-render.sh (Bash).'
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -37,12 +41,38 @@ runs:
         PROFILE_JSON: ${{ inputs.profile_json }}
         PIN_VERSION: ${{ inputs.pin_version }}
         RENDERED_AGAINST: ${{ inputs.rendered_against }}
+        USE_GO_CLI: ${{ inputs.use_go_cli }}
       run: |
         set -euo pipefail
+        CATALOG_ROOT="$GITHUB_ACTION_PATH/../.."
         # Inputs are passed via env so the shell never re-parses them. printf
         # avoids echo's backslash-interpretation surprises on bash.
         tmp=$(mktemp -d)
         trap 'rm -rf "$tmp"' EXIT
         printf '%s' "$PROFILE_JSON" > "$tmp/profile.json"
-        "$CATALOG_PATH/scripts/onboard-render.sh" \
-          "$CATALOG_PATH" "$TARGET_PATH" "$tmp/profile.json" "$PIN_VERSION"
+        if [[ "$USE_GO_CLI" == "true" ]]; then
+          if [[ -x "$CATALOG_ROOT/bin/sk-workflows" ]]; then
+            RENDERER="$CATALOG_ROOT/bin/sk-workflows"
+          else
+            if ! command -v go >/dev/null 2>&1; then
+              echo "::error::use_go_cli=true but no 'go' toolchain found and no prebuilt bin/sk-workflows present" >&2
+              exit 1
+            fi
+            BUILD_DIR="$(mktemp -d)"
+            trap 'rm -rf "$tmp" "$BUILD_DIR"' EXIT
+            (
+              cd "$CATALOG_ROOT"
+              GOCACHE="$BUILD_DIR/.gocache" go build -o "$BUILD_DIR/sk-workflows" ./cmd/sk-workflows
+            )
+            RENDERER="$BUILD_DIR/sk-workflows"
+          fi
+          "$RENDERER" render \
+            --catalog-path "$CATALOG_PATH" \
+            --target-path "$TARGET_PATH" \
+            --profile-json-path "$tmp/profile.json" \
+            --pin-version "$PIN_VERSION" \
+            --rendered-against "$RENDERED_AGAINST"
+        else
+          "$CATALOG_PATH/scripts/onboard-render.sh" \
+            "$CATALOG_PATH" "$TARGET_PATH" "$tmp/profile.json" "$PIN_VERSION"
+        fi

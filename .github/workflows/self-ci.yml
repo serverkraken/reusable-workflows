@@ -245,6 +245,50 @@ jobs:
             and ((.topics | index("sk-prerelease-on-push")) != null)
           ' > /dev/null
 
+  # ----- onboard-render (Go path): renders a detected fixture through
+  #       sk-workflows render and asserts the lock + core workflow outputs.
+  onboard-render-go-cli-happy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Install gomplate
+        run: sudo ./scripts/install-gomplate.sh
+      - id: profile
+        run: |
+          set -euo pipefail
+          profile="$(mktemp)"
+          ./scripts/onboard-detect.sh --profile-json tests/fixtures/onboard/go-repo > "$profile"
+          {
+            echo 'profile_json<<EOF'
+            cat "$profile"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+      - name: Render fixture
+        uses: ./actions/onboard-render
+        with:
+          catalog_path: .
+          target_path: ${{ runner.temp }}/render-target
+          profile_json: ${{ steps.profile.outputs.profile_json }}
+          pin_version: v4
+          rendered_against: v4.2.0
+          use_go_cli: 'true'
+      - name: Assert render outputs
+        env:
+          TARGET: ${{ runner.temp }}/render-target
+        run: |
+          set -euo pipefail
+          [[ -f "$TARGET/.github/workflows/ci.yml" ]]
+          [[ -f "$TARGET/.github/workflows/release.yml" ]]
+          [[ -f "$TARGET/.github/onboard.lock.json" ]]
+          jq -e '
+            .schema_version == 1
+            and .catalog_version == "v4"
+            and .rendered_against == "v4.2.0"
+            and (.files[".github/workflows/ci.yml"] | test("^sha256:[a-f0-9]{64}$"))
+            and (.files["release-please-config.json"] | test("^sha256:[a-f0-9]{64}$"))
+          ' "$TARGET/.github/onboard.lock.json" > /dev/null
+
   # ----- lint-flutter / test-flutter: happy -----
   lint-flutter-happy:
     uses: ./.github/workflows/lint-flutter.yml
@@ -282,6 +326,7 @@ jobs:
       - onboard-drift-happy
       - onboard-drift-go-cli-happy
       - onboard-detect-go-cli-happy
+      - onboard-render-go-cli-happy
       - lint-flutter-happy
       - test-flutter-happy
     if: always()
