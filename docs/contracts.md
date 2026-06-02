@@ -259,6 +259,19 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 |-------|-----------|--------|----------|---------|-------------|
 | input | `version` | string | no       | `''`    | Trivy version to install; empty → uses pinned default |
 
+### `actions/setup-sk-workflows`
+
+| Kind   | Name                | Type   | Required | Default                          | Description |
+|--------|---------------------|--------|----------|----------------------------------|-------------|
+| input  | `version`           | string | no       | `''`                             | Catalog release tag to install, e.g. `v4.2.0`. Empty uses the action ref when it is a `v*` tag |
+| input  | `repository`        | string | no       | `serverkraken/reusable-workflows` | Repository containing `sk-workflows` release assets |
+| input  | `github_token`      | string | no       | `''`                             | Optional token for downloading release assets from private repositories |
+| input  | `install_dir`       | string | no       | `''`                             | Install directory. Empty uses `${RUNNER_TEMP}/sk-workflows/bin` |
+| input  | `build_from_source` | string | no       | `'false'`                        | `true` builds from the checked-out catalog source instead of downloading a release asset |
+| output | `path`              | string | —        | —                                | Full path to the installed binary |
+| output | `version`           | string | —        | —                                | Resolved release tag, or `source` when built from source |
+| output | `source`            | string | —        | —                                | Installation source: `release` or `source` |
+
 ### `actions/ghcr-login`
 
 No inputs. Logs in to `ghcr.io` using `GITHUB_TOKEN`.
@@ -293,6 +306,7 @@ These are not intended for external consumption — they exist to factor `onboar
 | input | `language_override` | string | no | `'auto'` | `auto` runs file-signal detection; otherwise forces the value |
 | input | `target_repo` | string | yes | — | `owner/repo` of target (for `gh` API lookups) |
 | input | `github_token` | string | yes | — | Token with read access to `target_repo` |
+| input | `use_go_cli` | string | no | `'false'` | `true` runs `sk-workflows detect`; the wrapper prefers an installed `sk-workflows` binary on `PATH` |
 | output | `language` | string | — | — | Detected language |
 | output | `release_type` | string | — | — | release-please release-type (1:1 with language for V1) |
 | output | `current_version` | string | — | — | Current version (no leading `v`); `0.0.0` if no release found |
@@ -307,6 +321,7 @@ These are not intended for external consumption — they exist to factor `onboar
 | input | `target_path` | string | yes | — | Path to checked-out target repo (rendered files written here) |
 | input | `profile_json` | string | yes | — | Detection profile JSON from `onboard-detect` (forwarded as multi-line input) |
 | input | `pin_version` | string | no | `'v1'` | Catalog `@version` to pin rendered templates to |
+| input | `use_go_cli` | string | no | `'false'` | `true` runs `sk-workflows render`; the wrapper prefers an installed `sk-workflows` binary on `PATH` |
 
 ### `actions/onboard-drift`
 
@@ -314,6 +329,7 @@ These are not intended for external consumption — they exist to factor `onboar
 |---|---|---|---|---|---|
 | input | `target_path` | string | yes | — | Path to checked-out adopter repo (contains `.github/onboard.lock.json`) |
 | input | `current_version` | string | yes | — | Current catalog major (e.g. `v3`) used to compute `behind`/`clean` |
+| input | `use_go_cli` | string | no | `'false'` | `true` runs `sk-workflows drift`; the wrapper prefers an installed `sk-workflows` binary on `PATH` |
 | output | `status` | string | — | — | One of `clean` / `modified` / `behind` / `behind+modified` / `no-lock` |
 | output | `modified` | string | — | — | Comma-separated list of paths whose hash differs from lock (or has the `(missing)` suffix) |
 | output | `lock_version` | string | — | — | `catalog_version` field from `.github/onboard.lock.json` (empty when `no-lock`) |

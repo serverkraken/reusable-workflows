@@ -126,6 +126,7 @@ Reusable sub-steps used internally by the atoms. Available for advanced consumer
 | Action                                 | Purpose                                    |
 |----------------------------------------|--------------------------------------------|
 | `actions/install-trivy`                | Pinned Trivy CLI install (direct binary)   |
+| `actions/setup-sk-workflows`           | Install the Go onboarding CLI from release assets or source |
 | `actions/ghcr-login`                   | GHCR login wrapper                         |
 | `actions/compute-prerelease-tag`       | OCI-valid tag from branch + short SHA      |
 | `actions/post-prerelease-comment`      | Idempotent PR comment with pull command    |

@@ -49,14 +49,15 @@ runs:
         set -euo pipefail
         CATALOG_ROOT="$GITHUB_ACTION_PATH/../.."
         if [[ "$USE_GO_CLI" == "true" ]]; then
-          # Prefer an already-built binary; otherwise build once from source.
-          # This keeps the feature flag self-contained and avoids changing
-          # callers until parity is proven.
-          if [[ -x "$CATALOG_ROOT/bin/sk-workflows" ]]; then
+          # Prefer a binary installed by actions/setup-sk-workflows; otherwise
+          # keep the local/source fallback for PRs and feature branches.
+          if command -v sk-workflows >/dev/null 2>&1; then
+            DETECTOR="$(command -v sk-workflows)"
+          elif [[ -x "$CATALOG_ROOT/bin/sk-workflows" ]]; then
             DETECTOR="$CATALOG_ROOT/bin/sk-workflows"
           else
             if ! command -v go >/dev/null 2>&1; then
-              echo "::error::use_go_cli=true but no 'go' toolchain found and no prebuilt bin/sk-workflows present" >&2
+              echo "::error::use_go_cli=true but no 'go' toolchain found and no sk-workflows binary present" >&2
               exit 1
             fi
             BUILD_DIR="$(mktemp -d)"
