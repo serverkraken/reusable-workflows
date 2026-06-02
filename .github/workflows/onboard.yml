@@ -23,7 +23,7 @@ on:
         type: boolean
         default: false
       use_go_cli:
-        description: 'Use sk-workflows detect (Go) instead of scripts/onboard-detect.sh (Bash).'
+        description: 'Use sk-workflows for detect, render, and repo-default application instead of Bash.'
         required: false
         type: boolean
         default: false
@@ -218,6 +218,20 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: .catalog
 
+      - name: Setup Go for sk-workflows
+        if: ${{ inputs.use_go_cli }}
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: .catalog/go.mod
+          cache: true
+          cache-dependency-path: .catalog/go.mod
+
+      - name: Setup sk-workflows
+        if: ${{ inputs.use_go_cli }}
+        uses: ./.catalog/actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
+
       - name: Detect language and version
         id: detect
         uses: ./.catalog/actions/onboard-detect
@@ -261,6 +275,7 @@ jobs:
           target_path: target
           prev_defaults_applied_at: ${{ steps.snap_defaults.outputs.prev }}
           dry_run: ${{ inputs.dry_run }}
+          use_go_cli: ${{ inputs.use_go_cli }}
 
       - name: Stage rendered files and log diff
         working-directory: target

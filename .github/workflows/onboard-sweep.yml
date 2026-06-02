@@ -22,7 +22,7 @@ on:
         type: boolean
         default: false
       use_go_cli:
-        description: 'When true, onboard.yml uses sk-workflows detect (Go) instead of Bash.'
+        description: 'When true, onboard.yml uses sk-workflows for onboard actions instead of Bash.'
         required: false
         type: boolean
         default: false

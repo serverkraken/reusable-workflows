@@ -369,8 +369,8 @@ jobs:
       pin_version: v1
     secrets: inherit
 
-  # ----- onboard dry-run (Go detect path): same as above, but forces
-  #       actions/onboard-detect to run through sk-workflows detect. -----
+  # ----- onboard dry-run (Go path): same as above, but forces the onboard
+  #       actions through sk-workflows. -----
   test-onboard-dry-run-go:
     uses: ./.github/workflows/onboard.yml
     with:
