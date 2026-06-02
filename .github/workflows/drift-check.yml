@@ -19,10 +19,10 @@ on:
         required: false
         type: string
       use_go_cli:
-        description: 'When true, actions/onboard-drift uses sk-workflows drift (Go) instead of Bash.'
+        description: 'Use sk-workflows drift. Set false to use the Bash fallback.'
         required: false
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: drift-check-${{ github.ref }}
@@ -123,7 +123,7 @@ jobs:
           path: catalog
 
       - name: Setup Go for sk-workflows
-        if: ${{ fromJSON(inputs.use_go_cli || 'false') }}
+        if: ${{ fromJSON(inputs.use_go_cli || 'true') }}
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: catalog/go.mod
@@ -131,7 +131,7 @@ jobs:
           cache-dependency-path: catalog/go.mod
 
       - name: Setup sk-workflows
-        if: ${{ fromJSON(inputs.use_go_cli || 'false') }}
+        if: ${{ fromJSON(inputs.use_go_cli || 'true') }}
         uses: ./catalog/actions/setup-sk-workflows
         with:
           build_from_source: 'true'
@@ -142,7 +142,7 @@ jobs:
         with:
           target_path: target
           current_version: ${{ needs.enumerate.outputs.current_version }}
-          use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'false') }}
+          use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'true') }}
 
       - name: Emit per-target result
         if: always()

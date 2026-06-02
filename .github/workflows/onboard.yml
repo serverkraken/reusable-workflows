@@ -23,10 +23,10 @@ on:
         type: boolean
         default: false
       use_go_cli:
-        description: 'Use sk-workflows for detect, render, and repo-default application instead of Bash.'
+        description: 'Use sk-workflows for detect, render, and repo-default application. Set false to use the Bash fallback.'
         required: false
         type: boolean
-        default: false
+        default: true
       # pin_version: Catalog @version that rendered templates pin to.
       # When a new catalog major releases, bump this default, the matching
       # one in the workflow_call inputs block below, AND the ${PIN_VERSION:-vN}
@@ -67,7 +67,7 @@ on:
       use_go_cli:
         required: false
         type: boolean
-        default: false
+        default: true
       pin_version:
         required: false
         type: string

@@ -22,10 +22,10 @@ on:
         type: boolean
         default: false
       use_go_cli:
-        description: 'When true, onboard.yml uses sk-workflows for onboard actions instead of Bash.'
+        description: 'Use sk-workflows for onboard actions. Set false to use the Bash fallback.'
         required: false
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: onboard-sweep-${{ github.ref }}
@@ -186,9 +186,9 @@ jobs:
       # workflow_call inputs require fromJSON wrap for boolean conversion
       # (cf. memory: troubleshooting_gha_type_coercion).
       dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
-      # Forward optional detect-engine toggle. On schedule events `inputs.*` is
-      # unset; fallback keeps Bash as the default path.
-      use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'false') }}
+      # Forward optional engine toggle. On schedule events `inputs.*` is
+      # unset; fallback keeps Go as the default path on next.
+      use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'true') }}
 
   fresh-batch:
     needs: enumerate
@@ -201,7 +201,7 @@ jobs:
       pin_version: ${{ needs.enumerate.outputs.current_version }}
       rendered_against: ${{ needs.enumerate.outputs.current_minor }}
       dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
-      use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'false') }}
+      use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'true') }}
 
   summary:
     needs: [enumerate, update-batch, fresh-batch]

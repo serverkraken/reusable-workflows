@@ -194,6 +194,7 @@ Implementation status:
 - Self-CI builds `sk-workflows` from source through `actions/setup-sk-workflows` and runs the Go-mode wrapper jobs with that binary on `PATH`.
 - `onboard.yml` and `drift-check.yml` install `sk-workflows` once per job when Go mode is enabled, so the Go wrappers reuse one binary instead of rebuilding in each action.
 - `onboard.yml` forwards `use_go_cli` through detect, render, and repo-default application.
+- `onboard.yml`, `drift-check.yml`, and `onboard-sweep.yml` default to Go mode on `next`; Bash remains available with `use_go_cli: false`.
 - Release-download coverage is deferred to actual catalog releases because release assets do not exist on PR branches.
 
 ## Distribution Strategy

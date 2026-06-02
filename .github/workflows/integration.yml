@@ -367,6 +367,7 @@ jobs:
       language: auto
       dry_run: true
       pin_version: v1
+      use_go_cli: false
     secrets: inherit
 
   # ----- onboard dry-run (Go path): same as above, but forces the onboard
