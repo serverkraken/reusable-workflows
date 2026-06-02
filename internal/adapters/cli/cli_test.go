@@ -231,10 +231,118 @@ func TestDriftErrors(t *testing.T) {
 	}
 }
 
+func TestApplyDefaultsDryRunCLI(t *testing.T) {
+	prependFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "api /repos/o/r" ]]; then
+  echo '{"default_branch":"main","delete_branch_on_merge":false,"allow_squash_merge":true,"allow_merge_commit":true,"allow_rebase_merge":false,"allow_auto_merge":true,"squash_merge_commit_title":"PR_TITLE","squash_merge_commit_message":"PR_BODY","has_wiki":true,"has_projects":false,"has_issues":true,"has_discussions":false}'
+elif [[ "$*" == "api /repos/o/r/branches/main/protection" ]]; then
+  echo '{"enforce_admins":{"enabled":true},"required_linear_history":{"enabled":true},"required_status_checks":null,"required_pull_request_reviews":{"required_approving_review_count":0},"restrictions":null}'
+elif [[ "$*" == "api /repos/o/r/topics -q .names" ]]; then
+  echo '["go"]'
+else
+  echo "unexpected gh args: $*" >&2
+  exit 99
+fi
+`)
+	catalog := defaultsCatalog(t)
+	target := t.TempDir()
+	writeCLIFile(t, filepath.Join(target, ".github", "onboard.lock.json"), `{"schema_version":1}`)
+	summary := filepath.Join(t.TempDir(), "summary.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", summary)
+
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"apply-defaults",
+		"--catalog-path", catalog,
+		"--repo", "o/r",
+		"--target-path", target,
+		"--dry-run",
+	}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, errb.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "defaults_applied=false") || !strings.Contains(got, "tier_2_applied=false") || !strings.Contains(got, "would_change=branch_protection,delete_branch_on_merge,topics,merge_hygiene,repo_settings") {
+		t.Fatalf("stdout=%q", got)
+	}
+	if strings.Contains(got, "modified=") {
+		t.Fatalf("dry-run stdout used live key: %q", got)
+	}
+	if !strings.Contains(errb.String(), "::notice::dry-run") {
+		t.Fatalf("stderr=%q", errb.String())
+	}
+	summaryContent, err := os.ReadFile(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(summaryContent), "apply-repo-defaults") || !strings.Contains(string(summaryContent), "Would change") {
+		t.Fatalf("summary=%q", summaryContent)
+	}
+}
+
+func TestApplyDefaultsLiveCLIAndErrors(t *testing.T) {
+	prependFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "api /repos/o/r" ]]; then
+  echo '{"default_branch":"main","delete_branch_on_merge":true,"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false,"allow_auto_merge":true,"squash_merge_commit_title":"PR_TITLE","squash_merge_commit_message":"BLANK","has_wiki":false,"has_projects":false,"has_issues":true,"has_discussions":false}'
+elif [[ "$*" == "api /repos/o/r/branches/main/protection" ]]; then
+  echo '{"enforce_admins":{"enabled":false},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false},"required_conversation_resolution":{"enabled":false},"lock_branch":{"enabled":false},"block_creations":{"enabled":false},"required_status_checks":null,"required_pull_request_reviews":{"required_approving_review_count":0,"dismiss_stale_reviews":false,"require_code_owner_reviews":false,"require_last_push_approval":false},"restrictions":null}'
+elif [[ "$*" == "api /repos/o/r/topics -q .names" ]]; then
+  echo '["serverkraken-onboarded"]'
+else
+  echo "unexpected gh args: $*" >&2
+  exit 99
+fi
+`)
+	catalog := defaultsCatalog(t)
+	target := t.TempDir()
+	writeCLIFile(t, filepath.Join(target, ".github", "onboard.lock.json"), `{"schema_version":1}`)
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"apply-defaults",
+		"--catalog", catalog,
+		"--repo", "o/r",
+		"--target-path", target,
+		"--prev-marker", "2026-04-01T00:00:00Z",
+	}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, errb.String())
+	}
+	if strings.TrimSpace(out.String()) != "defaults_applied=true\ntier_2_applied=false\nmodified=" {
+		t.Fatalf("stdout=%q", out.String())
+	}
+	assertDefaultsMarker(t, target, "2026-04-01T00:00:00Z")
+
+	out.Reset()
+	errb.Reset()
+	if code := Run(context.Background(), []string{"apply-defaults", "--unknown"}, &out, &errb); code != 2 {
+		t.Fatalf("flag code=%d", code)
+	}
+	if code := Run(context.Background(), []string{"apply-defaults"}, &out, &errb); code != 1 {
+		t.Fatalf("missing args code=%d stderr=%s", code, errb.String())
+	}
+	if code := Run(context.Background(), []string{"apply-defaults", "--repo", "o/r", "--target-path", target, "extra"}, &out, &errb); code != 2 {
+		t.Fatalf("positional code=%d", code)
+	}
+}
+
 func TestDelimiterAvoidsPayloadCollision(t *testing.T) {
 	payload := []byte("EOF_MTI_0")
 	if got := delimiter(payload); strings.Contains(string(payload), got) {
 		t.Fatalf("delimiter collides: %s", got)
+	}
+}
+
+func TestWriteDefaultsSummaryVariants(t *testing.T) {
+	summary := filepath.Join(t.TempDir(), "summary.md")
+	writeDefaultsSummary("", "o/r", []string{"ignored"})
+	writeDefaultsSummary(summary, "o/r", nil)
+	writeDefaultsSummary(filepath.Join(t.TempDir(), "missing", "summary.md"), "o/r", []string{"topics"})
+	content, err := os.ReadFile(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "already in sync") {
+		t.Fatalf("summary=%q", content)
 	}
 }
 
@@ -294,6 +402,75 @@ esac
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func prependFakeGH(t *testing.T, script string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gh")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func defaultsCatalog(t *testing.T) string {
+	t.Helper()
+	catalog := t.TempDir()
+	content := `{
+	  "_schema_version": 1,
+	  "branch_protection": {
+	    "_target": "default_branch",
+	    "required_pull_request_reviews": {
+	      "required_approving_review_count": 0,
+	      "dismiss_stale_reviews": false,
+	      "require_code_owner_reviews": false,
+	      "require_last_push_approval": false
+	    },
+	    "required_status_checks": null,
+	    "enforce_admins": false,
+	    "required_linear_history": true,
+	    "allow_force_pushes": false,
+	    "allow_deletions": false,
+	    "required_conversation_resolution": false,
+	    "lock_branch": false,
+	    "block_creations": false,
+	    "restrictions": null
+	  },
+	  "merge_hygiene": {
+	    "allow_squash_merge": true,
+	    "allow_merge_commit": false,
+	    "allow_rebase_merge": false,
+	    "delete_branch_on_merge": true,
+	    "allow_auto_merge": true,
+	    "squash_merge_commit_title": "PR_TITLE",
+	    "squash_merge_commit_message": "BLANK"
+	  },
+	  "repo_settings": {
+	    "has_wiki": false,
+	    "has_projects": false,
+	    "has_issues": true,
+	    "has_discussions": false
+	  },
+	  "topics_additive": ["serverkraken-onboarded"]
+	}`
+	writeCLIFile(t, filepath.Join(catalog, "catalog", "onboard-defaults.json"), content)
+	return catalog
+}
+
+func assertDefaultsMarker(t *testing.T, target, marker string) {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(target, ".github", "onboard.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock map[string]any
+	if err := json.Unmarshal(content, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if lock["schema_version"].(float64) != 2 || lock["defaults_applied_at"] != marker {
+		t.Fatalf("lock=%v", lock)
+	}
 }
 
 func assertRenderLock(t *testing.T, target, renderedAgainst string) {

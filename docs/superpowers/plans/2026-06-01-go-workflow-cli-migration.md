@@ -160,6 +160,13 @@ Acceptance:
 - Lock mutation behavior remains identical.
 - Failure modes stay fail-loud for mutating API errors.
 
+Implementation status:
+
+- `sk-workflows apply-defaults` ports repo-default planning, Tier 1/Tier 2 decisions, dry-run output, mutating GitHub API calls, topic union, branch-protection diffing, and lock marker updates to Go.
+- `actions/onboard-apply-defaults` can opt into the Go path with `use_go_cli: true`; Bash remains the default fallback.
+- Self-CI exercises the Go path in dry-run mode with a hermetic `gh` stub.
+- Go unit coverage remains above the migration target at 96.1% total.
+
 ### Phase 6: Workflow Integration
 
 After parity is proven, update composite actions to prefer the binary:

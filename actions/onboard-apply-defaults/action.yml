@@ -18,6 +18,10 @@ inputs:
     description: 'When true, no API mutations and no lock write — only diff summary.'
     required: false
     default: 'false'
+  use_go_cli:
+    description: 'When true, run sk-workflows apply-defaults (Go) instead of scripts/apply-repo-defaults.sh (Bash).'
+    required: false
+    default: 'false'
 outputs:
   defaults_applied:
     description: 'true if script ran end-to-end in live mode; false in dry-run'
@@ -38,16 +42,46 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
+        USE_GO_CLI: ${{ inputs.use_go_cli }}
+        TARGET_REPO: ${{ inputs.target_repo }}
+        TARGET_PATH: ${{ inputs.target_path }}
+        PREV_MARKER: ${{ inputs.prev_defaults_applied_at }}
+        DRY_RUN: ${{ inputs.dry_run }}
       run: |
         set -euo pipefail
         catalog="$GITHUB_ACTION_PATH/../.."
         flags=()
-        if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+        if [[ "$DRY_RUN" == "true" ]]; then
           flags+=("--dry-run")
         fi
-        "$catalog/scripts/apply-repo-defaults.sh" \
-          --repo "${{ inputs.target_repo }}" \
-          --target-path "${{ inputs.target_path }}" \
-          --prev-marker "${{ inputs.prev_defaults_applied_at }}" \
-          "${flags[@]}" \
-          >> "$GITHUB_OUTPUT"
+        if [[ "$USE_GO_CLI" == "true" ]]; then
+          if [[ -x "$catalog/bin/sk-workflows" ]]; then
+            APPLY_DEFAULTS="$catalog/bin/sk-workflows"
+          else
+            if ! command -v go >/dev/null 2>&1; then
+              echo "::error::use_go_cli=true but no 'go' toolchain found and no prebuilt bin/sk-workflows present" >&2
+              exit 1
+            fi
+            BUILD_DIR="$(mktemp -d)"
+            trap 'rm -rf "$BUILD_DIR"' EXIT
+            (
+              cd "$catalog"
+              GOCACHE="$BUILD_DIR/.gocache" go build -o "$BUILD_DIR/sk-workflows" ./cmd/sk-workflows
+            )
+            APPLY_DEFAULTS="$BUILD_DIR/sk-workflows"
+          fi
+          "$APPLY_DEFAULTS" apply-defaults \
+            --catalog-path "$catalog" \
+            --repo "$TARGET_REPO" \
+            --target-path "$TARGET_PATH" \
+            --prev-marker "$PREV_MARKER" \
+            "${flags[@]}" \
+            >> "$GITHUB_OUTPUT"
+        else
+          "$catalog/scripts/apply-repo-defaults.sh" \
+            --repo "$TARGET_REPO" \
+            --target-path "$TARGET_PATH" \
+            --prev-marker "$PREV_MARKER" \
+            "${flags[@]}" \
+            >> "$GITHUB_OUTPUT"
+        fi

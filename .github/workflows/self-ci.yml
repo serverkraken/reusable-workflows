@@ -289,6 +289,75 @@ jobs:
             and (.files["release-please-config.json"] | test("^sha256:[a-f0-9]{64}$"))
           ' "$TARGET/.github/onboard.lock.json" > /dev/null
 
+  # ----- onboard-apply-defaults (Go path): plans repo-default changes through
+  #       sk-workflows apply-defaults in dry-run mode with a hermetic gh stub.
+  onboard-apply-defaults-go-cli-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Prepare target fixture
+        env:
+          TARGET: ${{ runner.temp }}/defaults-target
+        run: |
+          set -euo pipefail
+          mkdir -p "$TARGET/.github"
+          cp tests/fixtures/repo-defaults/locks/lock-v1-no-marker.json "$TARGET/.github/onboard.lock.json"
+      - name: Install gh stub
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gh-stub"
+          cat > "$RUNNER_TEMP/gh-stub/gh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ "$1" != "api" ]]; then
+            echo "unexpected gh args: $*" >&2
+            exit 99
+          fi
+          case "$*" in
+            "api /repos/serverkraken/example-repo")
+              cat tests/fixtures/repo-defaults/api-drifted-tier2/repos__o__r.json
+              ;;
+            "api /repos/serverkraken/example-repo/branches/main/protection")
+              cat tests/fixtures/repo-defaults/api-drifted-tier2/repos__o__r__branches__main__protection.json
+              ;;
+            "api /repos/serverkraken/example-repo/topics -q .names")
+              echo '["go"]'
+              ;;
+            *)
+              echo "unexpected gh args: $*" >&2
+              exit 99
+              ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/gh-stub/gh"
+          echo "$RUNNER_TEMP/gh-stub" >> "$GITHUB_PATH"
+      - id: defaults
+        uses: ./actions/onboard-apply-defaults
+        with:
+          token: fake-token
+          target_repo: serverkraken/example-repo
+          target_path: ${{ runner.temp }}/defaults-target
+          prev_defaults_applied_at: ''
+          dry_run: 'true'
+          use_go_cli: 'true'
+      - name: Assert dry-run outputs and lock preservation
+        env:
+          TARGET: ${{ runner.temp }}/defaults-target
+          DEFAULTS_APPLIED: ${{ steps.defaults.outputs.defaults_applied }}
+          TIER_2_APPLIED: ${{ steps.defaults.outputs.tier_2_applied }}
+          WOULD_CHANGE: ${{ steps.defaults.outputs.would_change }}
+          MODIFIED: ${{ steps.defaults.outputs.modified }}
+        run: |
+          set -euo pipefail
+          [[ "$DEFAULTS_APPLIED" == "false" ]]
+          [[ "$TIER_2_APPLIED" == "false" ]]
+          [[ "$WOULD_CHANGE" == *"topics"* ]]
+          [[ "$WOULD_CHANGE" == *"merge_hygiene"* ]]
+          [[ "$WOULD_CHANGE" == *"repo_settings"* ]]
+          [[ -z "$MODIFIED" ]]
+          [[ "$(jq -r '.schema_version' "$TARGET/.github/onboard.lock.json")" == "1" ]]
+
   # ----- lint-flutter / test-flutter: happy -----
   lint-flutter-happy:
     uses: ./.github/workflows/lint-flutter.yml
@@ -327,6 +396,7 @@ jobs:
       - onboard-drift-go-cli-happy
       - onboard-detect-go-cli-happy
       - onboard-render-go-cli-happy
+      - onboard-apply-defaults-go-cli-dry-run
       - lint-flutter-happy
       - test-flutter-happy
     if: always()
