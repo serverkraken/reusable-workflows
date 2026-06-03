@@ -272,6 +272,10 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | output | `version`           | string | —        | —                                | Resolved release tag, or `source` when built from source |
 | output | `source`            | string | —        | —                                | Installation source: `release` or `source` |
 
+### `sk-workflows` CLI
+
+`actions/setup-sk-workflows` is part of the documented composite-action surface. The installed `sk-workflows` binary is an operational helper used by onboarding and drift workflows, but its subcommands and stdout keys are not semver-protected public catalog contracts yet. External automation should call the reusable workflows or composite actions above; local operator use such as `sk-workflows preview` is supported as a rollout tool and may evolve with `next`.
+
 ### `actions/ghcr-login`
 
 No inputs. Logs in to `ghcr.io` using `GITHUB_TOKEN`.
