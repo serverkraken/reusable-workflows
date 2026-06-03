@@ -196,7 +196,7 @@ Implementation status:
 - `onboard.yml`, `drift-check.yml`, and `onboard-sweep.yml` default to Go mode on `next`; Bash remains available with `use_go_cli: false`.
 - `docs/operations.md` documents the Go default, Bash rollback dispatches, and the v4 compatibility window.
 - `sk-workflows preview` renders a local detect+render preview into a scratch directory for operator review before dispatching workflows.
-- Release-install branches are covered by hermetic Bats tests against local tarball/checksum fixtures; real asset smoke coverage still depends on an actual catalog release.
+- Release-install branches are covered by hermetic Bats tests against local tarball/checksum fixtures; `catalog-release.yml` also smokes the real uploaded asset after each newly created catalog release.
 
 ## Distribution Strategy
 
@@ -215,6 +215,7 @@ Implementation status:
 - `catalog-release.yml` uploads those tarballs plus `sk-workflows_<tag>_checksums.txt` when release-please creates a release.
 - `actions/setup-sk-workflows` installs either a verified release asset or a source-built binary and exposes the install directory through `GITHUB_PATH`.
 - `scripts/setup-sk-workflows.sh` contains the install logic used by the composite action, with hermetic Bats coverage for release downloads, checksum validation, tag resolution, and source builds.
+- `catalog-release.yml` installs the just-uploaded release asset through `actions/setup-sk-workflows` and runs a fixture-backed CLI smoke before the release workflow completes.
 
 ## Test Strategy
 
