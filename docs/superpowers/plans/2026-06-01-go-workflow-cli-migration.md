@@ -196,6 +196,7 @@ Implementation status:
 - `onboard.yml` forwards `use_go_cli` through detect, render, and repo-default application.
 - `onboard.yml`, `drift-check.yml`, and `onboard-sweep.yml` default to Go mode on `next`; Bash remains available with `use_go_cli: false`.
 - `docs/operations.md` documents the Go default, Bash rollback dispatches, and the v4 compatibility window.
+- `sk-workflows preview` renders a local detect+render preview into a scratch directory for operator review before dispatching workflows.
 - Release-download coverage is deferred to actual catalog releases because release assets do not exist on PR branches.
 
 ## Distribution Strategy
@@ -276,5 +277,4 @@ Out of scope for the first PR:
 ## Open Questions
 
 - Should the binary eventually use `go-github`, or should it keep delegating to `gh` to preserve operator auth behavior?
-- Should `preview` be introduced early as a local UX feature, even before workflows use the Go implementation?
 - Should the Go CLI become part of the public catalog contract, or remain an internal implementation detail?
