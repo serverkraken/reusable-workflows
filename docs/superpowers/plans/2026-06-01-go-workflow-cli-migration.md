@@ -215,6 +215,7 @@ Implementation status:
 - `scripts/build-sk-workflows-assets.sh` packages `sk-workflows_<tag>_linux_amd64.tar.gz` and `sk-workflows_<tag>_linux_arm64.tar.gz`.
 - `catalog-release.yml` uploads those tarballs plus `sk-workflows_<tag>_checksums.txt` when release-please creates a release.
 - `actions/setup-sk-workflows` installs either a verified release asset or a source-built binary and exposes the install directory through `GITHUB_PATH`.
+- `scripts/setup-sk-workflows.sh` contains the install logic used by the composite action, with hermetic Bats coverage for release downloads, checksum validation, tag resolution, and source builds.
 
 ## Test Strategy
 

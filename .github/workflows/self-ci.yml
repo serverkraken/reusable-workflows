@@ -135,7 +135,7 @@ jobs:
       cgo_enabled: ${{ fromJSON(vars.NONEXISTENT_BOOL_FOR_COERCION_TEST || 'false') }}
 
   # ----- setup-sk-workflows: build the CLI from source and expose it on PATH.
-  #       Release-download coverage happens after catalog releases; PRs use
+  #       Release-download branches are covered by shell tests; PR self-CI uses
   #       build_from_source so feature-branch CLI changes are exercised.
   setup-sk-workflows-source-happy:
     runs-on: ubuntu-latest
