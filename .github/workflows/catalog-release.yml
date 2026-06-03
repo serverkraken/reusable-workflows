@@ -43,3 +43,44 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ needs.release.outputs.tag_name }}
         run: gh release upload "$TAG_NAME" dist/sk-workflows/* --clobber
+
+  sk-workflows-release-smoke:
+    name: smoke sk-workflows release install
+    needs:
+      - release
+      - sk-workflows-assets
+    if: needs.release.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.release.outputs.tag_name }}
+      - id: setup
+        uses: ./actions/setup-sk-workflows
+        with:
+          version: ${{ needs.release.outputs.tag_name }}
+          github_token: ${{ github.token }}
+      - name: Smoke installed CLI
+        env:
+          EXPECTED_VERSION: ${{ needs.release.outputs.tag_name }}
+          SETUP_PATH: ${{ steps.setup.outputs.path }}
+          SETUP_VERSION: ${{ steps.setup.outputs.version }}
+          SETUP_SOURCE: ${{ steps.setup.outputs.source }}
+        run: |
+          set -euo pipefail
+          if [[ "$SETUP_SOURCE" != "release" ]]; then
+            echo "::error::expected setup source=release, got $SETUP_SOURCE"
+            exit 1
+          fi
+          if [[ "$SETUP_VERSION" != "$EXPECTED_VERSION" ]]; then
+            echo "::error::expected version=$EXPECTED_VERSION, got $SETUP_VERSION"
+            exit 1
+          fi
+          test -x "$SETUP_PATH"
+          command -v sk-workflows
+          "$SETUP_PATH" --help | grep -q 'sk-workflows detect'
+          detect_out="$("$SETUP_PATH" detect --repo-path tests/fixtures/onboard/go-repo)"
+          printf '%s\n' "$detect_out"
+          grep -qx 'language=go' <<< "$detect_out"
+          grep -qx 'release_type=go' <<< "$detect_out"
