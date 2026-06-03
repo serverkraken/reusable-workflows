@@ -99,7 +99,7 @@ UI: **Actions → onboard → Run workflow**.
 | `target_repos` | Comma-separated `serverkraken/<name>` list. Validated against `^serverkraken/[A-Za-z0-9._-]+$`. |
 | `language` | `auto` runs detection. Set explicitly to break detection ambiguity. |
 | `dry_run` | `true` renders + logs diff, no PRs opened. Use for first-time verification. |
-| `pin_version` | What `@version` the rendered templates pin to. Default `v1`. |
+| `pin_version` | What `@version` the rendered templates pin to. Default `v4` on `next`. |
 | `use_go_cli` | Default `true`. Uses `sk-workflows` for detection, rendering, and repo defaults. Set `false` only as Bash rollback during a suspected Go regression. |
 | `add_branch_name` / `cleanup_branch_name` | Escape hatches. Default branch names are bot-owned and force-pushed each run. |
 
