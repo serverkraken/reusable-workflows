@@ -1,7 +1,7 @@
 # Go Workflow CLI Migration Plan
 
-**Date:** 2026-06-01  
-**Branch:** `feat/go-workflow-cli-plan`  
+**Date:** 2026-06-01
+**Branch:** `feat/go-workflow-cli-plan`
 **Goal:** Plan an incremental Go implementation for the complex onboarding, rendering, drift, and repository-defaults logic currently implemented in Bash.
 
 ## Branching Strategy (Decided)
