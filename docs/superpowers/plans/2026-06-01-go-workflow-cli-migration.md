@@ -197,7 +197,7 @@ Implementation status:
 - `onboard.yml`, `drift-check.yml`, and `onboard-sweep.yml` default to Go mode on `next`; Bash remains available with `use_go_cli: false`.
 - `docs/operations.md` documents the Go default, Bash rollback dispatches, and the v4 compatibility window.
 - `sk-workflows preview` renders a local detect+render preview into a scratch directory for operator review before dispatching workflows.
-- Release-download coverage is deferred to actual catalog releases because release assets do not exist on PR branches.
+- Release-install branches are covered by hermetic Bats tests against local tarball/checksum fixtures; real asset smoke coverage still depends on an actual catalog release.
 
 ## Distribution Strategy
 
@@ -255,7 +255,7 @@ actionlint
 | Go output differs subtly from Bash | Normalize JSON and compare against fixture goldens before integration |
 | Binary distribution becomes a new supply-chain concern | Release checksums, verify downloads, keep Bash fallback |
 | Replacing gomplate causes large template churn | Keep gomplate in Phase 4; only move orchestration and lockfile logic first |
-| GitHub API behavior differs from `gh api` | Start with a `gh` adapter; move to `go-github` only after parity |
+| GitHub API behavior differs from `gh api` | Keep the `gh` adapter for now to preserve runner auth behavior; move to `go-github` only with a separate parity plan |
 | Bigger PR becomes hard to review | Ship phases independently, each with tests and no public contract change |
 
 ## Initial PR Scope
@@ -275,7 +275,7 @@ Out of scope for the first PR:
 - Replacing repo-default mutations.
 - Changing adopter-rendered workflows.
 
-## Open Questions
+## Decisions
 
-- Should the binary eventually use `go-github`, or should it keep delegating to `gh` to preserve operator auth behavior?
-- Should the Go CLI become part of the public catalog contract, or remain an internal implementation detail?
+- Keep delegating GitHub mutations and metadata reads to the `gh` CLI for the v4 rollout. This preserves the operator auth model and avoids changing API semantics while Bash fallback is still available.
+- Keep the `sk-workflows` command surface operational/internal for now. `actions/setup-sk-workflows` is documented as a composite action, but CLI subcommands and stdout keys are not semver-protected public catalog contracts until a separate public-CLI plan says otherwise.
