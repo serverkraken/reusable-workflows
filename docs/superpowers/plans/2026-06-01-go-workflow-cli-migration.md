@@ -95,7 +95,7 @@ Acceptance:
 
 - For each fixture under `tests/fixtures/onboard/`, Go detection output matches Bash detection after JSON normalization.
 - Existing `bats tests/shell/onboard-detect.bats` remains green.
-- `actions/onboard-detect/action.yml` can opt into Go via `SK_WORKFLOWS_GO=1` but defaults to Bash.
+- `actions/onboard-detect/action.yml` can run Go via `use_go_cli: true`; operational workflows default to Go on `next`, with Bash retained as rollback.
 
 ### Phase 3: Port Drift
 
@@ -105,8 +105,7 @@ Implementation status:
 
 - `sk-workflows drift` ports lock comparison and drift status classification to Go.
 - Render-and-compare remains conservative and uses the existing catalog scripts through ports/adapters until rendering is ported.
-- `actions/onboard-drift` can opt into Go with `use_go_cli: true`; Bash remains default.
-- `drift-check.yml` can manually opt into Go via workflow dispatch while scheduled runs stay on Bash.
+- `actions/onboard-drift` can run Go with `use_go_cli: true`; `drift-check.yml` defaults to Go on `next`, with Bash retained as rollback.
 
 Implementation details:
 
@@ -127,7 +126,7 @@ Implementation status:
 
 - `sk-workflows render` ports render orchestration, template selection, lockfile writing, trailing-newline normalization, and `$REPO` substitution to Go.
 - gomplate remains the template execution adapter, keeping the existing adopter templates authoritative.
-- `actions/onboard-render` can opt into Go with `use_go_cli: true`; Bash remains default.
+- `actions/onboard-render` can run Go with `use_go_cli: true`; operational onboarding defaults to Go on `next`, with Bash retained as rollback.
 - Self-CI exercises the Go render path against an onboarding fixture.
 
 Recommendation:
@@ -163,9 +162,9 @@ Acceptance:
 Implementation status:
 
 - `sk-workflows apply-defaults` ports repo-default planning, Tier 1/Tier 2 decisions, dry-run output, mutating GitHub API calls, topic union, branch-protection diffing, and lock marker updates to Go.
-- `actions/onboard-apply-defaults` can opt into the Go path with `use_go_cli: true`; Bash remains the default fallback.
+- `actions/onboard-apply-defaults` can run the Go path with `use_go_cli: true`; operational onboarding defaults to Go on `next`, with Bash retained as rollback.
 - Self-CI exercises the Go path in dry-run mode with a hermetic `gh` stub.
-- Go unit coverage remains above the migration target at 96.1% total.
+- Go unit coverage remains above the migration target.
 
 ### Phase 6: Workflow Integration
 
