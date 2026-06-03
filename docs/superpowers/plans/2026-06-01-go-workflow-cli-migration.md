@@ -223,7 +223,7 @@ Add:
 - Go unit tests for internal packages.
 - Golden JSON tests comparing Bash and Go detection.
 - Render golden tests comparing file trees.
-- Contract tests that validate docs/contracts.md against workflow inputs later.
+- Contract tests validate documented workflow/action inputs, outputs, and secrets in docs/contracts.md against source YAML.
 
 Keep:
 

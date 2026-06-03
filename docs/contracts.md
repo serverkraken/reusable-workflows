@@ -61,6 +61,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `runs_on_arm64`   | string  | no       | `'["self-hosted","Linux","ARM64"]'`             | Runner for arm64 build job (forwarded). |
 | input   | `runs_on_merge`   | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Runner for version + merge jobs (forwarded). |
 | input   | `runs_on_parse`   | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Runner for the parse job (pure shell; low-performance is fine). |
+| input   | `caller_id`       | string  | no       | `''`                                            | Optional caller identifier appended to the concurrency group for parallel callers. |
 | secret  | `release_please_app_client_id`  | — | **yes** | — | GitHub App Client ID with `contents:read` on the catalog repo. Forwarded to docker-build.yml. |
 | secret  | `release_please_app_private_key`| — | **yes** | — | PEM private key for the GitHub App. Forwarded to docker-build.yml. |
 
@@ -197,6 +198,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `scanners`        | string  | no       | `'vuln,secret,misconfig'`    | Trivy scanner list |
 | input   | `severity`        | string  | no       | `'HIGH,CRITICAL'`            | Severity levels to report |
 | input   | `paths_ignore`    | string  | no       | `''`                         | Newline-separated paths to skip |
+| input   | `files_ignore`    | string  | no       | `''`                         | Newline-separated files to skip |
 | input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks) |
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `ignore_unfixed`  | boolean | no       | `true`                       | Pass `--ignore-unfixed` to Trivy |
@@ -242,6 +244,7 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | input   | `attest`                        | boolean | no       | `true`                                          | Pass-through to docker-build (SLSA build provenance attestation) |
 | input   | `sbom`                          | boolean | no       | `true`                                          | Pass-through to docker-build (SPDX-JSON SBOM via Syft) |
 | input   | `trivy_severity`                | string  | no       | `'HIGH,CRITICAL'`                               | Pass-through to trivy-image |
+| input   | `trivy_fail_on_findings`        | boolean | no       | `true`                                          | Pass-through to trivy-image; set false to report findings without failing the release |
 | input   | `image_name`                    | string  | no       | `''`                                            | Pass-through to docker-build (default: caller repo) |
 | input   | `runs_on_amd64`                 | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | Pass-through to docker-build (amd64 build job) |
 | input   | `runs_on_arm64`                 | string  | no       | `'["self-hosted","Linux","ARM64"]'`             | Pass-through to docker-build (arm64 build job) |
@@ -278,7 +281,12 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 
 ### `actions/ghcr-login`
 
-No inputs. Logs in to `ghcr.io` using `GITHUB_TOKEN`.
+Logs in to `ghcr.io` using the workflow actor and `GITHUB_TOKEN` by default.
+
+| Kind  | Name       | Type   | Required | Default              | Description |
+|-------|------------|--------|----------|----------------------|-------------|
+| input | `username` | string | no       | `${{ github.actor }}` | GHCR username |
+| input | `token`    | string | no       | `${{ github.token }}` | GHCR token |
 
 ### `actions/compute-prerelease-tag`
 
@@ -295,6 +303,9 @@ No inputs. Logs in to `ghcr.io` using `GITHUB_TOKEN`.
 |-------|-------------|--------|----------|---------|-------------|
 | input | `image_ref` | string | yes      | —       | Full image reference for the pull command |
 | input | `pr_number` | string | yes      | —       | PR number to comment on |
+| input | `trivy_status` | string | no    | `''`    | Optional Trivy result line appended to the comment |
+| input | `commit_sha` | string | no      | `''`    | Optional commit SHA; empty derives a short SHA from the image tag |
+| input | `github_token` | string | no    | `${{ github.token }}` | Token with `pull-requests:write` permission |
 
 ---
 
@@ -325,6 +336,7 @@ These are not intended for external consumption — they exist to factor `onboar
 | input | `target_path` | string | yes | — | Path to checked-out target repo (rendered files written here) |
 | input | `profile_json` | string | yes | — | Detection profile JSON from `onboard-detect` (forwarded as multi-line input) |
 | input | `pin_version` | string | no | `'v1'` | Catalog `@version` to pin rendered templates to |
+| input | `rendered_against` | string | no | `''` | Full catalog tag recorded in `.github/onboard.lock.json`; empty falls back to `pin_version` |
 | input | `use_go_cli` | string | no | `'false'` | `true` runs `sk-workflows render`; the wrapper prefers an installed `sk-workflows` binary on `PATH` |
 
 ### `actions/onboard-drift`
@@ -337,3 +349,4 @@ These are not intended for external consumption — they exist to factor `onboar
 | output | `status` | string | — | — | One of `clean` / `modified` / `behind` / `behind+modified` / `no-lock` |
 | output | `modified` | string | — | — | Comma-separated list of paths whose hash differs from lock (or has the `(missing)` suffix) |
 | output | `lock_version` | string | — | — | `catalog_version` field from `.github/onboard.lock.json` (empty when `no-lock`) |
+| output | `render_error` | string | — | — | Render-and-compare failure reason when stale-lock detection could not run |
