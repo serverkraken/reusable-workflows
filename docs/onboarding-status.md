@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-06-08T08:41:17Z_
+_Last updated by the onboarding workflow: 2026-06-08T08:42:06Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -39,3 +39,4 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/tshock-kraken-mapservice | 2026-05-27 | v4 | [PR](https://github.com/serverkraken/tshock-kraken-mapservice/pull/62) | — | add-open, no-legacy |
 | serverkraken/tshock-kraken-plugin | 2026-06-08 | v4 | [PR](https://github.com/serverkraken/tshock-kraken-plugin/pull/15) | [PR](https://github.com/serverkraken/tshock-kraken-plugin/pull/16) | add-open, cleanup-open |
 | serverkraken/tshock-kraken-webui | 2026-05-27 | v4 | [PR](https://github.com/serverkraken/tshock-kraken-webui/pull/46) | — | add-open, no-legacy |
+| serverkraken/homelab-mail-nue | 2026-06-08 | v4 | [PR](https://github.com/serverkraken/homelab-mail-nue/pull/43) | — | add-open, no-legacy |
