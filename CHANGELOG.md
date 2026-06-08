@@ -1,5 +1,14 @@
 # Changelog
 
+## [4.9.1](https://github.com/serverkraken/reusable-workflows/compare/v4.9.0...v4.9.1) (2026-06-08)
+
+
+### Documentation
+
+* **plan:** gitops onboard detection + rendering implementation plan [skip ci] ([1a1147f](https://github.com/serverkraken/reusable-workflows/commit/1a1147f364b9a2135353515f5cc63a1dd9642a37))
+* **plan:** prerelease-trigger templates implementation plan [skip ci] ([2ee0a37](https://github.com/serverkraken/reusable-workflows/commit/2ee0a37a5fbe34df46a73079987fc9c6ab7a3b60))
+* **spec:** prerelease-trigger templates design (Phase-2 Item 3) [skip ci] ([192aa9a](https://github.com/serverkraken/reusable-workflows/commit/192aa9a8376002a6933b279895e2c42a53c1bacc))
+
 ## [4.9.0](https://github.com/serverkraken/reusable-workflows/compare/v4.8.0...v4.9.0) (2026-05-31)
 
 
