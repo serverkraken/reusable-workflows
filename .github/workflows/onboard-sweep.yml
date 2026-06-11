@@ -21,6 +21,11 @@ on:
         required: false
         type: boolean
         default: false
+      use_go_cli:
+        description: 'Use sk-workflows for onboard actions. Set false to use the Bash fallback.'
+        required: false
+        type: boolean
+        default: true
 
 concurrency:
   group: onboard-sweep-${{ github.ref }}
@@ -56,11 +61,11 @@ jobs:
         name: Derive current catalog major + minor
         run: |
           set -euo pipefail
-          tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          major=$(echo "$tag" | sed -E 's/^v([0-9]+).*$/v\1/')
-          echo "current_version=$major" >> "$GITHUB_OUTPUT"
-          echo "current_minor=$tag" >> "$GITHUB_OUTPUT"
-          echo "Resolved current major: $major / minor: $tag"
+          version_output="$(bash scripts/catalog-current-version.sh)"
+          echo "$version_output" >> "$GITHUB_OUTPUT"
+          current_version="$(echo "$version_output" | sed -n 's/^current_version=//p')"
+          current_minor="$(echo "$version_output" | sed -n 's/^current_minor=//p')"
+          echo "Resolved current major: $current_version / minor: $current_minor"
 
       - name: Mint App token for org-wide enumerate + drift
         id: app-token
@@ -181,6 +186,9 @@ jobs:
       # workflow_call inputs require fromJSON wrap for boolean conversion
       # (cf. memory: troubleshooting_gha_type_coercion).
       dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
+      # Forward optional engine toggle. On schedule events `inputs.*` is
+      # unset; fallback keeps Go as the default path on next.
+      use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'true') }}
 
   fresh-batch:
     needs: enumerate
@@ -193,6 +201,7 @@ jobs:
       pin_version: ${{ needs.enumerate.outputs.current_version }}
       rendered_against: ${{ needs.enumerate.outputs.current_minor }}
       dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
+      use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'true') }}
 
   summary:
     needs: [enumerate, update-batch, fresh-batch]

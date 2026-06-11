@@ -22,6 +22,11 @@ on:
         required: false
         type: boolean
         default: false
+      use_go_cli:
+        description: 'Use sk-workflows for detect, render, and repo-default application. Set false to use the Bash fallback.'
+        required: false
+        type: boolean
+        default: true
       # pin_version: Catalog @version that rendered templates pin to.
       # When a new catalog major releases, bump this default, the matching
       # one in the workflow_call inputs block below, AND the ${PIN_VERSION:-vN}
@@ -56,6 +61,10 @@ on:
         type: string
         default: auto
       dry_run:
+        required: false
+        type: boolean
+        default: true
+      use_go_cli:
         required: false
         type: boolean
         default: true
@@ -209,6 +218,20 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: .catalog
 
+      - name: Setup Go for sk-workflows
+        if: ${{ inputs.use_go_cli }}
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: .catalog/go.mod
+          cache: true
+          cache-dependency-path: .catalog/go.mod
+
+      - name: Setup sk-workflows
+        if: ${{ inputs.use_go_cli }}
+        uses: ./.catalog/actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
+
       - name: Detect language and version
         id: detect
         uses: ./.catalog/actions/onboard-detect
@@ -217,6 +240,7 @@ jobs:
           language_override: ${{ inputs.language }}
           target_repo: ${{ matrix.target.target }}
           github_token: ${{ steps.target-token.outputs.token }}
+          use_go_cli: ${{ inputs.use_go_cli }}
 
       - name: Install gomplate (needed by onboard-render)
         run: sudo ${{ github.workspace }}/.catalog/scripts/install-gomplate.sh
@@ -241,6 +265,7 @@ jobs:
           profile_json: ${{ steps.detect.outputs.profile_json }}
           pin_version: ${{ inputs.pin_version }}
           rendered_against: ${{ inputs.rendered_against }}
+          use_go_cli: ${{ inputs.use_go_cli }}
 
       - name: Apply repo defaults
         uses: ./.catalog/actions/onboard-apply-defaults
@@ -250,6 +275,7 @@ jobs:
           target_path: target
           prev_defaults_applied_at: ${{ steps.snap_defaults.outputs.prev }}
           dry_run: ${{ inputs.dry_run }}
+          use_go_cli: ${{ inputs.use_go_cli }}
 
       - name: Stage rendered files and log diff
         working-directory: target

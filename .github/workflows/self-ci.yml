@@ -1,6 +1,6 @@
 # .github/workflows/self-ci.yml
 # Aggregate self-CI wrapper: exercises every code-inspection atom (lint-*,
-# test-*, vars-coercion, onboard-drift) against catalog fixtures via
+# test-*, vars-coercion, onboard-drift/onboard-detect) against catalog fixtures via
 # happy-path jobs only. The summary job aggregates all children into a
 # single status — branch-protection requires only this check.
 #
@@ -134,6 +134,37 @@ jobs:
       coverage_threshold: ${{ fromJSON(vars.NONEXISTENT_NUMBER_FOR_COERCION_TEST || '70') }}
       cgo_enabled: ${{ fromJSON(vars.NONEXISTENT_BOOL_FOR_COERCION_TEST || 'false') }}
 
+  # ----- setup-sk-workflows: build the CLI from source and expose it on PATH.
+  #       Release-download branches are covered by shell tests; PR self-CI uses
+  #       build_from_source so feature-branch CLI changes are exercised.
+  setup-sk-workflows-source-happy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - id: setup
+        uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
+      - name: Assert installed CLI
+        env:
+          BINARY: ${{ steps.setup.outputs.path }}
+          SOURCE: ${{ steps.setup.outputs.source }}
+          VERSION: ${{ steps.setup.outputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE" == "source" ]]
+          [[ "$VERSION" == "source" ]]
+          [[ -x "$BINARY" ]]
+          [[ "$(command -v sk-workflows)" == "$BINARY" ]]
+          sk-workflows --help >/dev/null
+          sk-workflows detect --repo-path tests/fixtures/onboard/go-repo --emit-both > "$RUNNER_TEMP/detect.out"
+          grep -q '^language=go$' "$RUNNER_TEMP/detect.out"
+
   # ----- onboard-drift: exercises the composite action ./actions/onboard-drift
   #       against a known-clean fixture. Special-case: not a workflow_call
   #       caller — this is a plain runs-on job with an inline assertion
@@ -141,7 +172,7 @@ jobs:
   onboard-drift-happy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - id: drift
         uses: ./actions/onboard-drift
         with:
@@ -156,6 +187,235 @@ jobs:
             exit 1
           fi
           echo "onboard-drift wrapper returned status=clean"
+
+  # ----- onboard-drift (Go path): same fixture as onboard-drift-happy, but
+  #       forces the composite action through sk-workflows drift.
+  onboard-drift-go-cli-happy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
+      - id: drift
+        uses: ./actions/onboard-drift
+        with:
+          target_path: tests/fixtures/onboard/drift-clean
+          current_version: v3
+          use_go_cli: 'true'
+      - name: Assert clean status
+        env:
+          STATUS: ${{ steps.drift.outputs.status }}
+          MODIFIED: ${{ steps.drift.outputs.modified }}
+          RENDER_ERROR: ${{ steps.drift.outputs.render_error }}
+        run: |
+          set -euo pipefail
+          [[ "$STATUS" == "clean" ]]
+          [[ -z "$MODIFIED" ]]
+          [[ -z "$RENDER_ERROR" ]]
+          echo "onboard-drift Go wrapper returned status=clean"
+
+  # ----- onboard-detect (Go path): exercises ./actions/onboard-detect with
+  #       use_go_cli=true. Stubs gh CLI responses to keep the test hermetic
+  #       (no network/API auth dependency) while still verifying the wrapper's
+  #       target_repo metadata flow into outputs/profile_json.
+  onboard-detect-go-cli-happy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
+      - name: Install gh stub
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gh-stub"
+          cat > "$RUNNER_TEMP/gh-stub/gh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          case "$*" in
+            "api /repos/serverkraken/example-repo -q .default_branch")
+              echo "main"
+              ;;
+            "release list --repo serverkraken/example-repo --exclude-pre-releases --limit 1 --json tagName -q .[0].tagName")
+              echo "v9.8.7"
+              ;;
+            "api /repos/serverkraken/example-repo/topics -q .names")
+              echo '["sk-prerelease-on-push"]'
+              ;;
+            *)
+              echo "unexpected gh args: $*" >&2
+              exit 99
+              ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/gh-stub/gh"
+          echo "$RUNNER_TEMP/gh-stub" >> "$GITHUB_PATH"
+
+      - id: detect
+        uses: ./actions/onboard-detect
+        with:
+          repo_path: tests/fixtures/onboard/go-repo
+          language_override: auto
+          target_repo: serverkraken/example-repo
+          github_token: fake-token
+          use_go_cli: 'true'
+
+      - name: Assert detect outputs
+        env:
+          LANGUAGE: ${{ steps.detect.outputs.language }}
+          RELEASE_TYPE: ${{ steps.detect.outputs.release_type }}
+          CURRENT_VERSION: ${{ steps.detect.outputs.current_version }}
+          DEFAULT_BRANCH: ${{ steps.detect.outputs.default_branch }}
+          PROFILE_JSON: ${{ steps.detect.outputs.profile_json }}
+        run: |
+          set -euo pipefail
+          [[ "$LANGUAGE" == "go" ]]
+          [[ "$RELEASE_TYPE" == "go" ]]
+          [[ "$CURRENT_VERSION" == "9.8.7" ]]
+          [[ "$DEFAULT_BRANCH" == "main" ]]
+          echo "$PROFILE_JSON" | jq -e '
+            .default_branch == "main"
+            and .current_version == "9.8.7"
+            and .components[0].primary_language == "go"
+            and ((.topics | index("sk-prerelease-on-push")) != null)
+          ' > /dev/null
+
+  # ----- onboard-render (Go path): renders a detected fixture through
+  #       sk-workflows render and asserts the lock + core workflow outputs.
+  onboard-render-go-cli-happy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
+      - name: Install gomplate
+        run: sudo ./scripts/install-gomplate.sh
+      - id: profile
+        run: |
+          set -euo pipefail
+          profile="$(mktemp)"
+          ./scripts/onboard-detect.sh --profile-json tests/fixtures/onboard/go-repo > "$profile"
+          {
+            echo 'profile_json<<EOF'
+            cat "$profile"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+      - name: Render fixture
+        uses: ./actions/onboard-render
+        with:
+          catalog_path: .
+          target_path: ${{ runner.temp }}/render-target
+          profile_json: ${{ steps.profile.outputs.profile_json }}
+          pin_version: v4
+          rendered_against: v4.2.0
+          use_go_cli: 'true'
+      - name: Assert render outputs
+        env:
+          TARGET: ${{ runner.temp }}/render-target
+        run: |
+          set -euo pipefail
+          [[ -f "$TARGET/.github/workflows/ci.yml" ]]
+          [[ -f "$TARGET/.github/workflows/release.yml" ]]
+          [[ -f "$TARGET/.github/onboard.lock.json" ]]
+          jq -e '
+            .schema_version == 1
+            and .catalog_version == "v4"
+            and .rendered_against == "v4.2.0"
+            and (.files[".github/workflows/ci.yml"] | test("^sha256:[a-f0-9]{64}$"))
+            and (.files["release-please-config.json"] | test("^sha256:[a-f0-9]{64}$"))
+          ' "$TARGET/.github/onboard.lock.json" > /dev/null
+
+  # ----- onboard-apply-defaults (Go path): plans repo-default changes through
+  #       sk-workflows apply-defaults in dry-run mode with a hermetic gh stub.
+  onboard-apply-defaults-go-cli-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
+      - name: Prepare target fixture
+        env:
+          TARGET: ${{ runner.temp }}/defaults-target
+        run: |
+          set -euo pipefail
+          mkdir -p "$TARGET/.github"
+          cp tests/fixtures/repo-defaults/locks/lock-v1-no-marker.json "$TARGET/.github/onboard.lock.json"
+      - name: Install gh stub
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gh-stub"
+          cat > "$RUNNER_TEMP/gh-stub/gh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ "$1" != "api" ]]; then
+            echo "unexpected gh args: $*" >&2
+            exit 99
+          fi
+          case "$*" in
+            "api /repos/serverkraken/example-repo")
+              cat tests/fixtures/repo-defaults/api-drifted-tier2/repos__o__r.json
+              ;;
+            "api /repos/serverkraken/example-repo/branches/main/protection")
+              cat tests/fixtures/repo-defaults/api-drifted-tier2/repos__o__r__branches__main__protection.json
+              ;;
+            "api /repos/serverkraken/example-repo/topics -q .names")
+              echo '["go"]'
+              ;;
+            *)
+              echo "unexpected gh args: $*" >&2
+              exit 99
+              ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/gh-stub/gh"
+          echo "$RUNNER_TEMP/gh-stub" >> "$GITHUB_PATH"
+      - id: defaults
+        uses: ./actions/onboard-apply-defaults
+        with:
+          token: fake-token
+          target_repo: serverkraken/example-repo
+          target_path: ${{ runner.temp }}/defaults-target
+          prev_defaults_applied_at: ''
+          dry_run: 'true'
+          use_go_cli: 'true'
+      - name: Assert dry-run outputs and lock preservation
+        env:
+          TARGET: ${{ runner.temp }}/defaults-target
+          DEFAULTS_APPLIED: ${{ steps.defaults.outputs.defaults_applied }}
+          TIER_2_APPLIED: ${{ steps.defaults.outputs.tier_2_applied }}
+          WOULD_CHANGE: ${{ steps.defaults.outputs.would_change }}
+          MODIFIED: ${{ steps.defaults.outputs.modified }}
+        run: |
+          set -euo pipefail
+          [[ "$DEFAULTS_APPLIED" == "false" ]]
+          [[ "$TIER_2_APPLIED" == "false" ]]
+          [[ "$WOULD_CHANGE" == *"topics"* ]]
+          [[ "$WOULD_CHANGE" == *"merge_hygiene"* ]]
+          [[ "$WOULD_CHANGE" == *"repo_settings"* ]]
+          [[ -z "$MODIFIED" ]]
+          [[ "$(jq -r '.schema_version' "$TARGET/.github/onboard.lock.json")" == "1" ]]
 
   # ----- lint-flutter / test-flutter: happy -----
   lint-flutter-happy:
@@ -191,7 +451,12 @@ jobs:
       - test-python-pip-happy
       - test-rust-happy
       - test-vars-coercion
+      - setup-sk-workflows-source-happy
       - onboard-drift-happy
+      - onboard-drift-go-cli-happy
+      - onboard-detect-go-cli-happy
+      - onboard-render-go-cli-happy
+      - onboard-apply-defaults-go-cli-dry-run
       - lint-flutter-happy
       - test-flutter-happy
     if: always()

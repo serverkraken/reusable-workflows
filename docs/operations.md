@@ -99,7 +99,8 @@ UI: **Actions → onboard → Run workflow**.
 | `target_repos` | Comma-separated `serverkraken/<name>` list. Validated against `^serverkraken/[A-Za-z0-9._-]+$`. |
 | `language` | `auto` runs detection. Set explicitly to break detection ambiguity. |
 | `dry_run` | `true` renders + logs diff, no PRs opened. Use for first-time verification. |
-| `pin_version` | What `@version` the rendered templates pin to. Default `v1`. |
+| `pin_version` | What `@version` the rendered templates pin to. Default `v4` on `next`. |
+| `use_go_cli` | Default `true`. Uses `sk-workflows` for detection, rendering, and repo defaults. Set `false` only as Bash rollback during a suspected Go regression. |
 | `add_branch_name` / `cleanup_branch_name` | Escape hatches. Default branch names are bot-owned and force-pushed each run. |
 
 ### 5.3 What it produces
@@ -124,6 +125,12 @@ Branches are bot-owned and force-reset to `default_branch` HEAD on every run. Em
 ### 5.6 Failure handling
 
 `fail-fast: false` ensures one target's failure doesn't abort the rest. Each target's status is in the run's step summary and `docs/onboarding-status.md`. Re-running with the same inputs is safe and skips already-applied changes.
+
+### 5.7 Go engine and rollback
+
+On `next`, onboarding uses the Go `sk-workflows` CLI by default for detect, render, and repo-default application. The workflow installs the CLI once per target job via `actions/setup-sk-workflows`; the composite actions still keep Bash implementations as fallback during the v4 rollout window.
+
+If a Go-specific regression is suspected, re-run the same dispatch with `use_go_cli: false`. Keep the failed Go run URL and the Bash rerun URL in the incident or PR so the parity gap can be fixed before rollout continues. Do not remove Bash fallback during v4; removal needs a separate major-version plan.
 
 ---
 
@@ -204,6 +211,12 @@ gh workflow run drift-check.yml --repo serverkraken/reusable-workflows
 gh workflow run drift-check.yml \
   --repo serverkraken/reusable-workflows \
   -f target_repos=serverkraken/blupod-ui,serverkraken/flow
+
+# force Bash fallback for a suspected Go drift regression:
+gh workflow run drift-check.yml \
+  --repo serverkraken/reusable-workflows \
+  -f target_repos=serverkraken/blupod-ui \
+  -f use_go_cli=false
 ```
 
 ### 7.4 What it does NOT do
@@ -250,6 +263,10 @@ Trigger via `workflow_dispatch` with `dry_run: true` to see what would be
 dispatched without opening PRs. Useful before the first scheduled run after
 a major catalog change.
 
+Sweep dispatches `onboard.yml`, which defaults to the Go CLI on `next`. For
+rollback testing, run the sweep manually with `use_go_cli: false`; scheduled
+runs should stay on Go unless the current release is under incident rollback.
+
 ### `no-lock` semantics
 
 When sweep enumerate computes a drift status of `no-lock` for a repo listed in `docs/onboarding-status.md`, the repo is bucketed as **update**, not skipped. Background: a repo lands in the status-doc once the onboard atom runs against it, but the actual lock file (`.github/onboard.lock.json`) only lands on the default branch when the atom's PR-A is merged. If PR-A is never merged — common across a catalog major bump where the initial PR's version pin became stale — the repo stays in `no-lock` indefinitely. The sweep's atom is idempotent: it re-renders templates at the current catalog version, force-pushes the existing bot branch, and edits the existing PR (if any) to the current pin. Bucketing `no-lock` as update unblocks that flow.
@@ -259,48 +276,6 @@ The `behind+modified` status remains skipped: those repos have local modificatio
 ### gomplate is installed in enumerate
 
 The `enumerate` job installs gomplate before the bucketing loop. Gomplate is required by the `stale-lock` render-and-compare detection path inside `scripts/onboard-drift.sh`. Without gomplate, that path is conservative-on-failure and silently returns `clean`, causing stale-lock adopters to be falsely classified and skipped. Installation is idempotent and shared by all per-repo drift-status calls in the same enumerate step.
-
----
-
-## Repo Defaults
-
-Every onboard run applies a tier of repository-level defaults beyond the rendered workflow files. Source of truth: `catalog/onboard-defaults.json`.
-
-### What gets applied
-
-**Tier 1 — always-overwrite, every sweep:**
-
-- Branch protection on the default branch — PR-gate (0 approvers required), no force-push, no delete, linear history, enforce_admins=false.
-- `delete_branch_on_merge=true`.
-- Topic `serverkraken-onboarded` added (additive; other topics preserved).
-
-**Tier 2 — first-onboard-only, gated by lock marker:**
-
-- Merge-strategy flags: `allow_squash_merge=true`, `allow_merge_commit=false`, `allow_rebase_merge=false`, `allow_auto_merge=true`.
-- Squash-commit title/message format set to `PR_TITLE` / `BLANK`. (`PR_BODY` was the original default; it caused release-please's conventional-commits parser to fail on Renovate PRs whose body contained markdown code blocks with unbalanced parens.)
-- Repository toggles: `has_wiki=false`, `has_projects=false`, `has_issues=true`, `has_discussions=false`.
-
-### Marker mechanic
-
-The onboard lock file (`.github/onboard.lock.json`) gains a `defaults_applied_at` field once Tier 2 has been applied. Subsequent sweeps see the marker and skip Tier 2 — owner overrides to comfort fields are respected after the first onboard. Tier 1 ignores the marker and is always reconciled.
-
-To re-baseline Tier 2 on an adopter: clear `defaults_applied_at` from the lock (or delete the field), commit to the default branch, and trigger an onboard. The next sweep will apply Tier 2 fresh and set a new marker.
-
-### Required status checks gap
-
-The catalog default leaves `required_status_checks=null` on branch protection. This is deliberate — the rendered `ci.yml` has profile-dependent job names whose status-check context names cannot be hardcoded without breaking adopters whose check-context names differ.
-
-**Owner action recommended after first green CI run:**
-1. Open the adopter's first PR after onboarding.
-2. Wait for `ci.yml` to complete with a green run.
-3. Settings → Branches → main → Edit → Require status checks → add the contexts the CI run produced (e.g., `ci / secscan / scan`, `ci / lint-go-root`, `ci / test-go-root`).
-4. Save.
-
-This makes "merge without CI" structurally impossible.
-
-### Opt-out
-
-Topic `no-serverkraken-onboard` on the adopter repo skips both the rendered-files contract and the defaults contract — they go together. There is no separate defaults-only opt-out.
 
 ---
 
