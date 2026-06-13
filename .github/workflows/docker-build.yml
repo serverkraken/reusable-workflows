@@ -108,7 +108,7 @@ jobs:
       moving_tag: ${{ steps.resolve.outputs.moving_tag }}
       image_name: ${{ steps.resolve.outputs.image_name }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Mint catalog-scoped App token
         id: catalog-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -131,7 +131,7 @@ jobs:
             echo "ref=v4" >> "$GITHUB_OUTPUT"
           fi
       - name: Checkout catalog for composite actions
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ steps.catalog-ref.outputs.ref }}
@@ -204,7 +204,7 @@ jobs:
           fi
 
       - if: steps.check.outputs.selected == 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Mint catalog-scoped App token
         if: steps.check.outputs.selected == 'true'
         id: catalog-token
@@ -230,7 +230,7 @@ jobs:
           fi
       - name: Checkout catalog for composite actions
         if: steps.check.outputs.selected == 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ steps.catalog-ref.outputs.ref }}
@@ -296,7 +296,7 @@ jobs:
       image_ref: ${{ steps.compose.outputs.image_ref }}
       digest: ${{ steps.merge_step.outputs.digest }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Mint catalog-scoped App token
         id: catalog-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -319,7 +319,7 @@ jobs:
             echo "ref=v4" >> "$GITHUB_OUTPUT"
           fi
       - name: Checkout catalog for composite actions
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ steps.catalog-ref.outputs.ref }}
@@ -520,7 +520,7 @@ jobs:
             # renovate-marker: catalog-major-ref
             echo "ref=v4" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ steps.catalog-ref.outputs.ref }}
