@@ -1,0 +1,3 @@
+[makejinja]
+inputs = ["bootstrap/templates"]
+output = "kubernetes"

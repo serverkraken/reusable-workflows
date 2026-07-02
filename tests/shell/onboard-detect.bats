@@ -713,3 +713,269 @@ GHEOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"\"svc\""* ]]
 }
+
+# === Flutter detection ===
+
+@test "detects flutter from pubspec sdk: flutter (legacy key=value)" {
+  run "$DETECT" "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=flutter"* ]]
+}
+
+@test "profile-json: flutter-app primary_language=flutter" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "flutter"'
+  echo "$output" | jq -e '.components[0].languages == ["flutter"]'
+}
+
+@test "profile-json: flutter-package is still detected as flutter" {
+  run "$DETECT" --profile-json "$FIX/flutter-package"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "flutter"'
+}
+
+@test "profile-json: flutter-app release_please_type=dart" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_please_type == "dart"'
+}
+
+@test "profile-json: flutter emits no no_lint_test_atom warning" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.warnings[] | select(.code == "no_lint_test_atom")] | length == 0'
+}
+
+@test "profile-json: flutter-app has flutter_android=true and role=mobile-app" {
+  run "$DETECT" --profile-json "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == true'
+  echo "$output" | jq -e '.components[0].role == "mobile-app"'
+}
+
+@test "profile-json: flutter-package has flutter_android=false and role=library" {
+  run "$DETECT" --profile-json "$FIX/flutter-package"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == false'
+  echo "$output" | jq -e '.components[0].role == "library"'
+}
+
+@test "profile-json: go-repo release_signals gains flutter_android=false (additive)" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == false'
+}
+
+@test "legacy key=value: flutter emits release_type=dart" {
+  run "$DETECT" "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"release_type=dart"* ]]
+}
+
+@test "--emit-both: flutter emits release_type=dart" {
+  run "$DETECT" --emit-both "$FIX/flutter-app"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"release_type=dart"* ]]
+}
+
+@test "profile-json: flutter app with nested sub-chart stays a single root component" {
+  run "$DETECT" --profile-json "$FIX/flutter-app-subchart"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components | length == 1'
+  echo "$output" | jq -e '.components[0].path == "."'
+  echo "$output" | jq -e '.components[0].primary_language == "flutter"'
+  # the nested chart is reported as a release signal of the root component,
+  # not split into a sibling component
+  echo "$output" | jq -e '.components[0].release_signals.chart_yaml != null'
+  # the root is still an Android Flutter app (has android/) → flutter_android stays true
+  echo "$output" | jq -e '.components[0].release_signals.flutter_android == true'
+}
+
+# === topics ===
+
+@test "profile-json: topics defaults to [] when TARGET_REPO unset" {
+  unset TARGET_REPO
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.topics == []'
+}
+
+@test "profile-json: topics populated from gh api /repos/<repo>/topics" {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  cat > "$BATS_TEST_TMPDIR/bin/gh" <<'SH'
+#!/usr/bin/env bash
+# Minimal gh mock honoring the calls emit_profile_json makes with -q.
+case "$*" in
+  *"/topics"*)       echo '["sk-prerelease-on-push","serverkraken-onboarded"]' ;;
+  *"release list"*)  echo '' ;;
+  *"/repos/o/r"*)    echo 'main' ;;
+  *)                 echo '' ;;
+esac
+SH
+  chmod +x "$BATS_TEST_TMPDIR/bin/gh"
+  TARGET_REPO=o/r PATH="$BATS_TEST_TMPDIR/bin:$PATH" run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '(.topics | index("sk-prerelease-on-push")) != null'
+}
+
+# ---- gitops detection helpers (Task 1) ----
+
+# Source the lib directly to unit-test the helper functions.
+load_lib() { source "$REPO_ROOT/scripts/lib/onboard-detect-lib.sh"; }
+
+@test "detect_gitops_kubernetes: true on full cluster-template fingerprint" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps" "$d/bootstrap/templates"
+  touch "$d/.sops.yaml"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -eq 0 ]
+}
+
+@test "detect_gitops_kubernetes: true via makejinja.toml marker" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps"
+  touch "$d/.sops.yaml" "$d/makejinja.toml"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -eq 0 ]
+}
+
+@test "detect_gitops_kubernetes: false when .sops.yaml missing" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps" "$d/bootstrap/templates"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -ne 0 ]
+}
+
+@test "detect_gitops_kubernetes: false when kubernetes/ missing" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/bootstrap/templates"
+  touch "$d/.sops.yaml"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -ne 0 ]
+}
+
+@test "detect_gitops_kubernetes: false when no cluster-template marker" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps"
+  touch "$d/.sops.yaml"
+  load_lib
+  run detect_gitops_kubernetes "$d"
+  rm -rf "$d"
+  [ "$status" -ne 0 ]
+}
+
+@test "_gitops_manifests_paths: enumerates workload dirs, excludes control dirs" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/apps" "$d/kubernetes/argo" \
+           "$d/kubernetes/bootstrap" "$d/kubernetes/components" "$d/kubernetes/flux-system"
+  load_lib
+  run _gitops_manifests_paths "$d"
+  rm -rf "$d"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq -c .)" = '["kubernetes/apps","kubernetes/argo"]' ]
+}
+
+@test "_gitops_manifests_paths: empty array when no workload dirs" {
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/kubernetes/bootstrap"
+  load_lib
+  run _gitops_manifests_paths "$d"
+  rm -rf "$d"
+  [ "$status" -eq 0 ]
+  [ "$output" = '[]' ]
+}
+
+# ---- gitops profile-json (Task 2) ----
+
+@test "profile-json: gitops-cluster sets primary_language=gitops" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "gitops"'
+}
+
+@test "profile-json: gitops-cluster sets role=gitops" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  echo "$output" | jq -e '.components[0].role == "gitops"'
+}
+
+@test "profile-json: gitops-cluster release_please_type is simple" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  echo "$output" | jq -e '.components[0].release_please_type == "simple"'
+}
+
+@test "profile-json: gitops-cluster attaches .gitops object" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  echo "$output" | jq -e '.gitops.manifests_paths == ["kubernetes/apps","kubernetes/argo"]'
+  echo "$output" | jq -e '.gitops.sops == true'
+  echo "$output" | jq -e '.gitops.has_kube_linter_config == true'
+  echo "$output" | jq -e '.gitops.has_gitleaks_config == true'
+}
+
+@test "profile-json: gitops-cluster emits zero warnings" {
+  run "$DETECT" --profile-json "$FIX/gitops-cluster"
+  echo "$output" | jq -e '.warnings | length == 0'
+}
+
+@test "profile-json: non-gitops profile has no .gitops key" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  echo "$output" | jq -e 'has("gitops") | not'
+}
+
+# ---- gitops legacy_ci recognition (Task 3) ----
+
+# Build a tmp repo with a single legacy workflow file containing $2, assert the
+# detected replaced_by equals $3 (a JSON array literal).
+_legacy_one() {
+  local fname="$1" body="$2"
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/.github/workflows"
+  printf '%s\n' "$body" > "$d/.github/workflows/$fname"
+  "$DETECT" --profile-json "$d"
+  rm -rf "$d"
+}
+
+@test "legacy_ci: kubeconform.yaml → kube-validate.yml" {
+  out=$(_legacy_one "kubeconform.yaml" "run: kubeconform -strict")
+  echo "$out" | jq -e '[.legacy_ci[] | select(.path | endswith("kubeconform.yaml")) | .replaced_by] | flatten == ["kube-validate.yml"]'
+}
+
+@test "legacy_ci: kube-linter.yaml → kube-lint.yml" {
+  out=$(_legacy_one "kube-linter.yaml" "uses: stackrox/kube-linter-action@v1")
+  echo "$out" | jq -e '[.legacy_ci[] | select(.path | endswith("kube-linter.yaml")) | .replaced_by] | flatten == ["kube-lint.yml"]'
+}
+
+@test "legacy_ci: gitleaks.yaml → secret-scan.yml" {
+  out=$(_legacy_one "gitleaks.yaml" "run: gitleaks detect --source .")
+  echo "$out" | jq -e '[.legacy_ci[] | select(.path | endswith("gitleaks.yaml")) | .replaced_by] | flatten == ["secret-scan.yml"]'
+}
+
+@test "legacy_ci: trivy.yaml (CLI fs scan) → trivy-fs.yml" {
+  out=$(_legacy_one "trivy.yaml" "run: trivy fs --scanners vuln .")
+  echo "$out" | jq -e '[.legacy_ci[] | select(.path | endswith("trivy.yaml")) | .replaced_by] | flatten == ["trivy-fs.yml"]'
+}
+
+# ---- gitops legacy key=value path (Task 4) ----
+
+@test "legacy mode: gitops-cluster reports language=gitops" {
+  run "$DETECT" "$FIX/gitops-cluster"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=gitops"* ]]
+  [[ "$output" == *"release_type=simple"* ]]
+}
+
+@test "emit-both: gitops-cluster reports language=gitops + valid profile_json" {
+  run "$DETECT" --emit-both "$FIX/gitops-cluster"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=gitops"* ]]
+  # the profile_json block carries the gitops object
+  echo "$output" | sed -n '/profile_json<</,/^EOF_/p' | sed '1d;$d' | jq -e '.gitops.sops == true'
+}

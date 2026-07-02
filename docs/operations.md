@@ -383,10 +383,17 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 | `SK_SBOM` | `sbom` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
 | `SK_TRIVY_SEVERITY` | `severity` | trivy-fs (ci.yml secscan), trivy-image (prerelease scan) | `HIGH,CRITICAL` | string |
 | `SK_TRIVY_VERSION` | `trivy_version` | trivy-fs, trivy-image | (install-trivy default) | string |
+| `SK_KUSTOMIZE_VERSION` | `kustomize_version` | kube-validate | (composite default) | string |
+| `SK_KUBECONFORM_VERSION` | `kubeconform_version` | kube-validate | (composite default) | string |
+| `SK_KUBE_LINTER_VERSION` | `kube_linter_version` | kube-lint | (composite default) | string |
+| `SK_GITLEAKS_VERSION` | `gitleaks_version` | secret-scan | (composite default) | string |
+| `SK_FLUTTER_DART_DEFINE_SECRETS` | `dart_define_secret_names` | release-flutter-android (release.yml, prerelease.yml, prerelease-on-push.yml) | (empty) | string (comma-list of secret names) |
 
 **Org-level layering** (catalog maintainers): set a variable at the organization level (`https://github.com/organizations/serverkraken/settings/variables/actions`) to provide an org-wide default. Repo-level values override org-level. A change to the org var propagates to every non-overriding adopter on the next CI run, no re-rendering required.
 
 **`SK_CGO_ENABLED` override-wins semantic:** the onboard render uses an auto-detected boolean from the adopter's Go source / `go.mod` as the template default. Setting `SK_CGO_ENABLED = true` forces cgo on (auto-detect missed a transitive dep); setting `= false` forces it off (false-positive). Either value wins over the profile-derived default.
+
+**`SK_FLUTTER_DART_DEFINE_SECRETS`:** a comma-separated list of *secret names* (not values) that the rendered `release.yml` forwards to `release-flutter-android`'s `dart_define_secret_names`, which injects each as `--dart-define=NAME=$VALUE` at build time. The secrets themselves must exist at org or repo level; `secrets: inherit` makes them available. Example value: `SUPABASE_URL,SUPABASE_ANON_KEY`. Empty (default) means no dart-defines.
 
 **What's not in this list and why:**
 
@@ -398,6 +405,11 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 ## Release-Eligibility per Dockerfile
 
 By default, `release.yml` ships **only the bare `Dockerfile` (or `Containerfile`)** to GHCR on release-please-driven releases. Any `Dockerfile.*` / `Containerfile.*` variant (e.g. `Dockerfile.dev`, `Dockerfile.debug`) is **excluded** from release builds and only ships via the manual `prerelease.yml` workflow_dispatch path.
+
+**Prerelease callers (stack-aware).** The renderer emits up to two prerelease workflows:
+
+- `prerelease.yml` — **manual** (`workflow_dispatch`). For docker components it builds a prerelease image (+ trivy scan). For a Flutter app it calls `release-flutter-android` with `create_release: true` and `workflow_dispatch` inputs `version` (empty → auto `<latest>-rc.<run_number>`) and `prerelease` (default `true`); dart-defines come from `vars.SK_FLUTTER_DART_DEFINE_SECRETS`. A Flutter package (no `android/`) renders a no-op.
+- `prerelease-on-push.yml` — **automatic** on push to `develop`. Rendered **only** when the repo carries the `sk-prerelease-on-push` topic. Same stack-aware build jobs as `prerelease.yml`, with no manual inputs (Flutter uses the auto-rc version). The trigger branch is baked at render time (`develop`) because GitHub does not evaluate expressions in `on:`.
 
 ### Convention
 
@@ -446,9 +458,9 @@ Three Flutter `workflow_call` atoms plus a shared composite action:
 
 The shared toolchain (Java + Android SDK + Flutter + `pub get` + optional `build_runner`) lives in `actions/setup-flutter-toolchain/action.yml`. Because that composite is catalog-local, all three atoms mint a catalog-scoped App token and check the catalog out into `.catalog/` first — the same pattern as `lint-python.yml`. Callers therefore MUST pass `secrets: inherit`.
 
-### 9.1 Adopter integration (current)
+### 9.1 Adopter integration
 
-Until the onboard renderer learns to detect Flutter components, adopters wire the atoms by hand. Reference:
+The onboard renderer auto-detects Flutter components (a `pubspec.yaml` declaring the Flutter SDK) and emits `lint-flutter` + `test-flutter` in `ci.yml`; when the component also has an `android/` dir it emits `release-flutter-android` in `release.yml` and sets release-please `release-type: dart`. Adopters thread dart-defines by setting the `SK_FLUTTER_DART_DEFINE_SECRETS` repo variable (comma-list of secret names — see §Per-Adopter Overrides). The rendered `release.yml` looks like the block below, which also serves as the reference for hand-wiring a repo the renderer has not onboarded:
 
 ```yaml
 jobs:
@@ -469,13 +481,61 @@ jobs:
 
 The adopter sets the four keystore secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) at org or repo level. `dart_define_secret_names` is a comma-list of secret names forwarded as `--dart-define=NAME=$VALUE`; the values must be free of shell-splitting whitespace (URLs, tokens, JWTs are fine).
 
-### 9.2 Self-CI
+### 9.2 Manual / ad-hoc (pre)release builds
 
-`self-ci.yml` runs `lint-flutter-happy` + `test-flutter-happy` against `tests/fixtures/flutter-app`. `integration.yml` runs a `prepare-flutter-release → test-release-flutter-android → cleanup-flutter-release` lifecycle: it mints a throwaway prerelease on the catalog repo, builds+signs the fixture APK, attaches it, then deletes the release (`--cleanup-tag`). The fixture's `android/release.keystore.b64` is a throwaway keystore; the catalog repo holds matching `ANDROID_*` + `GREETING` secrets (alias `catalogtest`, store/key password `catalog-fixture-storepw` — JDK PKCS12 keystores use the store password as the key password).
+The `release-flutter-android.yml` atom carries a `create_release` input. When `true`, the atom creates the GitHub Release at the resolved tag itself (instead of expecting release-please to have made it) and marks it prerelease when `prerelease: true`. With an empty `version`, the atom derives `<latest-tag>-rc.<run_number>` via `git describe`. A `workflow_call` atom can't be triggered by `workflow_dispatch` directly, so adopters add a thin manual caller:
 
-### 9.3 Out of scope (Phase-2)
+```yaml
+# .github/workflows/manual-release.yml
+name: manual-release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag to build (empty → auto <latest>-rc.<run_number>)'
+        required: false
+        type: string
+        default: ''
+      prerelease:
+        type: boolean
+        default: true
+permissions:
+  contents: write
+jobs:
+  build:
+    uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@v4
+    with:
+      version: ${{ inputs.version }}
+      create_release: true
+      prerelease: ${{ inputs.prerelease }}
+      dart_define_secret_names: "SUPABASE_URL,SUPABASE_ANON_KEY"
+    secrets: inherit
+```
+
+This replaces the per-adopter hand-rolled `manual-apk-build.yml` pattern. Available since v4.x (additive input — `create_release` defaults `false`, so existing release-please callers are unaffected).
+
+### 9.3 Self-CI
+
+`self-ci.yml` runs `lint-flutter-happy` + `test-flutter-happy` against `tests/fixtures/flutter-app`. `integration.yml` runs `test-release-flutter-android` (with `create_release: true` + an explicit fixture tag) → `cleanup-flutter-release`: the atom self-creates a throwaway prerelease on the catalog repo, builds+signs the fixture APK, attaches it, then cleanup deletes the release (`--cleanup-tag`). An explicit fixture version is passed so CI never touches the catalog's real `vX` tag namespace; the auto-derive path is exercised by real adopters. The fixture's `android/release.keystore.b64` is a throwaway keystore; the catalog repo holds matching `ANDROID_*` + `GREETING` secrets (alias `catalogtest`, store/key password `catalog-fixture-storepw` — JDK PKCS12 keystores use the store password as the key password).
+
+### 9.4 Out of scope (Phase-2)
 
 - iOS build.
 - Play-Store upload — atom gains `upload_to_play_store` + `play_store_track` inputs; the renderer gains a repo-topic-detection branch so adopters opt in via a topic.
-- onboard renderer Flutter component detection (`scripts/onboard-detect.sh` probing `pubspec.yaml`) + `release.yml.tmpl` Flutter branch.
 - pubspec.yaml commit-back — adopters wire release-please `extra-files` if they want the bump persisted on `main`.
+
+## 10. GitOps Atom Set (v4.x+)
+
+Three reusable atoms validate a GitOps repository's Kubernetes manifests and scan for leaked secrets. They install their CLIs as pinned, Renovate-managed binaries (`setup-kube-toolchain`, `install-kube-linter`, `install-gitleaks`), so no third-party setup actions are involved. Version pins are overridable via the `SK_KUSTOMIZE_VERSION` / `SK_KUBECONFORM_VERSION` / `SK_KUBE_LINTER_VERSION` / `SK_GITLEAKS_VERSION` repository variables (each: version pin for the corresponding tool; empty → catalog composite default).
+
+| Atom | Does | Key inputs | Output |
+|---|---|---|---|
+| `kube-validate` | `kustomize build` every kustomization tree + `kubeconform` every standalone manifest under each root. Optional in-tree SOPS decryption via ksops (`sops: true`, requires the `sops_age_key` secret). | `manifests_paths`, `kustomize_args`, `schema_locations`, `skip_kinds`, `strict`, `sops` | pass/fail |
+| `kube-lint` | `kube-linter lint → SARIF`; counts findings, uploads to code-scanning, gates on count. Empty `config_path` → catalog baseline (`configs/kube-linter.yaml`, upstream defaults). | `manifests_path`, `config_path`, `fail_on_findings`, `upload_sarif` | `findings_count` |
+| `secret-scan` | `gitleaks detect → SARIF`; counts findings, uploads to code-scanning, gates on count. | `config_path`, `fail_on_findings`, `upload_sarif`, `fetch_depth`, `no_git`, `scan_path` | `findings_count` |
+
+**`secret-scan` is general-purpose** — callable by any adopter, not just GitOps repos. By default it is git-history-aware: a `pull_request` event scans the PR diff (`base..head`), a `push` event scans the tip commit, and a manual/scheduled run scans full history (so `fetch_depth: 0` is the default). Setting `no_git: true` switches it to a filesystem scan of `scan_path` (gitleaks `--no-git`), used for one-off directory scans and deterministic fixture tests where git history is irrelevant.
+
+All three mint a catalog-scoped App token (`secrets: inherit` covers it) to check out the catalog's composite actions, exactly like the existing security atoms. SARIF upload is auto-skipped on forks.
+
+> **ksops decryption is not exercised in catalog self-CI** — committing a decryptable age key to the catalog would itself be a secret leak. The happy integration path runs `kube-validate` with `sops: false` against plaintext fixtures; the real ksops path is validated at adopter-onboard time against repos that hold the real `SOPS_AGE_KEY` and encrypted trees.

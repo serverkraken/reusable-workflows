@@ -115,6 +115,7 @@ jobs:
       paths_ignore: |
         tests/fixtures/with-secret
         tests/fixtures/lint-test/helm-lint-fail
+        tests/fixtures/gitops-planted-secret
       fail_on_findings: false
       upload_sarif: false
 
@@ -125,6 +126,7 @@ jobs:
     with:
       paths_ignore: |
         tests/fixtures/lint-test/helm-lint-fail
+        tests/fixtures/gitops-planted-secret
       upload_sarif: false
       fail_on_findings: false   # don't fail the job; we assert on findings_count below
 
@@ -236,6 +238,113 @@ jobs:
       oci_registry: ghcr.io/serverkraken/test
       dry_run: true
 
+  # ----- kube-validate happy path: valid fixture tree must succeed -----
+  test-kube-validate-happy:
+    uses: ./.github/workflows/kube-validate.yml
+    secrets: inherit
+    with:
+      manifests_paths: |-
+        tests/fixtures/gitops-cluster/kubernetes/apps
+        tests/fixtures/gitops-cluster/kubernetes/argo
+      sops: false
+
+  # ----- kube-lint happy path: clean fixture + permissive config → 0 -----
+  test-kube-lint-happy:
+    uses: ./.github/workflows/kube-lint.yml
+    secrets: inherit
+    with:
+      manifests_path: tests/fixtures/gitops-cluster/kubernetes/apps
+      config_path: tests/fixtures/gitops-cluster/.kube-linter.yaml
+      fail_on_findings: false
+      upload_sarif: false
+
+  assert-kube-lint-clean:
+    needs: test-kube-lint-happy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify findings_count == 0
+        env:
+          COUNT: ${{ needs.test-kube-lint-happy.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" != "0" ]]; then
+            echo "::error::Expected 0 kube-linter findings on clean fixture, got $COUNT"
+            exit 1
+          fi
+
+  # ----- kube-lint find-something: violation fixture + baseline config → >0 -----
+  test-kube-lint-findings:
+    uses: ./.github/workflows/kube-lint.yml
+    secrets: inherit
+    with:
+      manifests_path: tests/fixtures/gitops-lint-violation/kubernetes/apps
+      fail_on_findings: false
+      upload_sarif: false
+
+  assert-kube-lint-finds:
+    needs: test-kube-lint-findings
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify findings_count > 0
+        env:
+          COUNT: ${{ needs.test-kube-lint-findings.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" == "0" ]]; then
+            echo "::error::Expected kube-linter findings on violation fixture, got 0"
+            exit 1
+          fi
+          echo "kube-lint correctly detected $COUNT finding(s)"
+
+  # ----- secret-scan happy path: clean fixture, no-git mode → 0 -----
+  test-secret-scan-happy:
+    uses: ./.github/workflows/secret-scan.yml
+    secrets: inherit
+    with:
+      no_git: true
+      scan_path: tests/fixtures/gitops-cluster
+      fail_on_findings: false
+      upload_sarif: false
+
+  assert-secret-scan-clean:
+    needs: test-secret-scan-happy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify findings_count == 0
+        env:
+          COUNT: ${{ needs.test-secret-scan-happy.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" != "0" ]]; then
+            echo "::error::Expected 0 secrets on clean fixture, got $COUNT"
+            exit 1
+          fi
+
+  # ----- secret-scan find-something: planted secret, no-git mode → >0 -----
+  test-secret-scan-findings:
+    uses: ./.github/workflows/secret-scan.yml
+    secrets: inherit
+    with:
+      no_git: true
+      scan_path: tests/fixtures/gitops-planted-secret
+      fail_on_findings: false
+      upload_sarif: false
+
+  assert-secret-scan-finds:
+    needs: test-secret-scan-findings
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify findings_count > 0
+        env:
+          COUNT: ${{ needs.test-secret-scan-findings.outputs.findings_count }}
+        run: |
+          if [[ "$COUNT" == "0" ]]; then
+            echo "::error::Expected secret findings on planted-secret fixture, got 0"
+            exit 1
+          fi
+          echo "secret-scan correctly detected $COUNT secret(s)"
+
   # ----- semantic-release dry-run: exercise the atom against the catalog's
   #       own release-please configs WITHOUT mutating remote state.
   #       skip-github-release + skip-github-pull-request flags on the
@@ -260,35 +369,19 @@ jobs:
       pin_version: v1
     secrets: inherit
 
-  # ----- release-flutter-android: happy. Mint a throwaway prerelease on the
-  #       catalog repo, build+sign the fixture APK and attach it, then delete
-  #       the release. The atom does not create releases (release-please does
-  #       in adopters), so the fixture test provides the upload target. -----
-  prepare-flutter-release:
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.tag.outputs.name }}
-    steps:
-      - id: tag
-        run: echo "name=v0.0.1-fixture-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
-      - name: Create throwaway prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ steps.tag.outputs.name }}" \
-            --repo "${{ github.repository }}" \
-            --title "Fixture release (run ${{ github.run_id }})" \
-            --notes "Throwaway release for the release-flutter-android integration test. Auto-deleted." \
-            --prerelease \
-            --target "${{ github.sha }}"
-
+  # ----- release-flutter-android: happy. Exercises the create_release=true
+  #       (manual/ad-hoc) path: the atom itself creates the throwaway prerelease
+  #       at the fixture tag, builds+signs the fixture APK, attaches it, then
+  #       cleanup deletes the release+tag. An explicit fixture version is passed
+  #       (not auto-derive) so CI never touches the catalog's real vX tag
+  #       namespace — the auto-derive path is exercised by real adopters. -----
   test-release-flutter-android:
-    needs: prepare-flutter-release
     uses: ./.github/workflows/release-flutter-android.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/flutter-app
-      version: ${{ needs.prepare-flutter-release.outputs.tag }}
+      version: v0.0.1-fixture-${{ github.run_id }}
+      create_release: true
       use_build_runner: false
       build_apk: true
       build_aab: false
@@ -297,14 +390,14 @@ jobs:
       artefact_name_prefix: catalog-test-flutter-app
 
   cleanup-flutter-release:
-    needs: [prepare-flutter-release, test-release-flutter-android]
+    needs: [test-release-flutter-android]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Delete fixture release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare-flutter-release.outputs.tag }}
+          TAG: v0.0.1-fixture-${{ github.run_id }}
         run: gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag || true
 
   # ----- Summary: aggregates ALL happy-path children into a single status.
@@ -335,6 +428,15 @@ jobs:
       - test-goreleaser
       - test-helm-publish
       - test-release-flutter-android
+      - test-kube-validate-happy
+      - test-kube-lint-happy
+      - assert-kube-lint-clean
+      - test-kube-lint-findings
+      - assert-kube-lint-finds
+      - test-secret-scan-happy
+      - assert-secret-scan-clean
+      - test-secret-scan-findings
+      - assert-secret-scan-finds
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

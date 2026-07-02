@@ -1,0 +1,94 @@
+name: setup-kube-toolchain
+description: |
+  Install kustomize + kubeconform (direct binary installs, pinned,
+  Renovate-managed — never third-party setup actions). When `sops: 'true'`,
+  also install sops + ksops so `kustomize build --enable-exec` can decrypt
+  in-tree SOPS generators (kind: ksops). Mirrors the install-trivy pattern.
+  Does NOT install helm: the current GitOps adopters pass --enable-helm but
+  have zero in-kustomize helmCharts, so kustomize never invokes helm.
+
+inputs:
+  kustomize_version:
+    description: 'kustomize version (no leading v). Empty → pinned default.'
+    required: false
+    default: ''
+  kubeconform_version:
+    description: 'kubeconform version (no leading v). Empty → pinned default.'
+    required: false
+    default: ''
+  sops:
+    description: 'When "true", also install sops + ksops for SOPS decryption.'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Install kustomize
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/v(?<version>.+)$
+        KUSTOMIZE_VERSION: '5.5.0'
+        REQUESTED: ${{ inputs.kustomize_version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$KUSTOMIZE_VERSION}"
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=amd64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT; cd "$TMP"
+        curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${VERSION}/kustomize_v${VERSION}_linux_${A}.tar.gz" -o k.tar.gz
+        tar -xzf k.tar.gz kustomize
+        sudo install -m 0755 kustomize /usr/local/bin/kustomize
+        kustomize version
+
+    - name: Install kubeconform
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=yannh/kubeconform
+        KUBECONFORM_VERSION: '0.6.7'
+        REQUESTED: ${{ inputs.kubeconform_version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$KUBECONFORM_VERSION}"
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=amd64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT; cd "$TMP"
+        curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v${VERSION}/kubeconform-linux-${A}.tar.gz" -o kc.tar.gz
+        tar -xzf kc.tar.gz kubeconform
+        sudo install -m 0755 kubeconform /usr/local/bin/kubeconform
+        kubeconform -v
+
+    - name: Install sops + ksops
+      if: ${{ inputs.sops == 'true' }}
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=getsops/sops
+        SOPS_VERSION: '3.9.4'
+        # renovate: datasource=github-releases depName=viaduct-ai/kustomize-sops
+        KSOPS_VERSION: '4.3.3'
+      run: |
+        set -euo pipefail
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=amd64; KA=x86_64 ;;
+          aarch64|arm64) A=arm64; KA=arm64 ;;
+          *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        # sops — single static binary
+        curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.${A}" -o sops
+        sudo install -m 0755 sops /usr/local/bin/sops
+        sops --version
+        # ksops — kustomize exec-plugin; MUST be on PATH for --enable-exec
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        curl -fsSL "https://github.com/viaduct-ai/kustomize-sops/releases/download/v${KSOPS_VERSION}/ksops_${KSOPS_VERSION}_Linux_${KA}.tar.gz" -o "$TMP/ksops.tar.gz"
+        tar -xzf "$TMP/ksops.tar.gz" -C "$TMP" ksops
+        sudo install -m 0755 "$TMP/ksops" /usr/local/bin/ksops
+        ksops --version || true

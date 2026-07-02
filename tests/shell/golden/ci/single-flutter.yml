@@ -1,0 +1,27 @@
+name: ci
+on:
+  pull_request:
+
+jobs:
+  secscan:
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-fs.yml@v4
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+    secrets: inherit
+
+  lint-flutter-root:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-flutter.yml@v4
+    with:
+      working_directory: .
+    secrets: inherit
+  test-flutter-root:
+    uses: serverkraken/reusable-workflows/.github/workflows/test-flutter.yml@v4
+    with:
+      working_directory: .
+      coverage_threshold: ${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}
+    secrets: inherit

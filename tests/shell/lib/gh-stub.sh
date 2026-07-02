@@ -64,9 +64,14 @@ if [[ -z "$fixture" ]]; then
   exit 1
 fi
 
+# Real `gh api` prints the HTTP error body to STDOUT (and a short diagnostic to
+# stderr) before exiting non-zero. Mirror that here so callers using the
+# `$(gh api ... 2>/dev/null || echo fallback)` idiom are exercised against real
+# behavior — the error body leaks into the capture unless the caller discards
+# stdout on failure.
 case "$fixture" in
-  *.404.json) echo "gh: HTTP 404" >&2; exit 1 ;;
-  *.403.json) echo "gh: HTTP 403 forbidden" >&2; exit 1 ;;
-  *.500.json) echo "gh: HTTP 500" >&2; exit 1 ;;
+  *.404.json) cat "$fixture"; echo "gh: HTTP 404" >&2; exit 1 ;;
+  *.403.json) cat "$fixture"; echo "gh: HTTP 403 forbidden" >&2; exit 1 ;;
+  *.500.json) cat "$fixture"; echo "gh: HTTP 500" >&2; exit 1 ;;
   *) cat "$fixture"; exit 0 ;;
 esac

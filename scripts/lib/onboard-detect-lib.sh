@@ -8,6 +8,8 @@
 #
 # Internal helpers:
 #   detect_components       — enumerate sub-components for monorepos, else single root
+#   detect_gitops_kubernetes — true when the repo matches the Talos/cluster-template fingerprint
+#   _gitops_manifests_paths — enumerate kubernetes/<workload> roots (excludes bootstrap/components/flux-system)
 #   detect_languages        — per-component language marker inventory
 #   inventory_dockerfiles   — per-component Dockerfile inventory + image-name override
 #   read_image_override     — read `# onboard:image=<name>` from a Dockerfile
@@ -25,7 +27,58 @@ set -euo pipefail
 # Anything outside this set triggers a `no_lint_test_atom` warning in profile.json.
 # IMPORTANT: keep this list in sync with docs/adopter-templates/skeletons/ci.yml.tmpl
 # (Task 11 rewrites that template to consume these warnings).
-SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm'
+SUPPORTED_LINT_TEST_LANGUAGES='go|python|rust|helm|flutter'
+
+# Languages that have a catalog atom set and therefore must NOT trigger the
+# no_lint_test_atom warning, even though they are not lint/test-named. gitops
+# is served by kube-validate / kube-lint / secret-scan instead of lint-X/test-X.
+WARNING_EXEMPT_LANGUAGES="${SUPPORTED_LINT_TEST_LANGUAGES}|gitops"
+
+# Flutter detection helper. Arg: absolute component directory.
+# True when pubspec.yaml exists AND declares the Flutter SDK dependency
+# (`sdk: flutter`) — every Flutter app/package has it; a pure-Dart package
+# does not.
+_component_is_flutter() {
+  local dir="$1"
+  [[ -f "$dir/pubspec.yaml" ]] && grep -qE 'sdk:[[:space:]]*flutter' "$dir/pubspec.yaml"
+}
+
+# GitOps cluster-template detection. Arg: repo root.
+# True only when all three legs hold: a kubernetes/ dir (workloads), a
+# .sops.yaml (SOPS encryption config), and a cluster-template generator marker
+# (makejinja.toml OR bootstrap/templates/). The .sops.yaml + template
+# conjunction prevents a false positive on a service repo that merely ships a
+# kubernetes/ deploy dir.
+detect_gitops_kubernetes() {
+  local repo="$1"
+  [[ -d "$repo/kubernetes" ]] || return 1
+  [[ -f "$repo/.sops.yaml" ]] || return 1
+  [[ -f "$repo/makejinja.toml" || -d "$repo/bootstrap/templates" ]] || return 1
+  return 0
+}
+
+# Enumerate kubernetes/<dir> workload roots for a gitops repo, excluding the
+# non-workload control dirs: bootstrap (Talos bootstrap), components (shared
+# kustomize components), flux-system (Flux controllers). Emits a compact JSON
+# array (e.g. ["kubernetes/apps","kubernetes/argo"]) or [] when none.
+_gitops_manifests_paths() {
+  local repo="$1"
+  local dirs=()
+  local d base
+  while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    base=$(basename "$d")
+    case "$base" in
+      bootstrap|components|flux-system) continue ;;
+    esac
+    dirs+=("kubernetes/$base")
+  done < <(find "$repo/kubernetes" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+  if (( ${#dirs[@]} == 0 )); then
+    echo '[]'
+  else
+    printf '%s\n' "${dirs[@]}" | jq -R . | jq -cs .
+  fi
+}
 
 emit_profile_json() {
   local repo="$1"
@@ -46,10 +99,53 @@ emit_profile_json() {
     [[ -n "$tag" && "$tag" != "null" ]] && current_version="${tag#v}"
   fi
 
+  # Repo topics — a general signal consumed by the renderer (e.g. the
+  # `sk-prerelease-on-push` opt-in). gh prints the HTTP error body to STDOUT on
+  # failure, so the fallback MUST be outside the substitution (see
+  # troubleshooting: gh-api-leaks-error-body-to-stdout); -q '.names' emits the
+  # array as compact JSON.
+  local topics='[]'
+  if [[ -n "$target_repo" ]]; then
+    topics=$(gh api "/repos/$target_repo/topics" -q '.names' 2>/dev/null) || topics='[]'
+    [[ -z "$topics" || "$topics" == "null" ]] && topics='[]'
+  fi
+
   local components
   components=$(detect_components "$repo")
   local legacy_ci
   legacy_ci=$(detect_legacy_ci "$repo")
+
+  # GitOps post-process: when the repo matches the cluster-template fingerprint
+  # AND no component has a buildable (lint/test) language, reclassify the root
+  # component as primary_language=gitops and attach a top-level .gitops object.
+  # This reuses the component-range + lock machinery (one ci.yml.tmpl arm)
+  # rather than a separate profile_kind axis. Non-gitops profiles are untouched.
+  local gitops_obj="null"
+  if detect_gitops_kubernetes "$repo"; then
+    local has_buildable
+    has_buildable=$(echo "$components" | jq --arg s "$SUPPORTED_LINT_TEST_LANGUAGES" \
+      'any(.[]; .primary_language | test("^(" + $s + ")$"))')
+    if [[ "$has_buildable" == "false" ]]; then
+      components=$(echo "$components" | jq \
+        '.[0].primary_language = "gitops"
+         | .[0].release_please_type = "simple"
+         | .[0].role = "gitops"')
+      local manifests_paths kube_linter_cfg gitleaks_cfg sops_present
+      manifests_paths=$(_gitops_manifests_paths "$repo")
+      kube_linter_cfg=false; [[ -f "$repo/.kube-linter.yaml" ]] && kube_linter_cfg=true
+      gitleaks_cfg=false;     [[ -f "$repo/.gitleaks.toml" ]]   && gitleaks_cfg=true
+      sops_present=false;     [[ -f "$repo/.sops.yaml" ]]       && sops_present=true
+      gitops_obj=$(jq -nc \
+        --argjson manifests_paths "$manifests_paths" \
+        --argjson has_kube_linter_config "$kube_linter_cfg" \
+        --argjson has_gitleaks_config "$gitleaks_cfg" \
+        --argjson sops "$sops_present" \
+        '{manifests_paths: $manifests_paths,
+          has_kube_linter_config: $has_kube_linter_config,
+          has_gitleaks_config: $has_gitleaks_config,
+          sops: $sops}')
+    fi
+  fi
 
   local profile
   profile=$(jq -n \
@@ -60,6 +156,7 @@ emit_profile_json() {
     --argjson monorepo "$(echo "$components" | jq 'length > 1')" \
     --argjson components "$components" \
     --argjson legacy_ci "$legacy_ci" \
+    --argjson topics "$topics" \
     --argjson warnings '[]' \
     '{
       schema_version: $schema_version,
@@ -69,8 +166,13 @@ emit_profile_json() {
       monorepo: $monorepo,
       components: $components,
       legacy_ci: $legacy_ci,
+      topics: $topics,
       warnings: $warnings
     }')
+
+  if [[ "$gitops_obj" != "null" ]]; then
+    profile=$(echo "$profile" | jq --argjson g "$gitops_obj" '. + {gitops: $g}')
+  fi
 
   profile=$(emit_unsupported_language_warnings "$profile")
   emit_no_release_eligible_warnings "$profile"
@@ -82,7 +184,7 @@ emit_profile_json() {
 # Signature: emit_unsupported_language_warnings <profile-json>
 emit_unsupported_language_warnings() {
   local profile_json="$1"
-  echo "$profile_json" | jq --arg supported "$SUPPORTED_LINT_TEST_LANGUAGES" '
+  echo "$profile_json" | jq --arg supported "$WARNING_EXEMPT_LANGUAGES" '
     . as $root
     | (.components
         | map(.primary_language)
@@ -206,7 +308,7 @@ detect_components() {
   local root_has_marker=false
   if [[ -f "$repo/go.mod" || -f "$repo/pyproject.toml" || -f "$repo/Cargo.toml" \
         || -f "$repo/Chart.yaml" || -f "$repo/Dockerfile" || -f "$repo/Containerfile" \
-        || -f "$repo/package.json" ]]; then
+        || -f "$repo/package.json" || -f "$repo/pubspec.yaml" ]]; then
     root_has_marker=true
   fi
   if [[ ${#paths[@]} -eq 0 && "$root_has_marker" == "false" ]]; then
@@ -265,6 +367,7 @@ detect_components() {
     # one, the consumer can override release-please-config.json after onboard.
     case "$primary" in
       generic) release_type="simple" ;;
+      flutter) release_type="dart" ;;
       *)       release_type="$primary" ;;
     esac
     signals=$(detect_release_signals "$repo" "$p")
@@ -349,6 +452,7 @@ detect_languages() {
   [[ -f "$p/pyproject.toml" ]] && langs+=(python)
   [[ -f "$p/Cargo.toml" ]]     && langs+=(rust)
   [[ -f "$p/Chart.yaml" ]]     && langs+=(helm)
+  _component_is_flutter "$p"   && langs+=(flutter)
   [[ -f "$p/package.json" ]]   && langs+=(node)
   if (( ${#langs[@]} == 0 )); then
     echo '[]'
@@ -505,6 +609,10 @@ detect_role() {
     echo "helm-app"; return
   fi
 
+  if _component_is_flutter "$p" && [[ -d "$p/android" ]]; then
+    echo "mobile-app"; return
+  fi
+
   echo "library"
 }
 
@@ -554,10 +662,20 @@ detect_release_signals() {
     chart=$(jq -nc --arg s "$rel" '$s')
   fi
 
+  # Flutter Android release signal: a Flutter component (pubspec declares the
+  # flutter SDK) that also has an android/ dir is an Android app and gets a
+  # release-flutter-android job. A Flutter *package* (no android/) is linted
+  # and tested but not released here.
+  local flutter_android=false
+  if _component_is_flutter "$p" && [[ -d "$p/android" ]]; then
+    flutter_android=true
+  fi
+
   jq -nc \
     --argjson goreleaser_config "$gorel" \
     --argjson chart_yaml "$chart" \
-    '{goreleaser_config: $goreleaser_config, chart_yaml: $chart_yaml}'
+    --argjson flutter_android "$flutter_android" \
+    '{goreleaser_config: $goreleaser_config, chart_yaml: $chart_yaml, flutter_android: $flutter_android}'
 }
 
 # Scan .github/workflows/*.{yml,yaml} (non-recursive) for legacy CI patterns,
@@ -571,7 +689,7 @@ detect_legacy_ci() {
   fi
 
   # Filenames OWNED by the catalog renderer — skip classification.
-  local OWNED=(ci.yml release.yml prerelease.yml cleanup.yml)
+  local OWNED=(ci.yml release.yml prerelease.yml prerelease-on-push.yml cleanup.yml)
 
   local entries=()
   local f
@@ -612,6 +730,18 @@ detect_legacy_ci() {
     elif grep -q 'semantic-release' "$f" 2>/dev/null; then
       summary="hand-rolled semantic-release; replaced by release-please.yml"
       replacements='["release-please.yml"]'
+    elif grep -q 'kubeconform' "$f" 2>/dev/null; then
+      summary="kubeconform manifest validation; replaced by kube-validate.yml"
+      replacements='["kube-validate.yml"]'
+    elif grep -qE 'kube-linter|stackrox/kube-linter' "$f" 2>/dev/null; then
+      summary="kube-linter; replaced by kube-lint.yml"
+      replacements='["kube-lint.yml"]'
+    elif grep -q 'gitleaks' "$f" 2>/dev/null; then
+      summary="gitleaks secret scan; replaced by secret-scan.yml"
+      replacements='["secret-scan.yml"]'
+    elif grep -qE 'trivy (fs|filesystem|rootfs)' "$f" 2>/dev/null; then
+      summary="trivy filesystem scan (CLI); replaced by trivy-fs.yml"
+      replacements='["trivy-fs.yml"]'
     else
       summary="unrecognized legacy workflow; manual review needed"
     fi

@@ -1,0 +1,3 @@
+title = "gitops-cluster fixture gitleaks config"
+[extend]
+useDefault = true

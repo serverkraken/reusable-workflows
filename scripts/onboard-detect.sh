@@ -20,7 +20,7 @@
 # When unset (local/test mode), emits defaults: current_version=0.0.0, default_branch=main.
 #
 # Legacy-mode outputs (stdout, key=value, GitHub-Actions friendly):
-#   language=<go|python|rust|helm|node|simple>
+#   language=<go|python|rust|helm|flutter|node|gitops|simple>
 #   release_type=<same as language>
 #   current_version=<X.Y.Z, no leading v>
 #   default_branch=<branch>
@@ -59,9 +59,10 @@ if [[ "${1:-}" == "--emit-both" ]]; then
     [[ -f "$REPO_PATH/pyproject.toml" ]] && matches+=(python)
     [[ -f "$REPO_PATH/Cargo.toml" ]]     && matches+=(rust)
     [[ -f "$REPO_PATH/Chart.yaml" ]]     && matches+=(helm)
+    _component_is_flutter "$REPO_PATH"   && matches+=(flutter)
     [[ -f "$REPO_PATH/package.json" ]]   && matches+=(node)
     if (( ${#matches[@]} == 0 )); then
-      language=simple
+      if detect_gitops_kubernetes "$REPO_PATH"; then language=gitops; else language=simple; fi
     elif (( ${#matches[@]} == 1 )); then
       language="${matches[0]}"
     else
@@ -69,7 +70,11 @@ if [[ "${1:-}" == "--emit-both" ]]; then
       exit 1
     fi
   fi
-  release_type="$language"
+  case "$language" in
+    flutter) release_type="dart" ;;
+    gitops)  release_type="simple" ;;
+    *)       release_type="$language" ;;
+  esac
 
   current_version="0.0.0"
   default_branch="main"
@@ -130,6 +135,9 @@ if [[ ! -d "$REPO_PATH" ]]; then
   exit 1
 fi
 
+# shellcheck source=lib/onboard-detect-lib.sh
+source "$SCRIPT_DIR/lib/onboard-detect-lib.sh"
+
 if [[ "$LANG_OVERRIDE" != "auto" ]]; then
   language="$LANG_OVERRIDE"
 else
@@ -138,10 +146,11 @@ else
   [[ -f "$REPO_PATH/pyproject.toml" ]] && matches+=(python)
   [[ -f "$REPO_PATH/Cargo.toml" ]]     && matches+=(rust)
   [[ -f "$REPO_PATH/Chart.yaml" ]]     && matches+=(helm)
+  { [[ -f "$REPO_PATH/pubspec.yaml" ]] && grep -qE 'sdk:[[:space:]]*flutter' "$REPO_PATH/pubspec.yaml"; } && matches+=(flutter)
   [[ -f "$REPO_PATH/package.json" ]]   && matches+=(node)
 
   if (( ${#matches[@]} == 0 )); then
-    language=simple
+    if detect_gitops_kubernetes "$REPO_PATH"; then language=gitops; else language=simple; fi
   elif (( ${#matches[@]} == 1 )); then
     language="${matches[0]}"
   else
@@ -150,7 +159,11 @@ else
   fi
 fi
 
-release_type="$language"
+case "$language" in
+  flutter) release_type="dart" ;;
+  gitops)  release_type="simple" ;;
+  *)       release_type="$language" ;;
+esac
 
 current_version="0.0.0"
 default_branch="main"

@@ -1,5 +1,65 @@
 # Changelog
 
+## [4.9.0](https://github.com/serverkraken/reusable-workflows/compare/v4.8.0...v4.9.0) (2026-05-31)
+
+
+### Features
+
+* **atoms:** kube-validate, kube-lint, secret-scan + trivy-fs files_ignore ([#169](https://github.com/serverkraken/reusable-workflows/issues/169)) ([c160f06](https://github.com/serverkraken/reusable-workflows/commit/c160f0604af2bc3e0bbc743dbc69c117dc1f14bf))
+
+
+### Bug Fixes
+
+* **onboard:** derive Branch A staged-file set from the lock, not a hardcoded array ([#168](https://github.com/serverkraken/reusable-workflows/issues/168)) ([b2deb5e](https://github.com/serverkraken/reusable-workflows/commit/b2deb5e1d6d9cacbfbae4d3a7613628d71ff0639))
+
+## [4.8.0](https://github.com/serverkraken/reusable-workflows/compare/v4.7.1...v4.8.0) (2026-05-30)
+
+
+### Features
+
+* **onboard:** detect gitops_kubernetes and render kube-validation ci ([#166](https://github.com/serverkraken/reusable-workflows/issues/166)) ([903d56e](https://github.com/serverkraken/reusable-workflows/commit/903d56ed97b70a3fd2b1304606908ed079834cc9))
+
+## [4.7.1](https://github.com/serverkraken/reusable-workflows/compare/v4.7.0...v4.7.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **onboard-sweep:** minor-version-aware stale-PR guard (v2) ([#163](https://github.com/serverkraken/reusable-workflows/issues/163)) ([3741d94](https://github.com/serverkraken/reusable-workflows/commit/3741d94fd5e77a2fc20ce8e108715b6cff4b786e))
+
+## [4.7.0](https://github.com/serverkraken/reusable-workflows/compare/v4.6.0...v4.7.0) (2026-05-30)
+
+
+### Features
+
+* **onboard:** render manual + auto-on-push prerelease callers ([#161](https://github.com/serverkraken/reusable-workflows/issues/161)) ([6e73b1e](https://github.com/serverkraken/reusable-workflows/commit/6e73b1e8e4102342290a07088b1889097c373530))
+
+
+### Documentation
+
+* **superpowers:** flutter renderer detection design + plan [skip ci] ([65837c9](https://github.com/serverkraken/reusable-workflows/commit/65837c9f039051b67686057b26a23fd7a95d5dca))
+
+## [4.6.0](https://github.com/serverkraken/reusable-workflows/compare/v4.5.1...v4.6.0) (2026-05-29)
+
+
+### Features
+
+* **onboard:** detect Flutter and render ci/release ([#157](https://github.com/serverkraken/reusable-workflows/issues/157)) ([81ba2d1](https://github.com/serverkraken/reusable-workflows/commit/81ba2d1e631f41a8de83b5ec312ded5ef2e3d398))
+
+## [4.5.1](https://github.com/serverkraken/reusable-workflows/compare/v4.5.0...v4.5.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **onboard:** discard gh-api error body so 404 branch protection applies ([#158](https://github.com/serverkraken/reusable-workflows/issues/158)) ([0038a6e](https://github.com/serverkraken/reusable-workflows/commit/0038a6e3aacebd1d9a06d7d7e10e56d740c12c22))
+
+## [4.5.0](https://github.com/serverkraken/reusable-workflows/compare/v4.4.2...v4.5.0) (2026-05-28)
+
+
+### Features
+
+* **flutter:** lint+test+release-android atoms + setup composite (Phase 8) ([#152](https://github.com/serverkraken/reusable-workflows/issues/152)) ([133f399](https://github.com/serverkraken/reusable-workflows/commit/133f3998a7c578d67cf93c0b8f5f4f59c2afaf46))
+* **flutter:** release-flutter-android create_release + auto-rc-version for manual builds ([#156](https://github.com/serverkraken/reusable-workflows/issues/156)) ([3413d87](https://github.com/serverkraken/reusable-workflows/commit/3413d87c9eaff4090ae911a57263a4b2c91839b0))
+
 ## [4.4.2](https://github.com/serverkraken/reusable-workflows/compare/v4.4.1...v4.4.2) (2026-05-28)
 
 

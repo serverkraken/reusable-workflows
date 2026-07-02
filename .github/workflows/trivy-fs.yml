@@ -19,6 +19,11 @@ on:
         required: false
         type: string
         default: ''
+      files_ignore:
+        description: 'Newline-separated files to skip (--skip-files).'
+        required: false
+        type: string
+        default: ''
       upload_sarif:
         description: 'Upload SARIF to GitHub code-scanning. Auto-skipped on forks.'
         required: false
@@ -62,7 +67,7 @@ permissions:
   actions: read           # codeql-action telemetry calls /repos/.../actions/runs
 
 concurrency:
-  group: trivy-fs-${{ github.workflow }}-${{ github.ref }}-${{ inputs.fail_on_findings }}-${{ inputs.paths_ignore }}
+  group: trivy-fs-${{ github.workflow }}-${{ github.ref }}-${{ inputs.fail_on_findings }}-${{ inputs.paths_ignore }}-${{ inputs.files_ignore }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -118,21 +123,26 @@ jobs:
         with:
           version: ${{ inputs.trivy_version }}
 
-      - name: Build ignore-paths args
+      - name: Build ignore args
         id: ignore
         env:
           PATHS: ${{ inputs.paths_ignore }}
+          FILES: ${{ inputs.files_ignore }}
         run: |
-          if [[ -z "$PATHS" ]]; then
-            echo "args=" >> "$GITHUB_OUTPUT"
-          else
-            ARGS=""
+          ARGS=""
+          if [[ -n "$PATHS" ]]; then
             while IFS= read -r line; do
               [[ -z "$line" ]] && continue
               ARGS="$ARGS --skip-dirs $line"
             done <<< "$PATHS"
-            echo "args=$ARGS" >> "$GITHUB_OUTPUT"
           fi
+          if [[ -n "$FILES" ]]; then
+            while IFS= read -r line; do
+              [[ -z "$line" ]] && continue
+              ARGS="$ARGS --skip-files $line"
+            done <<< "$FILES"
+          fi
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
 
       - name: Run Trivy filesystem scan
         env:

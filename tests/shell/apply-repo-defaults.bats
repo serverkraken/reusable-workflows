@@ -57,6 +57,10 @@ run_with_stub() {
   tgt=$(prepare_target "lock-v2-with-marker.json")
   run_with_stub api-no-bp --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
   [ "$status" -eq 0 ]
+  # Regression: gh prints the 404 body to stdout. If the `|| echo missing`
+  # fallback ran inside the substitution, BP_CURRENT would be "<body>missing",
+  # fed to jq --argjson → "invalid JSON" and branch protection silently skipped.
+  [[ "$output" != *"invalid JSON"* ]]
   # The stub call-log should contain a PUT to branches/main/protection
   grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
 }
