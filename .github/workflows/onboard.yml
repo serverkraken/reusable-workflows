@@ -295,19 +295,21 @@ jobs:
           git config user.email "${bot_id}+serverkraken-release-bot[bot]@users.noreply.github.com"
 
           # Target already has rendered files staged (from prior step's "git add -A").
-          # Reset index, then explicitly add only the 7 rendered files.
+          # Reset index, then re-add exactly the files onboard-render.sh wrote.
+          # The lock file is the authoritative manifest: its `.files` keys are
+          # every rendered path for THIS variant, so the set tracks the renderer
+          # instead of a hardcoded array that silently drifts. A release profile
+          # renders the full release-please set; a gitops profile renders ci.yml
+          # only; the prerelease-on-push opt-in adds one more file — all three
+          # are reflected in the lock without changes here.
           git reset
 
-          RENDERED=(
-            ".github/workflows/ci.yml"
-            ".github/workflows/release.yml"
-            ".github/workflows/prerelease.yml"
-            ".github/workflows/cleanup.yml"
-            ".github/onboard.lock.json"
-            "release-please-config.json"
-            ".release-please-manifest.json"
-          )
-          # All 7 should exist after render; defensive guard.
+          LOCK=".github/onboard.lock.json"
+          [[ -f "$LOCK" ]] || { echo "::error::lock file missing: $LOCK"; exit 1; }
+          mapfile -t RENDERED < <(jq -r '.files | keys[]' "$LOCK")
+          # The lock does not list itself; stage it alongside the rendered files.
+          RENDERED+=("$LOCK")
+          # Defensive guard: every path the lock claims must exist on disk.
           for f in "${RENDERED[@]}"; do
             [[ -f "$f" ]] || { echo "::error::expected rendered file missing: $f"; exit 1; }
           done
@@ -360,6 +362,20 @@ jobs:
             map("- `\(.path)` — \(.summary)") |
             join("\n")
           ')
+          # Post-merge guidance differs by variant. A gitops profile has no
+          # release-please flow — ci.yml IS the whole pipeline — so promising a
+          # release-please PR would be wrong. Branch on the profile's `gitops`
+          # presence (same signal the renderer uses to emit ci.yml only).
+          # shellcheck disable=SC2016  # backticks here are literal markdown code spans, not command substitution
+          if [[ "$(echo "$PROFILE" | jq -r 'if (.gitops // null) != null then "y" else "n" end')" == "y" ]]; then
+            next_steps_md='After merging, `ci.yml` validates Kubernetes manifests (kube-validate), '
+            next_steps_md+='runs kube-linter (kube-lint), and scans for secrets (secret-scan) on every push and PR. '
+            next_steps_md+='GitOps repos keep their existing release flow — no release-please PR is created.'
+          else
+            next_steps_md=$(printf 'After merging:\n1. Push a `feat:` / `fix:` commit to `%s` — `release.yml` should open a release-please PR.' "$DEFAULT_BRANCH")
+            next_steps_md+=$'\n2. Merge that release-please PR. A release + image build + Trivy scan should run end-to-end.'
+            next_steps_md+=$'\n3. Once one full release has run green, merge the companion cleanup PR (if open) to retire legacy workflow files.'
+          fi
 
           body=$(cat <<EOF
           ## Onboard to serverkraken/reusable-workflows@${PIN}
@@ -380,10 +396,7 @@ jobs:
           These workflows were detected but have no catalog replacement yet; PR B leaves them in place.
           ${manual_review_md}
           }
-          After merging:
-          1. Push a \`feat:\` / \`fix:\` commit to \`${DEFAULT_BRANCH}\` — \`release.yml\` should open a release-please PR.
-          2. Merge that release-please PR. A release + image build + Trivy scan should run end-to-end.
-          3. Once one full release has run green, merge the companion cleanup PR (if open) to retire legacy workflow files.
+          ${next_steps_md}
 
           _Opened by the \`onboard.yml\` workflow in \`serverkraken/reusable-workflows\`._
           EOF

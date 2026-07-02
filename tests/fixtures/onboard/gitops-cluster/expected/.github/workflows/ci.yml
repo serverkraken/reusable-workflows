@@ -1,0 +1,52 @@
+name: ci
+on:
+  pull_request:
+
+jobs:
+  secscan:
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-fs.yml@v2
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+      paths_ignore: |-
+        bootstrap/templates
+      files_ignore: |-
+        secrets.yaml
+        config.yaml
+        github-deploy.key
+        age.key
+        secrets.sample.yaml
+    secrets: inherit
+
+  kube-validate:
+    uses: serverkraken/reusable-workflows/.github/workflows/kube-validate.yml@v2
+    permissions:
+      contents: read
+    with:
+      manifests_paths: |-
+        kubernetes/apps
+        kubernetes/argo
+      sops: true
+    secrets: inherit
+  kube-lint:
+    uses: serverkraken/reusable-workflows/.github/workflows/kube-lint.yml@v2
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      config_path: .kube-linter.yaml
+    secrets: inherit
+  secret-scan:
+    uses: serverkraken/reusable-workflows/.github/workflows/secret-scan.yml@v2
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      config_path: .gitleaks.toml
+    secrets: inherit

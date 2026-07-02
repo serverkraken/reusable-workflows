@@ -1,0 +1,8 @@
+# Catalog baseline kube-linter config. Consumed at runtime by kube-lint.yml
+# (from the .catalog checkout) when an adopter passes no config_path. Keeps
+# kube-linter's built-in default checks; intentionally adds no custom checks
+# and disables none, so the baseline = upstream defaults. Tighten in a later
+# pass once adopters are clean.
+checks:
+  addAllBuiltIn: false
+  doNotAutoAddDefaults: false

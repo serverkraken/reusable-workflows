@@ -1,5 +1,24 @@
 # Changelog
 
+## [4.9.0](https://github.com/serverkraken/reusable-workflows/compare/v4.8.0...v4.9.0) (2026-05-31)
+
+
+### Features
+
+* **atoms:** kube-validate, kube-lint, secret-scan + trivy-fs files_ignore ([#169](https://github.com/serverkraken/reusable-workflows/issues/169)) ([c160f06](https://github.com/serverkraken/reusable-workflows/commit/c160f0604af2bc3e0bbc743dbc69c117dc1f14bf))
+
+
+### Bug Fixes
+
+* **onboard:** derive Branch A staged-file set from the lock, not a hardcoded array ([#168](https://github.com/serverkraken/reusable-workflows/issues/168)) ([b2deb5e](https://github.com/serverkraken/reusable-workflows/commit/b2deb5e1d6d9cacbfbae4d3a7613628d71ff0639))
+
+## [4.8.0](https://github.com/serverkraken/reusable-workflows/compare/v4.7.1...v4.8.0) (2026-05-30)
+
+
+### Features
+
+* **onboard:** detect gitops_kubernetes and render kube-validation ci ([#166](https://github.com/serverkraken/reusable-workflows/issues/166)) ([903d56e](https://github.com/serverkraken/reusable-workflows/commit/903d56ed97b70a3fd2b1304606908ed079834cc9))
+
 ## [4.7.1](https://github.com/serverkraken/reusable-workflows/compare/v4.7.0...v4.7.1) (2026-05-30)
 
 

@@ -383,6 +383,10 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 | `SK_SBOM` | `sbom` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
 | `SK_TRIVY_SEVERITY` | `severity` | trivy-fs (ci.yml secscan), trivy-image (prerelease scan) | `HIGH,CRITICAL` | string |
 | `SK_TRIVY_VERSION` | `trivy_version` | trivy-fs, trivy-image | (install-trivy default) | string |
+| `SK_KUSTOMIZE_VERSION` | `kustomize_version` | kube-validate | (composite default) | string |
+| `SK_KUBECONFORM_VERSION` | `kubeconform_version` | kube-validate | (composite default) | string |
+| `SK_KUBE_LINTER_VERSION` | `kube_linter_version` | kube-lint | (composite default) | string |
+| `SK_GITLEAKS_VERSION` | `gitleaks_version` | secret-scan | (composite default) | string |
 | `SK_FLUTTER_DART_DEFINE_SECRETS` | `dart_define_secret_names` | release-flutter-android (release.yml, prerelease.yml, prerelease-on-push.yml) | (empty) | string (comma-list of secret names) |
 
 **Org-level layering** (catalog maintainers): set a variable at the organization level (`https://github.com/organizations/serverkraken/settings/variables/actions`) to provide an org-wide default. Repo-level values override org-level. A change to the org var propagates to every non-overriding adopter on the next CI run, no re-rendering required.
@@ -519,3 +523,19 @@ This replaces the per-adopter hand-rolled `manual-apk-build.yml` pattern. Availa
 - iOS build.
 - Play-Store upload — atom gains `upload_to_play_store` + `play_store_track` inputs; the renderer gains a repo-topic-detection branch so adopters opt in via a topic.
 - pubspec.yaml commit-back — adopters wire release-please `extra-files` if they want the bump persisted on `main`.
+
+## 10. GitOps Atom Set (v4.x+)
+
+Three reusable atoms validate a GitOps repository's Kubernetes manifests and scan for leaked secrets. They install their CLIs as pinned, Renovate-managed binaries (`setup-kube-toolchain`, `install-kube-linter`, `install-gitleaks`), so no third-party setup actions are involved. Version pins are overridable via the `SK_KUSTOMIZE_VERSION` / `SK_KUBECONFORM_VERSION` / `SK_KUBE_LINTER_VERSION` / `SK_GITLEAKS_VERSION` repository variables (each: version pin for the corresponding tool; empty → catalog composite default).
+
+| Atom | Does | Key inputs | Output |
+|---|---|---|---|
+| `kube-validate` | `kustomize build` every kustomization tree + `kubeconform` every standalone manifest under each root. Optional in-tree SOPS decryption via ksops (`sops: true`, requires the `sops_age_key` secret). | `manifests_paths`, `kustomize_args`, `schema_locations`, `skip_kinds`, `strict`, `sops` | pass/fail |
+| `kube-lint` | `kube-linter lint → SARIF`; counts findings, uploads to code-scanning, gates on count. Empty `config_path` → catalog baseline (`configs/kube-linter.yaml`, upstream defaults). | `manifests_path`, `config_path`, `fail_on_findings`, `upload_sarif` | `findings_count` |
+| `secret-scan` | `gitleaks detect → SARIF`; counts findings, uploads to code-scanning, gates on count. | `config_path`, `fail_on_findings`, `upload_sarif`, `fetch_depth`, `no_git`, `scan_path` | `findings_count` |
+
+**`secret-scan` is general-purpose** — callable by any adopter, not just GitOps repos. By default it is git-history-aware: a `pull_request` event scans the PR diff (`base..head`), a `push` event scans the tip commit, and a manual/scheduled run scans full history (so `fetch_depth: 0` is the default). Setting `no_git: true` switches it to a filesystem scan of `scan_path` (gitleaks `--no-git`), used for one-off directory scans and deterministic fixture tests where git history is irrelevant.
+
+All three mint a catalog-scoped App token (`secrets: inherit` covers it) to check out the catalog's composite actions, exactly like the existing security atoms. SARIF upload is auto-skipped on forks.
+
+> **ksops decryption is not exercised in catalog self-CI** — committing a decryptable age key to the catalog would itself be a secret leak. The happy integration path runs `kube-validate` with `sops: false` against plaintext fixtures; the real ksops path is validated at adopter-onboard time against repos that hold the real `SOPS_AGE_KEY` and encrypted trees.

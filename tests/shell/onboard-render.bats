@@ -182,6 +182,7 @@ golden_check() {
 @test "golden: release-eligibility-mixed" { golden_check "release-eligibility-mixed"; }
 @test "golden: containerfile-only"     { golden_check "containerfile-only"; }
 @test "golden: flutter-app"            { golden_check "flutter-app"; }
+@test "golden: gitops-cluster"         { golden_check "gitops-cluster"; }
 
 # ---- ci.yml lint+test atom golden tests (Task 11) ----
 #
@@ -411,6 +412,64 @@ render_prerelease_for_profile() {
   grep -qF "lint-flutter.yml@v4" "$rendered"
   grep -qF "test-flutter.yml@v4" "$rendered"
   grep -qF "coverage_threshold: \${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}" "$rendered"
+}
+
+# === GitOps ci.yml ===
+
+@test "ci.yml renders kube-validation jobs for a gitops component" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/cluster",
+    "default_branch": "main", "current_version": "0.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": [], "primary_language": "gitops",
+      "release_please_type": "simple", "role": "gitops",
+      "dockerfiles": [], "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": [],
+    "gitops": {"manifests_paths": ["kubernetes/apps","kubernetes/argo"],
+      "has_kube_linter_config": true, "has_gitleaks_config": true, "sops": true}
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/gitops.yml" "$rendered"
+}
+
+@test "ci.yml gitops omits config_path when adopter has no own config" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/cluster",
+    "default_branch": "main", "current_version": "0.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": [], "primary_language": "gitops",
+      "release_please_type": "simple", "role": "gitops",
+      "dockerfiles": [], "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": [],
+    "gitops": {"manifests_paths": ["kubernetes/apps"],
+      "has_kube_linter_config": false, "has_gitleaks_config": false, "sops": false}
+  }')
+  grep -qF "kube-validate.yml@v4" "$rendered"
+  grep -qF "kube-lint.yml@v4" "$rendered"
+  grep -qF "secret-scan.yml@v4" "$rendered"
+  ! grep -q "config_path" "$rendered"
+  grep -qF "sops: false" "$rendered"
+}
+
+# A gitops repo whose kubernetes/ holds only control dirs (bootstrap/components/
+# flux-system) yields manifests_paths: []. The range then emits an empty `|-`
+# block scalar — which must stay valid YAML (sops stays a sibling key, not
+# swallowed). Pins that contract so a future trimming change can't silently
+# break the rendered caller.
+@test "ci.yml gitops with zero workload dirs renders empty manifests_paths and stays valid YAML" {
+  command -v yamllint >/dev/null 2>&1 || skip "yamllint not installed"
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/cluster",
+    "default_branch": "main", "current_version": "0.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": [], "primary_language": "gitops",
+      "release_please_type": "simple", "role": "gitops",
+      "dockerfiles": [], "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": [],
+    "gitops": {"manifests_paths": [],
+      "has_kube_linter_config": false, "has_gitleaks_config": false, "sops": false}
+  }')
+  grep -qF "kube-validate.yml@v4" "$rendered"
+  grep -qF "manifests_paths: |-" "$rendered"
+  ! grep -qE '^[[:space:]]+kubernetes/' "$rendered"
+  grep -qF "sops: false" "$rendered"
+  yamllint -d relaxed "$rendered"
 }
 
 # ---- release.yml SK_SIGN/SK_ATTEST/SK_SBOM threading (Task 6) ----
@@ -719,4 +778,26 @@ render_target_for_profile() {
   RENDERED_AGAINST="v4.7.0" "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
   v=$(jq -r '.rendered_against' "$TARGET/.github/onboard.lock.json")
   [ "$v" = "v4.7.0" ]
+}
+
+# ---- gitops variant render set (Task 5) ----
+
+@test "render: gitops profile produces ci.yml only (no release-please set)" {
+  seed_profile "gitops-cluster"
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
+  [ "$status" -eq 0 ]
+  [ -f "$TARGET/.github/workflows/ci.yml" ]
+  [ ! -f "$TARGET/.github/workflows/release.yml" ]
+  [ ! -f "$TARGET/.github/workflows/prerelease.yml" ]
+  [ ! -f "$TARGET/.github/workflows/cleanup.yml" ]
+  [ ! -f "$TARGET/release-please-config.json" ]
+  [ ! -f "$TARGET/.release-please-manifest.json" ]
+  [ -f "$TARGET/.github/onboard.lock.json" ]
+}
+
+@test "render: gitops lock file lists ci.yml only" {
+  seed_profile "gitops-cluster"
+  "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
+  files=$(jq -r '.files | keys[]' "$TARGET/.github/onboard.lock.json")
+  [ "$files" = ".github/workflows/ci.yml" ]
 }

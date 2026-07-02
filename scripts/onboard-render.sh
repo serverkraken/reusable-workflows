@@ -11,6 +11,9 @@
 #   .github/onboard.lock.json      (schema_version=1, sha256 of each file)
 #
 # The lock file is the contract drift-check (Phase 5) compares against.
+#
+# Variant: a gitops profile (.gitops present) renders `ci.yml` ONLY — no
+# release-please / prerelease / cleanup — and the lock lists just ci.yml.
 
 set -euo pipefail
 
@@ -43,6 +46,12 @@ if [[ ! -f "$PROFILE" ]]; then
 fi
 
 MONOREPO=$(jq -r '.monorepo' "$PROFILE")
+
+# GitOps profiles render ci.yml ONLY — never release-please / prerelease /
+# cleanup. The gitops repos use bespoke calendar-versioned release flows the
+# catalog must not overwrite. `.gitops` is present iff the detector matched the
+# cluster-template fingerprint.
+IS_GITOPS=$(jq -r 'if (.gitops // null) != null then "true" else "false" end' "$PROFILE")
 
 SKELETONS="$CATALOG/docs/adopter-templates/skeletons"
 CONFIGS="$CATALOG/docs/adopter-templates/configs"
@@ -90,29 +99,35 @@ normalize_trailing_newline() {
   printf '%s\n' "$content" > "$f"
 }
 
-# Workflow skeletons (same set for all variants; conditionals inside templates
-# decide which jobs are emitted).
+# ci.yml is rendered for ALL variants (conditionals inside the template decide
+# which jobs appear). Everything below — the release-please machinery and the
+# prerelease-on-push opt-in — is skipped entirely for gitops profiles.
 render "$SKELETONS/ci.yml.tmpl"         "$TARGET/.github/workflows/ci.yml"
-render "$SKELETONS/release.yml.tmpl"    "$TARGET/.github/workflows/release.yml"
-render "$SKELETONS/prerelease.yml.tmpl" "$TARGET/.github/workflows/prerelease.yml"
-render "$SKELETONS/cleanup.yml.tmpl"    "$TARGET/.github/workflows/cleanup.yml"
 
-# prerelease-on-push.yml — opt-in: rendered only when the repo carries the
-# `sk-prerelease-on-push` topic. Tracked in the lock + $REPO loop below only
-# when actually rendered.
+# RENDER_ON_PUSH is read later (lock array) under `set -u`; keep it initialised
+# for every variant. Only the non-gitops branch can ever flip it to 1.
 RENDER_ON_PUSH=0
-if jq -e '(.topics // []) | index("sk-prerelease-on-push")' "$PROFILE" >/dev/null 2>&1; then
-  render "$SKELETONS/prerelease-on-push.yml.tmpl" "$TARGET/.github/workflows/prerelease-on-push.yml"
-  RENDER_ON_PUSH=1
-fi
+if [[ "$IS_GITOPS" != "true" ]]; then
+  render "$SKELETONS/release.yml.tmpl"    "$TARGET/.github/workflows/release.yml"
+  render "$SKELETONS/prerelease.yml.tmpl" "$TARGET/.github/workflows/prerelease.yml"
+  render "$SKELETONS/cleanup.yml.tmpl"    "$TARGET/.github/workflows/cleanup.yml"
 
-# release-please config: single vs monorepo.
-if [[ "$MONOREPO" == "true" ]]; then
-  render "$CONFIGS/release-please-config.monorepo.json.tmpl" "$TARGET/release-please-config.json"
-else
-  render "$CONFIGS/release-please-config.json.tmpl"          "$TARGET/release-please-config.json"
+  # prerelease-on-push.yml — opt-in: rendered only when the repo carries the
+  # `sk-prerelease-on-push` topic. Tracked in the lock + $REPO loop below only
+  # when actually rendered.
+  if jq -e '(.topics // []) | index("sk-prerelease-on-push")' "$PROFILE" >/dev/null 2>&1; then
+    render "$SKELETONS/prerelease-on-push.yml.tmpl" "$TARGET/.github/workflows/prerelease-on-push.yml"
+    RENDER_ON_PUSH=1
+  fi
+
+  # release-please config: single vs monorepo.
+  if [[ "$MONOREPO" == "true" ]]; then
+    render "$CONFIGS/release-please-config.monorepo.json.tmpl" "$TARGET/release-please-config.json"
+  else
+    render "$CONFIGS/release-please-config.json.tmpl"          "$TARGET/release-please-config.json"
+  fi
+  render "$CONFIGS/release-please-manifest.json.tmpl" "$TARGET/.release-please-manifest.json"
 fi
-render "$CONFIGS/release-please-manifest.json.tmpl" "$TARGET/.release-please-manifest.json"
 
 # Substitute $REPO placeholder in image names. Detection emits "$REPO-api"
 # style names; the renderer resolves $REPO from the profile's `target_repo`
@@ -145,16 +160,22 @@ done
 
 # Lock file — sha256 every rendered path, write schema 1.
 LOCK="$TARGET/.github/onboard.lock.json"
-RENDERED=(
-  ".github/workflows/ci.yml"
-  ".github/workflows/release.yml"
-  ".github/workflows/prerelease.yml"
-  ".github/workflows/cleanup.yml"
-  "release-please-config.json"
-  ".release-please-manifest.json"
-)
-if [[ "$RENDER_ON_PUSH" == "1" ]]; then
-  RENDERED+=(".github/workflows/prerelease-on-push.yml")
+if [[ "$IS_GITOPS" == "true" ]]; then
+  RENDERED=(
+    ".github/workflows/ci.yml"
+  )
+else
+  RENDERED=(
+    ".github/workflows/ci.yml"
+    ".github/workflows/release.yml"
+    ".github/workflows/prerelease.yml"
+    ".github/workflows/cleanup.yml"
+    "release-please-config.json"
+    ".release-please-manifest.json"
+  )
+  if [[ "$RENDER_ON_PUSH" == "1" ]]; then
+    RENDERED+=(".github/workflows/prerelease-on-push.yml")
+  fi
 fi
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
