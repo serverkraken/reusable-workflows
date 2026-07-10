@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-06-22T09:09:09Z_
+_Last updated by the onboarding workflow: 2026-07-10T06:06:17Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -30,7 +30,7 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/music-assistant-sidecar | 2026-06-08 | v4 | [PR](https://github.com/serverkraken/music-assistant-sidecar/pull/22) | — | add-open, no-legacy |
 | serverkraken/openstreetmap-overpass | 2026-06-08 | v4 | [PR](https://github.com/serverkraken/openstreetmap-overpass/pull/1) | — | add-open, no-legacy |
 | serverkraken/smarthome-helm | 2026-06-08 | v4 | [PR](https://github.com/serverkraken/smarthome-helm/pull/5) | [PR](https://github.com/serverkraken/smarthome-helm/pull/7) | add-open, cleanup-open |
-| serverkraken/smarthome-jukebox-go | 2026-06-08 | v4 | [PR](https://github.com/serverkraken/smarthome-jukebox-go/pull/36) | [PR](https://github.com/serverkraken/smarthome-jukebox-go/pull/37) | add-open, cleanup-open |
+| serverkraken/smarthome-jukebox-go | 2026-07-10 | v4 | [PR](https://github.com/serverkraken/smarthome-jukebox-go/pull/36) | [PR](https://github.com/serverkraken/smarthome-jukebox-go/pull/37) | add-open, cleanup-open |
 | serverkraken/smarthome-jukebox | 2026-06-11 | v4 | [PR](https://github.com/serverkraken/smarthome-jukebox/pull/26) | [PR](https://github.com/serverkraken/smarthome-jukebox/pull/27) | add-open, cleanup-open |
 | serverkraken/strassenfuchs-admin-dashboard | 2026-05-27 | v4 | [PR](https://github.com/serverkraken/strassenfuchs-admin-dashboard/pull/23) | [PR](https://github.com/serverkraken/strassenfuchs-admin-dashboard/pull/24) | add-open, cleanup-open |
 | serverkraken/strassenfuchs-map-station-generator | 2026-05-27 | v4 | [PR](https://github.com/serverkraken/strassenfuchs-map-station-generator/pull/20) | [PR](https://github.com/serverkraken/strassenfuchs-map-station-generator/pull/21) | add-open, cleanup-open |
