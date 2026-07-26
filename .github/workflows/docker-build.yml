@@ -266,7 +266,12 @@ jobs:
           build-args: ${{ inputs.build_args }}
           outputs: type=image,name=ghcr.io/${{ needs.version.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=build-${{ steps.suffix.outputs.value }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=build-${{ steps.suffix.outputs.value }}-${{ matrix.arch }}
+          # ignore-error: a cache-backend outage must never fail a release
+          # build. Learned from actions-runner-image v1.5.1: the cluster-local
+          # cache server 500'd on FinalizeCacheEntryUpload (falcondev#239,
+          # >1000 multipart parts) and buildx treated the cache export as
+          # fatal — image push and all build steps had already succeeded.
+          cache-to: type=gha,mode=max,ignore-error=true,scope=build-${{ steps.suffix.outputs.value }}-${{ matrix.arch }}
 
       - name: Export digest
         if: steps.check.outputs.selected == 'true'
