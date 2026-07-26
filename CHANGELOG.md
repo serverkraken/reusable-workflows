@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.10.1](https://github.com/serverkraken/reusable-workflows/compare/v4.10.0...v4.10.1) (2026-07-26)
+
+
+### Bug Fixes
+
+* **catalog:** bats assertion hygiene + June codex-review findings ([#201](https://github.com/serverkraken/reusable-workflows/issues/201)) ([539d5c0](https://github.com/serverkraken/reusable-workflows/commit/539d5c0a0cc244cecd25c15014576f62918a319d))
+* **docker-build:** never fail a build on GHA cache export errors ([#202](https://github.com/serverkraken/reusable-workflows/issues/202)) ([6afd93d](https://github.com/serverkraken/reusable-workflows/commit/6afd93d50a1512a3c3d590346f5e5afa5bfecd6d))
+
 ## [4.10.0](https://github.com/serverkraken/reusable-workflows/compare/v4.9.0...v4.10.0) (2026-07-26)
 
 
