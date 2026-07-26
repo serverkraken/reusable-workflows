@@ -56,6 +56,7 @@ install_fake_curl() {
   cat > "$FAKE_BIN/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "$*" >> "${SK_TEST_CURL_ARGV_LOG:-/dev/null}"
 out=""
 url=""
 while [[ $# -gt 0 ]]; do
@@ -65,6 +66,14 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -H)
+      shift 2
+      ;;
+    --config)
+      # `--config -` feeds curl options via stdin; capture them so tests can
+      # assert the Authorization header arrives without touching argv.
+      if [[ "$2" == "-" ]]; then
+        cat >> "${SK_TEST_CURL_CONFIG_LOG:-/dev/null}"
+      fi
       shift 2
       ;;
     -*)
@@ -169,6 +178,39 @@ EOF
   [ "$(cat "$SK_TEST_GH_TOKEN_FILE")" = "secret-token" ]
   grep -qx "version=v4.2.1" "$GITHUB_OUTPUT"
   grep -qx "source=release" "$GITHUB_OUTPUT"
+}
+
+@test "release install via curl keeps the token out of curl argv" {
+  make_release_assets "v4.2.4" "amd64"
+  install_fake_curl
+  export SK_TEST_RELEASE_DIR="$RELEASE_DIR"
+  export SK_TEST_CURL_ARGV_LOG="$TMPDIR/curl-argv"
+  export SK_TEST_CURL_CONFIG_LOG="$TMPDIR/curl-config"
+  export INPUT_VERSION="v4.2.4"
+  export INPUT_GITHUB_TOKEN="secret-token"
+
+  # Hermetic PATH without gh so the curl fallback runs even on hosts that
+  # have gh installed. bash is needed because the fake curl's `env` shebang
+  # resolves it via PATH.
+  tools="$TMPDIR/tools"
+  mkdir -p "$tools"
+  for t in bash awk chmod dirname mkdir mktemp rm tar tr uname cp basename cat; do
+    ln -s "$(command -v "$t")" "$tools/$t"
+  done
+  for t in sha256sum shasum; do
+    command -v "$t" >/dev/null 2>&1 && ln -s "$(command -v "$t")" "$tools/$t"
+  done
+
+  run env PATH="$FAKE_BIN:$tools" bash "$SCRIPT"
+
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx "version=v4.2.4" "$GITHUB_OUTPUT"
+  grep -qx "source=release" "$GITHUB_OUTPUT"
+  # The token must never appear in curl argv (visible in the process list on
+  # shared runners) — it has to travel via the stdin --config channel.
+  run grep -c "secret-token" "$SK_TEST_CURL_ARGV_LOG"
+  [ "$output" = "0" ]
+  grep -q 'header = "Authorization: Bearer secret-token"' "$SK_TEST_CURL_CONFIG_LOG"
 }
 
 @test "release install fails on checksum mismatch" {

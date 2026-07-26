@@ -100,11 +100,16 @@ if [[ -n "$INPUT_GITHUB_TOKEN" ]] && command -v gh >/dev/null 2>&1; then
 else
   base_url="https://github.com/${INPUT_REPOSITORY}/releases/download/${version}"
   curl_args=(-fsSL)
+  curl_config=""
   if [[ -n "$INPUT_GITHUB_TOKEN" ]]; then
-    curl_args+=(-H "Authorization: Bearer $INPUT_GITHUB_TOKEN")
+    # Feed the Authorization header through `--config -` (stdin) instead of
+    # argv: header arguments are visible to every user on the runner via the
+    # process list for the lifetime of the download.
+    curl_args+=(--config -)
+    curl_config="header = \"Authorization: Bearer $INPUT_GITHUB_TOKEN\""
   fi
-  curl "${curl_args[@]}" -o "$tmp/$asset" "$base_url/$asset"
-  curl "${curl_args[@]}" -o "$tmp/$checksums" "$base_url/$checksums"
+  curl "${curl_args[@]}" -o "$tmp/$asset" "$base_url/$asset" <<< "$curl_config"
+  curl "${curl_args[@]}" -o "$tmp/$checksums" "$base_url/$checksums" <<< "$curl_config"
 fi
 
 expected="$(awk -v file="$asset" '$2 == file {print $1}' "$tmp/$checksums")"
