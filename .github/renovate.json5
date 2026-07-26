@@ -11,6 +11,14 @@
   schedule: [
     'before 6am on monday',
   ],
+  // Confine branch updates (rebases) to the schedule window as well.
+  // Default true meant: every push to main re-rebased ALL open PRs
+  // immediately, retriggering full self-ci+integration per PR and
+  // drowning the small self-hosted runner pool (observed 2026-07-26).
+  // rebaseWhen stays auto — branch protection has strict=true, so
+  // automerge needs up-to-date branches; they now get current on Monday
+  // mornings inside the schedule window.
+  updateNotScheduled: false,
   labels: [
     'dependencies',
   ],
@@ -30,6 +38,16 @@
       automerge: true,
       automergeType: 'pr',
       groupName: 'GitHub Actions',
+    },
+    {
+      description: 'Action digest bumps travel as one PR — 7 separate PRs each ran the full self-ci+integration suite',
+      matchManagers: [
+        'github-actions',
+      ],
+      matchUpdateTypes: [
+        'digest',
+      ],
+      groupName: 'GitHub Actions digests',
     },
     {
       description: 'Supply-chain actions move in lockstep',
