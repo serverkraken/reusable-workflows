@@ -89,6 +89,25 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 
 ---
 
+### `lint-flutter.yml`
+
+Runs `dart format --set-exit-if-changed` + `flutter analyze`.
+
+| Kind    | Name                | Type    | Required | Default                                         | Description |
+|---------|---------------------|---------|----------|-------------------------------------------------|-------------|
+| input   | `runs_on`           | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | JSON-encoded runner labels |
+| input   | `working_directory` | string  | no       | `'.'`                                           | Flutter project root, relative to repo root |
+| input   | `java_version`      | string  | no       | `'17'`                                          | Java major version |
+| input   | `flutter_channel`   | string  | no       | `'stable'`                                      | Flutter release channel |
+| input   | `flutter_version`   | string  | no       | `''`                                            | Specific Flutter version (empty = latest on channel) |
+| input   | `use_build_runner`  | boolean | no       | `true`                                          | Run `dart run build_runner build` after pub get |
+| input   | `sdk_cache`         | boolean | no       | `false`                                         | Cache the Flutter SDK via actions/cache (since v4; off — key rotates per Flutter release) |
+| input   | `timeout_minutes`   | number  | no       | `30`                                            | Job timeout (since v4) |
+| secret  | `release_please_app_client_id`   | — | **yes** | — | App Client ID for the catalog-checkout token |
+| secret  | `release_please_app_private_key` | — | **yes** | — | App private key for the catalog-checkout token |
+
+---
+
 ### `lint-go.yml`
 
 | Kind  | Name                    | Type    | Required | Default                                | Description |
@@ -136,6 +155,37 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 
 ---
 
+### `release-flutter-android.yml`
+
+Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
+
+| Kind    | Name                       | Type    | Required | Default                                         | Description |
+|---------|----------------------------|---------|----------|-------------------------------------------------|-------------|
+| input   | `runs_on`                  | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | JSON-encoded runner labels |
+| input   | `working_directory`        | string  | no       | `'.'`                                           | Flutter project root, relative to repo root |
+| input   | `version`                  | string  | no       | `''`                                            | Semver (leading v optional). Empty only with `create_release=true` → derives `<latest-tag>-rc.<run_number>` |
+| input   | `create_release`           | boolean | no       | `false`                                         | Create the Release at the resolved tag before upload (manual/ad-hoc builds) |
+| input   | `java_version`             | string  | no       | `'17'`                                          | Java major version |
+| input   | `flutter_channel`          | string  | no       | `'stable'`                                      | Flutter release channel |
+| input   | `flutter_version`          | string  | no       | `''`                                            | Specific Flutter version (empty = latest on channel) |
+| input   | `use_build_runner`         | boolean | no       | `true`                                          | Run `dart run build_runner build` after pub get |
+| input   | `build_apk`                | boolean | no       | `true`                                          | Build a release APK |
+| input   | `build_aab`                | boolean | no       | `false`                                         | Build a release AAB |
+| input   | `flavor`                   | string  | no       | `''`                                            | Build flavor (empty = no `--flavor`) |
+| input   | `prerelease`               | boolean | no       | `false`                                         | Mark the GitHub Release as prerelease |
+| input   | `dart_define_secret_names` | string  | no       | `''`                                            | Comma-separated secret names forwarded as `--dart-define=NAME=$VALUE` |
+| input   | `artefact_name_prefix`     | string  | no       | `''`                                            | Prefix for renamed artefacts (empty = repo name) |
+| input   | `sdk_cache`                | boolean | no       | `false`                                         | Cache the Flutter SDK via actions/cache (since v4; off — key rotates per Flutter release) |
+| input   | `timeout_minutes`          | number  | no       | `45`                                            | Job timeout (since v4) |
+| secret  | `release_please_app_client_id`   | — | **yes** | — | App Client ID for the catalog-checkout token |
+| secret  | `release_please_app_private_key` | — | **yes** | — | App private key for the catalog-checkout token |
+| secret  | `ANDROID_KEYSTORE_BASE64`        | — | **yes** | — | Base64-encoded release keystore |
+| secret  | `ANDROID_STORE_PASSWORD`         | — | **yes** | — | Keystore store password |
+| secret  | `ANDROID_KEY_ALIAS`              | — | **yes** | — | Key alias inside the keystore |
+| secret  | `ANDROID_KEY_PASSWORD`           | — | **yes** | — | Key password |
+
+---
+
 ### `semantic-release.yml`
 
 | Kind    | Name                            | Type    | Required | Default                                   | Description |
@@ -150,6 +200,26 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 | output  | `tag_name`                      | string  | —        | —                                         | e.g. `'v1.2.3'` |
 | output  | `major_tag`                     | string  | —        | —                                         | e.g. `'v1'` |
 | output  | `minor_tag`                     | string  | —        | —                                         | e.g. `'v1.2'` |
+
+---
+
+### `test-flutter.yml`
+
+Runs `flutter test --coverage` and enforces a line-coverage threshold.
+
+| Kind    | Name                 | Type    | Required | Default                                         | Description |
+|---------|----------------------|---------|----------|-------------------------------------------------|-------------|
+| input   | `runs_on`            | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | JSON-encoded runner labels |
+| input   | `working_directory`  | string  | no       | `'.'`                                           | Flutter project root, relative to repo root |
+| input   | `java_version`       | string  | no       | `'17'`                                          | Java major version |
+| input   | `flutter_channel`    | string  | no       | `'stable'`                                      | Flutter release channel |
+| input   | `flutter_version`    | string  | no       | `''`                                            | Specific Flutter version (empty = latest on channel) |
+| input   | `use_build_runner`   | boolean | no       | `true`                                          | Run `dart run build_runner build` after pub get |
+| input   | `coverage_threshold` | number  | no       | `80`                                            | Minimum line coverage percentage (0-100) |
+| input   | `sdk_cache`          | boolean | no       | `false`                                         | Cache the Flutter SDK via actions/cache (since v4; off — key rotates per Flutter release) |
+| input   | `timeout_minutes`    | number  | no       | `45`                                            | Job timeout (since v4) |
+| secret  | `release_please_app_client_id`   | — | **yes** | — | App Client ID for the catalog-checkout token |
+| secret  | `release_please_app_private_key` | — | **yes** | — | App private key for the catalog-checkout token |
 
 ---
 
@@ -278,6 +348,22 @@ No inputs. Logs in to `ghcr.io` using `GITHUB_TOKEN`.
 |-------|-------------|--------|----------|---------|-------------|
 | input | `image_ref` | string | yes      | —       | Full image reference for the pull command |
 | input | `pr_number` | string | yes      | —       | PR number to comment on |
+
+### `actions/setup-flutter-toolchain`
+
+Shared by the lint-flutter, test-flutter, and release-flutter-android atoms:
+setup-java → setup-android (`platform-tools` only) → subosito/flutter-action
+→ `flutter pub get` → optional build_runner.
+
+| Kind  | Name                | Type   | Required | Default     | Description |
+|-------|---------------------|--------|----------|-------------|-------------|
+| input | `java-version`      | string | no       | `'17'`      | Java major version |
+| input | `java-distribution` | string | no       | `'temurin'` | Distribution slug for actions/setup-java |
+| input | `flutter-channel`   | string | no       | `'stable'`  | Flutter release channel |
+| input | `flutter-version`   | string | no       | `''`        | Specific Flutter version (empty = latest on channel) |
+| input | `use-build-runner`  | string | no       | `'true'`    | Run build_runner after pub get |
+| input | `working-directory` | string | no       | `'.'`       | Flutter project root |
+| input | `sdk-cache`         | string | no       | `'false'`   | Cache the Flutter SDK via actions/cache (off: key rotates per Flutter stable) |
 
 ---
 
