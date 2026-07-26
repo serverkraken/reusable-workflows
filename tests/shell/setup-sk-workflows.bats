@@ -194,7 +194,9 @@ EOF
   # resolves it via PATH.
   tools="$TMPDIR/tools"
   mkdir -p "$tools"
-  for t in bash awk chmod dirname mkdir mktemp rm tar tr uname cp basename cat; do
+  # gzip: GNU tar on Linux execs it as a child for -z (bsdtar on macOS
+  # decompresses in-process, so its absence only shows up in CI).
+  for t in bash awk chmod dirname mkdir mktemp rm tar tr uname cp basename cat gzip; do
     ln -s "$(command -v "$t")" "$tools/$t"
   done
   for t in sha256sum shasum; do
