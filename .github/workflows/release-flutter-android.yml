@@ -85,6 +85,16 @@ on:
         required: false
         type: string
         default: ''
+      sdk_cache:
+        description: 'Cache the Flutter SDK via actions/cache. Off by default; see setup-flutter-toolchain.'
+        required: false
+        type: boolean
+        default: false
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 45
     secrets:
       release_please_app_client_id:
         required: true
@@ -115,7 +125,7 @@ concurrency:
 jobs:
   build:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     steps:
       - name: Checkout adopter repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -162,6 +172,7 @@ jobs:
           flutter-version: ${{ inputs.flutter_version }}
           use-build-runner: ${{ inputs.use_build_runner }}
           working-directory: ${{ inputs.working_directory }}
+          sdk-cache: ${{ inputs.sdk_cache }}
 
       - name: Resolve version + sync pubspec.yaml
         id: ver

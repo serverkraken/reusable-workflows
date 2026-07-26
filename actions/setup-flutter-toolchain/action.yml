@@ -20,6 +20,14 @@ inputs:
   working-directory:
     description: 'Path to the Flutter project root, relative to the runner workspace'
     default: '.'
+  sdk-cache:
+    description: >-
+      When "true", cache the Flutter SDK via actions/cache. Off by default:
+      the SDK cache key embeds the resolved Flutter version, so it rotates
+      with every Flutter stable release (~every 1-2 weeks) and almost never
+      hits — while every job re-uploads a ~1.7 GB archive. On GitHub-hosted
+      runners "true" is reasonable again.
+    default: 'false'
 
 runs:
   using: composite
@@ -32,13 +40,20 @@ runs:
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+      with:
+        # The action default 'tools platform-tools' drags in the emulator and
+        # legacy sdk-tools via the deprecated 'tools' alias (~2 min per job,
+        # useless for headless builds). platform-tools (adb) suffices; AGP
+        # auto-installs platforms/build-tools during the Gradle build, and
+        # the action still accepts the SDK licenses.
+        packages: 'platform-tools'
 
     - name: Setup Flutter
       uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
       with:
         channel: ${{ inputs.flutter-channel }}
         flutter-version: ${{ inputs.flutter-version }}
-        cache: true
+        cache: ${{ inputs.sdk-cache }}
 
     - name: flutter pub get
       shell: bash
