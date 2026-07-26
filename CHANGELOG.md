@@ -1,5 +1,40 @@
 # Changelog
 
+## [4.10.0](https://github.com/serverkraken/reusable-workflows/compare/v4.9.0...v4.10.0) (2026-07-26)
+
+
+### Features
+
+* **flutter:** fast path — emulator out, SDK cache opt-in, timeouts 30/45/45 ([#200](https://github.com/serverkraken/reusable-workflows/issues/200)) ([9d23f2b](https://github.com/serverkraken/reusable-workflows/commit/9d23f2bd0255559351d3669c704273ea3a8ee582))
+* **onboard-defaults:** add Go apply-defaults command ([#176](https://github.com/serverkraken/reusable-workflows/issues/176)) ([33a1ac0](https://github.com/serverkraken/reusable-workflows/commit/33a1ac0b08f35da3f4216eb1c8504cae87fb6448))
+* **onboard-drift:** add Go drift command and opt-in action path ([#174](https://github.com/serverkraken/reusable-workflows/issues/174)) ([db2bb8d](https://github.com/serverkraken/reusable-workflows/commit/db2bb8d4460e08ff02015c952822d09f09554003))
+* **onboard-render:** add Go render command ([#175](https://github.com/serverkraken/reusable-workflows/issues/175)) ([b09b7eb](https://github.com/serverkraken/reusable-workflows/commit/b09b7eb80fb08bcde7c23001e65e02094a7acc5b))
+* **onboard:** add Go detect CLI and opt-in workflow rollout ([#173](https://github.com/serverkraken/reusable-workflows/issues/173)) ([75cc381](https://github.com/serverkraken/reusable-workflows/commit/75cc3817362883f2c0e721e6200e202a0912b4ee))
+* **sk-workflows:** add local preview command ([#181](https://github.com/serverkraken/reusable-workflows/issues/181)) ([8f807d9](https://github.com/serverkraken/reusable-workflows/commit/8f807d97a28875e3074d1eca3c7e6de3f88017bc))
+* **sk-workflows:** add setup action and release assets ([#177](https://github.com/serverkraken/reusable-workflows/issues/177)) ([fb8708e](https://github.com/serverkraken/reusable-workflows/commit/fb8708efc08c9c641bac78cd4d6c4ae08940fafe))
+* **sk-workflows:** default operational workflows to go ([#179](https://github.com/serverkraken/reusable-workflows/issues/179)) ([bfbff98](https://github.com/serverkraken/reusable-workflows/commit/bfbff98bda4938c1600b06a0a94e5737df7021e1))
+* **sk-workflows:** roll out Go CLI migration ([67b5617](https://github.com/serverkraken/reusable-workflows/commit/67b561724befd93d6ce480ab45355d54cf097bac))
+* **sk-workflows:** roll out Go CLI migration ([#189](https://github.com/serverkraken/reusable-workflows/issues/189)) ([67b5617](https://github.com/serverkraken/reusable-workflows/commit/67b561724befd93d6ce480ab45355d54cf097bac))
+* **sk-workflows:** wire setup into operational go mode ([#178](https://github.com/serverkraken/reusable-workflows/issues/178)) ([3d76cf3](https://github.com/serverkraken/reusable-workflows/commit/3d76cf3ead7b91c7c2b5dced1d8818d590c14761))
+
+
+### Bug Fixes
+
+* **defaults:** abort on topics/branch-protection read errors ([df79fba](https://github.com/serverkraken/reusable-workflows/commit/df79fbacd99d0802489ab6ae38ff9fbc5de02460))
+* **onboard-sweep:** derive current minor from patch tags ([#186](https://github.com/serverkraken/reusable-workflows/issues/186)) ([ef4d3be](https://github.com/serverkraken/reusable-workflows/commit/ef4d3be67b669faccc30dce4a2ef705a27924eca))
+* **setup-sk-workflows:** keep release token out of curl argv ([562df9d](https://github.com/serverkraken/reusable-workflows/commit/562df9df1fcb83be14dc240f24d0021a02a748ea))
+
+
+### Documentation
+
+* **operations:** remove duplicate repo defaults section ([#185](https://github.com/serverkraken/reusable-workflows/issues/185)) ([a555036](https://github.com/serverkraken/reusable-workflows/commit/a5550362c2053aaee0c4c7041c71fde0def406f6))
+* **plan:** gitops onboard detection + rendering implementation plan [skip ci] ([1a1147f](https://github.com/serverkraken/reusable-workflows/commit/1a1147f364b9a2135353515f5cc63a1dd9642a37))
+* **plan:** prerelease-trigger templates implementation plan [skip ci] ([2ee0a37](https://github.com/serverkraken/reusable-workflows/commit/2ee0a37a5fbe34df46a73079987fc9c6ab7a3b60))
+* **sk-workflows:** align rollout defaults ([#184](https://github.com/serverkraken/reusable-workflows/issues/184)) ([03eba34](https://github.com/serverkraken/reusable-workflows/commit/03eba342df5c7b96a00668f6fb312821680b3428))
+* **sk-workflows:** document go rollout fallback ([#180](https://github.com/serverkraken/reusable-workflows/issues/180)) ([f4262ad](https://github.com/serverkraken/reusable-workflows/commit/f4262ad1797a161980be2504e45d0d9ae33ce098))
+* **sk-workflows:** record cli contract decisions ([#183](https://github.com/serverkraken/reusable-workflows/issues/183)) ([2537316](https://github.com/serverkraken/reusable-workflows/commit/2537316efe5e2ba910b182feea30dd7f8d887c37))
+* **spec:** prerelease-trigger templates design (Phase-2 Item 3) [skip ci] ([192aa9a](https://github.com/serverkraken/reusable-workflows/commit/192aa9a8376002a6933b279895e2c42a53c1bacc))
+
 ## [4.9.0](https://github.com/serverkraken/reusable-workflows/compare/v4.8.0...v4.9.0) (2026-05-31)
 
 
