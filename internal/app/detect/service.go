@@ -569,7 +569,7 @@ func detectLegacyCI(repo string) ([]domain.LegacyCI, error) {
 	owned := map[string]bool{"ci.yml": true, "release.yml": true, "prerelease.yml": true, "prerelease-on-push.yml": true, "cleanup.yml": true}
 	var out []domain.LegacyCI
 	for _, e := range entries {
-		if e.IsDir() || owned[e.Name()] || !(strings.HasSuffix(e.Name(), ".yml") || strings.HasSuffix(e.Name(), ".yaml")) {
+		if e.IsDir() || owned[e.Name()] || (!strings.HasSuffix(e.Name(), ".yml") && !strings.HasSuffix(e.Name(), ".yaml")) {
 			continue
 		}
 		rel := filepath.ToSlash(filepath.Join(".github", "workflows", e.Name()))

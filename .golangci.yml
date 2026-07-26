@@ -1,0 +1,14 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # CLI diagnostics written to the injected stdout/stderr writers are
+      # best-effort by design: a failed write to a closed pipe must not turn
+      # a correct exit code into extra error handling at every print site.
+      # Contract-relevant writes (step summary, lockfile) check errors
+      # explicitly in code.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln

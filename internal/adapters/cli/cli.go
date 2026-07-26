@@ -227,7 +227,9 @@ func runApplyDefaults(ctx context.Context, args []string, stdout, stderr io.Writ
 		fmt.Fprintln(stdout, "defaults_applied=false")
 		fmt.Fprintln(stdout, "tier_2_applied=false")
 		fmt.Fprintf(stdout, "would_change=%s\n", defaultsapp.CategoriesCSV(res.WouldChange))
-		writeDefaultsSummary(os.Getenv("GITHUB_STEP_SUMMARY"), *repo, res.WouldChange)
+		if err := writeDefaultsSummary(os.Getenv("GITHUB_STEP_SUMMARY"), *repo, res.WouldChange); err != nil {
+			fmt.Fprintf(stderr, "::warning::failed to write step summary: %v\n", err)
+		}
 		return 0
 	}
 	fmt.Fprintln(stdout, "defaults_applied=true")
@@ -336,9 +338,9 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  sk-workflows preview --repo-path <dir> --out <dir> [--catalog-path <dir>] [--pin-version vN] [--target-repo owner/repo]")
 }
 
-func writeDefaultsSummary(path, repo string, categories []string) {
+func writeDefaultsSummary(path, repo string, categories []string) error {
 	if path == "" {
-		return
+		return nil
 	}
 	var b strings.Builder
 	b.WriteString("## apply-repo-defaults (dry-run)\n\n")
@@ -356,8 +358,11 @@ func writeDefaultsSummary(path, repo string, categories []string) {
 	b.WriteString("\n")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return
+		return err
 	}
-	defer f.Close()
-	_, _ = f.WriteString(b.String())
+	if _, err := f.WriteString(b.String()); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }

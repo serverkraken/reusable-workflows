@@ -96,7 +96,7 @@ func (s Service) renderCompare(ctx context.Context, req Request, lock domain.Onb
 		res.RenderError = renderError("render-failed", err)
 		return
 	}
-	defer os.RemoveAll(scratch)
+	defer func() { _ = os.RemoveAll(scratch) }()
 
 	targetRepo := ""
 	if s.Git != nil {

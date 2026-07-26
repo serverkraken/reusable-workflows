@@ -61,7 +61,7 @@ func (s Service) Render(ctx context.Context, req Request) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(scratch)
+	defer func() { _ = os.RemoveAll(scratch) }()
 
 	contextPath := filepath.Join(scratch, "ctx.json")
 	if err := writeContext(contextPath, req.PinVersion, rawProfile); err != nil {

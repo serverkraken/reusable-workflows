@@ -92,7 +92,7 @@ func TestStoreUpdateLockErrors(t *testing.T) {
 	if err := os.Chmod(filepath.Join(blocked, ".github"), 0o500); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(filepath.Join(blocked, ".github"), 0o700)
+	defer func() { _ = os.Chmod(filepath.Join(blocked, ".github"), 0o700) }()
 	if err := (Store{}).UpdateLockDefaultsMarker(blocked, "x"); err == nil {
 		t.Fatal("expected temp file creation error")
 	}

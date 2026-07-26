@@ -399,15 +399,55 @@ func TestDelimiterAvoidsPayloadCollision(t *testing.T) {
 
 func TestWriteDefaultsSummaryVariants(t *testing.T) {
 	summary := filepath.Join(t.TempDir(), "summary.md")
-	writeDefaultsSummary("", "o/r", []string{"ignored"})
-	writeDefaultsSummary(summary, "o/r", nil)
-	writeDefaultsSummary(filepath.Join(t.TempDir(), "missing", "summary.md"), "o/r", []string{"topics"})
+	if err := writeDefaultsSummary("", "o/r", []string{"ignored"}); err != nil {
+		t.Fatalf("empty path must be a no-op, got %v", err)
+	}
+	if err := writeDefaultsSummary(summary, "o/r", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeDefaultsSummary(filepath.Join(t.TempDir(), "missing", "summary.md"), "o/r", []string{"topics"}); err == nil {
+		t.Fatal("expected error for unwritable summary path")
+	}
 	content, err := os.ReadFile(summary)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(content), "already in sync") {
 		t.Fatalf("summary=%q", content)
+	}
+}
+
+func TestApplyDefaultsDryRunWarnsOnSummaryWriteFailure(t *testing.T) {
+	prependFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "api /repos/o/r" ]]; then
+  echo '{"default_branch":"main","delete_branch_on_merge":true,"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false,"allow_auto_merge":true,"squash_merge_commit_title":"PR_TITLE","squash_merge_commit_message":"BLANK","has_wiki":false,"has_projects":false,"has_issues":true,"has_discussions":false}'
+elif [[ "$*" == "api /repos/o/r/branches/main/protection" ]]; then
+  echo '{"enforce_admins":{"enabled":true},"required_linear_history":{"enabled":true},"required_status_checks":null,"required_pull_request_reviews":{"required_approving_review_count":0},"restrictions":null}'
+elif [[ "$*" == "api /repos/o/r/topics -q .names" ]]; then
+  echo '["go"]'
+else
+  echo "unexpected gh args: $*" >&2
+  exit 99
+fi
+`)
+	catalog := defaultsCatalog(t)
+	target := t.TempDir()
+	writeCLIFile(t, filepath.Join(target, ".github", "onboard.lock.json"), `{"schema_version":1}`)
+	t.Setenv("GITHUB_STEP_SUMMARY", filepath.Join(t.TempDir(), "missing", "summary.md"))
+
+	var out, errb bytes.Buffer
+	code := Run(context.Background(), []string{"apply-defaults",
+		"--catalog-path", catalog,
+		"--repo", "o/r",
+		"--target-path", target,
+		"--dry-run",
+	}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("summary write failure must not fail the run: code=%d stderr=%s", code, errb.String())
+	}
+	if !strings.Contains(errb.String(), "::warning::") || !strings.Contains(errb.String(), "step summary") {
+		t.Fatalf("expected step-summary warning on stderr, got %q", errb.String())
 	}
 }
 

@@ -30,6 +30,23 @@ jobs:
     with:
       working_directory: tests/fixtures/lint-test/go-happy
 
+  # ----- lint-go + test-go: dogfood on the catalog's own sk-workflows module.
+  # The fixture jobs above prove the atoms work; these two prove the
+  # catalog's own Go code passes the product it ships (go vet, golangci-lint,
+  # go test with the >=90% coverage gate).
+  lint-go-self:
+    uses: ./.github/workflows/lint-go.yml
+    secrets: inherit
+    with:
+      working_directory: .
+
+  test-go-self:
+    uses: ./.github/workflows/test-go.yml
+    secrets: inherit
+    with:
+      working_directory: .
+      coverage_threshold: 90
+
   # ----- lint-helm: happy -----
   lint-helm-happy:
     uses: ./.github/workflows/lint-helm.yml
@@ -440,6 +457,8 @@ jobs:
     name: "self-ci / summary"
     needs:
       - lint-go-happy
+      - lint-go-self
+      - test-go-self
       - lint-helm-happy
       - lint-python-poetry-happy
       - lint-python-uv-happy
