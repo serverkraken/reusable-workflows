@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+
+load 'lib/assertions'
 # Script-level tests for apply-repo-defaults.sh.
 
 setup() {
@@ -69,7 +71,7 @@ run_with_stub() {
   tgt=$(prepare_target "lock-v2-with-marker.json")
   run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
   [ "$status" -eq 0 ]
-  ! grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
+  refute_grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
 }
 
 @test "tier_1 bp: drift (enforce_admins flipped) → PUT" {
@@ -92,7 +94,7 @@ run_with_stub() {
   tgt=$(prepare_target "lock-v2-with-marker.json")
   run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
   [ "$status" -eq 0 ]
-  ! grep -qE $'^PATCH\t/repos/o/r\t' "$GH_STUB_CALL_LOG"
+  refute_grep -qE $'^PATCH\t/repos/o/r\t' "$GH_STUB_CALL_LOG"
 }
 
 @test "tier_1 topics: target absent → PUT with union" {
@@ -107,14 +109,14 @@ run_with_stub() {
   tgt=$(prepare_target "lock-v2-with-marker.json")
   run_with_stub api-clean --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
   [ "$status" -eq 0 ]
-  ! grep -q $'^PUT\t/repos/o/r/topics' "$GH_STUB_CALL_LOG"
+  refute_grep -q $'^PUT\t/repos/o/r/topics' "$GH_STUB_CALL_LOG"
 }
 
 @test "tier_2: marker present → no merge_hygiene/repo_settings PATCH" {
   tgt=$(prepare_target "lock-v2-with-marker.json")
   run_with_stub api-drifted-tier2 --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
   [ "$status" -eq 0 ]
-  ! grep -q "has_wiki" "$GH_STUB_CALL_LOG"
+  refute_grep -q "has_wiki" "$GH_STUB_CALL_LOG"
 }
 
 @test "tier_2: marker empty + drift → PATCH" {
@@ -161,7 +163,7 @@ run_with_stub() {
   before_sha=$(jq -S . "$tgt/.github/onboard.lock.json" | sha256sum | awk '{print $1}')
   run_with_stub api-drifted --repo o/r --target-path "$tgt" --prev-marker "" --dry-run
   [ "$status" -eq 0 ]
-  ! grep -qE $'^(PUT|PATCH|POST|DELETE)\t' "$GH_STUB_CALL_LOG"
+  refute_grep -qE $'^(PUT|PATCH|POST|DELETE)\t' "$GH_STUB_CALL_LOG"
   after_sha=$(jq -S . "$tgt/.github/onboard.lock.json" | sha256sum | awk '{print $1}')
   [ "$before_sha" = "$after_sha" ]
 }
