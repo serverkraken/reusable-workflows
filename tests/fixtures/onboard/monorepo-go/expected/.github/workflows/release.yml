@@ -33,6 +33,15 @@ jobs:
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
     secrets: inherit
 
+  scan-services-api:
+    needs: [docker-build-services-api]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
+    with:
+      image_ref: ${{ needs.docker-build-services-api.outputs.image_ref }}
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+    secrets: inherit
+
   docker-build-services-worker:
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
@@ -45,4 +54,13 @@ jobs:
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+    secrets: inherit
+
+  scan-services-worker:
+    needs: [docker-build-services-worker]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
+    with:
+      image_ref: ${{ needs.docker-build-services-worker.outputs.image_ref }}
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
     secrets: inherit

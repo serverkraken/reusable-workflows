@@ -31,3 +31,12 @@ jobs:
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
     secrets: inherit
+
+  scan:
+    needs: [docker-build]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
+    with:
+      image_ref: ${{ needs.docker-build.outputs.image_ref }}
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+    secrets: inherit

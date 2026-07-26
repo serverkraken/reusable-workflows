@@ -140,7 +140,9 @@ jobs:
           echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
 
       - name: Upload SARIF to code-scanning
-        if: inputs.upload_sarif && github.event.pull_request.head.repo.full_name == github.repository
+        # Fork-PR guard only: on push/schedule/dispatch there is no
+        # pull_request context, which used to skip the upload entirely.
+        if: inputs.upload_sarif && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
           sarif_file: trivy-image.sarif

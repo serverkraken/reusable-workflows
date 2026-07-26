@@ -70,6 +70,15 @@ jobs:
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
     secrets: inherit
+
+  scan{{ $suffix }}:
+    needs: [docker-build{{ $suffix }}]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
+    with:
+      image_ref: {{ printf "${{ needs.docker-build%s.outputs.image_ref }}" $suffix }}
+      severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
+      trivy_version: {{`${{ vars.SK_TRIVY_VERSION || '' }}`}}
+    secrets: inherit
 {{- else if gt (len $releaseDfs) 1 -}}
 {{/* Translate profile.json's dockerfiles[{path, image_name, ...}] into the
      docker-build-multi atom's expected shape: [{dockerfile, image_name}]. */}}
