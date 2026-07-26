@@ -63,7 +63,7 @@ jobs:
         with:
           workspaces: ${{ inputs.working_directory }}
 
-      - uses: taiki-e/install-action@920ab1831fbf4fb3ef75c8ead83556c918bb7290 # v2
+      - uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2
         with:
           tool: cargo-llvm-cov@${{ inputs.cargo_llvm_cov_version }}
 
