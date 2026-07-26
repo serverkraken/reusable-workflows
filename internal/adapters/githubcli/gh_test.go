@@ -50,6 +50,9 @@ elif [[ "$1" == "release" ]]; then
 elif [[ "$1" == "api" && "$2" == "/repos/o/r/topics" ]]; then
   echo "forbidden" >&2
   exit 8
+elif [[ "$*" == "api /repos/o/r/branches/main/protection" ]]; then
+  echo "gh: Forbidden (HTTP 403)" >&2
+  exit 1
 fi
 `)
 	c := Client{}
@@ -59,8 +62,11 @@ fi
 	if version, err := c.LatestStableRelease(context.Background(), "o/r"); err != nil || version != "0.0.0" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
-	if topics, err := c.Topics(context.Background(), "o/r"); err != nil || len(topics) != 0 {
-		t.Fatalf("topics=%v err=%v", topics, err)
+	if topics, err := c.Topics(context.Background(), "o/r"); err == nil || !strings.Contains(err.Error(), "forbidden") || topics != nil {
+		t.Fatalf("topics=%v err=%v (expected propagated read error)", topics, err)
+	}
+	if raw, missing, err := c.BranchProtection(context.Background(), "o/r", "main"); err == nil || missing || raw != nil || !strings.Contains(err.Error(), "HTTP 403") {
+		t.Fatalf("raw=%s missing=%v err=%v (expected propagated 403)", raw, missing, err)
 	}
 }
 

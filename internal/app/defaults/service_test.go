@@ -130,12 +130,49 @@ func TestApplyDryRunPlansWithoutMutations(t *testing.T) {
 	}
 }
 
-func TestApplyHandlesNoLockAndReadFallbacks(t *testing.T) {
+func TestApplyAbortsWhenBranchProtectionReadFails(t *testing.T) {
 	gh := &fakeGitHub{
 		meta:          domain.RepoMetadata{DefaultBranch: "main", DeleteBranchOnMerge: true, HasIssues: true},
 		protectionErr: errors.New("branch protection read failed"),
+	}
+	store := &fakeStore{defaults: testDefaults(), targetExists: true}
+	_, err := (Service{GitHub: gh, Store: store}).Apply(context.Background(), Request{
+		CatalogPath: "catalog",
+		Repo:        "o/r",
+		TargetPath:  "target",
+		PrevMarker:  "marker",
+	})
+	if err == nil || !strings.Contains(err.Error(), "branch protection read failed") {
+		t.Fatalf("err=%v", err)
+	}
+	if gh.updatedProtection != "" || gh.replacedTopics != nil || len(gh.patchPayloads) != 0 || store.marker != "" {
+		t.Fatalf("mutations happened despite read failure: gh=%+v store=%+v", gh, store)
+	}
+}
+
+func TestApplyAbortsWhenTopicsReadFails(t *testing.T) {
+	gh := &fakeGitHub{
+		meta:          domain.RepoMetadata{DefaultBranch: "main", DeleteBranchOnMerge: true, HasIssues: true},
+		protectionRaw: cleanProtectionNoReviews(),
 		topicsErr:     errors.New("topics forbidden"),
 	}
+	store := &fakeStore{defaults: testDefaults(), targetExists: true}
+	_, err := (Service{GitHub: gh, Store: store}).Apply(context.Background(), Request{
+		CatalogPath: "catalog",
+		Repo:        "o/r",
+		TargetPath:  "target",
+		PrevMarker:  "marker",
+	})
+	if err == nil || !strings.Contains(err.Error(), "topics forbidden") {
+		t.Fatalf("err=%v", err)
+	}
+	if gh.replacedTopics != nil || store.marker != "" {
+		t.Fatalf("mutations happened despite read failure: gh=%+v store=%+v", gh, store)
+	}
+}
+
+func TestApplyNoLockSkipsMarkerMutation(t *testing.T) {
+	gh := cleanFakeGitHub()
 	store := &fakeStore{defaults: testDefaults(), targetExists: true}
 	res, err := (Service{GitHub: gh, Store: store}).Apply(context.Background(), Request{
 		CatalogPath: "catalog",
@@ -146,7 +183,7 @@ func TestApplyHandlesNoLockAndReadFallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(res.Modified, []string{"branch_protection", "topics"}) {
+	if len(res.Modified) != 0 {
 		t.Fatalf("modified=%v", res.Modified)
 	}
 	if store.marker != "" {

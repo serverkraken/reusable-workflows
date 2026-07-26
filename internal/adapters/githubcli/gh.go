@@ -42,7 +42,7 @@ func (Client) LatestStableRelease(ctx context.Context, repo string) (string, err
 func (Client) Topics(ctx context.Context, repo string) ([]string, error) {
 	out, err := run(ctx, "gh", "api", "/repos/"+repo+"/topics", "-q", ".names")
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	raw := strings.TrimSpace(string(out))
 	if raw == "" || raw == "null" {
@@ -70,12 +70,23 @@ func (Client) RepoMetadata(ctx context.Context, repo string) (domain.RepoMetadat
 	return meta, nil
 }
 
+// BranchProtection treats only HTTP 404 ("Branch not protected") as
+// missing; every other API failure is returned so callers abort instead
+// of overwriting live protection with catalog defaults.
 func (Client) BranchProtection(ctx context.Context, repo, branch string) (json.RawMessage, bool, error) {
 	out, err := api(ctx, "GET", fmt.Sprintf("/repos/%s/branches/%s/protection", repo, branch), nil)
 	if err != nil {
-		return nil, true, nil
+		if isNotFound(err) {
+			return nil, true, nil
+		}
+		return nil, false, err
 	}
 	return json.RawMessage(bytes.TrimSpace(out)), false, nil
+}
+
+func isNotFound(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "Branch not protected") || strings.Contains(msg, "Not Found")
 }
 
 func (Client) UpdateBranchProtection(ctx context.Context, repo, branch string, payload []byte) error {

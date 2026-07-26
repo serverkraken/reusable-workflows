@@ -96,8 +96,7 @@ func (s Service) validate(req Request) error {
 func (s Service) applyBranchProtection(ctx context.Context, req Request, cfg domain.RepoDefaults, meta domain.RepoMetadata, res *domain.RepoDefaultsResult) error {
 	current, missing, err := s.GitHub.BranchProtection(ctx, req.Repo, meta.DefaultBranch)
 	if err != nil {
-		missing = true
-		current = nil
+		return fmt.Errorf("failed to read branch protection for %s@%s: %w", req.Repo, meta.DefaultBranch, err)
 	}
 	diff, err := domain.DiffBranchProtection(current, missing, cfg.BranchProtection)
 	if err != nil {
@@ -138,7 +137,7 @@ func (s Service) applyDeleteBranch(ctx context.Context, req Request, cfg domain.
 func (s Service) applyTopics(ctx context.Context, req Request, cfg domain.RepoDefaults, res *domain.RepoDefaultsResult) error {
 	current, err := s.GitHub.Topics(ctx, req.Repo)
 	if err != nil {
-		current = nil
+		return fmt.Errorf("failed to read topics for %s: %w", req.Repo, err)
 	}
 	next := domain.ComputeTopicsUnion(current, cfg.TopicsAdditive)
 	if reflect.DeepEqual(current, next) {

@@ -256,6 +256,48 @@ run_with_stub() {
   [ "$before_sha" = "$after_sha" ]
 }
 
+@test "tier_1 bp: read fails with 403 → aborts before any mutation" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  # Clone a clean fixture, then make the protection GET fail with 403.
+  fixbp403="$WORK/fix-bp-403"
+  cp -R "$FIX/api-clean" "$fixbp403"
+  rm -f "$fixbp403/repos__o__r__branches__main__protection.json"
+  echo '{"message":"forbidden"}' > "$fixbp403/repos__o__r__branches__main__protection.403.json"
+
+  export GH_STUB_FIXTURE_DIR="$fixbp403"
+  mkdir -p "$WORK/bin"
+  ln -sf "$STUB" "$WORK/bin/gh"
+  PATH="$WORK/bin:$PATH" run "$SCRIPT" --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -ne 0 ]
+
+  # A read failure must never be treated as "not protected": no mutating call
+  # may have been issued (a PUT here would replace live protection with the
+  # catalog defaults). NB: plain `! grep` is exempt from errexit mid-test, so
+  # assert via explicit status checks.
+  run grep -c -E $'^(PUT|PATCH)\t' "$GH_STUB_CALL_LOG"
+  [ "$output" = "0" ]
+}
+
+@test "tier_1 topics: read fails with 500 → aborts, topics not replaced" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  # Clone a clean fixture, then make the topics GET fail with 500.
+  fixt500="$WORK/fix-topics-500"
+  cp -R "$FIX/api-clean" "$fixt500"
+  rm -f "$fixt500/repos__o__r__topics.json"
+  echo '{"message":"server error"}' > "$fixt500/repos__o__r__topics.500.json"
+
+  export GH_STUB_FIXTURE_DIR="$fixt500"
+  mkdir -p "$WORK/bin"
+  ln -sf "$STUB" "$WORK/bin/gh"
+  PATH="$WORK/bin:$PATH" run "$SCRIPT" --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -ne 0 ]
+
+  # A topics read failure treated as "no topics" would PUT only the additive
+  # set and wipe every existing topic — that call must not happen.
+  run grep -c $'^PUT\t/repos/o/r/topics' "$GH_STUB_CALL_LOG"
+  [ "$output" = "0" ]
+}
+
 @test "invalid JSON in config: exits 1 with parse error" {
   tgt=$(prepare_target "lock-v2-with-marker.json")
   # Temporarily corrupt the config.

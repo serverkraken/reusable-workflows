@@ -99,11 +99,23 @@ DEFAULT_BRANCH=$(echo "$REPO_META" | jq -r '.default_branch')
 
 # Fetch existing branch protection, or "missing" on 404.
 # NB: `gh api` prints the HTTP error body to STDOUT on a 4xx (e.g. the 404
-# "Branch not protected" JSON), so the `|| echo` fallback must live OUTSIDE the
+# "Branch not protected" JSON), so the fallback must live OUTSIDE the
 # command substitution — otherwise BP_CURRENT becomes "<error-body>missing",
 # the `== "missing"` sentinel never matches, and the garbage is fed to jq
 # --argjson (invalid JSON) which silently skips applying branch protection.
-BP_CURRENT=$(gh api "/repos/$REPO/branches/$DEFAULT_BRANCH/protection" 2>/dev/null) || BP_CURRENT="missing"
+# Only a 404 means "not protected"; any other read failure must abort, or the
+# later PUT would replace live protection with the catalog defaults.
+BP_ERR=$(mktemp)
+if BP_CURRENT=$(gh api "/repos/$REPO/branches/$DEFAULT_BRANCH/protection" 2>"$BP_ERR"); then
+  :
+elif grep -qiE 'HTTP 404|Branch not protected|Not Found' "$BP_ERR"; then
+  BP_CURRENT="missing"
+else
+  echo "::error::failed to read branch protection for $REPO@$DEFAULT_BRANCH: $(cat "$BP_ERR")" >&2
+  rm -f "$BP_ERR"
+  exit 2
+fi
+rm -f "$BP_ERR"
 
 # Target shape from config (drop the _target hint).
 BP_TARGET=$(jq -c '.branch_protection | del(._target)' "$CONFIG")
@@ -138,10 +150,13 @@ fi
 
 # --- Tier 1: topics additive (always) ---
 
-# Fallback lives outside the substitution for the same reason as BP_CURRENT
-# above: a failing `gh api` leaks its error body to stdout, which would corrupt
-# the captured value if `|| echo` ran inside `$(...)`.
-TOPICS_RESPONSE=$(gh api "/repos/$REPO/topics" 2>/dev/null) || TOPICS_RESPONSE='{"names":[]}'
+# A topics read failure must abort: treating it as "no topics" would compute
+# the union from an empty list and the later PUT would wipe every existing
+# topic on the target repo.
+TOPICS_RESPONSE=$(gh api "/repos/$REPO/topics" 2>/dev/null) || {
+  echo "::error::failed to read topics for $REPO" >&2
+  exit 2
+}
 CURRENT_TOPICS=$(echo "$TOPICS_RESPONSE" | jq -c '.names')
 ADDITIVE=$(jq -c '.topics_additive' "$CONFIG")
 NEW_TOPICS=$(compute_topics_union "$CURRENT_TOPICS" "$ADDITIVE")
