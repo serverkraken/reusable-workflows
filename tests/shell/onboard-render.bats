@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+
+load 'lib/assertions'
 # Tests for scripts/onboard-render.sh
 #
 # Contract (from spec § 6.2):
@@ -99,14 +101,14 @@ release-please-config.json"
   seed_profile "multi-dockerfile"
   "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
   grep -q "docker-build-multi.yml@v2" "$TARGET/.github/workflows/release.yml"
-  ! grep -qE "docker-build\.yml@v2" "$TARGET/.github/workflows/release.yml"
+  refute_grep -qE "docker-build\.yml@v2" "$TARGET/.github/workflows/release.yml"
 }
 
 @test "render: library-go has no docker job" {
   seed_profile "library-go"
   "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
-  ! grep -q "docker-build" "$TARGET/.github/workflows/release.yml"
-  ! grep -q "trivy-image" "$TARGET/.github/workflows/release.yml"
+  refute_grep -q "docker-build" "$TARGET/.github/workflows/release.yml"
+  refute_grep -q "trivy-image" "$TARGET/.github/workflows/release.yml"
 }
 
 @test "render: cli-go-with-goreleaser includes goreleaser job" {
@@ -444,7 +446,7 @@ render_prerelease_for_profile() {
   grep -qF "kube-validate.yml@v4" "$rendered"
   grep -qF "kube-lint.yml@v4" "$rendered"
   grep -qF "secret-scan.yml@v4" "$rendered"
-  ! grep -q "config_path" "$rendered"
+  refute_grep -q "config_path" "$rendered"
   grep -qF "sops: false" "$rendered"
 }
 
@@ -467,7 +469,7 @@ render_prerelease_for_profile() {
   }')
   grep -qF "kube-validate.yml@v4" "$rendered"
   grep -qF "manifests_paths: |-" "$rendered"
-  ! grep -qE '^[[:space:]]+kubernetes/' "$rendered"
+  refute_grep -qE '^[[:space:]]+kubernetes/' "$rendered"
   grep -qF "sops: false" "$rendered"
   yamllint -d relaxed "$rendered"
 }
@@ -517,7 +519,7 @@ render_prerelease_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
     "legacy_ci": [], "warnings": []
   }')
-  ! grep -q "docker-build" "$rendered"
+  refute_grep -q "docker-build" "$rendered"
 }
 
 # ---- prerelease.yml SK_SIGN/SK_ATTEST/SK_SBOM threading (Task 7) ----
@@ -562,7 +564,7 @@ render_prerelease_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
     "legacy_ci": [], "warnings": []
   }')
-  ! grep -q "release-flutter-android" "$rendered"
+  refute_grep -q "release-flutter-android" "$rendered"
 }
 
 @test "release.yml does not error when release_signals lacks the flutter_android key" {
@@ -580,7 +582,7 @@ render_prerelease_for_profile() {
     "legacy_ci": [], "warnings": []
   }')
   [ -f "$rendered" ]
-  ! grep -q "release-flutter-android" "$rendered"
+  refute_grep -q "release-flutter-android" "$rendered"
 }
 
 @test "release-please-config renders release-type dart for flutter" {
@@ -622,7 +624,7 @@ render_prerelease_for_profile() {
   grep -qF "create_release: true" "$rendered"
   grep -qF "version: \${{ inputs.version }}" "$rendered"
   grep -qF "dart_define_secret_names: \${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}" "$rendered"
-  ! grep -q "noop" "$rendered"
+  refute_grep -q "noop" "$rendered"
 }
 
 @test "prerelease.yml keeps noop for a flutter package (no android/)" {
@@ -635,7 +637,7 @@ render_prerelease_for_profile() {
     "legacy_ci": [], "topics": [], "warnings": []
   }')
   grep -q "noop" "$rendered"
-  ! grep -q "release-flutter-android" "$rendered"
+  refute_grep -q "release-flutter-android" "$rendered"
 }
 
 @test "prerelease.yml does not error when release_signals lacks the flutter_android key" {
@@ -652,7 +654,7 @@ render_prerelease_for_profile() {
     "legacy_ci": [], "warnings": []
   }')
   [ -f "$rendered" ]
-  ! grep -q "release-flutter-android" "$rendered"
+  refute_grep -q "release-flutter-android" "$rendered"
 }
 
 # === prerelease-on-push.yml (opt-in topic) ===
@@ -727,7 +729,7 @@ render_target_for_profile() {
     "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
   }')
   [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
-  ! grep -q "release-flutter-android" "$tgt/.github/workflows/prerelease-on-push.yml"
+  refute_grep -q "release-flutter-android" "$tgt/.github/workflows/prerelease-on-push.yml"
   grep -qF "docker-build.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
 }
 
@@ -746,7 +748,7 @@ render_target_for_profile() {
   }')
   [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
   grep -qF "docker-build-multi.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
-  ! grep -qE "docker-build\.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
+  refute_grep -qE "docker-build\.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
   grep -qF "prerelease: true" "$tgt/.github/workflows/prerelease-on-push.yml"
 }
 

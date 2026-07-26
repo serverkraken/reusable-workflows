@@ -16,7 +16,7 @@ on:
         required: false
         type: choice
         default: auto
-        options: [auto, go, python, rust, helm, node, simple]
+        options: [auto, go, python, rust, helm, node, flutter, gitops, simple]
       dry_run:
         description: 'Render + log diff; do NOT push or open PRs'
         required: false

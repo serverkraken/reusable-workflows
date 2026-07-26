@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+
+load 'lib/assertions'
 # Unit tests for scripts/kube-validate.sh. Stubs kustomize + kubeconform on
 # PATH so the orchestration logic is tested without the real binaries.
 
@@ -76,7 +78,7 @@ teardown() { rm -rf "$TESTDIR"; }
   printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n' > "$TREE/argo/app.yaml"
   STRICT=false MANIFESTS_PATHS="$TREE/argo" run bash "$SCRIPT"
   [ "$status" -eq 0 ]
-  ! grep -q -- "-strict" "$ARGLOG"
+  refute_grep -q -- "-strict" "$ARGLOG"
 }
 
 @test "SKIP_KINDS and SCHEMA_LOCATIONS flow into kubeconform argv" {
