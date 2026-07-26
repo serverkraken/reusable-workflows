@@ -1,0 +1,50 @@
+name: 'Setup sk-workflows'
+description: 'Install the sk-workflows CLI from a catalog release or build it from source.'
+
+inputs:
+  version:
+    description: 'Catalog release tag to install, e.g. v4.2.0. Empty uses the action ref when it is a v* tag.'
+    required: false
+    default: ''
+  repository:
+    description: 'Repository containing sk-workflows release assets.'
+    required: false
+    default: 'serverkraken/reusable-workflows'
+  github_token:
+    description: 'Optional token for downloading release assets from private repositories.'
+    required: false
+    default: ''
+  install_dir:
+    description: 'Directory where the sk-workflows binary is installed. Empty uses RUNNER_TEMP.'
+    required: false
+    default: ''
+  build_from_source:
+    description: 'When true, build sk-workflows from the checked-out catalog source instead of downloading a release asset.'
+    required: false
+    default: 'false'
+
+outputs:
+  path:
+    description: 'Full path to the installed sk-workflows binary.'
+    value: ${{ steps.setup.outputs.path }}
+  version:
+    description: 'Resolved release tag, or source when build_from_source=true.'
+    value: ${{ steps.setup.outputs.version }}
+  source:
+    description: 'Installation source: release or source.'
+    value: ${{ steps.setup.outputs.source }}
+
+runs:
+  using: composite
+  steps:
+    - id: setup
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github_token }}
+        INPUT_INSTALL_DIR: ${{ inputs.install_dir }}
+        INPUT_BUILD_FROM_SOURCE: ${{ inputs.build_from_source }}
+      run: |
+        set -euo pipefail
+        bash "$GITHUB_ACTION_PATH/../../scripts/setup-sk-workflows.sh"

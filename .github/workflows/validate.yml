@@ -44,6 +44,8 @@ jobs:
         run: yamllint .github/ actions/ tests/
       - name: Check step-summary convention
         run: bash tests/conventions/check-step-summary.sh
+      - name: Check contract documentation
+        run: bash tests/conventions/check-contracts.sh
 
   renovate-config-check:
     runs-on: ubuntu-latest
