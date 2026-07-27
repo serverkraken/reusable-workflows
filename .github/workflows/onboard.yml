@@ -204,7 +204,7 @@ jobs:
             | gh api --method PATCH "/repos/$TARGET" --input - > /dev/null
 
       - name: Checkout target repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: ${{ matrix.target.target }}
           token: ${{ steps.target-token.outputs.token }}
@@ -212,7 +212,7 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout catalog at this workflow's SHA
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ github.workflow_sha }}
@@ -220,7 +220,7 @@ jobs:
 
       - name: Setup Go for sk-workflows
         if: ${{ inputs.use_go_cli }}
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: .catalog/go.mod
           cache: true
@@ -605,7 +605,7 @@ jobs:
 
       - name: Checkout catalog on main
         if: ${{ !inputs.dry_run }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: serverkraken/reusable-workflows
           ref: main
