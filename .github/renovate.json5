@@ -1,81 +1,16 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  // Org baseline (schedule, updateNotScheduled, actions automerge/grouping,
+  // major review, vulnerability alerts) lives in the shared preset —
+  // see serverkraken/renovate-config. Only catalog-specific bits stay here.
   extends: [
-    'config:recommended',
-    ':dependencyDashboard',
-    ':semanticCommits',
-    'group:allNonMajor',
+    'github>serverkraken/renovate-config',
     'helpers:pinGitHubActionDigests',
-  ],
-  timezone: 'Europe/Berlin',
-  schedule: [
-    'before 6am on monday',
-  ],
-  // Confine branch updates (rebases) to the schedule window as well.
-  // Default true meant: every push to main re-rebased ALL open PRs
-  // immediately, retriggering full self-ci+integration per PR and
-  // drowning the small self-hosted runner pool (observed 2026-07-26).
-  // rebaseWhen stays auto — branch protection has strict=true, so
-  // automerge needs up-to-date branches; they now get current on Monday
-  // mornings inside the schedule window.
-  updateNotScheduled: false,
-  labels: [
-    'dependencies',
   ],
   ignorePaths: [
     'tests/fixtures/**',
   ],
   packageRules: [
-    {
-      description: 'GitHub Actions — auto-merge minor+patch (gated by integration tests)',
-      matchManagers: [
-        'github-actions',
-      ],
-      matchUpdateTypes: [
-        'minor',
-        'patch',
-      ],
-      automerge: true,
-      automergeType: 'pr',
-      groupName: 'GitHub Actions',
-    },
-    {
-      description: 'Action digest bumps travel as one PR — 7 separate PRs each ran the full self-ci+integration suite',
-      matchManagers: [
-        'github-actions',
-      ],
-      matchUpdateTypes: [
-        'digest',
-      ],
-      groupName: 'GitHub Actions digests',
-    },
-    {
-      description: 'Supply-chain actions move in lockstep',
-      groupName: 'Supply chain actions',
-      matchPackageNames: [
-        '/^sigstore//',
-        '/^actions/attest-/',
-        '/^anchore/sbom-action/',
-      ],
-    },
-    {
-      description: 'Docker actions',
-      groupName: 'Docker actions',
-      matchPackageNames: [
-        '/^docker//',
-      ],
-    },
-    {
-      description: 'Major updates always require review',
-      matchUpdateTypes: [
-        'major',
-      ],
-      automerge: false,
-      labels: [
-        'dependencies',
-        'major',
-      ],
-    },
     {
       description: 'Initial SHA-pin: bundle all pin updates into one PR',
       matchManagers: [
@@ -92,12 +27,6 @@
       ],
     },
   ],
-  vulnerabilityAlerts: {
-    labels: [
-      'security',
-    ],
-    automerge: true,
-  },
   customManagers: [
     {
       // NOTE: customManagers still uses `fileMatch` — Renovate's migration
