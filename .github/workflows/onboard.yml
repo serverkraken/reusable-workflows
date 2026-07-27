@@ -204,7 +204,7 @@ jobs:
             | gh api --method PATCH "/repos/$TARGET" --input - > /dev/null
 
       - name: Checkout target repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ matrix.target.target }}
           token: ${{ steps.target-token.outputs.token }}
@@ -212,7 +212,7 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout catalog at this workflow's SHA
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: serverkraken/reusable-workflows
           ref: ${{ github.workflow_sha }}
@@ -605,7 +605,7 @@ jobs:
 
       - name: Checkout catalog on main
         if: ${{ !inputs.dry_run }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: serverkraken/reusable-workflows
           ref: main
