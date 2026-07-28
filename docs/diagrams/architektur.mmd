@@ -1,0 +1,21 @@
+flowchart LR
+  adopter["Adopter-Repo<br/>dünner Caller-Workflow<br/>(uses: …@v4)"]
+
+  subgraph katalog["Katalog — reusable-workflows"]
+    direction TB
+    release["release.yml<br/>Release-Orchestrator"]
+    atome["Atome<br/>Lint · Test · Scan · Build"]
+    actions["Composite Actions<br/>gemeinsame Bausteine"]
+    release --> atome
+    atome --> actions
+  end
+
+  adopter --> katalog
+
+  runner["Self-hosted Runner<br/>x64 + arm64<br/>(actions-runner-image)"]
+  ghcr[("GHCR<br/>signierte Multi-Arch-Images")]
+  releases["GitHub Releases<br/>Version + SBOM"]
+
+  katalog -.läuft auf.- runner
+  release --> ghcr
+  release --> releases

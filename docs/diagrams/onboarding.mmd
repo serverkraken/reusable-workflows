@@ -1,0 +1,14 @@
+flowchart TB
+  onboard["onboard-Workflow<br/>rendert CI-Workflows + Lockfile"]
+  prs["Zwei PRs im Ziel-Repo<br/>PR-A: hinzufügen · PR-B: aufräumen"]
+  adopter["Adopter-Repo<br/>läuft mit Katalog-CI"]
+  drift["drift-check<br/>wöchentlicher Abgleich gegen Lockfile"]
+  issue["Rolling Drift-Report-Issue<br/>behind · modified · no-lock"]
+  sweep["onboard-sweep<br/>wöchentliches Auto-Update"]
+
+  onboard --> prs
+  prs --> adopter
+  adopter --> drift
+  drift --> issue
+  drift -- "Status: behind" --> sweep
+  sweep -- "re-onboardet" --> onboard
