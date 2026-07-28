@@ -142,6 +142,13 @@ jobs:
               ARGS="$ARGS --skip-files $line"
             done <<< "$FILES"
           fi
+          # Trivy auto-discovers only the plain .trivyignore, NOT the YAML
+          # variant with path scoping and statements. Adopters that ship a
+          # .trivyignore.yaml expect it to be honored — pass it explicitly
+          # (observed 2026-07-28: homelab-mail-nue's file was silently unused).
+          if [[ -f .trivyignore.yaml ]]; then
+            ARGS="$ARGS --ignorefile .trivyignore.yaml"
+          fi
           echo "args=$ARGS" >> "$GITHUB_OUTPUT"
 
       - name: Run Trivy filesystem scan
