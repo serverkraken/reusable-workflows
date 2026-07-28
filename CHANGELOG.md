@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.10.2](https://github.com/serverkraken/reusable-workflows/compare/v4.10.1...v4.10.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* **trivy-fs:** honor adopter .trivyignore.yaml ([#209](https://github.com/serverkraken/reusable-workflows/issues/209)) ([a0b83e8](https://github.com/serverkraken/reusable-workflows/commit/a0b83e8fe1ea0d9a8224866c871c636ba97e23ff))
+
 ## [4.10.1](https://github.com/serverkraken/reusable-workflows/compare/v4.10.0...v4.10.1) (2026-07-26)
 
 
