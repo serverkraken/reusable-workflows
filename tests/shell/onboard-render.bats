@@ -803,3 +803,36 @@ render_target_for_profile() {
   files=$(jq -r '.files | keys[]' "$TARGET/.github/onboard.lock.json")
   [ "$files" = ".github/workflows/ci.yml" ]
 }
+
+# ---- ci-android.yml (build-flutter-android PR gate) ----
+#
+# Rendered ONLY when at least one component has release_signals.flutter_android
+# — the same flag that gates release-flutter-android in the release skeletons.
+
+@test "render: ci-android.yml emitted for flutter app with android dir" {
+  seed_profile "flutter-app"
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
+  [ "$status" -eq 0 ]
+  [ -f "$TARGET/.github/workflows/ci-android.yml" ]
+  grep -q "build-flutter-root:" "$TARGET/.github/workflows/ci-android.yml"
+  grep -q "build-flutter-android.yml@v2" "$TARGET/.github/workflows/ci-android.yml"
+  grep -q -- "- 'android/\*\*'" "$TARGET/.github/workflows/ci-android.yml"
+  lock_entry=$(jq -r '.files[".github/workflows/ci-android.yml"]' "$TARGET/.github/onboard.lock.json")
+  [[ "$lock_entry" =~ ^sha256: ]]
+}
+
+@test "render: ci-android.yml omitted for flutter package without android dir" {
+  seed_profile "flutter-package"
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
+  [ "$status" -eq 0 ]
+  [ ! -f "$TARGET/.github/workflows/ci-android.yml" ]
+  lock_entry=$(jq -r '.files[".github/workflows/ci-android.yml"] // "absent"' "$TARGET/.github/onboard.lock.json")
+  [ "$lock_entry" = "absent" ]
+}
+
+@test "render: ci-android.yml omitted for non-flutter profile" {
+  seed_profile "go-repo"
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
+  [ "$status" -eq 0 ]
+  [ ! -f "$TARGET/.github/workflows/ci-android.yml" ]
+}

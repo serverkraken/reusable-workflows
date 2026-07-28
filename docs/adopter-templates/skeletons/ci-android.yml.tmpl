@@ -1,0 +1,48 @@
+{{- /*
+  ci-android.yml — PR-time Android compile gate for Flutter-app components.
+
+  Rendered ONLY when at least one component has release_signals.flutter_android
+  (i.e. a Flutter project with an android/ directory). The paths filter keeps
+  pure Dart/docs PRs from paying the ~9-minute toolchain + Gradle cost — which
+  also means this check MUST NOT be a required branch-protection check (it
+  does not appear on filtered PRs at all).
+
+  Job-id pattern matches ci.yml: build-flutter-<suffix>, where path == "." →
+  "root", otherwise path with `/` → `-`.
+*/ -}}
+{{- $pin := .pin -}}
+name: ci-android
+on:
+  pull_request:
+    paths:
+{{- range $i, $c := .profile.components }}
+{{- if and (has $c.release_signals "flutter_android") $c.release_signals.flutter_android }}
+{{- if eq $c.path "." }}
+      - 'android/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+{{- else }}
+      - '{{ $c.path }}/android/**'
+      - '{{ $c.path }}/pubspec.yaml'
+      - '{{ $c.path }}/pubspec.lock'
+{{- end }}
+{{- end }}
+{{- end }}
+      - '.github/workflows/ci-android.yml'
+
+jobs:
+{{- range $i, $c := .profile.components }}
+{{- if and (has $c.release_signals "flutter_android") $c.release_signals.flutter_android }}
+{{- $suffix := "" -}}
+{{- if eq $c.path "." -}}
+{{- $suffix = "root" -}}
+{{- else -}}
+{{- $suffix = $c.path | replaceAll "/" "-" -}}
+{{- end }}
+  build-flutter-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/build-flutter-android.yml@{{ $pin }}
+    with:
+      working_directory: {{ $c.path }}
+    secrets: inherit
+{{- end }}
+{{- end }}

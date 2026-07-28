@@ -107,6 +107,7 @@ render "$SKELETONS/ci.yml.tmpl"         "$TARGET/.github/workflows/ci.yml"
 # RENDER_ON_PUSH is read later (lock array) under `set -u`; keep it initialised
 # for every variant. Only the non-gitops branch can ever flip it to 1.
 RENDER_ON_PUSH=0
+RENDER_ANDROID=0
 if [[ "$IS_GITOPS" != "true" ]]; then
   render "$SKELETONS/release.yml.tmpl"    "$TARGET/.github/workflows/release.yml"
   render "$SKELETONS/prerelease.yml.tmpl" "$TARGET/.github/workflows/prerelease.yml"
@@ -118,6 +119,14 @@ if [[ "$IS_GITOPS" != "true" ]]; then
   if jq -e '(.topics // []) | index("sk-prerelease-on-push")' "$PROFILE" >/dev/null 2>&1; then
     render "$SKELETONS/prerelease-on-push.yml.tmpl" "$TARGET/.github/workflows/prerelease-on-push.yml"
     RENDER_ON_PUSH=1
+  fi
+
+  # ci-android.yml — rendered only when at least one component is a Flutter
+  # app with an android/ directory (release_signals.flutter_android). Gives
+  # PRs a paths-filtered Android compile gate (build-flutter-android atom).
+  if jq -e '[.components[].release_signals.flutter_android // false] | any' "$PROFILE" >/dev/null 2>&1; then
+    render "$SKELETONS/ci-android.yml.tmpl" "$TARGET/.github/workflows/ci-android.yml"
+    RENDER_ANDROID=1
   fi
 
   # release-please config: single vs monorepo.
@@ -175,6 +184,9 @@ else
   )
   if [[ "$RENDER_ON_PUSH" == "1" ]]; then
     RENDERED+=(".github/workflows/prerelease-on-push.yml")
+  fi
+  if [[ "$RENDER_ANDROID" == "1" ]]; then
+    RENDERED+=(".github/workflows/ci-android.yml")
   fi
 fi
 
