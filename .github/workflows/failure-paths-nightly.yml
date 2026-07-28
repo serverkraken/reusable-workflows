@@ -386,8 +386,35 @@ jobs:
           fi
           echo "secret-scan-fail: correctly observed failure"
 
+  # ----- build-flutter-android: fail-path -----
+  # A --flavor that no Gradle flavor defines aborts the build (Gradle cannot
+  # resolve the assemble task) — exercises failure propagation without a
+  # dedicated broken fixture.
+  test-build-flutter-android-fail:
+    uses: ./.github/workflows/build-flutter-android.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/flutter-app
+      use_build_runner: false
+      flavor: nonexistent
+
+  assert-build-flutter-android-fail:
+    needs: test-build-flutter-android-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert build job failed
+        env:
+          RESULT: ${{ needs.test-build-flutter-android-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected build-flutter-android to fail on nonexistent flavor, got: $RESULT"
+            exit 1
+          fi
+          echo "build-flutter-android-fail: correctly observed failure"
+
   # ----- Regression Reporter -----
-  # Runs after all 14 assert-* jobs. The job always runs (if: always()),
+  # Runs after all 15 assert-* jobs. The job always runs (if: always()),
   # but the bash step short-circuits when no asserts failed — gating in
   # bash rather than via the workflow-level `if:` expression. An earlier
   # smoke-test (issue #147) showed that `if: always() && contains(needs.*.result,
@@ -413,6 +440,7 @@ jobs:
       - assert-kube-validate-fail
       - assert-kube-lint-fail
       - assert-secret-scan-fail
+      - assert-build-flutter-android-fail
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -434,7 +462,7 @@ jobs:
           ' | paste -sd ',' -)
 
           if [[ -z "$failed" ]]; then
-            echo "All 14 assert-*-fail jobs returned success — no regression to report."
+            echo "All 15 assert-*-fail jobs returned success — no regression to report."
             exit 0
           fi
 

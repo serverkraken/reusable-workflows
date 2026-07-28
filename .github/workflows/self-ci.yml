@@ -450,6 +450,14 @@ jobs:
       use_build_runner: false
       coverage_threshold: 80
 
+  # ----- build-flutter-android: happy -----
+  build-flutter-android-happy:
+    uses: ./.github/workflows/build-flutter-android.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/flutter-app
+      use_build_runner: false
+
   # ----- Summary: aggregates ALL happy-path children into a single status.
   #       Branch-protection will require ONLY this check. Failure-path tests
   #       moved to failure-paths-nightly.yml (Phase 9.5) — not exercised here.
@@ -478,6 +486,7 @@ jobs:
       - onboard-apply-defaults-go-cli-dry-run
       - lint-flutter-happy
       - test-flutter-happy
+      - build-flutter-android-happy
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
