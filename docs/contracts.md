@@ -8,6 +8,30 @@ Adding optional inputs with safe defaults, adding outputs, or changing internal 
 
 ## Atomic Workflows
 
+### `build-flutter-android.yml`
+
+PR-time Android compile gate: runs `flutter build apk --<build_mode>` with no
+release semantics — no signing, no upload, no version handling. Complements
+`release-flutter-android.yml`. Typically called from the rendered
+`ci-android.yml` (paths-filtered; NOT suitable as a required check).
+
+| Kind    | Name                 | Type    | Required | Default                                         | Description |
+|---------|----------------------|---------|----------|-------------------------------------------------|-------------|
+| input   | `runs_on`            | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | JSON-encoded runner labels |
+| input   | `working_directory`  | string  | no       | `'.'`                                           | Flutter project root, relative to repo root |
+| input   | `java_version`       | string  | no       | `'17'`                                          | Java major version |
+| input   | `flutter_channel`    | string  | no       | `'stable'`                                      | Flutter release channel |
+| input   | `flutter_version`    | string  | no       | `''`                                            | Specific Flutter version (empty = latest on channel) |
+| input   | `use_build_runner`   | boolean | no       | `true`                                          | Run `dart run build_runner build` after pub get |
+| input   | `build_mode`         | string  | no       | `'debug'`                                       | `debug` \| `profile` \| `release`; debug needs no keystore |
+| input   | `flavor`             | string  | no       | `''`                                            | Build flavor (empty = no `--flavor` flag) |
+| input   | `sdk_cache`          | boolean | no       | `false`                                         | Cache the Flutter SDK via actions/cache (off — key rotates per Flutter release) |
+| input   | `timeout_minutes`    | number  | no       | `45`                                            | Job timeout |
+| secret  | `release_please_app_client_id`   | — | **yes** | — | App Client ID for the catalog-checkout token |
+| secret  | `release_please_app_private_key` | — | **yes** | — | App private key for the catalog-checkout token |
+
+---
+
 ### `cleanup-images.yml`
 
 | Kind    | Name                   | Type   | Required | Default                     | Description |
@@ -379,7 +403,7 @@ Logs in to `ghcr.io` using the workflow actor and `GITHUB_TOKEN` by default.
 
 ### `actions/setup-flutter-toolchain`
 
-Shared by the lint-flutter, test-flutter, and release-flutter-android atoms:
+Shared by the lint-flutter, test-flutter, build-flutter-android, and release-flutter-android atoms:
 setup-java → setup-android (`platform-tools` only) → subosito/flutter-action
 → `flutter pub get` → optional build_runner.
 

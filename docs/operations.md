@@ -107,7 +107,7 @@ UI: **Actions → onboard → Run workflow**.
 
 Per target, up to two PRs:
 
-- **PR A** on `chore/onboard-reusable-workflows`: adds `ci.yml`, `release.yml`, `prerelease.yml`, `cleanup.yml`, `release-please-config.json`, `.release-please-manifest.json`. Always opened when the rendered diff is non-empty.
+- **PR A** on `chore/onboard-reusable-workflows`: adds `ci.yml`, `release.yml`, `prerelease.yml`, `cleanup.yml`, `release-please-config.json`, `.release-please-manifest.json` — plus `ci-android.yml` for Flutter apps with an `android/` directory. Always opened when the rendered diff is non-empty.
 - **PR B** on `chore/remove-legacy-workflows`: deletes a curated list of legacy workflow names (`semantic-release.yml`, `docker-build.yml`, `trivy.yml`, `trivy.yaml`, `build.yml`, `publish.yml`). Only opened when at least one matches in the target.
 
 ### 5.4 Idempotency
@@ -385,6 +385,7 @@ By default, `release.yml` ships **only the bare `Dockerfile` (or `Containerfile`
 
 - `prerelease.yml` — **manual** (`workflow_dispatch`). For docker components it builds a prerelease image (+ trivy scan). For a Flutter app it calls `release-flutter-android` with `create_release: true` and `workflow_dispatch` inputs `version` (empty → auto `<latest>-rc.<run_number>`) and `prerelease` (default `true`); dart-defines come from `vars.SK_FLUTTER_DART_DEFINE_SECRETS`. A Flutter package (no `android/`) renders a no-op.
 - `prerelease-on-push.yml` — **automatic** on push to `develop`. Rendered **only** when the repo carries the `sk-prerelease-on-push` topic. Same stack-aware build jobs as `prerelease.yml`, with no manual inputs (Flutter uses the auto-rc version). The trigger branch is baked at render time (`develop`) because GitHub does not evaluate expressions in `on:`.
+- `ci-android.yml` — **PR-time** Android compile gate. Rendered **only** when a component has `release_signals.flutter_android` (Flutter app with `android/`). Calls `build-flutter-android` (`flutter build apk --debug`, unsigned) and is paths-filtered to `android/**`, `pubspec.yaml`, `pubspec.lock` — pure Dart/docs PRs skip it entirely. Because the check does not appear on filtered PRs, it must **not** be configured as a required branch-protection check.
 
 ### Convention
 
