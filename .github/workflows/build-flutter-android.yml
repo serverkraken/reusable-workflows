@@ -1,0 +1,177 @@
+# .github/workflows/build-flutter-android.yml
+# Reusable workflow: PR-time Android compile gate. Verifies the Android side
+# of a Flutter app still builds (flutter build apk) — no signing, no upload,
+# no version handling, no release secrets.
+#
+# Complements release-flutter-android.yml: this atom guards pull requests;
+# the release atom builds and publishes the signed artefacts.
+#
+# Auth: callers MUST pass `secrets: inherit` so the catalog-scoped App
+# token can be minted. See lint-flutter.yml for the full explanation.
+#
+# Stability surface: all `inputs:` and `secrets:` keys below are stable
+# within major v4. Any removal or rename is a major-version bump.
+#
+# Summary convention: docs/conventions/step-summary.md
+name: build-flutter-android
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","performance"]'
+      working_directory:
+        description: 'Path to the Flutter project root, relative to the repo root.'
+        required: false
+        type: string
+        default: '.'
+      java_version:
+        description: 'Java major version.'
+        required: false
+        type: string
+        default: '17'
+      flutter_channel:
+        description: 'Flutter release channel.'
+        required: false
+        type: string
+        default: 'stable'
+      flutter_version:
+        description: 'Specific Flutter version (empty = latest on channel).'
+        required: false
+        type: string
+        default: ''
+      use_build_runner:
+        description: 'When true, runs dart run build_runner build after pub get.'
+        required: false
+        type: boolean
+        default: true
+      build_mode:
+        description: 'Flutter build mode: debug, profile, or release. debug needs no keystore and suffices as a compile gate.'
+        required: false
+        type: string
+        default: 'debug'
+      flavor:
+        description: 'Build flavor name (empty = no --flavor flag).'
+        required: false
+        type: string
+        default: ''
+      sdk_cache:
+        description: 'Cache the Flutter SDK via actions/cache. Off by default; see setup-flutter-toolchain.'
+        required: false
+        type: boolean
+        default: false
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 45
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-flutter-android-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    steps:
+      - name: Validate build_mode
+        # build_mode is interpolated into the flutter CLI call below — fail
+        # fast on anything that is not a known mode.
+        env:
+          BUILD_MODE: ${{ inputs.build_mode }}
+        run: |
+          set -euo pipefail
+          case "$BUILD_MODE" in
+            debug|profile|release) ;;
+            *)
+              echo "::error::build_mode must be one of debug|profile|release, got: ${BUILD_MODE}"
+              exit 1
+              ;;
+          esac
+      - name: Checkout adopter repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        # Self-CI (caller == catalog): use the caller's SHA so feature-branch
+        # composite-action changes are exercised. Cross-repo (adopters):
+        # pin to the floating major tag `v4`. Bump this hardcoded major when
+        # a new major releases.
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog (for composite actions)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+      - name: Setup Flutter toolchain
+        uses: ./.catalog/actions/setup-flutter-toolchain
+        with:
+          java-version: ${{ inputs.java_version }}
+          flutter-channel: ${{ inputs.flutter_channel }}
+          flutter-version: ${{ inputs.flutter_version }}
+          use-build-runner: ${{ inputs.use_build_runner }}
+          working-directory: ${{ inputs.working_directory }}
+          sdk-cache: ${{ inputs.sdk_cache }}
+
+      - name: flutter build apk
+        id: build
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          BUILD_MODE: ${{ inputs.build_mode }}
+          FLAVOR: ${{ inputs.flavor }}
+        run: |
+          set -euo pipefail
+          flavor_arg=""; [[ -n "$FLAVOR" ]] && flavor_arg="--flavor=$FLAVOR"
+          # shellcheck disable=SC2086
+          flutter build apk "--${BUILD_MODE}" $flavor_arg
+
+      - name: Summary
+        if: always()
+        env:
+          WD: ${{ inputs.working_directory }}
+          BUILD_MODE: ${{ inputs.build_mode }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          if [[ "$BUILD_OUTCOME" == "success" ]]; then
+            result="✓ passed"
+          else
+            result="✗ failed"
+          fi
+          {
+            echo "## build-flutter-android"
+            echo ""
+            echo "**Tool:** flutter build apk --${BUILD_MODE}"
+            echo "**Working dir:** \`${WD}\`"
+            echo "**Result:** ${result}"
+          } >> "$GITHUB_STEP_SUMMARY" || true
