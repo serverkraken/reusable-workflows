@@ -132,6 +132,9 @@ func plannedFiles(profile domain.Profile) []renderFile {
 	if profile.GitOps != nil {
 		return files
 	}
+	if hasFlutterAndroid(profile) {
+		files = append(files, renderFile{Template: "skeletons/ci-android.yml.tmpl", Output: ".github/workflows/ci-android.yml"})
+	}
 	files = append(files,
 		renderFile{Template: "skeletons/release.yml.tmpl", Output: ".github/workflows/release.yml"},
 		renderFile{Template: "skeletons/prerelease.yml.tmpl", Output: ".github/workflows/prerelease.yml"},
@@ -162,6 +165,9 @@ func lockPaths(profile domain.Profile) []string {
 		".github/workflows/cleanup.yml",
 		"release-please-config.json",
 		".release-please-manifest.json",
+	}
+	if hasFlutterAndroid(profile) {
+		files = append(files, ".github/workflows/ci-android.yml")
 	}
 	if hasTopic(profile.Topics, "sk-prerelease-on-push") {
 		files = append(files, ".github/workflows/prerelease-on-push.yml")
@@ -302,6 +308,15 @@ func renderedAt(now func() time.Time) string {
 func hasTopic(topics []string, topic string) bool {
 	for _, candidate := range topics {
 		if candidate == topic {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFlutterAndroid(profile domain.Profile) bool {
+	for _, c := range profile.Components {
+		if c.ReleaseSignals.FlutterAndroid {
 			return true
 		}
 	}
