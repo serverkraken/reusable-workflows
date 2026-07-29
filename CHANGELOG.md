@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.11.0](https://github.com/serverkraken/reusable-workflows/compare/v4.10.2...v4.11.0) (2026-07-29)
+
+
+### Features
+
+* build-flutter-android PR-time compile gate + ci-android.yml onboarding ([#212](https://github.com/serverkraken/reusable-workflows/issues/212)) ([e42f3e9](https://github.com/serverkraken/reusable-workflows/commit/e42f3e9385b78d32dfe9dfcab818f7b47e451dd0))
+
+
+### Documentation
+
+* README auf Deutsch mit Architektur-Diagrammen und Repo-Logo ([ce533cc](https://github.com/serverkraken/reusable-workflows/commit/ce533cc91ae334e00630d98d3a3b63895b900027))
+
 ## [4.10.2](https://github.com/serverkraken/reusable-workflows/compare/v4.10.1...v4.10.2) (2026-07-28)
 
 
