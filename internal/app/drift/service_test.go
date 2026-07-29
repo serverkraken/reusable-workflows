@@ -273,6 +273,38 @@ func TestRenderCompareStaleLockAndErrors(t *testing.T) {
 	}
 }
 
+func TestRenderCompareDetectsNetNewRenderedFiles(t *testing.T) {
+	// An adopter onboarded before a profile-conditional template existed has a
+	// lock without that key; lock-keyed comparison alone reports clean. The
+	// render-compare must flag files the re-render emits that the lock does
+	// not track.
+	repo := fixtureRepo(t, "v4")
+	rendered := renderedFixtureFiles()
+	rendered[".github/workflows/ci-android.yml"] = "android\n"
+	// The real renderer writes lock + manifest into the scratch tree too;
+	// neither may count as net-new.
+	rendered[lockPath] = "lock\n"
+	rendered[manifestPath] = `{".":"0.0.0"}`
+	renderer := &fakeRenderer{files: rendered}
+	res, err := (Service{Detector: &fakeDetector{profile: []byte(`{"schema_version":1}`)}, Renderer: renderer}).Drift(context.Background(), Request{
+		TargetPath:     repo,
+		CatalogPath:    t.TempDir(),
+		CurrentVersion: "v4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != domain.DriftStaleLock {
+		t.Fatalf("status=%s want %s result=%+v", res.Status, domain.DriftStaleLock, res)
+	}
+	if !reflect.DeepEqual(res.Modified, []string{".github/workflows/ci-android.yml"}) {
+		t.Fatalf("modified=%v", res.Modified)
+	}
+	if res.RenderError != "" {
+		t.Fatalf("render_error=%q", res.RenderError)
+	}
+}
+
 func TestRenderCompareDerivesTargetRepoFromOrigin(t *testing.T) {
 	repo := fixtureRepo(t, "v4")
 	detector := &fakeDetector{profile: []byte(`{"schema_version":1}`)}

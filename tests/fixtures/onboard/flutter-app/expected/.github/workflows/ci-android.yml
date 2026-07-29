@@ -1,0 +1,15 @@
+name: ci-android
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/ci-android.yml'
+
+jobs:
+  build-flutter-root:
+    uses: serverkraken/reusable-workflows/.github/workflows/build-flutter-android.yml@v2
+    with:
+      working_directory: .
+    secrets: inherit

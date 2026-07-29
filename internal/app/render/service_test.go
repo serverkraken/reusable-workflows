@@ -189,6 +189,74 @@ func TestRenderMonorepoUsesMonorepoConfig(t *testing.T) {
 	}
 }
 
+func TestRenderFlutterAndroidEmitsCIAndroid(t *testing.T) {
+	catalog := renderCatalog(t, allTemplateFiles()...)
+	target := t.TempDir()
+	profile := writeProfile(t, target, `{
+	  "schema_version": 1,
+	  "target_repo": "serverkraken/strassenfuchs",
+	  "default_branch": "main",
+	  "monorepo": false,
+	  "components": [{
+	    "path": ".",
+	    "primary_language": "flutter",
+	    "release_please_type": "dart",
+	    "release_signals": {"flutter_android": true}
+	  }]
+	}`)
+	templates := &fakeTemplates{}
+	if err := (Service{Templates: templates, Now: fixedNow}).Render(context.Background(), Request{
+		CatalogPath:     catalog,
+		TargetPath:      target,
+		ProfileJSONPath: profile,
+		PinVersion:      "v4",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !calledTemplate(templates.calls, "ci-android.yml.tmpl") {
+		t.Fatalf("ci-android.yml.tmpl not rendered: %+v", templates.calls)
+	}
+	lock := readLock(t, target)
+	if lock.Files[".github/workflows/ci-android.yml"] == "" {
+		t.Fatalf("lock missing ci-android.yml: %v", lock.Files)
+	}
+}
+
+func TestRenderNoFlutterAndroidOmitsCIAndroid(t *testing.T) {
+	catalog := renderCatalog(t, allTemplateFiles()...)
+	target := t.TempDir()
+	profile := writeProfile(t, target, `{
+	  "schema_version": 1,
+	  "target_repo": "serverkraken/pkg",
+	  "monorepo": false,
+	  "components": [{
+	    "path": ".",
+	    "primary_language": "flutter",
+	    "release_please_type": "dart",
+	    "release_signals": {"flutter_android": false}
+	  }]
+	}`)
+	templates := &fakeTemplates{}
+	if err := (Service{Templates: templates, Now: fixedNow}).Render(context.Background(), Request{
+		CatalogPath:     catalog,
+		TargetPath:      target,
+		ProfileJSONPath: profile,
+		PinVersion:      "v4",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if calledTemplate(templates.calls, "ci-android.yml.tmpl") {
+		t.Fatalf("ci-android.yml.tmpl rendered for non-android profile: %+v", templates.calls)
+	}
+	lock := readLock(t, target)
+	if lock.Files[".github/workflows/ci-android.yml"] != "" {
+		t.Fatalf("lock contains ci-android.yml: %v", lock.Files)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".github/workflows/ci-android.yml")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("ci-android.yml exists: %v", err)
+	}
+}
+
 func TestRenderErrors(t *testing.T) {
 	catalog := renderCatalog(t, allTemplateFiles()...)
 	target := t.TempDir()
@@ -371,6 +439,7 @@ func renderCatalog(t *testing.T, templates ...string) string {
 func allTemplateFiles() []string {
 	return []string{
 		"skeletons/ci.yml.tmpl",
+		"skeletons/ci-android.yml.tmpl",
 		"skeletons/release.yml.tmpl",
 		"skeletons/prerelease.yml.tmpl",
 		"skeletons/cleanup.yml.tmpl",

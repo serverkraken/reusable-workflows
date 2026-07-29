@@ -120,6 +120,7 @@ jobs:
 | `lint-python.yml` / `test-python.yml`   | ruff + mypy / pytest + Coverage-Gate (poetry/uv/pip automatisch erkannt) |
 | `lint-rust.yml` / `test-rust.yml`       | cargo fmt + clippy / cargo test + cargo-llvm-cov    |
 | `lint-flutter.yml` / `test-flutter.yml` | dart format + flutter analyze / flutter test + Coverage-Gate |
+| `build-flutter-android.yml`  | PR-Gate: flutter build apk (debug, unsigniert) — kompiliert die Android-Seite |
 | `lint-helm.yml`              | helm lint + ct lint                                            |
 
 ### Versionierung und Pinning

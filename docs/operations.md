@@ -107,7 +107,7 @@ UI: **Actions → onboard → Run workflow**.
 
 Per target, up to two PRs:
 
-- **PR A** on `chore/onboard-reusable-workflows`: adds `ci.yml`, `release.yml`, `prerelease.yml`, `cleanup.yml`, `release-please-config.json`, `.release-please-manifest.json`. Always opened when the rendered diff is non-empty.
+- **PR A** on `chore/onboard-reusable-workflows`: adds `ci.yml`, `release.yml`, `prerelease.yml`, `cleanup.yml`, `release-please-config.json`, `.release-please-manifest.json` — plus `ci-android.yml` for Flutter apps with an `android/` directory. Always opened when the rendered diff is non-empty.
 - **PR B** on `chore/remove-legacy-workflows`: deletes a curated list of legacy workflow names (`semantic-release.yml`, `docker-build.yml`, `trivy.yml`, `trivy.yaml`, `build.yml`, `publish.yml`). Only opened when at least one matches in the target.
 
 ### 5.4 Idempotency
@@ -385,6 +385,7 @@ By default, `release.yml` ships **only the bare `Dockerfile` (or `Containerfile`
 
 - `prerelease.yml` — **manual** (`workflow_dispatch`). For docker components it builds a prerelease image (+ trivy scan). For a Flutter app it calls `release-flutter-android` with `create_release: true` and `workflow_dispatch` inputs `version` (empty → auto `<latest>-rc.<run_number>`) and `prerelease` (default `true`); dart-defines come from `vars.SK_FLUTTER_DART_DEFINE_SECRETS`. A Flutter package (no `android/`) renders a no-op.
 - `prerelease-on-push.yml` — **automatic** on push to `develop`. Rendered **only** when the repo carries the `sk-prerelease-on-push` topic. Same stack-aware build jobs as `prerelease.yml`, with no manual inputs (Flutter uses the auto-rc version). The trigger branch is baked at render time (`develop`) because GitHub does not evaluate expressions in `on:`.
+- `ci-android.yml` — **PR-time** Android compile gate. Rendered **only** when a component has `release_signals.flutter_android` (Flutter app with `android/`). Calls `build-flutter-android` (`flutter build apk --debug`, unsigned) and is paths-filtered to `android/**`, `pubspec.yaml`, `pubspec.lock` — pure Dart/docs PRs skip it entirely. Because the check does not appear on filtered PRs, it must **not** be configured as a required branch-protection check.
 
 ### Convention
 
@@ -423,19 +424,20 @@ The rendered `release.yml` simply omits the docker-build job. release-please + a
 
 ## 9. Flutter Atom Set (v4.x+)
 
-Three Flutter `workflow_call` atoms plus a shared composite action:
+Four Flutter `workflow_call` atoms plus a shared composite action:
 
 | Reusable workflow | Purpose |
 |---|---|
 | `lint-flutter.yml`            | `dart format --set-exit-if-changed` (over `lib test bin integration_test tool`) + `flutter analyze` |
 | `test-flutter.yml`            | `flutter test --coverage` + LCOV line-coverage gate (default 80) |
+| `build-flutter-android.yml`   | PR-time Android compile gate: `flutter build apk --<build_mode>` (default `debug`, unsigned) — no release semantics |
 | `release-flutter-android.yml` | pubspec-version sync → APK and/or AAB build → keystore sign → attach to existing GitHub Release |
 
-The shared toolchain (Java + Android SDK + Flutter + `pub get` + optional `build_runner`) lives in `actions/setup-flutter-toolchain/action.yml`. Because that composite is catalog-local, all three atoms mint a catalog-scoped App token and check the catalog out into `.catalog/` first — the same pattern as `lint-python.yml`. Callers therefore MUST pass `secrets: inherit`.
+The shared toolchain (Java + Android SDK + Flutter + `pub get` + optional `build_runner`) lives in `actions/setup-flutter-toolchain/action.yml`. Because that composite is catalog-local, all four atoms mint a catalog-scoped App token and check the catalog out into `.catalog/` first — the same pattern as `lint-python.yml`. Callers therefore MUST pass `secrets: inherit`.
 
 ### 9.1 Adopter integration
 
-The onboard renderer auto-detects Flutter components (a `pubspec.yaml` declaring the Flutter SDK) and emits `lint-flutter` + `test-flutter` in `ci.yml`; when the component also has an `android/` dir it emits `release-flutter-android` in `release.yml` and sets release-please `release-type: dart`. Adopters thread dart-defines by setting the `SK_FLUTTER_DART_DEFINE_SECRETS` repo variable (comma-list of secret names — see §Per-Adopter Overrides). The rendered `release.yml` looks like the block below, which also serves as the reference for hand-wiring a repo the renderer has not onboarded:
+The onboard renderer auto-detects Flutter components (a `pubspec.yaml` declaring the Flutter SDK) and emits `lint-flutter` + `test-flutter` in `ci.yml`; when the component also has an `android/` dir it emits `release-flutter-android` in `release.yml` and sets release-please `release-type: dart`. It also renders a paths-filtered `ci-android.yml` calling `build-flutter-android` for PR-time Android compile gates (see the `ci-android.yml` bullet in the Prerelease callers section above). Adopters thread dart-defines by setting the `SK_FLUTTER_DART_DEFINE_SECRETS` repo variable (comma-list of secret names — see §Per-Adopter Overrides). The rendered `release.yml` looks like the block below, which also serves as the reference for hand-wiring a repo the renderer has not onboarded:
 
 ```yaml
 jobs:

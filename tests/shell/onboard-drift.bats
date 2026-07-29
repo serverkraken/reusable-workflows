@@ -131,6 +131,33 @@ teardown() {
   echo "$output" | grep -E "^render_error=$" >/dev/null
 }
 
+@test "drift: net-new conditional template flips clean lock to stale-lock" {
+  # Simulate an adopter onboarded BEFORE ci-android.yml existed: render the
+  # flutter-app fixture at the current catalog, then delete the rendered
+  # ci-android.yml and strip its lock entry. Every lock-tracked file still
+  # matches the working tree, so lock-comparison says clean — but the
+  # re-render now emits a file the lock has no key for. Drift must surface
+  # that as stale-lock so the sweep delivers the new file.
+  android=$(mktemp -d)
+  "$DETECT" --profile-json "$FIX/flutter-app" > "$android/profile.json"
+  "$RENDER" "$REPO_ROOT" "$android" "$android/profile.json" "v4"
+  rm "$android/profile.json"
+  # Copy fixture source so the drift re-render can re-detect the profile.
+  cp -R "$FIX/flutter-app/." "$android/" 2>/dev/null || true
+  rm "$android/.github/workflows/ci-android.yml"
+  jq 'del(.files[".github/workflows/ci-android.yml"])' \
+    "$android/.github/onboard.lock.json" > "$android/.github/onboard.lock.json.new"
+  mv "$android/.github/onboard.lock.json.new" "$android/.github/onboard.lock.json"
+
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$android" "$REPO_ROOT"
+  rm -rf "$android"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"status=stale-lock"* ]]
+  [[ "$output" == *".github/workflows/ci-android.yml"* ]]
+  # render_error stays empty (render succeeded; lock is just incomplete).
+  echo "$output" | grep -E "^render_error=$" >/dev/null
+}
+
 @test "drift: render failure keeps status=clean and sets render_error" {
   # Force render-failure by stripping gomplate (and other render-time tools)
   # from PATH. The script still needs core tools (bash, jq, mktemp, etc.) for

@@ -5,9 +5,10 @@
 # the working-tree contents of the same paths, plus catalog-version freshness.
 # When lock-comparison says "clean", additionally re-renders the catalog
 # templates at the current catalog state and byte-compares the result — if
-# the renderer would now produce different files than what the lock recorded,
-# emits status=stale-lock. This catches within-major template evolution that
-# pure lock-comparison cannot see.
+# the renderer would now produce different files than what the lock recorded
+# — or net-new files the lock has no entry for (templates added after the
+# adopter onboarded) — emits status=stale-lock. This catches within-major
+# template evolution that pure lock-comparison cannot see.
 #
 # Skipped from both compare loops (by-design adopter mutation):
 #   - .github/onboard.lock.json     lock never self-tracks (defensive)
@@ -136,6 +137,23 @@ if [[ "$status" == "clean" ]]; then
         stale_files+=("$f")
       fi
     done < <(jq -r '.files | keys[]' "$LOCK")
+
+    # Step 4: detect net-new rendered files — paths the current renderer emits
+    # that the lock has no entry for. An adopter onboarded before a
+    # profile-conditional template existed carries a lock without that key, so
+    # the lock-keyed loops above can never see the file. Scan the rendered
+    # scratch tree (it contains exactly the rendered output plus the lock the
+    # renderer writes) and flag anything untracked as stale.
+    while IFS= read -r f; do
+      f="${f#"$scratch/rendered/"}"
+      # Lock never self-tracks (defensive, mirrors step 3).
+      [[ "$f" == ".github/onboard.lock.json" ]] && continue
+      # .release-please-manifest.json mutates by-design (see lock-compare loop).
+      [[ "$f" == ".release-please-manifest.json" ]] && continue
+      if ! jq -e --arg k "$f" '.files | has($k)' "$LOCK" >/dev/null; then
+        stale_files+=("$f")
+      fi
+    done < <(find "$scratch/rendered" -type f | sort)
 
     if (( ${#stale_files[@]} > 0 )); then
       status="stale-lock"

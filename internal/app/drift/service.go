@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -190,6 +191,48 @@ func staleFiles(targetPath, renderedPath string, lock domain.OnboardLock) ([]str
 			out = append(out, p)
 		}
 	}
+	// Net-new rendered files: paths the current renderer emits that the lock
+	// has no entry for (templates added after the adopter onboarded). The
+	// lock-keyed loop above can never see them, so scan the rendered tree —
+	// it contains exactly the rendered output plus the lock the renderer
+	// writes (excluded, as is the by-design mutable manifest).
+	extra, err := untrackedRenderedFiles(renderedPath, lock)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, extra...), nil
+}
+
+func untrackedRenderedFiles(renderedPath string, lock domain.OnboardLock) ([]string, error) {
+	if !isDir(renderedPath) {
+		// Renderer produced no tree at all — nothing net-new to report.
+		return nil, nil
+	}
+	var out []string
+	err := filepath.WalkDir(renderedPath, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(renderedPath, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == lockPath || rel == manifestPath {
+			return nil
+		}
+		if _, tracked := lock.Files[rel]; !tracked {
+			out = append(out, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(out)
 	return out, nil
 }
 

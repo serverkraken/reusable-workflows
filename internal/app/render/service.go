@@ -140,6 +140,11 @@ func plannedFiles(profile domain.Profile) []renderFile {
 	if hasTopic(profile.Topics, "sk-prerelease-on-push") {
 		files = append(files, renderFile{Template: "skeletons/prerelease-on-push.yml.tmpl", Output: ".github/workflows/prerelease-on-push.yml"})
 	}
+	// After the sk-prerelease-on-push block — mirrors the shell engine's
+	// render/lock ordering so both engines emit identical lock files.
+	if hasFlutterAndroid(profile) {
+		files = append(files, renderFile{Template: "skeletons/ci-android.yml.tmpl", Output: ".github/workflows/ci-android.yml"})
+	}
 	configTemplate := "configs/release-please-config.json.tmpl"
 	if profile.Monorepo {
 		configTemplate = "configs/release-please-config.monorepo.json.tmpl"
@@ -165,6 +170,11 @@ func lockPaths(profile domain.Profile) []string {
 	}
 	if hasTopic(profile.Topics, "sk-prerelease-on-push") {
 		files = append(files, ".github/workflows/prerelease-on-push.yml")
+	}
+	// After the sk-prerelease-on-push block — mirrors the shell engine's
+	// render/lock ordering so both engines emit identical lock files.
+	if hasFlutterAndroid(profile) {
+		files = append(files, ".github/workflows/ci-android.yml")
 	}
 	return files
 }
@@ -302,6 +312,15 @@ func renderedAt(now func() time.Time) string {
 func hasTopic(topics []string, topic string) bool {
 	for _, candidate := range topics {
 		if candidate == topic {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFlutterAndroid(profile domain.Profile) bool {
+	for _, c := range profile.Components {
+		if c.ReleaseSignals.FlutterAndroid {
 			return true
 		}
 	}
