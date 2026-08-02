@@ -26,7 +26,7 @@ on:
         type: string
         default: '.'
       version:
-        description: 'Semver (leading v optional, stripped). Empty only with create_release=true → atom derives <latest-tag>-rc.<run_number> via git describe.'
+        description: 'Semver (leading v optional). Empty only with create_release=true → derives <latest>-rc.<run_number> from the newest exact vX.Y.Z tag (other tags ignored; none → 0.0.0).'
         required: false
         type: string
         default: ''
@@ -182,27 +182,14 @@ jobs:
           CREATE_RELEASE: ${{ inputs.create_release }}
         run: |
           set -euo pipefail
-          V="${INPUT_VERSION#v}"
-          if [[ -z "$V" ]]; then
-            if [[ "$CREATE_RELEASE" != "true" ]]; then
-              echo "::error::version is required unless create_release=true"
-              exit 1
-            fi
-            # Manual/ad-hoc build: derive <latest-tag>-rc.<run_number>. Strip a
-            # leading v and any +build / -prerelease suffix from the latest tag
-            # first so the rc identifier attaches to a clean X.Y.Z core.
-            LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
-            LATEST="${LATEST#v}"; LATEST="${LATEST%%+*}"; LATEST="${LATEST%%-*}"
-            V="${LATEST}-rc.${GITHUB_RUN_NUMBER}"
-            echo "Auto-derived manual build version: $V"
-          fi
-          if [[ ! "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "::error::resolved version does not look like semver: $V"
-            exit 1
-          fi
+          # Version resolution lives in the catalog so the auto-derive rules
+          # (exact-version-tag filter, 0.0.0 fallback) are bats-tested:
+          # tests/shell/resolve-flutter-version.bats.
+          OUT=$("$GITHUB_WORKSPACE/.catalog/scripts/resolve-flutter-version.sh" \
+            "$INPUT_VERSION" "$CREATE_RELEASE" "$GITHUB_RUN_NUMBER")
+          echo "$OUT" >> "$GITHUB_OUTPUT"
+          V=$(printf '%s\n' "$OUT" | sed -n 's/^bare=//p')
           sed -i -E "s/^version: .*/version: ${V}+${GITHUB_RUN_NUMBER}/" pubspec.yaml
-          echo "bare=$V" >> "$GITHUB_OUTPUT"
-          echo "tag=v$V" >> "$GITHUB_OUTPUT"
 
       - name: Decode keystore
         working-directory: ${{ inputs.working_directory }}
