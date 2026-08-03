@@ -188,7 +188,7 @@ Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
 |---------|----------------------------|---------|----------|-------------------------------------------------|-------------|
 | input   | `runs_on`                  | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | JSON-encoded runner labels |
 | input   | `working_directory`        | string  | no       | `'.'`                                           | Flutter project root, relative to repo root |
-| input   | `version`                  | string  | no       | `''`                                            | Semver (leading v optional). Empty only with `create_release=true` → derives `<latest-tag>-rc.<run_number>` |
+| input   | `version`                  | string  | no       | `''`                                            | Semver (leading v optional). Empty only with `create_release=true` → derives `<latest>-rc.<run_number>` from the newest exact `vX.Y.Z` tag (none → `0.0.0`) |
 | input   | `create_release`           | boolean | no       | `false`                                         | Create the Release at the resolved tag before upload (manual/ad-hoc builds) |
 | input   | `java_version`             | string  | no       | `'17'`                                          | Java major version |
 | input   | `flutter_channel`          | string  | no       | `'stable'`                                      | Flutter release channel |

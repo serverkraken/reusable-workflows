@@ -460,7 +460,7 @@ The adopter sets the four keystore secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_
 
 ### 9.2 Manual / ad-hoc (pre)release builds
 
-The `release-flutter-android.yml` atom carries a `create_release` input. When `true`, the atom creates the GitHub Release at the resolved tag itself (instead of expecting release-please to have made it) and marks it prerelease when `prerelease: true`. With an empty `version`, the atom derives `<latest-tag>-rc.<run_number>` via `git describe`. A `workflow_call` atom can't be triggered by `workflow_dispatch` directly, so adopters add a thin manual caller:
+The `release-flutter-android.yml` atom carries a `create_release` input. When `true`, the atom creates the GitHub Release at the resolved tag itself (instead of expecting release-please to have made it) and marks it prerelease when `prerelease: true`. With an empty `version`, the atom derives `<latest>-rc.<run_number>`, where `<latest>` is the newest exact `vX.Y.Z` tag (rolling `vX`/`vX.Y` and non-version tags are ignored; without a usable tag it falls back to `0.0.0`). A `workflow_call` atom can't be triggered by `workflow_dispatch` directly, so adopters add a thin manual caller:
 
 ```yaml
 # .github/workflows/manual-release.yml
