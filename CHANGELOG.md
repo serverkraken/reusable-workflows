@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.11.1](https://github.com/serverkraken/reusable-workflows/compare/v4.11.0...v4.11.1) (2026-08-03)
+
+
+### Bug Fixes
+
+* **release-flutter-android:** derive rc versions only from exact version tags ([#213](https://github.com/serverkraken/reusable-workflows/issues/213)) ([c3df8ea](https://github.com/serverkraken/reusable-workflows/commit/c3df8ea534116853210fe94d527bb705f4e01aa3))
+
 ## [4.11.0](https://github.com/serverkraken/reusable-workflows/compare/v4.10.2...v4.11.0) (2026-07-29)
 
 
