@@ -36,7 +36,7 @@ No emoji. Only the glyphs above.
 |---|---|
 | `lint-*` | Working dir; table `\| Check \| Status \|` with one row per tool |
 | `test-*` | Working dir; test counts (run/pass/fail); coverage % + threshold; duration |
-| `trivy-*` | Target (image ref or path); severity filter; findings count table by severity |
+| `trivy-*` | Target (image ref or path); severity filter; findings count table by severity; when findings exist, a `### Findings` table (Severity, Type, ID, Location, Installed → Fixed, Title; max 50 rows, rendered by `scripts/trivy-findings-report.sh`) plus links to code-scanning alerts (if SARIF was uploaded) and the run's SARIF artifact |
 | `docker-build`, `docker-build-multi` | Tags; digest; platforms; sign/attest/SBOM status |
 | `helm-publish` | Chart name; version; OCI ref; digest |
 | `semantic-release` | Old → new version; bump type; release URL (or "no release" if idle) |
