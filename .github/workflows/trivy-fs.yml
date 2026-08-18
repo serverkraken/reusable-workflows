@@ -193,6 +193,7 @@ jobs:
           echo "Found $COUNT severity-matching findings"
 
       - name: Upload SARIF to code-scanning
+        id: sarif
         # Fork-PR guard only: on push/schedule/dispatch there is no
         # pull_request context, which used to skip the upload entirely.
         if: inputs.upload_sarif && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -216,7 +217,14 @@ jobs:
           FAIL_ON_FINDINGS: ${{ inputs.fail_on_findings }}
           COUNT: ${{ steps.count.outputs.findings_count }}
           REPORT: trivy-fs.json
+          SARIF_UPLOADED: ${{ steps.sarif.outcome == 'success' }}
+          ALERTS_BASE: ${{ github.server_url }}/${{ github.repository }}/security/code-scanning
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FINDINGS_REPORT: ${{ github.workspace }}/.catalog/scripts/trivy-findings-report.sh
         run: |
+          ALERTS_URL="${ALERTS_BASE}?query=is%3Aopen+tool%3ATrivy"
+          [[ -n "$PR_NUMBER" ]] && ALERTS_URL="${ALERTS_URL}+pr%3A${PR_NUMBER}"
           trivy_version=$(trivy --version 2>/dev/null | awk '/^Version:/ {print $2}' || echo unknown)
           if [[ -f "$REPORT" ]]; then
             crit=$(jq '[.Results[]? | (.Vulnerabilities // [], .Secrets // [], .Misconfigurations // [])[] | select(.Severity=="CRITICAL")] | length' "$REPORT")
@@ -247,12 +255,40 @@ jobs:
             echo "| HIGH | ${high} |"
             echo "| MEDIUM | ${med} |"
             echo "| LOW | ${low} |"
+            if [[ "$COUNT" != "0" && -f "$REPORT" && -x "$FINDINGS_REPORT" ]]; then
+              echo ""
+              echo "### Findings"
+              echo ""
+              MAX_ROWS=50 "$FINDINGS_REPORT" table "$REPORT"
+              echo ""
+              if [[ "$SARIF_UPLOADED" == "true" ]]; then
+                echo "**Code scanning:** [open Trivy alerts](${ALERTS_URL})"
+              fi
+              echo "**Full report:** SARIF artifact \`trivy-fs-sarif\` on the [run page](${RUN_URL})"
+            fi
           } >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Fail on findings
         if: inputs.fail_on_findings && steps.count.outputs.findings_count != '0'
         env:
           COUNT: ${{ steps.count.outputs.findings_count }}
+          REPORT: trivy-fs.json
+          SARIF_UPLOADED: ${{ steps.sarif.outcome == 'success' }}
+          ALERTS_BASE: ${{ github.server_url }}/${{ github.repository }}/security/code-scanning
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          FINDINGS_REPORT: ${{ github.workspace }}/.catalog/scripts/trivy-findings-report.sh
         run: |
-          echo "::error::Trivy found $COUNT severity-matching findings"
+          ALERTS_URL="${ALERTS_BASE}?query=is%3Aopen+tool%3ATrivy"
+          [[ -n "$PR_NUMBER" ]] && ALERTS_URL="${ALERTS_URL}+pr%3A${PR_NUMBER}"
+          # One annotation per finding (capped at GitHub's 10-per-step limit) so
+          # the failing check shows WHAT was found; the full table is in the
+          # step summary, the full list in the SARIF artifact / code-scanning.
+          if [[ -x "$FINDINGS_REPORT" ]]; then
+            MAX_ANNOTATIONS=10 "$FINDINGS_REPORT" annotations "$REPORT" || true
+          fi
+          where=""
+          if [[ "$SARIF_UPLOADED" == "true" ]]; then
+            where=" — see $ALERTS_URL"
+          fi
+          echo "::error::Trivy found $COUNT severity-matching findings (details in step summary)$where"
           exit 1
