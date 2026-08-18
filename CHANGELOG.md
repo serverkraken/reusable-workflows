@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.12.0](https://github.com/serverkraken/reusable-workflows/compare/v4.11.0...v4.12.0) (2026-08-18)
+
+
+### Features
+
+* **trivy:** surface findings in step summary, annotations and code-scanning link ([#215](https://github.com/serverkraken/reusable-workflows/issues/215)) ([670408d](https://github.com/serverkraken/reusable-workflows/commit/670408dd48e540d376c18d45d7784a89b076cd77))
+
+
+### Bug Fixes
+
+* **release-flutter-android:** derive rc versions only from exact version tags ([#213](https://github.com/serverkraken/reusable-workflows/issues/213)) ([c3df8ea](https://github.com/serverkraken/reusable-workflows/commit/c3df8ea534116853210fe94d527bb705f4e01aa3))
+
 ## [4.11.0](https://github.com/serverkraken/reusable-workflows/compare/v4.10.2...v4.11.0) (2026-07-29)
 
 
