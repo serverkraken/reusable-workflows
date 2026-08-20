@@ -1,0 +1,210 @@
+# .github/workflows/e2e-kind.yml
+# Reusable workflow: run a consumer-owned Kubernetes e2e script against a
+# kind cluster inside the runner pod's dind sidecar.
+#
+# Stability surface: the shape of `inputs` and `secrets` below is the
+# contract. The kind-cluster lifecycle belongs to the consumer script;
+# this atom provisions the toolchain (kind/kubectl/cilium-cli via the
+# catalog's setup-kind-toolchain action, helm via azure/setup-helm), runs
+# the script, collects diagnostics on failure, and guarantees that no
+# kind cluster survives the job on the long-lived self-hosted runner pods.
+#
+# Operational notes for consumer scripts (2026-08-20 spike, see
+# docs/superpowers/specs/2026-08-20-e2e-kind-design.md):
+#   * Talos hosts drop CAP_SYS_MODULE from the kernel bounding set; a
+#     nested container (runner pod -> dind -> kind node -> CNI pod) can
+#     never regain it. Cilium installs MUST remove SYS_MODULE from BOTH
+#     capability lists (mirrors homelab-study kube-system/cilium):
+#       --set securityContext.capabilities.ciliumAgent='{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}'
+#       --set securityContext.capabilities.cleanCiliumState='{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}'
+#   * `cilium install --wait` returns without waiting (cilium-cli
+#     v0.18.7); budget waits into `cilium status --wait` instead.
+#   * Skip `kind create --wait` when disableDefaultCNI is set — the node
+#     cannot become Ready before a CNI is installed.
+name: e2e-kind
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","performance"]'
+      script:
+        description: 'Consumer e2e script path (relative to working_directory), e.g. test/e2e/run.sh. Owns the kind-cluster lifecycle.'
+        required: true
+        type: string
+      working_directory:
+        description: 'Component sub-path.'
+        required: false
+        type: string
+        default: '.'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 45
+      kind_version:
+        description: 'kind version (leading v). Empty → setup-kind-toolchain pinned default.'
+        required: false
+        type: string
+        default: ''
+      kubectl_version:
+        description: 'kubectl version (leading v). Empty → setup-kind-toolchain pinned default.'
+        required: false
+        type: string
+        default: ''
+      cilium_cli_version:
+        description: 'cilium-cli version (leading v). Empty → setup-kind-toolchain pinned default.'
+        required: false
+        type: string
+        default: ''
+      # renovate: datasource=github-releases depName=helm/helm
+      helm_version:
+        description: 'Helm CLI version.'
+        required: false
+        type: string
+        default: 'v3.16.3'
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: e2e-kind-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}-${{ inputs.script }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+
+      - name: Resolve catalog ref
+        # GitHub Actions does NOT expose the @version the caller pinned in
+        # `uses:` inside a reusable workflow. Self-CI (caller == catalog):
+        # use the caller's SHA — it IS a catalog commit and exercises
+        # feature-branch composite-action changes. Cross-repo (adopters):
+        # pin to the floating major tag `v4`. Bump the hardcoded major in
+        # this block when a new major releases.
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+            echo "Self-CI: catalog ref = $SELF_SHA"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+            echo "Cross-repo: catalog ref = v4 (floating)"
+          fi
+
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+
+      - name: Install kind toolchain
+        uses: ./.catalog/actions/setup-kind-toolchain
+        with:
+          kind_version: ${{ inputs.kind_version }}
+          kubectl_version: ${{ inputs.kubectl_version }}
+          cilium_cli_version: ${{ inputs.cilium_cli_version }}
+
+      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
+        with:
+          version: ${{ inputs.helm_version }}
+
+      - name: Run e2e script
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          E2E_SCRIPT: ${{ inputs.script }}
+        run: |
+          set -euo pipefail
+          # Commands containing a slash bypass PATH lookup; force one for
+          # bare filenames so "run.sh" resolves relative to the cwd.
+          [[ "$E2E_SCRIPT" == */* ]] || E2E_SCRIPT="./$E2E_SCRIPT"
+          if [[ ! -x "$E2E_SCRIPT" ]]; then
+            echo "::error::script '$E2E_SCRIPT' not found or not executable (path is relative to working_directory)"
+            exit 1
+          fi
+          "$E2E_SCRIPT"
+
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          set -uo pipefail
+          OUT=/tmp/e2e-kind-diagnostics
+          mkdir -p "$OUT"
+          for c in $(kind get clusters 2>/dev/null); do
+            ctx="kind-$c"
+            {
+              echo "==== cluster $c: nodes ===="
+              kubectl --context "$ctx" get nodes -o wide
+              echo "==== cluster $c: all pods ===="
+              kubectl --context "$ctx" get pods -A -o wide
+              echo "==== cluster $c: recent events ===="
+              kubectl --context "$ctx" get events -A --sort-by=.lastTimestamp | tail -100
+            } > "$OUT/$c-overview.txt" 2>&1 || true
+            while read -r ns pod; do
+              kubectl --context "$ctx" -n "$ns" describe pod "$pod" \
+                > "$OUT/$c-describe-$ns-$pod.txt" 2>&1 || true
+            done < <(kubectl --context "$ctx" get pods -A \
+                       --field-selector=status.phase!=Running \
+                       --no-headers 2>/dev/null | awk '{print $1" "$2}')
+            kind export logs "$OUT/$c-kind-logs" --name "$c" || true
+          done
+          docker system df > "$OUT/dind-disk.txt" 2>&1 || true
+
+      - name: Upload diagnostics artifact
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: e2e-kind-diagnostics
+          path: /tmp/e2e-kind-diagnostics
+          retention-days: 5
+          if-no-files-found: ignore
+
+      - name: Cleanup kind clusters
+        # Deletes EVERY cluster, not a known name: a leaked cluster from an
+        # aborted run must not poison the next job on this long-lived pod.
+        # The kindest/node image stays in the dind cache deliberately
+        # (~50s saved per subsequent run). Self-asserting: leftovers fail
+        # the job even on otherwise-green runs.
+        if: always()
+        run: |
+          set -euo pipefail
+          for c in $(kind get clusters 2>/dev/null); do
+            kind delete cluster --name "$c"
+          done
+          leftover=$(kind get clusters 2>/dev/null || true)
+          if [[ -n "$leftover" ]]; then
+            echo "::error::kind clusters leaked past cleanup: $leftover"
+            exit 1
+          fi
+          rm -rf /tmp/e2e-kind-diagnostics
