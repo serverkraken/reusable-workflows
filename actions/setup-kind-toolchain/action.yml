@@ -1,0 +1,107 @@
+name: setup-kind-toolchain
+description: |
+  Install kind + kubectl + cilium-cli for kind-based e2e jobs. Direct
+  pinned binary installs (never third-party setup actions), mirroring
+  setup-kube-toolchain. Each tool is SKIPPED when the requested version
+  already answers on PATH — the actions-runner-image bakes all three into
+  /usr/local/bin, so the common case on self-hosted runners is free.
+  Otherwise the tool is downloaded to a job-private dir
+  ($RUNNER_TEMP/kind-toolchain) that shadows a stale bake via PATH
+  prepend. No sudo — works unchanged on ubuntu-latest.
+
+inputs:
+  kind_version:
+    description: 'kind version (leading v). Empty → pinned default.'
+    required: false
+    default: ''
+  kubectl_version:
+    description: 'kubectl version (leading v). Empty → pinned default.'
+    required: false
+    default: ''
+  cilium_cli_version:
+    description: 'cilium-cli version (leading v). Empty → pinned default.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install kind
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=kubernetes-sigs/kind
+        KIND_VERSION: 'v0.27.0'
+        REQUESTED: ${{ inputs.kind_version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$KIND_VERSION}"
+        if command -v kind >/dev/null && kind version | grep -qF "kind ${VERSION} "; then
+          echo "kind ${VERSION} already on PATH ($(command -v kind)) — skipping install"
+          exit 0
+        fi
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=amd64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        BIN="$RUNNER_TEMP/kind-toolchain"; mkdir -p "$BIN"
+        curl -fsSL --retry 3 -o "$BIN/kind" \
+          "https://kind.sigs.k8s.io/dl/${VERSION}/kind-linux-${A}"
+        chmod +x "$BIN/kind"
+        echo "$BIN" >> "$GITHUB_PATH"
+        "$BIN/kind" version
+
+    - name: Install kubectl
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=kubernetes/kubernetes
+        KUBECTL_VERSION: 'v1.32.2'
+        REQUESTED: ${{ inputs.kubectl_version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$KUBECTL_VERSION}"
+        if command -v kubectl >/dev/null && kubectl version --client 2>/dev/null | grep -qF "Client Version: ${VERSION}"; then
+          echo "kubectl ${VERSION} already on PATH ($(command -v kubectl)) — skipping install"
+          exit 0
+        fi
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=amd64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        BIN="$RUNNER_TEMP/kind-toolchain"; mkdir -p "$BIN"
+        curl -fsSL --retry 3 -o "$BIN/kubectl" \
+          "https://dl.k8s.io/release/${VERSION}/bin/linux/${A}/kubectl"
+        chmod +x "$BIN/kubectl"
+        echo "$BIN" >> "$GITHUB_PATH"
+        "$BIN/kubectl" version --client
+
+    - name: Install cilium-cli
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=cilium/cilium-cli
+        CILIUM_CLI_VERSION: 'v0.18.7'
+        REQUESTED: ${{ inputs.cilium_cli_version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$CILIUM_CLI_VERSION}"
+        if command -v cilium >/dev/null && cilium version --client 2>/dev/null | grep -qF "cilium-cli: ${VERSION} "; then
+          echo "cilium-cli ${VERSION} already on PATH ($(command -v cilium)) — skipping install"
+          exit 0
+        fi
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=amd64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        BIN="$RUNNER_TEMP/kind-toolchain"; mkdir -p "$BIN"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        curl -fsSL --retry 3 \
+          "https://github.com/cilium/cilium-cli/releases/download/${VERSION}/cilium-linux-${A}.tar.gz" \
+          | tar xz -C "$TMP" cilium
+        install -m 0755 "$TMP/cilium" "$BIN/cilium"
+        echo "$BIN" >> "$GITHUB_PATH"
+        "$BIN/cilium" version --client

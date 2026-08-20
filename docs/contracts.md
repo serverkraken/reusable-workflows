@@ -91,6 +91,32 @@ release semantics — no signing, no upload, no version handling. Complements
 
 ---
 
+### `e2e-kind.yml`
+
+Kubernetes e2e atom: provisions a kind toolchain (kind/kubectl/cilium-cli via
+`setup-kind-toolchain`, Helm via azure/setup-helm) and runs a consumer-owned
+script that owns the kind-cluster lifecycle end to end. On failure, collects
+per-cluster diagnostics (nodes, pods, events, `kind export logs`) into the
+`e2e-kind-diagnostics` artifact. Cleanup is unconditional and self-asserting:
+every kind cluster is deleted after the job, and a leftover cluster fails the
+job even on an otherwise-green run — required on the long-lived self-hosted
+runner pods.
+
+| Kind    | Name                  | Type    | Required | Default                                         | Description |
+|---------|-----------------------|---------|----------|--------------------------------------------------|-------------|
+| input   | `runs_on`             | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | JSON-encoded array of runner labels |
+| input   | `script`              | string  | **yes**  | —                                                | Consumer e2e script path (relative to `working_directory`), e.g. `test/e2e/run.sh`. Owns the kind-cluster lifecycle |
+| input   | `working_directory`   | string  | no       | `'.'`                                            | Component sub-path |
+| input   | `timeout_minutes`     | number  | no       | `45`                                             | Job timeout in minutes |
+| input   | `kind_version`        | string  | no       | `''`                                             | kind version (leading v). Empty → `setup-kind-toolchain` pinned default |
+| input   | `kubectl_version`     | string  | no       | `''`                                             | kubectl version (leading v). Empty → `setup-kind-toolchain` pinned default |
+| input   | `cilium_cli_version`  | string  | no       | `''`                                             | cilium-cli version (leading v). Empty → `setup-kind-toolchain` pinned default |
+| input   | `helm_version`        | string  | no       | `'v3.16.3'`                                      | Helm CLI version |
+| secret  | `release_please_app_client_id`   | — | **yes** | — | App Client ID for the catalog-checkout token |
+| secret  | `release_please_app_private_key` | — | **yes** | — | App private key for the catalog-checkout token |
+
+---
+
 ### `goreleaser.yml`
 
 | Kind    | Name                 | Type    | Required | Default                     | Description |
@@ -416,6 +442,20 @@ setup-java → setup-android (`platform-tools` only) → subosito/flutter-action
 | input | `use-build-runner`  | string | no       | `'true'`    | Run build_runner after pub get |
 | input | `working-directory` | string | no       | `'.'`       | Flutter project root |
 | input | `sdk-cache`         | string | no       | `'false'`   | Cache the Flutter SDK via actions/cache (off: key rotates per Flutter stable) |
+
+### `actions/setup-kind-toolchain`
+
+Installs kind + kubectl + cilium-cli for kind-based e2e jobs (direct pinned
+binary installs, mirroring `setup-kube-toolchain`). Each tool is skipped when
+the requested version already answers on PATH — the actions-runner-image
+bakes all three into `/usr/local/bin`; otherwise it downloads to a
+job-private dir prepended onto PATH.
+
+| Kind  | Name                 | Type   | Required | Default | Description |
+|-------|----------------------|--------|----------|---------|-------------|
+| input | `kind_version`       | string | no       | `''`    | kind version (leading v). Empty → pinned default |
+| input | `kubectl_version`    | string | no       | `''`    | kubectl version (leading v). Empty → pinned default |
+| input | `cilium_cli_version` | string | no       | `''`    | cilium-cli version (leading v). Empty → pinned default |
 
 ---
 

@@ -413,6 +413,42 @@ jobs:
           fi
           echo "build-flutter-android-fail: correctly observed failure"
 
+  # ----- e2e-kind: fail-path -----
+  # Fixture creates a cluster then exits 1 without deleting it. Asserts:
+  # (a) the atom job failed, (b) the diagnostics artifact was uploaded.
+  # (c) no-leak is asserted INSIDE the atom's cleanup step itself — a
+  # separate job cannot see the runner pod's dind.
+  test-e2e-kind-fail:
+    uses: ./.github/workflows/e2e-kind.yml
+    secrets: inherit
+    with:
+      script: tests/fixtures/kind-smoke/e2e-fail.sh
+      timeout_minutes: 15
+
+  assert-e2e-kind-fail:
+    needs: test-e2e-kind-fail
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify the atom failed and produced diagnostics
+        env:
+          RESULT: ${{ needs.test-e2e-kind-fail.result }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected e2e-kind to fail on the fail fixture, got: $RESULT"
+            exit 1
+          fi
+          names=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+                    --jq '.artifacts[].name')
+          if ! grep -qx "e2e-kind-diagnostics" <<< "$names"; then
+            echo "::error::diagnostics artifact 'e2e-kind-diagnostics' missing; artifacts were: ${names:-<none>}"
+            exit 1
+          fi
+          echo "e2e-kind failed as designed and uploaded diagnostics"
+
   # ----- Regression Reporter -----
   # Runs after all 15 assert-* jobs. The job always runs (if: always()),
   # but the bash step short-circuits when no asserts failed — gating in
@@ -441,6 +477,7 @@ jobs:
       - assert-kube-lint-fail
       - assert-secret-scan-fail
       - assert-build-flutter-android-fail
+      - assert-e2e-kind-fail
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
