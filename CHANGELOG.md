@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.13.2](https://github.com/serverkraken/reusable-workflows/compare/v4.13.1...v4.13.2) (2026-08-20)
+
+
+### Bug Fixes
+
+* **e2e-kind:** follow-up — unbreak renovate managers, doc + atom polish ([#221](https://github.com/serverkraken/reusable-workflows/issues/221)) ([78ed5b9](https://github.com/serverkraken/reusable-workflows/commit/78ed5b9911995ab01097eb891a1c32c090aa1bda))
+
 ## [4.13.1](https://github.com/serverkraken/reusable-workflows/compare/v4.13.0...v4.13.1) (2026-08-20)
 
 
