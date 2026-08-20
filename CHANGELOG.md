@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.13.0](https://github.com/serverkraken/reusable-workflows/compare/v4.12.0...v4.13.0) (2026-08-20)
+
+
+### Features
+
+* e2e-kind atom — kind e2e on self-hosted runners ([#216](https://github.com/serverkraken/reusable-workflows/issues/216)) ([33188ca](https://github.com/serverkraken/reusable-workflows/commit/33188ca3d3f679a5ce2a8f1dc1e3586e3928aa54))
+
 ## [4.12.0](https://github.com/serverkraken/reusable-workflows/compare/v4.11.0...v4.12.0) (2026-08-18)
 
 
