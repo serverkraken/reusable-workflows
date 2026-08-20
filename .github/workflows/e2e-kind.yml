@@ -221,15 +221,34 @@ jobs:
         # The kindest/node image stays in the dind cache deliberately
         # (~50s saved per subsequent run). Self-asserting: leftovers fail
         # the job even on otherwise-green runs.
+        # Handles dind race ("docker rm -f" loses shim exit event): retry
+        # kind delete, then remove node containers directly as fallback.
         if: always()
         run: |
           set -euo pipefail
+          delete_cluster() {
+            local c="$1"
+            for attempt in 1 2 3; do
+              if kind delete cluster --name "$c"; then
+                return 0
+              fi
+              echo "kind delete cluster $c failed (attempt $attempt/3) — retrying in 5s"
+              sleep 5
+            done
+            # Fallback for the dind race ("did not receive an exit event"): remove
+            # the node containers directly, then let kind clean up its bookkeeping.
+            echo "falling back to docker rm -f for cluster $c node containers"
+            docker ps -a --filter "label=io.x-k8s.kind.cluster=$c" -q | xargs -r docker rm -f || true
+            sleep 2
+            kind delete cluster --name "$c" || true
+          }
           for c in $(kind get clusters 2>/dev/null); do
-            kind delete cluster --name "$c"
+            delete_cluster "$c"
           done
           leftover=$(kind get clusters 2>/dev/null || true)
-          if [[ -n "$leftover" ]]; then
-            echo "::error::kind clusters leaked past cleanup: $leftover"
+          containers=$(docker ps -a --filter "label=io.x-k8s.kind.cluster" -q 2>/dev/null || true)
+          if [[ -n "$leftover" || -n "$containers" ]]; then
+            echo "::error::kind state leaked past cleanup: clusters=[${leftover:-}] containers=[${containers:-}]"
             exit 1
           fi
           rm -rf /tmp/e2e-kind-diagnostics
