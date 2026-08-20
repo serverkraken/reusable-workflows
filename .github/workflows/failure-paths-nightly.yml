@@ -22,8 +22,9 @@ on:
 # Atoms inherit secrets and declare their own permission caps. This
 # top-level block must mirror the union of nested atom permissions.
 # The integration.yml block is the closest reference and is reproduced
-# here (minus security-events:write — no SARIF uploads in nightly,
-# upload_sarif: false on all trivy-* callers below).
+# here. kube-lint.yml declares security-events: write at workflow level,
+# so it must be granted here even though upload_sarif: false on all
+# trivy-* callers (no SARIF uploads in nightly).
 permissions:
   contents: write
   packages: write
@@ -31,6 +32,7 @@ permissions:
   pull-requests: write
   issues: write
   actions: read
+  security-events: write
 
 concurrency:
   group: failure-paths-nightly
