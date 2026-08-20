@@ -45,5 +45,41 @@
       depNameTemplate: 'aquasecurity/trivy',
       extractVersionTemplate: '^v(?<version>.*)$',
     },
+    {
+      customType: 'regex',
+      fileMatch: [
+        '^\\.github/workflows/.+\\.ya?ml$',
+        '^actions/.+/action\\.ya?ml$',
+      ],
+      matchStrings: [
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*KIND_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s*$',
+      ],
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'kubernetes-sigs/kind',
+    },
+    {
+      customType: 'regex',
+      fileMatch: [
+        '^\\.github/workflows/.+\\.ya?ml$',
+        '^actions/.+/action\\.ya?ml$',
+      ],
+      matchStrings: [
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*KUBECTL_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s*$',
+      ],
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'kubernetes/kubernetes',
+    },
+    {
+      customType: 'regex',
+      fileMatch: [
+        '^\\.github/workflows/.+\\.ya?ml$',
+        '^actions/.+/action\\.ya?ml$',
+      ],
+      matchStrings: [
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*CILIUM_CLI_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s*$',
+      ],
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'cilium/cilium-cli',
+    },
   ],
 }
