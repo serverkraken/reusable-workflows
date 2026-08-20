@@ -21,6 +21,11 @@
 #     v0.18.7); budget waits into `cilium status --wait` instead.
 #   * Skip `kind create --wait` when disableDefaultCNI is set — the node
 #     cannot become Ready before a CNI is installed.
+#   * The runner disk is shared with the dind image store; under
+#     concurrent CI IO, etcd fsyncs can stall ("etcdserver: request timed
+#     out"). Run etcd with `unsafe-no-fsync: "true"` (kubeadmConfigPatches
+#     -> ClusterConfiguration) — the cluster is throwaway, so durability
+#     is free to give up (see tests/fixtures/kind-smoke/kind-config.yaml).
 #
 # Summary convention: docs/conventions/step-summary.md
 name: e2e-kind

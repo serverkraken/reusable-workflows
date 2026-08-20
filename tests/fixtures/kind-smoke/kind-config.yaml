@@ -1,0 +1,18 @@
+# Shared by e2e.sh and e2e-fail.sh. The only non-default setting is the
+# etcd fsync opt-out: the e2e cluster shares its disk with the runner's
+# dind image store, and concurrent CI jobs generate enough IO that etcd's
+# fsyncs stall ("etcdserver: request timed out" killed the PR-time happy
+# path on 2026-08-20). The cluster is throwaway — durability is free to
+# give up, stability under IO pressure is not. Real consumers should do
+# the same (see the e2e-kind.yml header notes).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        etcd:
+          local:
+            extraArgs:
+              unsafe-no-fsync: "true"
