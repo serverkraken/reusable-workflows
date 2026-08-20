@@ -136,7 +136,7 @@ If a Go-specific regression is suspected, re-run the same dispatch with `use_go_
 
 ## 6. v2.0.0 — App-Token Catalog Checkout
 
-Adopters pinning `@v2` (or `pin_version: v2` at onboard time) must pass `secrets: inherit` on every atom call. The atoms `trivy-fs.yml`, `trivy-image.yml`, and `docker-build.yml` mint a catalog-scoped App token from the org-level App credentials (see §1.3) and use it to clone the private catalog repo. Without `secrets: inherit`, the call fails immediately with "required secret missing". (Since v3.0.0 the secret name is `RELEASE_PLEASE_APP_CLIENT_ID`; `@v2.x` callers still use the older `RELEASE_PLEASE_APP_ID`.)
+Adopters pinning `@v2` (or `pin_version: v2` at onboard time) must pass `secrets: inherit` on every atom call. The atoms `trivy-fs.yml`, `trivy-image.yml`, `docker-build.yml`, and `e2e-kind.yml` mint a catalog-scoped App token from the org-level App credentials (see §1.3) and use it to clone the private catalog repo. Without `secrets: inherit`, the call fails immediately with "required secret missing". (Since v3.0.0 the secret name is `RELEASE_PLEASE_APP_CLIENT_ID`; `@v2.x` callers still use the older `RELEASE_PLEASE_APP_ID`.)
 
 ### 6.1 Why this exists
 
@@ -323,7 +323,7 @@ Topic `no-serverkraken-onboard` on the adopter repo skips both the rendered-file
 
 ## 8. Lint and test atoms
 
-Per-language lint and test atoms callable via `workflow_call`. Each atom accepts a `runs_on` input. Build-heavy atoms (`lint-go`, `test-go`, `lint-rust`, `test-rust`) default to `[self-hosted, Linux, X64]`; the lighter atoms (`lint-python`, `test-python`, `lint-helm`) default to `[self-hosted, Linux]`. Callers without a matching runner pool can override to `ubuntu-latest`.
+Per-language lint and test atoms callable via `workflow_call`. Each atom accepts a `runs_on` input. Build-heavy atoms (`lint-go`, `test-go`, `lint-rust`, `test-rust`) default to `[self-hosted, Linux, X64]`; the lighter atoms (`lint-python`, `test-python`, `lint-helm`) default to `[self-hosted, Linux]`. Callers without a matching runner pool can override to `ubuntu-latest`. `e2e-kind` (below) is the heaviest atom in this set — it defaults to `[self-hosted, Linux, X64, performance]`, since it runs a full kind cluster plus CNI inside the runner pod's dind sidecar.
 
 | Atom                  | Purpose                                            |
 |-----------------------|----------------------------------------------------|
@@ -334,6 +334,7 @@ Per-language lint and test atoms callable via `workflow_call`. Each atom accepts
 | `lint-rust.yml`       | `cargo fmt --check` + `cargo clippy -D warnings`   |
 | `test-rust.yml`       | `cargo test` + `cargo-llvm-cov` coverage gate      |
 | `lint-helm.yml`       | `helm lint` + `ct lint`                            |
+| `e2e-kind.yml`        | Consumer-owned kind e2e script; diagnostics artifact on failure; guaranteed cluster cleanup |
 
 The test atoms expose a `coverage_threshold` input (default `80`) so consumers can tighten or loosen the gate per repo. The Python atoms reuse the `actions/setup-python-deps` composite to auto-detect Poetry / uv / pip-bare project layouts.
 

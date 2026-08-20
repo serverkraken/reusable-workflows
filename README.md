@@ -115,6 +115,7 @@ jobs:
 | `secret-scan.yml`            | gitleaks, git-history-aware                                    |
 | `kube-lint.yml`              | kube-linter über Kubernetes-Manifeste                          |
 | `kube-validate.yml`          | kustomize build + kubeconform-Schema-Validierung               |
+| `e2e-kind.yml`               | Kubernetes-e2e mit kind (Consumer-Script, Diagnose-Artifact, Cleanup-Garantie) |
 | `cleanup-images.yml`         | GHCR-Retention                                                 |
 | `lint-go.yml` / `test-go.yml`           | go vet + golangci-lint / go test + Coverage-Gate    |
 | `lint-python.yml` / `test-python.yml`   | ruff + mypy / pytest + Coverage-Gate (poetry/uv/pip automatisch erkannt) |
