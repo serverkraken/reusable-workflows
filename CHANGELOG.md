@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.13.1](https://github.com/serverkraken/reusable-workflows/compare/v4.13.0...v4.13.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **nightly:** grant security-events to satisfy kube-lint's permission cap ([#218](https://github.com/serverkraken/reusable-workflows/issues/218)) ([e822e8e](https://github.com/serverkraken/reusable-workflows/commit/e822e8ee3985538e0a71c8ac032c5b765e3cf87f))
+
 ## [4.13.0](https://github.com/serverkraken/reusable-workflows/compare/v4.12.0...v4.13.0) (2026-08-20)
 
 
