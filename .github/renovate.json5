@@ -33,13 +33,21 @@
       // tool generates `managerFilePatterns` here, but the validator (and
       // some Renovate runtimes) reject it inside customManagers. Keep
       // `fileMatch` until upstream sorts this out.
+      //
+      // NOTE: matchStrings are compiled WITHOUT the `m` flag, so `$` means
+      // end-of-INPUT, not end-of-line. A trailing `['"]?\s*$` therefore only
+      // matches a value on the LAST line of the file and can never match a
+      // mid-file `KEY: 'value'` — these four managers never produced a PR
+      // until this fix. Terminate on `['"]?\s` (a single following
+      // whitespace/newline char) instead; the lazy `\S+?` capture still
+      // stops before the closing quote.
       customType: 'regex',
       fileMatch: [
         '^\\.github/workflows/.+\\.ya?ml$',
         '^actions/.+/action\\.ya?ml$',
       ],
       matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*TRIVY_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s*$',
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*TRIVY_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
       ],
       datasourceTemplate: 'github-releases',
       depNameTemplate: 'aquasecurity/trivy',
@@ -52,7 +60,7 @@
         '^actions/.+/action\\.ya?ml$',
       ],
       matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*KIND_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s*$',
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*KIND_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
       ],
       datasourceTemplate: 'github-releases',
       depNameTemplate: 'kubernetes-sigs/kind',
@@ -64,7 +72,7 @@
         '^actions/.+/action\\.ya?ml$',
       ],
       matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*KUBECTL_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s*$',
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*KUBECTL_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
       ],
       datasourceTemplate: 'github-releases',
       depNameTemplate: 'kubernetes/kubernetes',
@@ -76,10 +84,26 @@
         '^actions/.+/action\\.ya?ml$',
       ],
       matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*CILIUM_CLI_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s*$',
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*CILIUM_CLI_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
       ],
       datasourceTemplate: 'github-releases',
       depNameTemplate: 'cilium/cilium-cli',
+    },
+    {
+      // Matches the `helm_version:` input default used by lint-helm.yml,
+      // helm-publish.yml, and e2e-kind.yml. `[\s\S]*?` spans the
+      // description/required/type lines between the input key and its
+      // `default:` value without needing a dotall flag.
+      customType: 'regex',
+      fileMatch: [
+        '^\\.github/workflows/.+\\.ya?ml$',
+        '^actions/.+/action\\.ya?ml$',
+      ],
+      matchStrings: [
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*helm_version:[\\s\\S]*?default:\\s*[\'"]?(?<currentValue>v\\S+?)[\'"]?\\s',
+      ],
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'helm/helm',
     },
   ],
 }
