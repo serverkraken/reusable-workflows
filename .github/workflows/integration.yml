@@ -413,6 +413,17 @@ jobs:
           TAG: v0.0.1-fixture-${{ github.run_id }}
         run: gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag || true
 
+  # ----- e2e-kind happy path: fixture creates a 1-node kind cluster in
+  # the runner pod's dind sidecar, asserts Ready, deletes it. Runs on the
+  # performance pool (atom default) — this is the PR-time proof that kind
+  # works inside the ARC topology. -----
+  test-e2e-kind:
+    uses: ./.github/workflows/e2e-kind.yml
+    secrets: inherit
+    with:
+      script: tests/fixtures/kind-smoke/e2e.sh
+      timeout_minutes: 15
+
   # ----- Summary: aggregates ALL happy-path children into a single status.
   #       Branch-protection will require ONLY this check. Atom-failure-path
   #       tests (cleanup-images-fail, docker-build-multi-fail, goreleaser-fail,
@@ -442,6 +453,7 @@ jobs:
       - test-goreleaser
       - test-helm-publish
       - test-release-flutter-android
+      - test-e2e-kind
       - test-kube-validate-happy
       - test-kube-lint-happy
       - assert-kube-lint-clean
