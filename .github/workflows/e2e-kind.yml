@@ -21,6 +21,8 @@
 #     v0.18.7); budget waits into `cilium status --wait` instead.
 #   * Skip `kind create --wait` when disableDefaultCNI is set — the node
 #     cannot become Ready before a CNI is installed.
+#
+# Summary convention: docs/conventions/step-summary.md
 name: e2e-kind
 on:
   workflow_call:
@@ -140,6 +142,7 @@ jobs:
           version: ${{ inputs.helm_version }}
 
       - name: Run e2e script
+        id: run_script
         working-directory: ${{ inputs.working_directory }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -154,6 +157,28 @@ jobs:
             exit 1
           fi
           "$E2E_SCRIPT"
+
+      - name: Write step summary
+        if: always()
+        env:
+          SCRIPT: ${{ inputs.script }}
+          OUTCOME: ${{ steps.run_script.outcome }}
+        run: |
+          {
+            KIND_VER=$(kind version 2>/dev/null | cut -d' ' -f1-2 || echo 'kind ?')
+            KUBECTL_VER=$(kubectl version --client 2>/dev/null | sed -n 's/^Client Version: //p' || echo '?')
+            CILIUM_VER=$(cilium version --client 2>/dev/null | sed -n 's/^cilium-cli: \([^ ]*\).*/cilium-cli \1/p' || echo 'cilium-cli ?')
+            HELM_VER=$(helm version --template '{{.Version}}' 2>/dev/null || echo '?')
+            echo "## e2e-kind"
+            echo ""
+            echo "**Tools:** $KIND_VER, kubectl $KUBECTL_VER, $CILIUM_VER, helm $HELM_VER"
+            echo "**Script:** \`$SCRIPT\`"
+            if [[ "$OUTCOME" == "success" ]]; then
+              echo "**Result:** ✓ e2e script passed"
+            else
+              echo "**Result:** ✗ e2e script failed — diagnostics artifact \`e2e-kind-diagnostics\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Collect diagnostics
         if: failure()
