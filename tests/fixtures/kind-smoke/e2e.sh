@@ -8,7 +8,7 @@
 set -euo pipefail
 CLUSTER=kind-smoke
 trap 'kind delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true' EXIT
-kind create cluster --name "$CLUSTER" --wait 180s
+kind create cluster --name "$CLUSTER" --config "$(dirname "$0")/kind-config.yaml" --wait 180s
 kubectl --context "kind-$CLUSTER" get nodes -o wide
 kubectl --context "kind-$CLUSTER" wait --for=condition=Ready node --all --timeout=60s
 echo "OK: kind-smoke happy path"
