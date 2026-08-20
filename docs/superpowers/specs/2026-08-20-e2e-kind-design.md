@@ -89,7 +89,7 @@ Stability surface (`inputs`):
 | `kind_version` | string | `''` | empty → action's pinned default |
 | `kubectl_version` | string | `''` | empty → action's pinned default |
 | `cilium_cli_version` | string | `''` | empty → action's pinned default |
-| `helm_version` | string | `''` | empty → pinned default env in the workflow (renovate-tracked); installed via `azure/setup-helm` (resolves the image's toolcache bake) |
+| `helm_version` | string | `'v3.16.3'` | renovate-tracked input default (house style, as in `lint-helm.yml`); installed via `azure/setup-helm` (resolves the image's toolcache bake) |
 
 No outputs. `permissions: contents: read, packages: read`.
 `GITHUB_TOKEN` is passed to the script env (consumers use it to let the
