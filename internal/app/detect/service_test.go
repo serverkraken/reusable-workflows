@@ -260,6 +260,25 @@ func TestFallbackDockerfileMonorepo(t *testing.T) {
 	}
 }
 
+func TestRootMarkerWinsOverSubdirDockerfiles(t *testing.T) {
+	p := detectFixture(t, "go-root-subdir-dockerfile").Profile
+	if p.Monorepo || len(p.Components) != 1 || p.Components[0].Path != "." || p.Components[0].PrimaryLanguage != "go" {
+		t.Fatalf("components=%+v", p.Components)
+	}
+	if len(p.Components[0].Dockerfiles) != 0 {
+		t.Fatalf("root must not silently adopt sub-directory Dockerfiles: %+v", p.Components[0].Dockerfiles)
+	}
+	var w *domain.Warning
+	for i := range p.Warnings {
+		if p.Warnings[i].Code == "subdir_dockerfiles_unassigned" {
+			w = &p.Warnings[i]
+		}
+	}
+	if w == nil || w.Path != "images/api/Dockerfile,images/worker/Dockerfile" || !strings.Contains(w.Message, ".github/onboard.yml") {
+		t.Fatalf("warning=%+v all=%+v", w, p.Warnings)
+	}
+}
+
 func TestFallbackMarkerMonorepo(t *testing.T) {
 	tmp := t.TempDir()
 	mustMkdir(t, filepath.Join(tmp, "services", "api"))

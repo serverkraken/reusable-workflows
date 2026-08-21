@@ -107,6 +107,7 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	}
 	profile.Warnings = append(profile.Warnings, unsupportedLanguageWarnings(profile.Components)...)
 	profile.Warnings = append(profile.Warnings, noReleaseEligibleWarnings(profile.Components)...)
+	profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(req.RepoPath, profile.Components)...)
 
 	legacyLanguage, err := legacyLanguage(req.RepoPath, req.LanguageOverride)
 	if err != nil {
@@ -149,7 +150,7 @@ func detectComponents(repo string) ([]domain.Component, error) {
 	if len(paths) == 0 && !rootHasMarker {
 		paths = fallbackMarkerPaths(repo)
 	}
-	if len(paths) == 0 {
+	if len(paths) == 0 && !rootHasMarker {
 		paths = fallbackDockerfilePaths(repo)
 	}
 	if len(paths) == 0 {
@@ -647,6 +648,41 @@ func noReleaseEligibleWarnings(components []domain.Component) []domain.Warning {
 		}
 	}
 	return out
+}
+
+// unassignedSubdirDockerfileWarnings fires when the repo resolved to a single
+// root component but carries Dockerfiles in sub-directories that no component
+// owns. Before the root-marker fix those Dockerfiles hijacked the layout; now
+// they are ignored loudly and the adopter manifest is the way to claim them.
+func unassignedSubdirDockerfileWarnings(repo string, components []domain.Component) []domain.Warning {
+	if len(components) != 1 || components[0].Path != "." {
+		return nil
+	}
+	var orphans []string
+	_ = filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if name != "Dockerfile" && name != "Containerfile" && !strings.HasPrefix(name, "Dockerfile.") && !strings.HasPrefix(name, "Containerfile.") {
+			return nil
+		}
+		rel, _ := filepath.Rel(repo, path)
+		rel = filepath.ToSlash(rel)
+		if strings.Contains(rel, "/") && !strings.HasPrefix(rel, ".git/") {
+			orphans = append(orphans, rel)
+		}
+		return nil
+	})
+	if len(orphans) == 0 {
+		return nil
+	}
+	sort.Strings(orphans)
+	return []domain.Warning{{
+		Code:    "subdir_dockerfiles_unassigned",
+		Path:    strings.Join(orphans, ","),
+		Message: fmt.Sprintf("%d Dockerfile(s) in sub-directories are not attached to any component and will not be built: %s. Declare them in .github/onboard.yml (components[].dockerfiles or their own component).", len(orphans), strings.Join(orphans, ", ")),
+	}}
 }
 
 func releasePleaseType(primary string) string {

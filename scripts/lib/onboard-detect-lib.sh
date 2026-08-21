@@ -322,7 +322,9 @@ detect_components() {
   fi
 
   # 3) Sub-Dockerfile/Containerfile fallback (no language markers but multiple sub-Dockerfiles/Containerfiles)
-  if [[ ${#paths[@]} -eq 0 ]]; then
+  # — only when the root has no marker of its own (same guard as step 2; a root
+  # go.mod/Dockerfile/etc. must not be displaced by Dockerfiles living in sub-directories).
+  if [[ ${#paths[@]} -eq 0 && "$root_has_marker" == "false" ]]; then
     local sub_dockerfile_dirs=()
     while IFS= read -r f; do
       local d
