@@ -618,6 +618,16 @@ Semantics:
   single shared `context` — and detect rejects mixed contexts. mailstack
   sets `context: .` on every image component because its Dockerfiles
   `COPY images/<name>/…` from the repo root.
+- **`platforms` is per component, not per image.** It may be written on the
+  component (shorthand) or on individual `dockerfiles[]` entries, but all
+  Dockerfiles of one component must end up with the same value — the
+  `docker-build-multi` atom takes a single `platforms` input and forwards it
+  to every image it builds. Detect rejects a mismatch (including "explicit
+  list on one file, atom default on another") with
+  `Dockerfiles of component <path> must share one platforms value`. The
+  value must be a comma-separated `os/arch[/variant]` list
+  (`linux/amd64,linux/arm64/v8`); leave it out to take the atom's default,
+  which is what nearly every adopter wants.
 - **`type: helm`** marks a chart component; `unittest: true` renders the
   `helm-unittest` step (via the new `lint-helm` input). `type` is only
   needed when the directory has no language marker; a `Chart.yaml` at
@@ -625,7 +635,21 @@ Semantics:
   driven purely by that component's own resolved `primary_language ==
   helm` — set by `type: helm` or by an auto-detected `Chart.yaml` inside
   the component's own directory — never by a `release_signals.chart_yaml`
-  hit on some other component in the same repo.
+  hit on some other component in the same repo. A chart directory that is
+  declared as its own component is also **removed from the parent
+  component's `release_signals.chart_yaml`**
+  (`internal/app/detect/service.go`, `componentsFromManifest`), so the
+  chart renders exactly one `helm-publish` job — from its own component —
+  instead of a duplicate under the parent.
+- **Chart-component CI and publish jobs are a manifest feature.** The
+  `charts_dir` form of `lint-helm`, the `helm-publish` dry-run in `ci.yml`
+  and the per-component `helm-publish` job in `release.yml` are rendered
+  only when the profile carries a manifest. A chart repo whose `Chart.yaml`
+  merely *sits* in a sub-directory (`calert/Chart.yaml`,
+  `chart/Chart.yaml`) is detected as a non-root helm component but has no
+  manifest, and keeps its previous rendering: a single `lint-helm` job with
+  `working_directory: <chart path>` and no publish job. Adding a manifest is
+  the deliberate step that opts such a repo into publishing its chart.
 - **A manifest component with no detected language and at least one
   declared Dockerfile** (an image-only component — a plain build context
   with no source of its own, e.g. `images/postfix` in the mailstack
@@ -659,8 +683,30 @@ named); booleans are strictly `true`/`false` (`yes`/`1`/etc. fail; a quoted
 `"true"` still parses, since quoting doesn't change the underlying value);
 `language` must be one of `go`, `python`, `rust`, `helm`, `flutter`, `node`,
 `generic`; `type` must be `helm`; `image` must match `^[A-Za-z0-9._/-]+$`;
+`platforms` must be a comma-separated `os/arch[/variant]` list;
+`workflows.e2e.script` must be a repo-relative path matching
+`^[A-Za-z0-9._/-]+$`; `workflows.e2e.schedule` must be five cron fields made
+of digits, `*`, `,`, `-`, `/` and names (no quotes or other punctuation);
 `gitops[].repo` must be `owner/name`; component paths must be unique and
-stay inside the repository.
+stay inside the repository, and two non-root components must not share a
+directory basename — release-please derives the `package-name` (and hence
+the tag prefix) from it, so `images/svc` and `charts/svc` would collide.
+
+**The YAML the reader accepts.** `internal/manifest` implements the small
+subset the schema needs rather than pulling in a YAML dependency, and
+rejects the rest with a line number instead of guessing:
+
+| Accepted | Rejected |
+|---|---|
+| block mappings (`key: value`, two-space indent) | tabs, odd indentation |
+| block sequences, including `- key: value` items with **exactly one space** after the dash | nested sequences (`- - x`) |
+| flow scalar lists (`scope: [a, b]`) | flow mappings (`{a: 1}`) |
+| single- and double-quoted scalars (verbatim — no escape processing) | block scalars (`|`, `>`) |
+| `#` comments, whole-line and trailing | anchors, aliases, tags (`&x`, `*x`, `!x`) |
+
+Quoting changes nothing about a value: `dispatch_trigger: "true"` and
+`dispatch_trigger: true` parse identically, and `"a\nb"` is the four
+characters `a\nb`. Keep the manifest boring.
 
 ### 11.3 Per-component releases
 
@@ -677,6 +723,36 @@ package-name prefix:
 - Chart components render with `release-type: helm` (release-please bumps
   `Chart.yaml`'s `version` directly); the chart's package name and prefix
   follow the same directory-basename rule as any sub-directory component.
+
+**The root package excludes every sub-component path.** Release-please
+feeds each package the commits that touch its path — and the root package's
+path is `.`, which matches *every* commit in the repo. Without a guard a
+`fix(postfix): …` commit under `images/postfix` would bump the root version
+too, on top of the component's own release. The rendered
+`release-please-config.json` therefore gives the root package
+
+```json
+    ".": {
+      "release-type": "go",
+      "exclude-paths": ["images/postfix", "charts/mailstack"],
+      "include-component-in-tag": false
+    }
+```
+
+listing every non-root component path (the key is omitted when the manifest
+declares no non-root component). A commit that touches only a sub-component
+now releases only that component; the root releases when something outside
+every component path changes.
+
+> **Re-onboarding a repo rendered from the monorepo template before
+> v4.14:** the package naming changed. Sub-directory packages now use the
+> directory **basename** as `package-name` (`postfix-v1.2.0`, not
+> `images/postfix-v1.2.0`), and the root package carries no component in its
+> tag at all. Before merging the re-onboarding PR, reconcile
+> `.release-please-manifest.json` (its keys are paths — the values must be
+> the versions actually released under the *new* tag names) and, if
+> necessary, push the corresponding tags. Getting this wrong makes
+> release-please re-release from `0.1.0`.
 
 Each release job in the rendered `release.yml` is gated on whether its path
 was actually released:
@@ -748,9 +824,22 @@ orphaned Dockerfiles and pointing at the manifest — honest instead of wrong.
 written only when a manifest exists. `drift-check` treats a changed,
 added, or removed manifest as **`stale-lock`** (re-render required, not a
 hand-edit) — the drift report's `Modified` column for that status lists
-`.github/onboard.yml`. An unreadable manifest (parse/validation failure
-during the drift re-render) surfaces as an error for that target rather
-than a silent `clean`.
+`.github/onboard.yml`.
+
+A broken manifest shows up in one of two ways, and the difference matters
+when reading a drift report:
+
+- **Parse or validation failure** (unknown key, bad `platforms`, duplicate
+  package name, …): the file is readable, so its SHA-256 is computed and
+  compared — and it differs from the locked hash, because the last
+  successful render used a different byte sequence. The target reports
+  **`stale-lock`**, not `error`. The real message (`.github/onboard.yml:
+  line N: …`) appears when the re-render is attempted, in `render_error`.
+- **Read failure** (`EISDIR` because someone made `.github/onboard.yml` a
+  directory, `EPERM`, an I/O error): there is nothing to hash, so drift
+  cannot be evaluated at all — `sk-workflows drift` fails and the target is
+  bucketed as **`error`**, never silently as `clean`. The same bucket
+  covers the Bash engine meeting a manifest it cannot parse (§ 11.4).
 
 ### 11.6 GitOps consumers
 

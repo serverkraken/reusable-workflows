@@ -263,8 +263,8 @@ while Helm v3 is the default — 1.1.0 switched `plugin.yaml` to
 ### 4. Templates (`docs/adopter-templates/`)
 
 Hard constraint: **single-component adopters render byte-identically.**
-Every change below lives behind `monorepo` / manifest conditions; a
-snapshot test over the four live adopter profiles is the release gate.
+Every change below lives behind `monorepo` / manifest conditions; the
+pre-tag live-adopter render diff (see § Test strategy) is the release gate.
 
 - **`release.yml.tmpl`, monorepo branch.** Each component job is gated
   `if: contains(fromJSON(needs.release-please.outputs.paths_released), '<path>')`
@@ -334,9 +334,19 @@ Catalog release: **v4.14.0**.
   fallback fix and its warning, image name precedence
   (manifest > annotation > derived), context derivation.
 - **bats:** Bash detect fails loud on a manifest; every template stays
-  byte-reproducible; **snapshot test: the four live adopter profiles
-  (blupod-ui, flow, skytrack, skytrack-ui) render identically before and
-  after** — this is the v4.14 release gate.
+  byte-reproducible against the committed fixture goldens
+  (`tests/shell/onboard-render.bats`, `tests/shell/golden/ci/*.yml`), and
+  the `drift-clean` fixture keeps a locked adopter clean through a
+  re-render in CI (`tests/shell/onboard-drift.bats`).
+- **Live-adopter byte identity (manual, pre-tag):** the fixture goldens
+  cover the shapes, not the real repos, so before tagging run
+  `sk-workflows preview` against every live adopter with the catalog at
+  `main` and at the release branch and diff the two rendered trees — see
+  `.superpowers/sdd/2026-08-21-adopter-manifest-monorepo/live-adopter-check.sh`,
+  which does exactly that for blupod-ui, flow, skytrack, skytrack-ui,
+  calert-helm, helm-chart-tshock and smarthome-helm. Every adopter must
+  print `IDENTICAL`. Record the run in the release checklist; this is the
+  v4.14 release gate.
 - **Golden renders:** new fixture `tests/fixtures/onboard/go-root-multi-image`
   (root `go.mod`, `images/{a,b}/Dockerfile` copying from root,
   `charts/demo`, `test/e2e/run.sh`, manifest) with expected `ci.yml`,
@@ -357,7 +367,7 @@ Catalog release: **v4.14.0**.
 | Stage | Repo | Content | Gate |
 |---|---|---|---|
 | 1 — atoms | reusable-workflows | `semantic-release.yml` outputs; `lint-helm.yml` `unittest` | self-CI + integration; no template change → no drift |
-| 2 — detect + templates | reusable-workflows | manifest parser, fallback fix, profile fields, monorepo templates, `e2e.yml.tmpl`, lock hash, Bash fail-loud, docs | snapshot test of the four live adopters green → tag v4.14.0 |
+| 2 — detect + templates | reusable-workflows | manifest parser, fallback fix, profile fields, monorepo templates, `e2e.yml.tmpl`, lock hash, Bash fail-loud, docs | live-adopter render diff green (every adopter `IDENTICAL`) → tag v4.14.0 |
 | 3 — mailstack | mailstack | commit `.github/onboard.yml`; dispatch `onboard.yml` → bot PR with rendered workflows + lock; `values.yaml` gets a default tag per image, `appVersion` `extra-files` removed; `Chart.yaml` seeded in the release-please manifest | first real release: a `fix(postfix): …` commit builds **only** postfix |
 | 4 — Renovate | renovate-config, mailstack | homelab preset: `packageRule` for `ghcr.io/serverkraken/**` — no schedule, `minimumReleaseAge: 0`, automerge (own images are signed and scanned); mailstack `renovate.json`: `helm-values` on `charts/mailstack/values.yaml` so image bumps land as `fix(chart): …` | watch for automerge firing too early on own images |
 

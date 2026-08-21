@@ -10,8 +10,20 @@ against `expected/`. The bats harness (`tests/shell/`) cannot exercise this
 fixture — the Bash engine refuses manifests by design (§ 11.4 of
 `docs/operations.md`).
 
-`expected/` lives inside this same directory tree, so it is also visible to
-`sk-workflows detect` when it walks the repo. This is benign: the manifest's
-`components:` list is authoritative (§ 11.2), so detection never falls back
-to scanning the file system for components, Dockerfiles, or chart
-directories — the extra files under `expected/` are simply never looked at.
+`expected/` lives inside this same directory tree, so the walkers **do**
+reach it — it is not a dot-directory, and only dot-directories are pruned.
+It stays benign for two separate reasons:
+
+- The manifest's `components:` list is authoritative (§ 11.2), so the
+  component walkers (`fallbackMarkerPaths`, `fallbackDockerfilePaths`) never
+  run at all, and `unassignedSubdirDockerfileWarnings` is skipped for
+  manifest repos.
+- The one walker that does run over the whole tree, `firstNestedChart`,
+  stops at the first `Chart.yaml` it finds in directory order — and
+  `charts/` sorts before `expected/`, so it resolves `charts/demo` and
+  returns. That chart is then dropped from the root component's release
+  signals anyway, because `charts/demo` is its own component.
+
+Nothing under `expected/` contains a `Chart.yaml`, so the sort order is
+belt-and-braces rather than load-bearing — but keep new fixture directories
+out of alphabetical range before `charts/` if they ever grow one.
