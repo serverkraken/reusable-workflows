@@ -373,7 +373,13 @@ jobs:
           # repos that consume this target's manifests — surfaced so reviewers
           # know who's affected before merging.
           consumers_md="$(echo "$PROFILE" | jq -r '
-            (.gitops_consumers // []) | map("- `" + .repo + "`" + (if (.scope // []) | length > 0 then " (" + (.scope | join(", ")) + ")" else "" end) + " — " + .mode) | join("\n")')"
+            (.gitops_consumers // []) | map(
+              "- `" + .repo + "`"
+              + (if (.scope // []) | length > 0
+                 then " (" + (.scope | map("`" + . + "`") | join(", ")) + ")"
+                 else "" end)
+              + " — " + .mode
+            ) | join("\n")')"
           # Warnings are objects {code, path, message} from emit_*_warnings in
           # onboard-detect-lib.sh — extract human-readable fields for the PR body.
           warnings_md=$(echo "$PROFILE" | jq -r '.warnings // [] | map("- `\(.code)` at `\(.path)` — \(.message)") | join("\n")')
@@ -417,8 +423,11 @@ jobs:
 
           ### Detected shape
           ${components_md}
-          $( [[ -n "$consumers_md" ]] && printf '\n### Consumed by (from .github/onboard.yml)\n\n%s\n' "$consumers_md" )
 
+          ${consumers_md:+### Consumed by (from .github/onboard.yml)
+
+          ${consumers_md}
+          }
           ${warnings_md:+#### Warnings
           ${warnings_md}
           }
@@ -573,8 +582,19 @@ jobs:
           # Carry gitops_consumers through to the result JSON so the finalize
           # job's status-doc step can render a "Consumers" cell without
           # re-running detection. Fall back to [] if PROFILE is empty/invalid
-          # (e.g. detect never ran on a failed job).
-          gc_json=$(echo "$PROFILE" | jq -c '.gitops_consumers // []' 2>/dev/null) || gc_json='[]'
+          # (e.g. detect never ran on a failed job). jq exits 0 with EMPTY
+          # stdout on empty/whitespace input (not a nonzero exit), so an
+          # `|| gc_json='[]'` alone does not catch that case — check
+          # for blank PROFILE explicitly first, then re-validate whatever
+          # jq produced is actually a JSON array before it ever reaches
+          # `--argjson` (a non-array value there would also abort the script).
+          if [[ -z "${PROFILE//[[:space:]]/}" ]]; then
+            gc_json='[]'
+          else
+            gc_json=$(jq -c '.gitops_consumers // []' <<<"$PROFILE" 2>/dev/null) || gc_json='[]'
+          fi
+          [[ -n "$gc_json" ]] || gc_json='[]'
+          jq -e 'type=="array"' <<<"$gc_json" >/dev/null 2>&1 || gc_json='[]'
           jq -n \
             --arg target "$TARGET" \
             --arg language "$LANG" \
@@ -715,7 +735,13 @@ jobs:
           # For each result, replace or append a row.
           for f in results-for-status/*.json; do
             [[ -f "$f" ]] || continue
-            target=$(jq -r '.target' "$f")
+            # A truncated/empty result file (e.g. the emit step aborted before
+            # writing valid JSON) must never turn into a blank-target row in
+            # the status doc — skip it loudly instead.
+            if ! target=$(jq -e -r '.target' "$f" 2>/dev/null) || [[ -z "$target" ]]; then
+              echo "::warning::skipping malformed or empty result file: $f"
+              continue
+            fi
             pa=$(jq -r '.pr_a_url' "$f")
             pas=$(jq -r '.pr_a_status' "$f")
             pb=$(jq -r '.pr_b_url' "$f")
