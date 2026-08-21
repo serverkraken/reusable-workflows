@@ -260,6 +260,25 @@ func TestFallbackDockerfileMonorepo(t *testing.T) {
 	}
 }
 
+func TestRootMarkerWinsOverSubdirDockerfiles(t *testing.T) {
+	p := detectFixture(t, "go-root-subdir-dockerfile").Profile
+	if p.Monorepo || len(p.Components) != 1 || p.Components[0].Path != "." || p.Components[0].PrimaryLanguage != "go" {
+		t.Fatalf("components=%+v", p.Components)
+	}
+	if len(p.Components[0].Dockerfiles) != 0 {
+		t.Fatalf("root must not silently adopt sub-directory Dockerfiles: %+v", p.Components[0].Dockerfiles)
+	}
+	var w *domain.Warning
+	for i := range p.Warnings {
+		if p.Warnings[i].Code == "subdir_dockerfiles_unassigned" {
+			w = &p.Warnings[i]
+		}
+	}
+	if w == nil || w.Path != "images/api/Dockerfile,images/worker/Dockerfile" || !strings.Contains(w.Message, ".github/onboard.yml") {
+		t.Fatalf("warning=%+v all=%+v", w, p.Warnings)
+	}
+}
+
 func TestFallbackMarkerMonorepo(t *testing.T) {
 	tmp := t.TempDir()
 	mustMkdir(t, filepath.Join(tmp, "services", "api"))
@@ -382,7 +401,7 @@ func TestLegacyCIAllClassifiers(t *testing.T) {
 	for _, c := range cases {
 		mustWrite(t, filepath.Join(dir, c.name), c.content)
 	}
-	entries, err := detectLegacyCI(tmp)
+	entries, err := detectLegacyCI(tmp, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,4 +514,192 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestManifestDrivesComponents(t *testing.T) {
+	p := detectFixture(t, "go-root-multi-image").Profile
+	if len(p.ManifestSHA256) != 64 || !p.Monorepo || len(p.Components) != 4 {
+		t.Fatalf("profile=%+v", p)
+	}
+	want := []string{".", "images/api", "images/worker", "charts/demo"}
+	if got := componentPaths(p.Components); !reflect.DeepEqual(got, want) {
+		t.Fatalf("paths=%v want %v", got, want)
+	}
+	root := p.Components[0]
+	if root.PrimaryLanguage != "go" || len(root.Dockerfiles) != 1 {
+		t.Fatalf("root=%+v", root)
+	}
+	if d := root.Dockerfiles[0]; d.Path != "images/tools/Dockerfile" || d.ImageName != "acme/multi/tools" || d.ImageNameSource != "manifest" || d.Context != "" || !d.ReleaseEligible {
+		t.Fatalf("tools=%+v", d)
+	}
+	if root.ReleaseSignals.ChartYAML != nil {
+		t.Fatalf("chart owned by charts/demo must not be a root signal: %+v", root.ReleaseSignals)
+	}
+	api := p.Components[1]
+	if api.PrimaryLanguage != "generic" || len(api.Dockerfiles) != 1 || api.Dockerfiles[0].Path != "Dockerfile" || api.Dockerfiles[0].ImageName != "acme/multi/api" || api.Dockerfiles[0].Context != "" {
+		t.Fatalf("api=%+v", api)
+	}
+	if w := p.Components[2]; w.Dockerfiles[0].Platforms != "linux/amd64" || w.Dockerfiles[0].Context != "." {
+		t.Fatalf("worker=%+v", w)
+	}
+	chart := p.Components[3]
+	if chart.PrimaryLanguage != "helm" || chart.ReleasePleaseType != "helm" || chart.Role != "helm-app" || !chart.Unittest || chart.Version != "0.3.0" {
+		t.Fatalf("chart=%+v", chart)
+	}
+	if p.Workflows == nil || p.Workflows.E2E == nil || p.Workflows.E2E.Script != "test/e2e/run.sh" || p.Release == nil || !p.Release.DispatchTrigger {
+		t.Fatalf("workflows=%+v release=%+v", p.Workflows, p.Release)
+	}
+	if len(p.Consumers) != 2 || p.Consumers[0].Repo != "acme/gitops-prod" || p.Consumers[1].Mode != "renovate" {
+		t.Fatalf("consumers=%+v", p.Consumers)
+	}
+	for _, l := range p.LegacyCI {
+		if l.Path == ".github/workflows/e2e.yml" {
+			t.Fatalf("manifest-declared e2e.yml reported as legacy: %+v", l)
+		}
+	}
+	for _, w := range p.Warnings {
+		if w.Code == "subdir_dockerfiles_unassigned" || w.Code == "no_lint_test_atom" {
+			t.Fatalf("unexpected warning %+v", w)
+		}
+	}
+}
+
+func TestManifestErrors(t *testing.T) {
+	write := func(t *testing.T, manifest string, files map[string]string) string {
+		tmp := t.TempDir()
+		mustMkdir(t, filepath.Join(tmp, ".github"))
+		mustWrite(t, filepath.Join(tmp, ".github", "onboard.yml"), manifest)
+		for p, c := range files {
+			mustMkdir(t, filepath.Dir(filepath.Join(tmp, p)))
+			mustWrite(t, filepath.Join(tmp, p), c)
+		}
+		return tmp
+	}
+	tests := []struct {
+		name, manifest string
+		files          map[string]string
+		want           string
+	}{
+		{"missing attached dockerfile", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: images/x/Dockerfile\n", map[string]string{"go.mod": "module x\n"}, "images/x/Dockerfile: no such file"},
+		{"shorthand without dockerfile", "schema: 1\ncomponents:\n  - path: svc\n    image: a/b\n", map[string]string{"svc/go.mod": "module x\n"}, "but has 0 Dockerfiles"},
+		{"mixed contexts", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: a/Dockerfile\n        context: a\n      - path: b/Dockerfile\n", map[string]string{"go.mod": "module x\n", "a/Dockerfile": "FROM scratch\n", "b/Dockerfile": "FROM scratch\n"}, "must share one build context"},
+		{"missing component dir", "schema: 1\ncomponents:\n  - path: nope\n", nil, "component path nope does not exist"},
+		{"schema error surfaces", "schema: 1\nfoo: 1\n", nil, "line 2: unknown key"},
+		{"dockerfile already inventoried", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: Dockerfile\n", map[string]string{"go.mod": "module x\n", "Dockerfile": "FROM scratch\n"}, "already inventoried from the component directory"},
+		{"dockerfile outside component", "schema: 1\ncomponents:\n  - path: svc\n    dockerfiles:\n      - path: other/Dockerfile\n", map[string]string{"svc/go.mod": "module x\n", "other/Dockerfile": "FROM scratch\n"}, "is outside component"},
+		{
+			"mixed platforms",
+			"schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: a/Dockerfile\n        platforms: linux/amd64\n      - path: b/Dockerfile\n",
+			map[string]string{"go.mod": "module x\n", "a/Dockerfile": "FROM scratch\n", "b/Dockerfile": "FROM scratch\n"},
+			"Dockerfiles of component . must share one platforms value (docker-build-multi has a single platforms), got linux/amd64 vs (atom default)",
+		},
+		{
+			"dockerfile claimed twice",
+			"schema: 1\ncomponents:\n  - path: .\n    language: go\n    dockerfiles:\n      - path: images/api/Dockerfile\n  - path: images/api\n",
+			map[string]string{"go.mod": "module x\n", "images/api/Dockerfile": "FROM scratch\n"},
+			"line 7: Dockerfile images/api/Dockerfile is claimed by both component . and component images/api",
+		},
+		{
+			"shorthand with attached dockerfiles only",
+			"schema: 1\ncomponents:\n  - path: svc\n    image: a/b\n    dockerfiles:\n      - path: svc/sub/Dockerfile\n",
+			map[string]string{"svc/go.mod": "module x\n", "svc/sub/Dockerfile": "FROM scratch\n"},
+			"component svc has no Dockerfile in its directory; the shorthand fields apply to that file only",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := write(t, tt.manifest, tt.files)
+			_, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err=%v want %q", err, tt.want)
+			}
+			if !strings.HasPrefix(err.Error(), ".github/onboard.yml: line ") {
+				t.Fatalf("err=%v missing manifest line-number prefix", err)
+			}
+		})
+	}
+}
+
+// The "no Dockerfile in its directory" variant must not tell the adopter to
+// "use dockerfiles[] instead" — they already did, and the shorthand simply has
+// no own-directory file to apply to.
+func TestManifestShorthandErrorDoesNotSuggestDockerfilesWhenPresent(t *testing.T) {
+	tmp := t.TempDir()
+	mustMkdir(t, filepath.Join(tmp, ".github"))
+	mustMkdir(t, filepath.Join(tmp, "svc", "sub"))
+	mustWrite(t, filepath.Join(tmp, ".github", "onboard.yml"),
+		"schema: 1\ncomponents:\n  - path: svc\n    image: a/b\n    dockerfiles:\n      - path: svc/sub/Dockerfile\n")
+	mustWrite(t, filepath.Join(tmp, "svc", "go.mod"), "module x\n")
+	mustWrite(t, filepath.Join(tmp, "svc", "sub", "Dockerfile"), "FROM scratch\n")
+	_, err := (Service{}).Detect(context.Background(), Request{RepoPath: tmp})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), "use dockerfiles[] instead") {
+		t.Fatalf("stale suggestion in %v", err)
+	}
+}
+
+// TestWalkersSkipHiddenDirectories pins that the file-system walkers ignore
+// dot-directories: a `.worktrees/` checkout of this very repo, an editor's
+// `.cache/`, or a vendored `.hidden/` build tree must never contribute a chart
+// signal or an "unassigned Dockerfile" warning.
+func TestWalkersSkipHiddenDirectories(t *testing.T) {
+	tmp := t.TempDir()
+	mustWrite(t, filepath.Join(tmp, "go.mod"), "module x\n")
+	mustMkdir(t, filepath.Join(tmp, ".worktrees", "wt", "charts", "decoy"))
+	mustWrite(t, filepath.Join(tmp, ".worktrees", "wt", "charts", "decoy", "Chart.yaml"),
+		"apiVersion: v2\nname: decoy\nversion: 9.9.9\n")
+	mustMkdir(t, filepath.Join(tmp, ".hidden"))
+	mustWrite(t, filepath.Join(tmp, ".hidden", "Dockerfile"), "FROM scratch\n")
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: tmp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := res.Profile
+	if got := componentPaths(p.Components); !reflect.DeepEqual(got, []string{"."}) {
+		t.Fatalf("paths=%v want [.]", got)
+	}
+	if sig := p.Components[0].ReleaseSignals.ChartYAML; sig != nil {
+		t.Fatalf("hidden chart leaked into release signals: %q", *sig)
+	}
+	for _, w := range p.Warnings {
+		if w.Code == "subdir_dockerfiles_unassigned" {
+			t.Fatalf("hidden Dockerfile reported as orphan: %+v", w)
+		}
+	}
+}
+
+// TestManifestTypeHelmOverridesLanguage guards against type: helm being a
+// no-op when another language marker (go.mod) already sorts ahead of helm
+// in languagesAt's output: the manifest's type: helm must still win.
+func TestManifestTypeHelmOverridesLanguage(t *testing.T) {
+	tmp := t.TempDir()
+	mustMkdir(t, filepath.Join(tmp, ".github"))
+	mustMkdir(t, filepath.Join(tmp, "chart"))
+	mustWrite(t, filepath.Join(tmp, ".github", "onboard.yml"), "schema: 1\ncomponents:\n  - path: chart\n    type: helm\n")
+	mustWrite(t, filepath.Join(tmp, "chart", "go.mod"), "module chart\n")
+	mustWrite(t, filepath.Join(tmp, "chart", "Chart.yaml"), "apiVersion: v2\nname: chart\nversion: 1.2.3\ntype: application\n")
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: tmp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := res.Profile.Components[0]
+	if c.PrimaryLanguage != "helm" || c.ReleasePleaseType != "helm" || c.Version != "1.2.3" {
+		t.Fatalf("component=%+v", c)
+	}
+}
+
+func TestProfileJSONHasNoNewKeysWithoutManifest(t *testing.T) {
+	p := detectFixture(t, "go-repo").Profile
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"manifest_sha256", "workflows", "gitops_consumers", "\"release\"", "unittest", "\"version\"", "\"context\"", "platforms"} {
+		if strings.Contains(string(raw), key) {
+			t.Fatalf("profile for a manifest-less repo leaks key %s: %s", key, raw)
+		}
+	}
 }

@@ -342,6 +342,73 @@ render_prerelease_for_profile() {
   diff -u "$BATS_TEST_DIRNAME/golden/ci/single-helm.yml" "$rendered"
 }
 
+# Byte-identity guard for live chart adopters (calert-helm, helm-chart-tshock,
+# smarthome-helm): their chart sits in a sub-directory, so detection yields a
+# non-root helm component — but without a manifest they must keep rendering the
+# single legacy lint-helm job (working_directory = the chart path), never the
+# manifest-only charts_dir + helm-publish-dryrun pair.
+@test "ci.yml keeps the legacy lint-helm block for a detected chart in a sub-directory" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/calert-helm",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": "calert", "languages": ["helm"], "primary_language": "helm",
+      "release_please_type": "helm", "role": "helm-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-helm-subdir.yml" "$rendered"
+  refute_grep -q "charts_dir" "$rendered"
+  refute_grep -q "helm-publish" "$rendered"
+}
+
+@test "release.yml omits helm-publish for a detected chart in a sub-directory" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/calert-helm",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": "calert", "languages": ["helm"], "primary_language": "helm",
+      "release_please_type": "helm", "role": "helm-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  refute_grep -q "helm-publish" "$rendered"
+}
+
+# The same shape *with* a manifest keeps the chart-component behaviour: this is
+# what the manifest_sha256 gate buys the go-root-multi-image fixture.
+@test "ci.yml + release.yml render chart-component jobs when a manifest is present" {
+  profile='{
+    "schema_version": 1, "target_repo": "serverkraken/mailstack",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "components": [{"path": "charts/mailstack", "languages": ["helm"], "primary_language": "helm",
+      "release_please_type": "helm", "role": "helm-app", "dockerfiles": [], "unittest": true,
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "warnings": []
+  }'
+  ci=$(render_ci_for_profile "$profile")
+  grep -qF "charts_dir: charts/mailstack" "$ci"
+  grep -qF "unittest: true" "$ci"
+  grep -q "helm-publish-dryrun-charts-mailstack:" "$ci"
+  rel=$(render_release_for_profile "$profile")
+  grep -q "helm-publish-charts-mailstack:" "$rel"
+}
+
+# C3: a root chart component declared with `unittest: true` in the manifest
+# threads the flag into the legacy (root) lint-helm block.
+@test "ci.yml root helm component forwards unittest from the manifest" {
+  rendered=$(render_ci_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/chart",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "components": [{"path": ".", "languages": ["helm"], "primary_language": "helm",
+      "release_please_type": "helm", "role": "helm-app", "dockerfiles": [], "unittest": true,
+      "release_signals": {"goreleaser_config": null, "chart_yaml": "Chart.yaml"}}],
+    "legacy_ci": [], "warnings": []
+  }')
+  grep -qF "working_directory: ." "$rendered"
+  grep -qF "unittest: true" "$rendered"
+}
+
 @test "ci.yml renders mixed monorepo (go service + helm chart)" {
   rendered=$(render_ci_for_profile '{
     "schema_version": 1, "target_repo": "serverkraken/svc",

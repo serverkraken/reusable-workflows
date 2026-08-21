@@ -1,0 +1,29 @@
+{{- /*
+  e2e.yml — consumer-owned Kubernetes e2e suite on a kind cluster, rendered
+  only when the adopter manifest declares workflows.e2e. The script owns the
+  cluster lifecycle; e2e-kind.yml provisions the toolchain and guarantees
+  cleanup on the long-lived self-hosted runners.
+*/ -}}
+{{- $pin := .pin -}}
+{{- $e2e := .profile.workflows.e2e -}}
+name: e2e
+on:
+{{- if index $e2e "schedule" }}
+  schedule:
+    - cron: '{{ index $e2e "schedule" }}'
+{{- end }}
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  e2e:
+    uses: serverkraken/reusable-workflows/.github/workflows/e2e-kind.yml@{{ $pin }}
+    permissions:
+      contents: read
+      packages: read
+    with:
+      script: {{ $e2e.script }}
+      helm_version: {{`${{ vars.SK_HELM_VERSION || 'v3.16.3' }}`}}
+    secrets: inherit

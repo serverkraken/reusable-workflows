@@ -3,6 +3,21 @@
 
   Skipped (file still rendered but empty-jobs) for library/cli roles with no
   dockerfiles: there's nothing to build.
+
+  The job set is decided per component from profile.components[].dockerfiles,
+  mirroring release.yml.tmpl's build/scan shape — but prerelease builds every
+  Dockerfile regardless of release_eligible (release.yml filters to
+  release-eligible-only; prerelease is a manual, throwaway build). Single-
+  component components have path="." and emit unsuffixed job names
+  (build, scan). Monorepo components emit suffixed job names
+  (build-services-api) so multiple components don't collide. The noop job
+  (no Dockerfiles at all) is emitted for the first component only, so a
+  monorepo never gets two noop jobs.
+
+  The on: block (and the Flutter workflow_dispatch inputs) is still derived
+  from the first component only — the Flutter dispatch inputs only make
+  sense single-component; a monorepo with an attached Flutter app keeps
+  index-0 semantics there.
 */ -}}
 {{- $pin := .pin -}}
 {{- $c := index .profile.components 0 -}}
@@ -25,8 +40,14 @@ on:
 {{- end }}
 
 jobs:
+{{- range $i, $c := .profile.components }}
+{{- $slug := strings.ReplaceAll "/" "-" $c.path -}}
+{{- if eq $slug "." }}{{ $slug = "" }}{{ end -}}
+{{- $suffix := "" -}}
+{{- if $slug }}{{ $suffix = printf "-%s" $slug }}{{ end -}}
+{{- $isRoot := eq $c.path "." -}}
 {{- if and (has $c.release_signals "flutter_android") $c.release_signals.flutter_android }}
-  build:
+  build{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@{{ $pin }}
     secrets: inherit
     with:
@@ -36,7 +57,8 @@ jobs:
       dart_define_secret_names: {{`${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}`}}
 {{- else if eq (len $c.dockerfiles) 1 }}
 {{- $df := index $c.dockerfiles 0 }}
-  build:
+{{- $ctx := $c.path }}{{ if (index $df "context") }}{{ $ctx = index $df "context" }}{{ end }}
+  build{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}
     permissions:
       contents: read
@@ -48,13 +70,23 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
+    {{- if ne $ctx "." }}
+      context: {{ $ctx }}
+    {{- end }}
+    {{- if not $isRoot }}
+      dockerfile: {{ $c.path }}/{{ $df.path }}
+    {{- else }}
       dockerfile: {{ $df.path }}
+    {{- end }}
       image_name: {{ $df.image_name }}
+    {{- if (index $df "platforms") }}
+      platforms: {{ index $df "platforms" }}
+    {{- end }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
-  scan:
-    needs: build
+  scan{{ $suffix }}:
+    needs: build{{ $suffix }}
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
     permissions:
       contents: read
@@ -63,15 +95,20 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: {{`${{ needs.build.outputs.image_ref }}`}}
+      image_ref: {{ printf "${{ needs.build%s.outputs.image_ref }}" $suffix }}
       severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
       trivy_version: {{`${{ vars.SK_TRIVY_VERSION || '' }}`}}
 {{- else if gt (len $c.dockerfiles) 1 -}}
+{{/* Translate profile.json's dockerfiles[{path, image_name, ...}] into the
+     docker-build-multi atom's expected shape: [{dockerfile, image_name}]. */}}
 {{- $images := coll.Slice -}}
 {{- range $c.dockerfiles -}}
-  {{- $images = coll.Append (coll.Dict "dockerfile" .path "image_name" .image_name) $images -}}
+  {{- $dfPath := .path -}}
+  {{- if not $isRoot -}}{{- $dfPath = printf "%s/%s" $c.path .path -}}{{- end -}}
+  {{- $images = coll.Append (coll.Dict "dockerfile" $dfPath "image_name" .image_name) $images -}}
 {{- end }}
-  build:
+{{- $ctx := $c.path }}{{ if (index (index $c.dockerfiles 0) "context") }}{{ $ctx = index (index $c.dockerfiles 0) "context" }}{{ end }}
+  build{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@{{ $pin }}
     permissions:
       contents: read
@@ -83,15 +120,25 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
+    {{- if ne $ctx "." }}
+      context: {{ $ctx }}
+    {{- end }}
       images: |
         {{ $images | toJSON }}
+    {{- /* detect enforces one platforms value across a component's Dockerfiles
+         (docker-build-multi has a single platforms input), so index 0 speaks
+         for all of them. */ -}}
+    {{- if (index (index $c.dockerfiles 0) "platforms") }}
+      platforms: {{ index (index $c.dockerfiles 0) "platforms" }}
+    {{- end }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
-{{- else }}
+{{- else if eq $i 0 }}
   # No Dockerfiles detected for this component.
   noop:
     runs-on: ubuntu-latest
     steps:
       - run: echo "No prerelease build artifacts for this repo (no Dockerfiles)."
+{{- end }}
 {{- end }}

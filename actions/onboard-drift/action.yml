@@ -14,12 +14,17 @@ inputs:
 outputs:
   status:
     description: |
-      clean | modified | behind | behind+modified | no-lock | stale-lock
+      clean | modified | behind | behind+modified | no-lock | stale-lock | error
 
       stale-lock: lock hashes match working-tree files, but a fresh render of
       the catalog templates at the current catalog state would produce
       different output. Adopter needs re-onboarding to refresh the rendered
       files (and the lock).
+
+      error: drift could not be evaluated at all for this target — today the
+      only such case is an adopter manifest (.github/onboard.yml) hit by the
+      Bash engine, which has no manifest parser. `render_error` carries the
+      reason; re-dispatch with use_go_cli=true.
     value: ${{ steps.drift.outputs.status }}
   modified:
     description: |

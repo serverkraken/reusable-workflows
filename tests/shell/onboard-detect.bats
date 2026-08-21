@@ -199,6 +199,14 @@ setup() {
   rm -rf "$tmpdir"
 }
 
+@test "detect: root go.mod wins over sub-directory Dockerfiles" {
+  run "$DETECT" --profile-json "$FIX/go-root-subdir-dockerfile"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.monorepo' <<< "$output")" = "false" ]
+  [ "$(jq -r '.components | length' <<< "$output")" = "1" ]
+  [ "$(jq -r '.components[0].path' <<< "$output")" = "." ]
+}
+
 @test "profile-json: empty-signals component maps release_please_type to simple" {
   # Direct test of the generic→simple mapping for fully-empty repos.
   run "$DETECT" --profile-json "$FIX/simple"
@@ -978,4 +986,15 @@ _legacy_one() {
   [[ "$output" == *"language=gitops"* ]]
   # the profile_json block carries the gitops object
   echo "$output" | sed -n '/profile_json<</,/^EOF_/p' | sed '1d;$d' | jq -e '.gitops.sops == true'
+}
+
+@test "detect: refuses a repo with an adopter manifest (Go CLI required)" {
+  run "$DETECT" --profile-json "$FIX/go-root-multi-image"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"adopter manifest"* ]]
+  [[ "$output" == *"use_go_cli"* ]]
+  run "$DETECT" "$FIX/go-root-multi-image"
+  [ "$status" -eq 1 ]
+  run "$DETECT" --emit-both "$FIX/go-root-multi-image"
+  [ "$status" -eq 1 ]
 }

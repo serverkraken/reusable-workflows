@@ -102,11 +102,42 @@ jobs:
       cargo_llvm_cov_version: {{`${{ vars.SK_CARGO_LLVM_COV_VERSION || '0.6.16' }}`}}
     secrets: inherit
 {{- else if eq $c.primary_language "helm" }}
+{{- /* Chart-component CI (charts_dir + helm-publish dry-run) is a manifest
+     feature. A chart repo whose chart merely *sits* in a sub-directory was
+     detected as a non-root helm component long before the manifest existed
+     and must keep rendering the legacy single lint-helm job byte-identically
+     — hence the manifest_sha256 gate rather than a bare `ne $c.path "."`.
+     manifest_sha256 is omitempty, so read it with `index`. */ -}}
+{{- if or (eq $c.path ".") (not (index $.profile "manifest_sha256")) }}
   lint-helm-{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@{{ $pin }}
     with:
       working_directory: {{ $c.path }}
+    {{- if index $c "unittest" }}
+      unittest: true
+    {{- end }}
     secrets: inherit
+{{- else }}
+  lint-helm-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@{{ $pin }}
+    with:
+      working_directory: .
+      charts_dir: {{ $c.path }}
+    {{- if index $c "unittest" }}
+      unittest: true
+    {{- end }}
+    secrets: inherit
+  helm-publish-dryrun-{{ $suffix }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@{{ $pin }}
+    permissions:
+      contents: read
+      packages: write
+    with:
+      chart_path: {{ $c.path }}
+      oci_registry: ghcr.io/{{ $.profile.target_repo }}/charts
+      dry_run: true
+    secrets: inherit
+{{- end }}
 {{- else if eq $c.primary_language "flutter" }}
   lint-flutter-{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-flutter.yml@{{ $pin }}

@@ -1,0 +1,11 @@
+suite: configmap
+templates:
+  - configmap.yaml
+tests:
+  - it: renders the message
+    set:
+      message: hi
+    asserts:
+      - equal:
+          path: data.message
+          value: wrong

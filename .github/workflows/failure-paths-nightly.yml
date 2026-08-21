@@ -84,6 +84,29 @@ jobs:
           fi
           echo "lint-helm-fail: correctly observed failure"
 
+  test-lint-helm-unittest-fail:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test
+      charts_dir: helm-unittest-fail
+      unittest: true
+
+  assert-lint-helm-unittest-fail:
+    needs: test-lint-helm-unittest-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-helm-unittest-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-helm-unittest-fail: correctly observed failure"
+
   # ----- lint-python: fail-path -----
   test-lint-python-fail:
     uses: ./.github/workflows/lint-python.yml
@@ -466,6 +489,7 @@ jobs:
     needs:
       - assert-lint-go-fail
       - assert-lint-helm-fail
+      - assert-lint-helm-unittest-fail
       - assert-lint-python-fail
       - assert-lint-rust-fail
       - assert-test-go-cov-fail

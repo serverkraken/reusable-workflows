@@ -132,6 +132,8 @@ On `next`, onboarding uses the Go `sk-workflows` CLI by default for detect, rend
 
 If a Go-specific regression is suspected, re-run the same dispatch with `use_go_cli: false`. Keep the failed Go run URL and the Bash rerun URL in the incident or PR so the parity gap can be fixed before rollout continues. Do not remove Bash fallback during v4; removal needs a separate major-version plan.
 
+Repos with `.github/onboard.yml` require `use_go_cli: true` — see § 11.4.
+
 ---
 
 ## 6. v2.0.0 — App-Token Catalog Checkout
@@ -201,6 +203,7 @@ All results land in a single rolling Issue in this repo titled exactly `Onboardi
 | `behind` | Lock's `catalog_version` is older than current major (e.g. lock `v2`, catalog `v3`) | Re-dispatch `onboard.yml` with `pin_version: v3` (or current major) |
 | `behind+modified` | Both | Re-dispatch `onboard.yml`; the bot PR will reset hand-edits and bump the pin in one shot |
 | `no-lock` | `.github/onboard.lock.json` is missing — adopter was onboarded before Phase 3 added the lock file | Re-dispatch `onboard.yml` once to write the lock |
+| `stale-lock` | Hashes match, but a re-render at current catalog HEAD would produce different files — also when `.github/onboard.yml` changed since the last render | Re-dispatch `onboard.yml` to pick up the template (or manifest) change |
 | `error` | Drift action failed (target inaccessible, malformed lock, …) | Click through to the matrix job for the failing target |
 
 ### 7.3 Manual dispatch
@@ -517,3 +520,376 @@ Three reusable atoms validate a GitOps repository's Kubernetes manifests and sca
 All three mint a catalog-scoped App token (`secrets: inherit` covers it) to check out the catalog's composite actions, exactly like the existing security atoms. SARIF upload is auto-skipped on forks.
 
 > **ksops decryption is not exercised in catalog self-CI** — committing a decryptable age key to the catalog would itself be a secret leak. The happy integration path runs `kube-validate` with `sops: false` against plaintext fixtures; the real ksops path is validated at adopter-onboard time against repos that hold the real `SOPS_AGE_KEY` and encrypted trees.
+
+---
+
+## 11. Adopter Manifest
+
+Detection can infer language, Dockerfiles, and chart presence from the file
+system, but not everything an adopter needs to declare. Some repos —
+mailstack is the reference case — carry a shape detection cannot express on
+its own: a root Go module with images built from sub-directories, image
+names that don't follow the `$REPO-<dir>` convention, a chart that lives
+next to code instead of alone, an e2e suite, or a list of who consumes the
+repo's images. For those repos, drop an adopter manifest (`.github/onboard.yml`)
+into the target repo before dispatching onboarding.
+
+### 11.1 When you need it
+
+Reach for the adopter manifest (`.github/onboard.yml`) when any of the following apply:
+
+- **Root language marker + sub-directory Dockerfiles.** A `go.mod` (or
+  equivalent) at the repo root plus `images/<name>/Dockerfile` sub-directories
+  is exactly the shape detection cannot resolve on its own — see § 11.4.
+- **Non-default image names or build contexts.** The derived name is
+  `$REPO-<dir>`; if the org's GHCR package is named differently (e.g.
+  `serverkraken/mailstack/postfix`), or a Dockerfile needs a build context
+  other than its component directory (e.g. `COPY images/<name>/…` from the
+  repo root), declare it explicitly.
+- **A Helm chart next to application code.** Without a manifest, `type: helm`
+  (or a component-level marker) is how a chart directory that shares a repo
+  with Go/Python/Rust/Flutter code gets recognized and gets its own
+  `lint-helm` + dry-run `helm-publish` jobs and release-please package.
+- **An e2e suite.** There is no file-system signal for "run this kind-based
+  e2e script on a schedule" — `workflows.e2e` is the only way in.
+- **Declaring GitOps consumers.** Repos that other repos deploy from (via
+  Renovate-managed image references) can inventory those consumers so they
+  show up in the onboarding PR body and `docs/onboarding-status.md`.
+
+A repo with none of the above onboards exactly as before — the manifest is
+opt-in and entirely absent from every non-monorepo adopter today.
+
+### 11.2 Schema v1
+
+```yaml
+schema: 1
+components:                      # optional; absent → auto-detect as today
+  - path: .
+    language: go                 # optional; overrides detection
+    dockerfiles:                 # optional; in addition to those found in `path`
+      - path: images/tools/Dockerfile
+        image: serverkraken/mailstack/tools
+        context: .                           # optional, repo-relative; default = component path
+        platforms: linux/amd64,linux/arm64   # optional; default = atom default
+        release: true                        # optional; default by file name
+  - path: images/postfix
+    image: serverkraken/mailstack/postfix    # shorthand when `path` holds exactly one Dockerfile
+    context: .                               # shorthand form of the same field
+  - path: images/dovecot
+    image: serverkraken/mailstack/dovecot
+    context: .
+  - path: images/unbound
+    image: serverkraken/mailstack/unbound
+    context: .
+  - path: images/fangfrisch
+    image: serverkraken/mailstack/fangfrisch
+    context: .
+  - path: images/olefy
+    image: serverkraken/mailstack/olefy
+    context: .
+  - path: charts/mailstack
+    type: helm
+    unittest: true
+workflows:                       # optional
+  e2e:
+    script: test/e2e/run.sh
+    schedule: "0 3 * * *"        # optional; dispatch + tag push are always on
+release:                         # optional
+  dispatch_trigger: true         # adds `workflow_dispatch: {}` to release.yml
+gitops:                          # optional; list of consuming repos
+  - repo: serverkraken/homelab-mail-nue
+    scope:                       # optional file globs; default = whole repo
+      - kubernetes/apps/mailstack/**
+      - bootstrap/templates/kubernetes/apps/mailstack/**
+    mode: renovate               # default; `push` reserved, rejected in v1
+```
+
+Semantics:
+
+- **`components:` present ⇒ authoritative and complete.** No mixing with
+  auto-detected components (otherwise nobody can tell where a component
+  came from). Inside a component, absent fields are still detected:
+  languages, Dockerfiles in `path` itself, `release_signals` (goreleaser,
+  nested `Chart.yaml`, Flutter), `cgo`.
+- **Build context defaults to the component path** and can be overridden
+  per component (`context`, shorthand) or per Dockerfile
+  (`dockerfiles[].context`), repo-relative. All Dockerfiles of one
+  component must resolve to the same context — `docker-build-multi` has a
+  single shared `context` — and detect rejects mixed contexts. mailstack
+  sets `context: .` on every image component because its Dockerfiles
+  `COPY images/<name>/…` from the repo root.
+- **`platforms` is per component, not per image.** It may be written on the
+  component (shorthand) or on individual `dockerfiles[]` entries, but all
+  Dockerfiles of one component must end up with the same value — the
+  `docker-build-multi` atom takes a single `platforms` input and forwards it
+  to every image it builds. Detect rejects a mismatch (including "explicit
+  list on one file, atom default on another") with
+  `Dockerfiles of component <path> must share one platforms value`. The
+  value must be a comma-separated `os/arch[/variant]` list
+  (`linux/amd64,linux/arm64/v8`); leave it out to take the atom's default,
+  which is what nearly every adopter wants.
+- **`type: helm`** marks a chart component; `unittest: true` renders the
+  `helm-unittest` step (via the new `lint-helm` input). `type` is only
+  needed when the directory has no language marker; a `Chart.yaml` at
+  `path` implies it. Chart CI jobs (`lint-helm`, `helm-publish` dry-run) are
+  driven purely by that component's own resolved `primary_language ==
+  helm` — set by `type: helm` or by an auto-detected `Chart.yaml` inside
+  the component's own directory — never by a `release_signals.chart_yaml`
+  hit on some other component in the same repo. A chart directory that is
+  declared as its own component is also **removed from the parent
+  component's `release_signals.chart_yaml`**
+  (`internal/app/detect/service.go`, `componentsFromManifest`), so the
+  chart renders exactly one `helm-publish` job — from its own component —
+  instead of a duplicate under the parent.
+- **Chart-component CI and publish jobs are a manifest feature.** The
+  `charts_dir` form of `lint-helm`, the `helm-publish` dry-run in `ci.yml`
+  and the per-component `helm-publish` job in `release.yml` are rendered
+  only when the profile carries a manifest. A chart repo whose `Chart.yaml`
+  merely *sits* in a sub-directory (`calert/Chart.yaml`,
+  `chart/Chart.yaml`) is detected as a non-root helm component but has no
+  manifest, and keeps its previous rendering: a single `lint-helm` job with
+  `working_directory: <chart path>` and no publish job. Adding a manifest is
+  the deliberate step that opts such a repo into publishing its chart.
+- **A manifest component with no detected language and at least one
+  declared Dockerfile** (an image-only component — a plain build context
+  with no source of its own, e.g. `images/postfix` in the mailstack
+  example above) is exempt from the `no_lint_test_atom` warning: there is
+  nothing to lint or test, only an image to build.
+- **Dockerfile annotations stay valid;** the manifest wins on conflict.
+  Their deprecation is a separate major-version step.
+- **Unknown keys are errors,** not warnings. A typo must not silently fall
+  back to a default. Unknown `schema` values are errors too.
+- **`gitops[]`** is an inventory in v1: validated, copied into the profile
+  and the lock, surfaced in the onboarding PR body and
+  `docs/onboarding-status.md` ("consumed by"). `mode: renovate` means the
+  catalog does nothing active — rollout latency is governed by the
+  consumer repo's Renovate preset. `mode: push` is reserved; v1 rejects it
+  with "gitops mode push is not yet supported". `scope` is expressed in
+  **file globs, never image references**; it documents both the template
+  and the rendered copy on purpose.
+- The manifest is a **render input**: its SHA-256 is recorded in the lock
+  (`inputs.manifest_sha256`). See § 11.5.
+
+A component's `dockerfiles[]` only lists Dockerfiles *in addition to* those
+already found under `path` — a Dockerfile that the component directory
+already contains is an error if also listed there ("already inventoried …
+use the component-level shorthand"). The component-level `image`/`context`/
+`platforms`/`release` shorthand (as used on `images/postfix` above) is only
+valid when the component directory holds exactly one Dockerfile.
+
+Every validation error is prefixed `.github/onboard.yml: line N:` — schema
+must be `1` (unsupported schema values fail with the offending number
+named); booleans are strictly `true`/`false` (`yes`/`1`/etc. fail; a quoted
+`"true"` still parses, since quoting doesn't change the underlying value);
+`language` must be one of `go`, `python`, `rust`, `helm`, `flutter`, `node`,
+`generic`; `type` must be `helm`; `image` must match `^[A-Za-z0-9._/-]+$`;
+`platforms` must be a comma-separated `os/arch[/variant]` list;
+`workflows.e2e.script` must be a repo-relative path matching
+`^[A-Za-z0-9._/-]+$`; `workflows.e2e.schedule` must be five cron fields made
+of digits, `*`, `,`, `-`, `/` and names (no quotes or other punctuation);
+`gitops[].repo` must be `owner/name`; component paths must be unique and
+stay inside the repository, and two non-root components must not share a
+directory basename — release-please derives the `package-name` (and hence
+the tag prefix) from it, so `images/svc` and `charts/svc` would collide.
+
+**The YAML the reader accepts.** `internal/manifest` implements the small
+subset the schema needs rather than pulling in a YAML dependency, and
+rejects the rest with a line number instead of guessing:
+
+| Accepted | Rejected |
+|---|---|
+| block mappings (`key: value`, two-space indent) | tabs, odd indentation |
+| block sequences, including `- key: value` items with **exactly one space** after the dash | nested sequences (`- - x`) |
+| flow scalar lists (`scope: [a, b]`) | flow mappings (`{a: 1}`) |
+| single- and double-quoted scalars (verbatim — no escape processing) | block scalars (`|`, `>`) |
+| `#` comments, whole-line and trailing | anchors, aliases, tags (`&x`, `*x`, `!x`) |
+
+Quoting changes nothing about a value: `dispatch_trigger: "true"` and
+`dispatch_trigger: true` parse identically, and `"a\nb"` is the four
+characters `a\nb`. Keep the manifest boring.
+
+### 11.3 Per-component releases
+
+When `components:` describes more than one path, release-please runs in
+monorepo mode: one package per component, one combined release PR
+(`separate-pull-requests: false`). Tags follow release-please's default
+package-name prefix:
+
+- The root component (`path: .`) keeps `include-component-in-tag: false` —
+  its tag is plain `vX.Y.Z`.
+- Sub-directory components get `include-component-in-tag: true` and a
+  `package-name` set to the directory basename — `postfix-v1.2.0`,
+  `demo-v0.3.0`.
+- Chart components render with `release-type: helm` (release-please bumps
+  `Chart.yaml`'s `version` directly); the chart's package name and prefix
+  follow the same directory-basename rule as any sub-directory component.
+
+**What the `helm` release strategy touches.** On each release of the chart
+package, release-please rewrites `version:` in `Chart.yaml` through the YAML
+document API — comments and formatting survive — and **never touches
+`appVersion`**. That is correct for the decoupled model this catalog uses:
+`appVersion` carries no meaning, because image tags live in `values.yaml`
+and are bumped by Renovate, not by the chart's own release. The chart's
+current `version` is seeded into `.release-please-manifest.json` at
+onboarding, so the first release continues from where the chart already is.
+
+Adopters migrating from a **root package with `Chart.yaml` in
+`extra-files`** — which only rewrote the `appVersion` marker line — should
+drop that `extra-files` entry (and the `x-release-please-version` marker
+comment in `Chart.yaml`) when the chart becomes its own component. Leaving
+it in place makes the root package keep editing a file the chart package now
+owns.
+
+**The root package excludes every sub-component path.** Release-please
+feeds each package the commits that touch its path — and the root package's
+path is `.`, which matches *every* commit in the repo. Without a guard a
+`fix(postfix): …` commit under `images/postfix` would bump the root version
+too, on top of the component's own release. The rendered
+`release-please-config.json` therefore gives the root package
+
+```json
+    ".": {
+      "release-type": "go",
+      "exclude-paths": ["images/postfix", "charts/mailstack"],
+      "include-component-in-tag": false
+    }
+```
+
+listing every non-root component path (the key is omitted when the manifest
+declares no non-root component). A commit that touches only a sub-component
+now releases only that component; the root releases when something outside
+every component path changes.
+
+> **Re-onboarding a repo rendered from the monorepo template before
+> v4.14:** the package naming changed. Sub-directory packages now use the
+> directory **basename** as `package-name` (`postfix-v1.2.0`, not
+> `images/postfix-v1.2.0`), and the root package carries no component in its
+> tag at all. Before merging the re-onboarding PR, reconcile
+> `.release-please-manifest.json` (its keys are paths — the values must be
+> the versions actually released under the *new* tag names) and, if
+> necessary, push the corresponding tags. Getting this wrong makes
+> release-please re-release from `0.1.0`.
+
+Each release job in the rendered `release.yml` is gated on whether its path
+was actually released:
+
+```yaml
+if: contains(fromJSON(needs.release-please.outputs.paths_released), '<path>')
+```
+
+and tags its image with the version release-please assigned to that
+specific path:
+
+```yaml
+tag: v${{ fromJSON(needs.release-please.outputs.releases)['<path>'].version }}
+```
+
+The practical effect: **a `fix(postfix): …` commit builds only postfix.**
+Release-please still opens one combined PR covering every component that
+changed, but the release job (and its Trivy scan, and its chart publish, if
+any) only fires for the paths release-please actually released — an
+unrelated component's image is never rebuilt just because something else in
+the repo shipped a release.
+
+Prerelease (`prerelease.yml`, manual `workflow_dispatch`) has no such
+gating — it loops every release-eligible component and builds all of them,
+since a prerelease is a manual, PR-scoped action rather than a
+release-please decision.
+
+`release.dispatch_trigger: true` adds `workflow_dispatch: {}` to the
+rendered `release.yml` so a monorepo release can be re-run by hand.
+
+### 11.4 Engines
+
+The adopter manifest is parsed **only by the Go CLI** (`internal/manifest`).
+The Bash detector (`scripts/onboard-detect.sh`) gets no parser — deliberately;
+a second hand-rolled YAML-schema implementation would be a second bug class
+for a rollback path the Go engine hasn't needed since 2026-07-26. If the
+Bash engine finds `.github/onboard.yml` it fails loud instead of silently
+ignoring the file or mis-detecting the repo:
+
+```
+::error::<repo>/.github/onboard.yml: adopter manifest present — the Bash detector does not support manifests; dispatch with use_go_cli=true (sk-workflows detect)
+```
+
+Practical consequences:
+
+- **Onboarding** a manifest repo requires dispatching `onboard.yml` with
+  `use_go_cli: true` (the default on `next` already — only relevant if
+  someone forces Bash rollback per § 5.7).
+- **Drift and sweep** hit the same wall: `onboard-drift.sh` checks for
+  `.github/onboard.yml` before touching the lock, and reports `status=error`
+  immediately for that target with `render_error` pointing at
+  `use_go_cli=true` — not a `clean` result with the real failure buried in
+  `render_error`, and not a lock-comparison result that never had a chance
+  to run. A weekly `drift-check` or `onboard-sweep` run against a manifest
+  adopter using the Bash engine therefore surfaces the problem directly in
+  the drift report. Re-dispatch with `use_go_cli: true` to get a real
+  reading.
+- Without a manifest, nothing changes — Bash-engine adopters are unaffected.
+
+Related: a repo with a root language marker *and* sub-directory Dockerfiles
+but **no manifest** no longer silently mis-detects as an all-`generic`
+monorepo (the fallback bug this feature also fixes). Instead it yields the
+root component plus a `subdir_dockerfiles_unassigned` warning listing the
+orphaned Dockerfiles and pointing at the manifest — honest instead of wrong.
+
+### 11.5 Lock and drift
+
+`.github/onboard.lock.json` gains `inputs.manifest_sha256` (`sha256:<hex>`),
+written only when a manifest exists. `drift-check` treats a changed,
+added, or removed manifest as **`stale-lock`** (re-render required, not a
+hand-edit) — the drift report's `Modified` column for that status lists
+`.github/onboard.yml`.
+
+A broken manifest shows up in one of two ways, and the difference matters
+when reading a drift report:
+
+- **Parse or validation failure** (unknown key, bad `platforms`, duplicate
+  package name, …): the file is readable, so its SHA-256 is computed and
+  compared — and it differs from the locked hash, because the last
+  successful render used a different byte sequence. The target reports
+  **`stale-lock`**, not `error`. The real message (`.github/onboard.yml:
+  line N: …`) appears when the re-render is attempted, in `render_error`.
+- **Read failure** (`EISDIR` because someone made `.github/onboard.yml` a
+  directory, `EPERM`, an I/O error): there is nothing to hash, so drift
+  cannot be evaluated at all — `sk-workflows drift` fails and the target is
+  bucketed as **`error`**, never silently as `clean`. The same bucket
+  covers the Bash engine meeting a manifest it cannot parse (§ 11.4).
+
+### 11.6 GitOps consumers
+
+`gitops[]` is an **inventory only** in v1 — nothing dispatches on it yet.
+Each entry gets copied into the profile and the lock, and shown:
+
+- In the onboarding PR body, under "Consumed by".
+- In the `Consumers` column of `docs/onboarding-status.md`.
+
+`mode: renovate` (the default, and the only value v1 accepts) means the
+catalog does nothing active for the entry — rollout latency into that
+consumer is governed entirely by the consumer repo's own Renovate preset.
+`mode: push` is reserved for a future release-triggered dispatch and is
+rejected today with "gitops mode push is not yet supported".
+
+`scope` is expressed in **file globs, never image references** — it
+documents which paths in the consumer repo reference this adopter's
+images, not which image strings to match. This matters because of a rule
+for GitOps repos that the manifest's `scope` relies on: **image references
+in `bootstrap/templates/**/*.j2` must stay literal.** The moment a tag
+becomes a template variable, Renovate's file-based managers stop matching
+it, and the version has to move into a config file instead — a third copy
+of the same value. Keep both the template and its rendered copy holding
+the literal image reference so Renovate matches both.
+
+### 11.7 Relation to Dockerfile annotations
+
+The `# onboard:image=<name>` and `# onboard:release=<bool>` Dockerfile
+comment annotations (see § Release-Eligibility per Dockerfile) are still
+fully valid and unaffected by the manifest. Precedence when both are
+present: **manifest wins**. The profile records which source produced the
+image name via `image_name_source`: `manifest` > `override` (the
+annotation) > `derived` (the `$REPO-<dir>` convention). Release eligibility
+follows the same order — the annotation applies over the file-name
+convention, and a manifest `release:` value overrides both. Deprecating the
+annotations in favor of the manifest is a separate, future major-version
+step; it is not part of this feature.

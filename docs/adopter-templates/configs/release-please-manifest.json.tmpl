@@ -3,6 +3,6 @@
 {{- range .profile.components }}
 {{- if not $first }},{{ end }}
 {{- $first = false }}
-  "{{ .path }}": "{{ $.profile.current_version }}"
+  "{{ .path }}": "{{ if index . "version" }}{{ .version }}{{ else }}{{ $.profile.current_version }}{{ end }}"
 {{- end }}
 }

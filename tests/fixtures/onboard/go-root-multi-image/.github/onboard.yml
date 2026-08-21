@@ -1,0 +1,26 @@
+schema: 1
+components:
+  - path: .
+    language: go
+    dockerfiles:
+      - path: images/tools/Dockerfile
+        image: acme/multi/tools
+  - path: images/api
+    image: acme/multi/api
+  - path: images/worker
+    image: acme/multi/worker
+    context: .
+    platforms: linux/amd64
+  - path: charts/demo
+    type: helm
+    unittest: true
+workflows:
+  e2e:
+    script: test/e2e/run.sh
+    schedule: "0 3 * * *"
+release:
+  dispatch_trigger: true
+gitops:
+  - repo: acme/gitops-prod
+    scope: [kubernetes/apps/multi/**]
+  - repo: acme/gitops-lab

@@ -180,6 +180,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | input | `charts_dir`        | string  | no       | `'charts'`                  | Directory containing one or more charts (relative to `working_directory`). |
 | input | `helm_version`      | string  | no       | `'v3.16.3'`                 | Helm CLI version. |
 | input | `ct_version`        | string  | no       | `'v3.11.0'`                 | chart-testing (`ct`) version. |
+| input | `unittest`          | boolean | no       | `false`                     | Run helm-unittest (`tests/*_test.yaml` in each chart) after linting. |
 
 ---
 
@@ -251,6 +252,8 @@ Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
 | output  | `tag_name`                      | string  | —        | —                                         | e.g. `'v1.2.3'` |
 | output  | `major_tag`                     | string  | —        | —                                         | e.g. `'v1'` |
 | output  | `minor_tag`                     | string  | —        | —                                         | e.g. `'v1.2'` |
+| output  | `paths_released`                | string  | —        | —                                         | JSON array of released package paths, e.g. `'["."]'`; `'[]'` when idle |
+| output  | `releases`                      | string  | —        | —                                         | JSON object `{"<path>":{"tag_name","version","major","minor"}}`; `'{}'` when idle |
 
 ---
 

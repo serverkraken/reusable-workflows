@@ -273,6 +273,67 @@ func TestRenderCompareStaleLockAndErrors(t *testing.T) {
 	}
 }
 
+func TestDriftManifestHashMismatchIsStaleLock(t *testing.T) {
+	repo := fixtureRepo(t, "v4") // helper used by TestRenderCompareStaleLockAndErrors
+	// lock records a manifest hash, working tree has a different manifest
+	lockFilePath := filepath.Join(repo, ".github", "onboard.lock.json")
+	raw, _ := os.ReadFile(lockFilePath)
+	var lock map[string]any
+	_ = json.Unmarshal(raw, &lock)
+	lock["inputs"] = map[string]string{"manifest_sha256": "sha256:" + strings.Repeat("00", 32)}
+	updated, _ := json.Marshal(lock)
+	_ = os.WriteFile(lockFilePath, updated, 0o644)
+	_ = os.WriteFile(filepath.Join(repo, ".github", "onboard.yml"), []byte("schema: 1\n"), 0o644)
+
+	detector := &fakeDetector{profile: []byte(`{"schema_version":1}`)}
+	renderer := &fakeRenderer{files: renderedFixtureFiles()}
+	res, err := (Service{Detector: detector, Renderer: renderer}).Drift(context.Background(), Request{TargetPath: repo, CatalogPath: t.TempDir(), CurrentVersion: "v4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != domain.DriftStaleLock || !reflect.DeepEqual(res.Modified, []string{".github/onboard.yml"}) {
+		t.Fatalf("res=%+v", res)
+	}
+	if renderer.profile != "" {
+		t.Fatal("render-compare must be skipped when the manifest hash already proves staleness")
+	}
+}
+
+func TestDriftManifestHashMatchProceedsToRenderCompare(t *testing.T) {
+	repo := fixtureRepo(t, "v4")
+	content := []byte("schema: 1\n")
+	sum := sha256.Sum256(content)
+	lockFilePath := filepath.Join(repo, ".github", "onboard.lock.json")
+	raw, _ := os.ReadFile(lockFilePath)
+	var lock map[string]any
+	_ = json.Unmarshal(raw, &lock)
+	lock["inputs"] = map[string]string{"manifest_sha256": "sha256:" + hex.EncodeToString(sum[:])}
+	updated, _ := json.Marshal(lock)
+	_ = os.WriteFile(lockFilePath, updated, 0o644)
+	_ = os.WriteFile(filepath.Join(repo, ".github", "onboard.yml"), content, 0o644)
+
+	renderer := &fakeRenderer{files: renderedFixtureFiles()}
+	res, err := (Service{Detector: &fakeDetector{profile: []byte(`{"schema_version":1}`)}, Renderer: renderer}).Drift(context.Background(), Request{TargetPath: repo, CatalogPath: t.TempDir(), CurrentVersion: "v4"})
+	if err != nil || res.Status != domain.DriftClean || renderer.profile == "" {
+		t.Fatalf("res=%+v err=%v profile=%q", res, err, renderer.profile)
+	}
+}
+
+func TestDriftManifestUnreadableReturnsError(t *testing.T) {
+	repo := fixtureRepo(t, "v4")
+	// Making .github/onboard.yml a directory forces os.ReadFile to fail with a
+	// non-ErrNotExist error (EISDIR) on every platform, so this exercises the
+	// "unreadable, not absent" branch of manifestChanged.
+	if err := os.MkdirAll(filepath.Join(repo, ".github", "onboard.yml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (Service{Detector: &fakeDetector{profile: []byte(`{"schema_version":1}`)}, Renderer: &fakeRenderer{files: renderedFixtureFiles()}}).Drift(context.Background(), Request{TargetPath: repo, CatalogPath: t.TempDir(), CurrentVersion: "v4"})
+	if err == nil || !strings.Contains(err.Error(), ".github/onboard.yml") {
+		t.Fatalf("err=%v want an error mentioning .github/onboard.yml", err)
+	}
+}
+
 func TestRenderCompareDetectsNetNewRenderedFiles(t *testing.T) {
 	// An adopter onboarded before a profile-conditional template existed has a
 	// lock without that key; lock-keyed comparison alone reports clean. The

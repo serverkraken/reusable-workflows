@@ -1,16 +1,47 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": false,
+  "bump-minor-pre-major": true,
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "refactor", "section": "Refactors" },
+    { "type": "docs", "section": "Documentation", "hidden": false },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "ci", "section": "CI", "hidden": true },
+    { "type": "chore", "section": "Chores", "hidden": true }
+  ],
   "packages": {
+{{- /* Every commit reaches the root package unless it is excluded, so a
+     `fix(api): …` touching only services/api would release the root too.
+     exclude-paths lists every non-root component path to keep the root
+     release honest. Emitted only when there is a non-root component. */ -}}
+{{- $nonRoot := coll.Slice -}}
+{{- range .profile.components -}}
+  {{- if ne .path "." -}}
+    {{- $nonRoot = coll.Append .path $nonRoot -}}
+  {{- end -}}
+{{- end }}
 {{- $first := true }}
 {{- range .profile.components }}
 {{- if not $first }},{{ end }}
 {{- $first = false }}
+{{- if eq .path "." }}
+    ".": {
+      "release-type": "{{ .release_please_type }}",
+{{- if gt (len $nonRoot) 0 }}
+      "exclude-paths": [{{ range $i, $p := $nonRoot }}{{ if $i }}, {{ end }}{{ printf "%q" $p }}{{ end }}],
+{{- end }}
+      "include-component-in-tag": false
+    }
+{{- else }}
     "{{ .path }}": {
       "release-type": "{{ .release_please_type }}",
-      "package-name": "{{ .path }}",
-      "include-component-in-tag": true,
-      "bump-minor-pre-major": true
+      "package-name": "{{ path.Base .path }}",
+      "include-component-in-tag": true
     }
+{{- end }}
 {{- end }}
   }
 }

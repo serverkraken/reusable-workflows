@@ -55,6 +55,14 @@ jobs:
       working_directory: tests/fixtures
       charts_dir: helm-only
 
+  lint-helm-unittest-happy:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures
+      charts_dir: helm-unittest
+      unittest: true
+
   # ----- lint-python: 3 happy paths (poetry/uv/pip) -----
   lint-python-poetry-happy:
     uses: ./.github/workflows/lint-python.yml
@@ -358,6 +366,47 @@ jobs:
             and (.files["release-please-config.json"] | test("^sha256:[a-f0-9]{64}$"))
           ' "$TARGET/.github/onboard.lock.json" > /dev/null
 
+  # ----- onboard preview (Go path, adopter manifest): renders the manifest
+  #       fixture through sk-workflows preview and diffs it against the
+  #       committed golden. The bats harness cannot cover this fixture — the
+  #       Bash engine refuses manifests by design.
+  onboard-preview-manifest-golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: ./actions/setup-sk-workflows
+        with:
+          build_from_source: 'true'
+      - name: Install gomplate
+        run: sudo ./scripts/install-gomplate.sh
+      - name: Install actionlint
+        # Same installer and pin as validate.yml; the -ignore flags there are
+        # for the catalog's own workflows and do not apply to rendered output.
+        run: |
+          bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+      - name: Preview and diff
+        env:
+          FIX: tests/fixtures/onboard/go-root-multi-image
+        run: |
+          set -euo pipefail
+          out="$(mktemp -d)"
+          # no -target-repo: that would call `gh` for branch/release metadata;
+          # target_repo falls back to the fixture basename (deterministic).
+          sk-workflows preview -catalog-path . -repo-path "$FIX" \
+            -pin-version v4 -rendered-against v4.14.0 -out "$out"
+          rm "$out/profile.json"
+          jq 'del(.rendered_at)' "$out/.github/onboard.lock.json" > "$out/lock.tmp" && mv "$out/lock.tmp" "$out/.github/onboard.lock.json"
+          diff -r "$FIX/expected" "$out"
+          # The golden is only as good as the workflows it pins: lint the
+          # rendered callers so a template change can never commit a golden
+          # that actionlint would reject in the adopter repo.
+          ./actionlint "$out"/.github/workflows/*.yml
+
   # ----- onboard-apply-defaults (Go path): plans repo-default changes through
   #       sk-workflows apply-defaults in dry-run mode with a hermetic gh stub.
   onboard-apply-defaults-go-cli-dry-run:
@@ -468,6 +517,7 @@ jobs:
       - lint-go-self
       - test-go-self
       - lint-helm-happy
+      - lint-helm-unittest-happy
       - lint-python-poetry-happy
       - lint-python-uv-happy
       - lint-python-pip-happy
@@ -483,6 +533,7 @@ jobs:
       - onboard-drift-go-cli-happy
       - onboard-detect-go-cli-happy
       - onboard-render-go-cli-happy
+      - onboard-preview-manifest-golden
       - onboard-apply-defaults-go-cli-dry-run
       - lint-flutter-happy
       - test-flutter-happy

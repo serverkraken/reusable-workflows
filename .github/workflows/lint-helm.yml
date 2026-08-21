@@ -32,6 +32,11 @@ on:
         required: false
         type: string
         default: 'v3.11.0'
+      unittest:
+        description: 'Run helm-unittest (tests/*_test.yaml inside each chart) after linting.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -85,10 +90,67 @@ jobs:
       - name: ct lint
         id: ct_lint
         working-directory: ${{ inputs.working_directory }}
+        env:
+          CHARTS_DIR: ${{ inputs.charts_dir }}
+          TARGET_BRANCH: ${{ github.base_ref || 'main' }}
         run: |
-          ct lint --all --validate-maintainers=false \
-            --chart-dirs="${{ inputs.charts_dir }}" \
-            --target-branch="${{ github.base_ref || 'main' }}"
+          set -euo pipefail
+          # If charts_dir is itself a chart, lint just that chart; else let ct
+          # discover every chart under charts_dir. Mirrors the helm-lint /
+          # helm-unittest branch above — a chart-shaped charts_dir must never
+          # be treated as "a directory containing charts" (that would make ct
+          # sweep in sibling charts under the same parent directory).
+          if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
+            ct lint --charts "$CHARTS_DIR" --validate-maintainers=false \
+              --target-branch="$TARGET_BRANCH"
+          else
+            ct lint --all --validate-maintainers=false \
+              --chart-dirs="$CHARTS_DIR" \
+              --target-branch="$TARGET_BRANCH"
+          fi
+
+      # Third-party plugin on a long-lived runner: pinned release into a
+      # job-private plugin dir, so neither a plugin left behind by an earlier
+      # job nor the upstream default branch decides what runs. <1.1.0 is
+      # enforced by a Renovate packageRule: 1.1.0 switched plugin.yaml to
+      # `platformHooks`, which Helm v3's plugin loader rejects outright.
+      - name: Install helm-unittest
+        if: inputs.unittest && success()
+        env:
+          HELM_PLUGINS: ${{ runner.temp }}/helm-plugins
+          # renovate: datasource=github-releases depName=helm-unittest/helm-unittest
+          HELM_UNITTEST_VERSION: v1.0.3
+        run: |
+          set -euo pipefail
+          rm -rf "$HELM_PLUGINS" && mkdir -p "$HELM_PLUGINS"
+          helm plugin install https://github.com/helm-unittest/helm-unittest \
+            --version "${HELM_UNITTEST_VERSION#v}"
+
+      - name: helm unittest
+        if: inputs.unittest && success()
+        id: helm_unittest
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          HELM_PLUGINS: ${{ runner.temp }}/helm-plugins
+          CHARTS_DIR: ${{ inputs.charts_dir }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
+            helm unittest "$CHARTS_DIR"
+          else
+            found=0
+            for d in "$CHARTS_DIR"/*/; do
+              if [[ -f "${d%/}/Chart.yaml" ]]; then
+                helm unittest "${d%/}"
+                found=1
+              fi
+            done
+            if (( found == 0 )); then
+              echo "::error::no chart found in $CHARTS_DIR (no Chart.yaml in $CHARTS_DIR or its immediate subdirs)"
+              exit 1
+            fi
+          fi
 
       - name: Summary
         if: always()
@@ -97,6 +159,7 @@ jobs:
           CHARTS_DIR: ${{ inputs.charts_dir }}
           HELM_LINT_OUTCOME: ${{ steps.helm_lint.outcome }}
           CT_LINT_OUTCOME: ${{ steps.ct_lint.outcome }}
+          HELM_UNITTEST_OUTCOME: ${{ steps.helm_unittest.outcome }}
         run: |
           glyph() {
             case "$1" in
@@ -106,7 +169,7 @@ jobs:
               *)       echo "?" ;;
             esac
           }
-          if [[ "$HELM_LINT_OUTCOME" == "success" && "$CT_LINT_OUTCOME" == "success" ]]; then
+          if [[ "$HELM_LINT_OUTCOME" == "success" && "$CT_LINT_OUTCOME" == "success" && ( "$HELM_UNITTEST_OUTCOME" == "success" || "$HELM_UNITTEST_OUTCOME" == "skipped" ) ]]; then
             result="✓ passed"
           else
             result="✗ failed"
@@ -123,4 +186,5 @@ jobs:
             echo "|---|---|"
             echo "| helm lint | $(glyph "$HELM_LINT_OUTCOME") |"
             echo "| ct lint | $(glyph "$CT_LINT_OUTCOME") |"
+            echo "| helm unittest | $(glyph "$HELM_UNITTEST_OUTCOME") |"
           } >> "$GITHUB_STEP_SUMMARY" || true

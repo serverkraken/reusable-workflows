@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/serverkraken/reusable-workflows/internal/domain"
+	"github.com/serverkraken/reusable-workflows/internal/manifest"
 	"github.com/serverkraken/reusable-workflows/internal/ports"
 )
 
@@ -74,9 +75,42 @@ func (s Service) Drift(ctx context.Context, req Request) (domain.DriftResult, er
 	}
 
 	if res.Status == domain.DriftClean {
-		s.renderCompare(ctx, req, lock, &res)
+		changed, err := manifestChanged(req.TargetPath, lock)
+		if err != nil {
+			return domain.DriftResult{}, err
+		}
+		if changed {
+			res.Status = domain.DriftStaleLock
+			res.Modified = []string{manifest.FileName}
+		} else {
+			s.renderCompare(ctx, req, lock, &res)
+		}
 	}
 	return res, nil
+}
+
+// manifestChanged compares the lock's recorded manifest hash with the working
+// tree. A manifest that appeared or disappeared since the last render counts
+// as changed; repos that never had one (both sides empty) are unaffected. Any
+// read error other than the manifest being absent (permission denied, symlink
+// loop, I/O error, ...) is surfaced rather than silently treated as absent.
+func manifestChanged(targetPath string, lock domain.OnboardLock) (bool, error) {
+	recorded := ""
+	if lock.Inputs != nil {
+		recorded = lock.Inputs.ManifestSHA256
+	}
+	current := ""
+	raw, err := os.ReadFile(filepath.Join(targetPath, filepath.FromSlash(manifest.FileName)))
+	switch {
+	case err == nil:
+		sum := sha256.Sum256(raw)
+		current = "sha256:" + hex.EncodeToString(sum[:])
+	case errors.Is(err, os.ErrNotExist):
+		// current stays "" -- no manifest present.
+	default:
+		return false, fmt.Errorf("read %s: %w", manifest.FileName, err)
+	}
+	return recorded != current, nil
 }
 
 func (s Service) renderCompare(ctx context.Context, req Request, lock domain.OnboardLock, res *domain.DriftResult) {

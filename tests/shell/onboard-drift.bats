@@ -205,3 +205,23 @@ teardown() {
   [[ "$output" == *"status=clean"* ]]
   [[ "$output" != *"release-please-manifest"* ]]
 }
+
+@test "drift: adopter manifest present reports error (Bash engine cannot evaluate it)" {
+  # The Bash engine has no parser for the adopter manifest
+  # (.github/onboard.yml) — internal/manifest is Go-CLI-only. A manifest
+  # repo must short-circuit to status=error with an explanatory render_error
+  # pointing at use_go_cli, rather than silently staying "clean" while the
+  # render-and-compare step's failure hides in render_error unnoticed.
+  manifest_target=$(mktemp -d)
+  cp -R "$FIX/drift-clean/." "$manifest_target/"
+  mkdir -p "$manifest_target/.github"
+  cat > "$manifest_target/.github/onboard.yml" <<'YAML'
+schema: 1
+YAML
+
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$manifest_target" "$REPO_ROOT"
+  rm -rf "$manifest_target"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"status=error"* ]]
+  echo "$output" | grep -E '^render_error=.*use_go_cli' >/dev/null
+}

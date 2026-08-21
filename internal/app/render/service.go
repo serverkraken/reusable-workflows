@@ -84,7 +84,7 @@ func (s Service) Render(ctx context.Context, req Request) error {
 	if renderedAgainst == "" {
 		renderedAgainst = req.PinVersion
 	}
-	return writeLock(req.TargetPath, req.PinVersion, renderedAgainst, renderedAt(s.Now), lockPaths(profile))
+	return writeLock(req.TargetPath, req.PinVersion, renderedAgainst, renderedAt(s.Now), profile.ManifestSHA256, lockPaths(profile))
 }
 
 func validateRequest(req Request) error {
@@ -145,6 +145,9 @@ func plannedFiles(profile domain.Profile) []renderFile {
 	if hasFlutterAndroid(profile) {
 		files = append(files, renderFile{Template: "skeletons/ci-android.yml.tmpl", Output: ".github/workflows/ci-android.yml"})
 	}
+	if profile.Workflows != nil && profile.Workflows.E2E != nil {
+		files = append(files, renderFile{Template: "skeletons/e2e.yml.tmpl", Output: ".github/workflows/e2e.yml"})
+	}
 	configTemplate := "configs/release-please-config.json.tmpl"
 	if profile.Monorepo {
 		configTemplate = "configs/release-please-config.monorepo.json.tmpl"
@@ -175,6 +178,9 @@ func lockPaths(profile domain.Profile) []string {
 	// render/lock ordering so both engines emit identical lock files.
 	if hasFlutterAndroid(profile) {
 		files = append(files, ".github/workflows/ci-android.yml")
+	}
+	if profile.Workflows != nil && profile.Workflows.E2E != nil {
+		files = append(files, ".github/workflows/e2e.yml")
 	}
 	return files
 }
@@ -245,7 +251,7 @@ func repoName(targetPath, targetRepo string) string {
 	return base
 }
 
-func writeLock(targetPath, pinVersion, renderedAgainst, renderedAt string, files []string) error {
+func writeLock(targetPath, pinVersion, renderedAgainst, renderedAt, manifestSHA string, files []string) error {
 	hashes := make(map[string]string, len(files))
 	for _, rel := range files {
 		path := filepath.Join(targetPath, filepath.FromSlash(rel))
@@ -260,17 +266,22 @@ func writeLock(targetPath, pinVersion, renderedAgainst, renderedAt string, files
 		}
 		hashes[rel] = "sha256:" + hash
 	}
-	content := encodeLock(pinVersion, renderedAgainst, renderedAt, files, hashes)
+	content := encodeLock(pinVersion, renderedAgainst, renderedAt, manifestSHA, files, hashes)
 	return os.WriteFile(filepath.Join(targetPath, filepath.FromSlash(lockPath)), content, 0o644)
 }
 
-func encodeLock(pinVersion, renderedAgainst, renderedAt string, files []string, hashes map[string]string) []byte {
+func encodeLock(pinVersion, renderedAgainst, renderedAt, manifestSHA string, files []string, hashes map[string]string) []byte {
 	var out bytes.Buffer
 	out.WriteString("{\n")
 	fmt.Fprintf(&out, "  \"schema_version\": 1,\n")
 	writeStringField(&out, "catalog_version", pinVersion, true)
 	writeStringField(&out, "rendered_against", renderedAgainst, true)
 	writeStringField(&out, "rendered_at", renderedAt, true)
+	if manifestSHA != "" {
+		out.WriteString("  \"inputs\": {\n")
+		fmt.Fprintf(&out, "    \"manifest_sha256\": %s\n", mustJSON("sha256:"+manifestSHA))
+		out.WriteString("  },\n")
+	}
 	out.WriteString("  \"files\": {")
 	if len(files) == 0 {
 		out.WriteString("}\n")
@@ -291,6 +302,11 @@ func encodeLock(pinVersion, renderedAgainst, renderedAt string, files []string, 
 	out.WriteString("  }\n")
 	out.WriteString("}\n")
 	return out.Bytes()
+}
+
+func mustJSON(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 func writeStringField(out *bytes.Buffer, key, value string, comma bool) {
