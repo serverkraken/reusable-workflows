@@ -33,6 +33,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# The Bash engine has no manifest parser by design (see
+# docs/operations.md § Adopter Manifest). Fail loud instead of rendering a
+# wrong layout; onboard.yml's use_go_cli=true routes such repos to sk-workflows.
+refuse_manifest() {
+  if [[ -f "$1/.github/onboard.yml" ]]; then
+    echo "::error::$1/.github/onboard.yml: adopter manifest present — the Bash detector does not support manifests; dispatch with use_go_cli=true (sk-workflows detect)" >&2
+    exit 1
+  fi
+}
+
 # Dispatch on --emit-both before --profile-json. Used by the onboard-detect
 # composite action to produce both legacy key=value outputs AND a
 # profile_json<<DELIM multiline block in a single invocation — halves the
@@ -47,6 +57,7 @@ if [[ "${1:-}" == "--emit-both" ]]; then
     echo "::error::usage: $0 --emit-both <repo-path> [language-override]" >&2
     exit 1
   fi
+  refuse_manifest "$REPO_PATH"
 
   # Language detection — mirrors the legacy fallthrough below. We could share
   # this code via a helper, but the duplication is small and the existing
@@ -116,6 +127,7 @@ if [[ "${1:-}" == "--profile-json" ]]; then
     echo "::error::usage: $0 --profile-json <repo-path>" >&2
     exit 1
   fi
+  refuse_manifest "$REPO_PATH"
   emit_profile_json "$REPO_PATH"
   exit 0
 fi
@@ -134,6 +146,7 @@ if [[ ! -d "$REPO_PATH" ]]; then
   echo "::error::repo path does not exist: $REPO_PATH" >&2
   exit 1
 fi
+refuse_manifest "$REPO_PATH"
 
 # shellcheck source=lib/onboard-detect-lib.sh
 source "$SCRIPT_DIR/lib/onboard-detect-lib.sh"
