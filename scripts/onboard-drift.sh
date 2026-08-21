@@ -14,18 +14,25 @@
 #   - .github/onboard.lock.json     lock never self-tracks (defensive)
 #   - .release-please-manifest.json release-please rewrites it on every release
 #
+# Adopter manifest (.github/onboard.yml) is Go-CLI-only: this Bash engine has
+# no parser for it, so a target that carries one short-circuits immediately
+# with status=error (see the manifest check right after arg validation)
+# instead of attempting lock-comparison or a render-and-compare that would
+# either fail or mis-detect the layout the manifest exists to correct.
+#
 # Usage:   onboard-drift.sh <target-path> <catalog-path>
 # Env:     CATALOG_CURRENT_VERSION   string, e.g. "v3" or "v3.0.1"
 #                                    Empty → only modified/no-lock/stale-lock
 #                                    can fire, behind is suppressed.
 #
 # Stdout (key=value, sink-friendly for GITHUB_OUTPUT):
-#   status=<clean|behind|modified|behind+modified|no-lock|stale-lock>
+#   status=<clean|behind|modified|behind+modified|no-lock|stale-lock|error>
 #   modified=<comma-separated paths>      empty when clean (without re-render)
 #                                         lists stale paths when stale-lock
 #   lock_version=<value from lock>        absent when no-lock
 #   current_version=<value from env>      absent when env unset
 #   render_error=<phase:truncated-stderr> empty when render OK or skipped
+#                                         explanatory text when status=error
 set -euo pipefail
 
 # Resolve script directory so we can source siblings even when called via $PATH.
@@ -39,6 +46,28 @@ CURRENT="${CATALOG_CURRENT_VERSION:-}"
 if [[ -z "$TARGET" || -z "$CATALOG" || ! -d "$TARGET" || ! -d "$CATALOG" ]]; then
   echo "::error::usage: $0 <target-path> <catalog-path>" >&2
   exit 1
+fi
+
+# Adopter manifest (.github/onboard.yml) is Go-CLI-only (internal/manifest).
+# This Bash engine has no parser for it, and re-detecting such a repo below
+# would either fail outright or — worse — silently mis-detect the layout the
+# manifest exists to correct. Fail loud with status=error up front rather
+# than letting the render-and-compare step swallow the failure into
+# render_error while status stays "clean" (an operator would then have to
+# notice a render_error hiding behind a clean status). This must run before
+# the lock check too: a manifest repo the Bash engine can't evaluate is not
+# meaningfully "no-lock" either.
+MANIFEST="$TARGET/.github/onboard.yml"
+if [[ -f "$MANIFEST" ]]; then
+  echo "::error::$MANIFEST: adopter manifest present — the Bash engine cannot evaluate it; dispatch onboard.yml with use_go_cli=true (sk-workflows detect)" >&2
+  echo "status=error"
+  if [[ -f "$TARGET/.github/onboard.lock.json" ]]; then
+    echo "lock_version=$(jq -r '.catalog_version' "$TARGET/.github/onboard.lock.json")"
+  fi
+  [[ -n "$CURRENT" ]] && echo "current_version=$CURRENT"
+  echo "modified="
+  echo "render_error=adopter manifest present; the Bash engine cannot evaluate it — dispatch with use_go_cli=true"
+  exit 0
 fi
 
 LOCK="$TARGET/.github/onboard.lock.json"

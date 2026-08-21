@@ -621,7 +621,16 @@ Semantics:
 - **`type: helm`** marks a chart component; `unittest: true` renders the
   `helm-unittest` step (via the new `lint-helm` input). `type` is only
   needed when the directory has no language marker; a `Chart.yaml` at
-  `path` implies it.
+  `path` implies it. Chart CI jobs (`lint-helm`, `helm-publish` dry-run) are
+  driven purely by that component's own resolved `primary_language ==
+  helm` — set by `type: helm` or by an auto-detected `Chart.yaml` inside
+  the component's own directory — never by a `release_signals.chart_yaml`
+  hit on some other component in the same repo.
+- **A manifest component with no detected language and at least one
+  declared Dockerfile** (an image-only component — a plain build context
+  with no source of its own, e.g. `images/postfix` in the mailstack
+  example above) is exempt from the `no_lint_test_atom` warning: there is
+  nothing to lint or test, only an image to build.
 - **Dockerfile annotations stay valid;** the manifest wins on conflict.
   Their deprecation is a separate major-version step.
 - **Unknown keys are errors,** not warnings. A typo must not silently fall
@@ -716,10 +725,14 @@ Practical consequences:
 - **Onboarding** a manifest repo requires dispatching `onboard.yml` with
   `use_go_cli: true` (the default on `next` already — only relevant if
   someone forces Bash rollback per § 5.7).
-- **Drift and sweep** hit the same wall: a weekly `drift-check` or
-  `onboard-sweep` run against a manifest adopter using the Bash engine
-  reports `error` for that target (the underlying detect call fails), not a
-  meaningful drift status. Re-dispatch with `use_go_cli: true` to get a real
+- **Drift and sweep** hit the same wall: `onboard-drift.sh` checks for
+  `.github/onboard.yml` before touching the lock, and reports `status=error`
+  immediately for that target with `render_error` pointing at
+  `use_go_cli=true` — not a `clean` result with the real failure buried in
+  `render_error`, and not a lock-comparison result that never had a chance
+  to run. A weekly `drift-check` or `onboard-sweep` run against a manifest
+  adopter using the Bash engine therefore surfaces the problem directly in
+  the drift report. Re-dispatch with `use_go_cli: true` to get a real
   reading.
 - Without a manifest, nothing changes — Bash-engine adopters are unaffected.
 
