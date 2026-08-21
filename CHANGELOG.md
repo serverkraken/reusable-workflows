@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.14.1](https://github.com/serverkraken/reusable-workflows/compare/v4.14.0...v4.14.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **templates:** publish chart components to the org-wide ghcr.io/&lt;owner&gt;/charts namespace ([#225](https://github.com/serverkraken/reusable-workflows/issues/225)) ([e20df51](https://github.com/serverkraken/reusable-workflows/commit/e20df51cb532c564f500f3215d60a55cff9e0765))
+
 ## [4.14.0](https://github.com/serverkraken/reusable-workflows/compare/v4.13.2...v4.14.0) (2026-08-21)
 
 
