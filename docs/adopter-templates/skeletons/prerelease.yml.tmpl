@@ -125,6 +125,12 @@ jobs:
     {{- end }}
       images: |
         {{ $images | toJSON }}
+    {{- /* detect enforces one platforms value across a component's Dockerfiles
+         (docker-build-multi has a single platforms input), so index 0 speaks
+         for all of them. */ -}}
+    {{- if (index (index $c.dockerfiles 0) "platforms") }}
+      platforms: {{ index (index $c.dockerfiles 0) "platforms" }}
+    {{- end }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}

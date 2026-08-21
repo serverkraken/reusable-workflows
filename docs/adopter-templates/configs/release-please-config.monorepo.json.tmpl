@@ -13,6 +13,16 @@
     { "type": "chore", "section": "Chores", "hidden": true }
   ],
   "packages": {
+{{- /* Every commit reaches the root package unless it is excluded, so a
+     `fix(api): …` touching only services/api would release the root too.
+     exclude-paths lists every non-root component path to keep the root
+     release honest. Emitted only when there is a non-root component. */ -}}
+{{- $nonRoot := coll.Slice -}}
+{{- range .profile.components -}}
+  {{- if ne .path "." -}}
+    {{- $nonRoot = coll.Append .path $nonRoot -}}
+  {{- end -}}
+{{- end }}
 {{- $first := true }}
 {{- range .profile.components }}
 {{- if not $first }},{{ end }}
@@ -20,6 +30,9 @@
 {{- if eq .path "." }}
     ".": {
       "release-type": "{{ .release_please_type }}",
+{{- if gt (len $nonRoot) 0 }}
+      "exclude-paths": [{{ range $i, $p := $nonRoot }}{{ if $i }}, {{ end }}{{ printf "%q" $p }}{{ end }}],
+{{- end }}
       "include-component-in-tag": false
     }
 {{- else }}

@@ -120,6 +120,12 @@ jobs:
     {{- end }}
       images: |
         {{ $images | toJSON }}
+    {{- /* detect enforces one platforms value across a component's Dockerfiles
+         (docker-build-multi has a single platforms input), so index 0 speaks
+         for all of them. */ -}}
+    {{- if (index (index $releaseDfs 0) "platforms") }}
+      platforms: {{ index (index $releaseDfs 0) "platforms" }}
+    {{- end }}
       tag: {{ $tag }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
@@ -153,8 +159,10 @@ jobs:
 {{- /* A chart that is itself a component (manifest-declared `charts/<name>` with
      primary_language helm) publishes from its own path. Root charts keep the
      release_signals.chart_yaml path above; the chart_yaml guard keeps the two
-     branches from emitting the same job key twice. */ -}}
-{{- if and (eq $c.primary_language "helm") (not $isRoot) (not $c.release_signals.chart_yaml) }}
+     branches from emitting the same job key twice. Gated on the manifest: a
+     detected (manifest-less) chart repo whose chart lives in a sub-directory
+     never published from here and must not start now. */ -}}
+{{- if and (eq $c.primary_language "helm") (not $isRoot) (not $c.release_signals.chart_yaml) (index $.profile "manifest_sha256") }}
   helm-publish{{ $suffix }}:
     needs: [release-please]
     if: {{ $gate }}

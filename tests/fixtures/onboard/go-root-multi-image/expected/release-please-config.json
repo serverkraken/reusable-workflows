@@ -15,6 +15,7 @@
   "packages": {
     ".": {
       "release-type": "go",
+      "exclude-paths": ["images/api", "images/worker", "charts/demo"],
       "include-component-in-tag": false
     },
     "images/api": {
