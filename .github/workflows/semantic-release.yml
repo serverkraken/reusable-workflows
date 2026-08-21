@@ -103,10 +103,10 @@ jobs:
         id: paths
         env:
           RP_OUTPUTS: ${{ toJSON(steps.release.outputs) }}
-        run: |
-          set -euo pipefail
-          paths="$(jq -c '(.paths_released // "[]") | fromjson' <<< "$RP_OUTPUTS")"
-          releases="$(jq -c '
+          # Kept as its own env var (rather than inline in `run:`) so
+          # tests/shell/semantic-release-outputs.bats can extract this exact
+          # program with awk and unit-test it against fixture outputs.
+          JQ_RELEASES: |
             . as $o
             | (($o.paths_released // "[]") | fromjson) as $paths
             | def pick($p; $k):
@@ -116,7 +116,11 @@ jobs:
                 version:  pick($p; "version"),
                 major:    pick($p; "major"),
                 minor:    pick($p; "minor")
-              }})' <<< "$RP_OUTPUTS")"
+              }})
+        run: |
+          set -euo pipefail
+          paths="$(jq -c '(.paths_released // "[]") | fromjson' <<< "$RP_OUTPUTS")"
+          releases="$(jq -c "$JQ_RELEASES" <<< "$RP_OUTPUTS")"
           {
             echo "paths_released=$paths"
             echo "releases=$releases"
