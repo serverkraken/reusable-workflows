@@ -663,8 +663,8 @@ jobs:
           {
             echo "### Onboarding run summary"
             echo ""
-            echo "| Repository | Language | Version | Add PR | Cleanup PR | Status |"
-            echo "|---|---|---|---|---|---|"
+            echo "| Repository | Language | Version | Add PR | Cleanup PR | Status | Consumers |"
+            echo "|---|---|---|---|---|---|---|"
             for f in results/*.json; do
               [[ -f "$f" ]] || continue
               target=$(jq -r '.target' "$f")
@@ -697,7 +697,13 @@ jobs:
               pb_md="—"
               [[ -n "$pa" ]] && pa_md="[link]($pa)"
               [[ -n "$pb" ]] && pb_md="[link]($pb)"
-              echo "| $target | $lang | $ver | $pa_md | $pb_md | $combined |"
+
+              # Same cell the status-doc step writes: the manifest's gitops[]
+              # inventory, em dash when the target declares none.
+              consumers_cell=$(jq -r '(.gitops_consumers // []) | map(.repo) | join(", ")' "$f")
+              [[ -z "$consumers_cell" ]] && consumers_cell="—"
+
+              echo "| $target | $lang | $ver | $pa_md | $pb_md | $combined | $consumers_cell |"
             done
           } >> "$GITHUB_STEP_SUMMARY"
 

@@ -384,6 +384,11 @@ jobs:
           build_from_source: 'true'
       - name: Install gomplate
         run: sudo ./scripts/install-gomplate.sh
+      - name: Install actionlint
+        # Same installer and pin as validate.yml; the -ignore flags there are
+        # for the catalog's own workflows and do not apply to rendered output.
+        run: |
+          bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
       - name: Preview and diff
         env:
           FIX: tests/fixtures/onboard/go-root-multi-image
@@ -397,6 +402,10 @@ jobs:
           rm "$out/profile.json"
           jq 'del(.rendered_at)' "$out/.github/onboard.lock.json" > "$out/lock.tmp" && mv "$out/lock.tmp" "$out/.github/onboard.lock.json"
           diff -r "$FIX/expected" "$out"
+          # The golden is only as good as the workflows it pins: lint the
+          # rendered callers so a template change can never commit a golden
+          # that actionlint would reject in the adopter repo.
+          ./actionlint "$out"/.github/workflows/*.yml
 
   # ----- onboard-apply-defaults (Go path): plans repo-default changes through
   #       sk-workflows apply-defaults in dry-run mode with a hermetic gh stub.
