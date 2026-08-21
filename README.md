@@ -66,6 +66,8 @@ Neue Repos werden nicht von Hand verdrahtet: Der `onboard`-Workflow rendert die 
 - **drift-check:** wöchentlicher Abgleich jedes Adopters gegen sein Lockfile; das Ergebnis (`behind`, `modified`, `no-lock`) landet in einem einzigen rollierenden Drift-Report-Issue.
 - **onboard-sweep:** re-onboardet Adopter mit Status `behind` automatisch gegen den aktuellen Katalog-Major und onboardet neue `serverkraken/*`-Repos (Opt-out per Repo-Topic `no-serverkraken-onboard`).
 
+Repos, deren Layout die Erkennung nicht ableiten kann (Root-Modul + Image-Verzeichnisse, Charts neben Code, e2e-Suiten), deklarieren das in `.github/onboard.yml` — siehe [`docs/operations.md`](docs/operations.md) §11.
+
 Details und Operator-Handgriffe: [`docs/operations.md`](docs/operations.md) §5–§7.
 
 ## Nutzung
