@@ -228,6 +228,11 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 		paths[mc.Path] = true
 	}
 	out := make([]domain.Component, 0, len(m.Components))
+	// owner maps a repo-relative Dockerfile path to the component that already
+	// claimed it — either through its own-directory inventory or through an
+	// explicit dockerfiles[] entry. Two components building the same file would
+	// push two images from one build context.
+	owner := map[string]string{}
 	for _, mc := range m.Components {
 		dir := filepath.Join(repo, mc.Path)
 		if !dirExists(dir) {
@@ -250,6 +255,13 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 
 		dockerfiles := inventoryDockerfiles(repo, mc.Path, mc.Image)
 		if mc.Image != "" || mc.Context != "" || mc.Platforms != "" || mc.Release != nil {
+			// The shorthand always targets the single Dockerfile in the
+			// component's own directory. When dockerfiles[] is already carrying
+			// the images, pointing at it as the fix is misleading — the real
+			// problem is that there is no own-directory file to apply it to.
+			if len(dockerfiles) == 0 && len(mc.Dockerfiles) > 0 {
+				return nil, fmt.Errorf("%s: line %d: component %s has no Dockerfile in its directory; the shorthand fields apply to that file only", manifest.FileName, mc.Line, mc.Path)
+			}
 			if len(dockerfiles) != 1 {
 				return nil, fmt.Errorf("%s: line %d: component %s declares image/context/platforms/release but has %d Dockerfiles; use dockerfiles[] instead", manifest.FileName, mc.Line, mc.Path, len(dockerfiles))
 			}
@@ -281,6 +293,19 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 		sort.Slice(dockerfiles, func(i, j int) bool { return dockerfiles[i].Path < dockerfiles[j].Path })
 		if ctx, ok := sharedContext(mc.Path, dockerfiles); !ok {
 			return nil, fmt.Errorf("%s: line %d: Dockerfiles of component %s must share one build context (docker-build-multi has a single context), got %s", manifest.FileName, mc.Line, mc.Path, ctx)
+		}
+		if pf, ok := sharedPlatforms(dockerfiles); !ok {
+			return nil, fmt.Errorf("%s: line %d: Dockerfiles of component %s must share one platforms value (docker-build-multi has a single platforms), got %s", manifest.FileName, mc.Line, mc.Path, pf)
+		}
+		for _, d := range dockerfiles {
+			rel := d.Path
+			if mc.Path != "." {
+				rel = filepath.ToSlash(filepath.Join(mc.Path, d.Path))
+			}
+			if prev, dup := owner[rel]; dup {
+				return nil, fmt.Errorf("%s: line %d: Dockerfile %s is claimed by both component %s and component %s", manifest.FileName, mc.Line, rel, prev, mc.Path)
+			}
+			owner[rel] = mc.Path
 		}
 
 		signals := releaseSignals(repo, mc.Path)
@@ -338,6 +363,30 @@ func sharedContext(componentPath string, dfs []domain.Dockerfile) (string, bool)
 		}
 	}
 	return first, true
+}
+
+// sharedPlatforms returns the effective platforms list of a component's
+// Dockerfiles and whether they all agree. Empty means "the atom's default", so
+// mixing an explicit list with an implicit default is a mismatch too —
+// docker-build-multi forwards one platforms value to every image it builds.
+func sharedPlatforms(dfs []domain.Dockerfile) (string, bool) {
+	if len(dfs) == 0 {
+		return "", true
+	}
+	first := dfs[0].Platforms
+	for _, d := range dfs[1:] {
+		if d.Platforms != first {
+			return displayPlatforms(first) + " vs " + displayPlatforms(d.Platforms), false
+		}
+	}
+	return first, true
+}
+
+func displayPlatforms(p string) string {
+	if p == "" {
+		return "(atom default)"
+	}
+	return p
 }
 
 // chartVersion reads `version:` from a Chart.yaml; empty when absent.
@@ -457,10 +506,31 @@ func expandPNPM(repo, content string) []string {
 	return out
 }
 
+// skipHidden is the shared WalkDirFunc preamble for every repo walker: it
+// prunes dot-directories (`.git/`, `.worktrees/`, `.venv/`, editor caches, …)
+// so a nested checkout or build tree can never contribute a component, a chart
+// signal, or an orphan-Dockerfile warning. `root` itself is never pruned — the
+// repo path may legitimately live under a dot-directory.
+func skipHidden(root, path string, d fs.DirEntry) error {
+	if !d.IsDir() || path == root {
+		return nil
+	}
+	if strings.HasPrefix(d.Name(), ".") {
+		return fs.SkipDir
+	}
+	return nil
+}
+
 func fallbackMarkerPaths(repo string) []string {
 	var out []string
 	_ = filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
+			return nil
+		}
+		if skip := skipHidden(repo, path, d); skip != nil {
+			return skip
+		}
+		if d.IsDir() {
 			return nil
 		}
 		base := d.Name()
@@ -481,7 +551,13 @@ func fallbackMarkerPaths(repo string) []string {
 func fallbackDockerfilePaths(repo string) []string {
 	var out []string
 	_ = filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
+			return nil
+		}
+		if skip := skipHidden(repo, path, d); skip != nil {
+			return skip
+		}
+		if d.IsDir() {
 			return nil
 		}
 		name := d.Name()
@@ -861,7 +937,13 @@ func unassignedSubdirDockerfileWarnings(repo string, components []domain.Compone
 	}
 	var orphans []string
 	_ = filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
+			return nil
+		}
+		if skip := skipHidden(repo, path, d); skip != nil {
+			return skip
+		}
+		if d.IsDir() {
 			return nil
 		}
 		name := d.Name()
@@ -870,7 +952,7 @@ func unassignedSubdirDockerfileWarnings(repo string, components []domain.Compone
 		}
 		rel, _ := filepath.Rel(repo, path)
 		rel = filepath.ToSlash(rel)
-		if strings.Contains(rel, "/") && !strings.HasPrefix(rel, ".git/") {
+		if strings.Contains(rel, "/") {
 			orphans = append(orphans, rel)
 		}
 		return nil
@@ -977,7 +1059,13 @@ func hasPythonScripts(dir string) bool {
 func firstNestedChart(dir string) string {
 	var found string
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || d.Name() != "Chart.yaml" || path == filepath.Join(dir, "Chart.yaml") {
+		if err != nil {
+			return nil
+		}
+		if skip := skipHidden(dir, path, d); skip != nil {
+			return skip
+		}
+		if d.IsDir() || d.Name() != "Chart.yaml" || path == filepath.Join(dir, "Chart.yaml") {
 			return nil
 		}
 		rel, _ := filepath.Rel(dir, path)

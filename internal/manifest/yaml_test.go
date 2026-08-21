@@ -68,6 +68,7 @@ func TestParseYAMLErrors(t *testing.T) {
 		"seq under scalar":  "a: 1\n  - b\n",
 		"missing value":     "a:\n",
 		"unterminated quote": "a: \"x\n",
+		"nested sequence":    "a:\n  - - b\n",
 	}
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -75,6 +76,13 @@ func TestParseYAMLErrors(t *testing.T) {
 				t.Fatalf("err=%v", err)
 			}
 		})
+	}
+}
+
+func TestParseYAMLNestedSequenceMessage(t *testing.T) {
+	_, err := parseYAML("a:\n  - - b\n")
+	if err == nil || !strings.Contains(err.Error(), "line 2: nested sequences are not supported") {
+		t.Fatalf("err=%v", err)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -46,12 +47,20 @@ type Consumer struct {
 }
 
 var (
-	imageRe    = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
-	repoRe     = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-	cronRe     = regexp.MustCompile(`^\S+ \S+ \S+ \S+ \S+$`)
-	languages  = []string{"go", "python", "rust", "helm", "flutter", "node", "generic"}
-	types      = []string{"helm"}
-	modes      = []string{"renovate"}
+	imageRe  = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+	scriptRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+	repoRe   = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+	// platformsRe mirrors the buildx `--platform` list the docker-build atoms
+	// forward verbatim: os/arch with an optional /vN variant, comma-separated,
+	// no spaces.
+	platformsRe = regexp.MustCompile(`^[a-z0-9]+/[a-z0-9]+(/v[0-9]+)?(,[a-z0-9]+/[a-z0-9]+(/v[0-9]+)?)*$`)
+	// cronRe accepts the five standard cron fields. The charset is deliberately
+	// narrow (digits, `*`, `,`, `-`, `/`, and names like MON-FRI) so quoting
+	// artefacts or shell punctuation never reach the rendered `schedule:`.
+	cronRe    = regexp.MustCompile(`^[-0-9*,/A-Za-z]+( [-0-9*,/A-Za-z]+){4}$`)
+	languages = []string{"go", "python", "rust", "helm", "flutter", "node", "generic"}
+	types     = []string{"helm"}
+	modes     = []string{"renovate"}
 )
 
 func Load(repoPath string) (*Manifest, string, bool, error) {
@@ -109,6 +118,10 @@ func decode(root *Node) (*Manifest, error) {
 			return nil, fmt.Errorf("line %d: `components` must not be empty when set", n.Line)
 		}
 		seen := map[string]bool{}
+		// release-please derives a non-root package's `package-name` (and thus
+		// its tag prefix) from the directory basename, so two components with
+		// the same basename would fight over one tag namespace.
+		packages := map[string]string{}
 		for _, item := range seq {
 			c, err := decodeComponent(item)
 			if err != nil {
@@ -118,6 +131,13 @@ func decode(root *Node) (*Manifest, error) {
 				return nil, fmt.Errorf("line %d: duplicate component path %q", item.Line, c.Path)
 			}
 			seen[c.Path] = true
+			if c.Path != "." {
+				base := path.Base(c.Path)
+				if prev, dup := packages[base]; dup {
+					return nil, fmt.Errorf("line %d: component %s: package name %q already used by %s", item.Line, c.Path, base, prev)
+				}
+				packages[base] = c.Path
+			}
 			m.Components = append(m.Components, c)
 		}
 	}
@@ -133,6 +153,14 @@ func decode(root *Node) (*Manifest, error) {
 			e2e := &E2E{}
 			if e2e.Script, err = requiredString(e, "script"); err != nil {
 				return nil, err
+			}
+			scriptLine := e.Map["script"].Line
+			raw := e2e.Script
+			if e2e.Script, err = cleanRelPath(raw, scriptLine); err != nil {
+				return nil, err
+			}
+			if !scriptRe.MatchString(e2e.Script) {
+				return nil, fmt.Errorf("line %d: script must be a repo-relative path matching %s, got %q", scriptLine, scriptRe.String(), raw)
 			}
 			if e2e.Schedule, err = optionalString(e, "schedule"); err != nil {
 				return nil, err
@@ -222,7 +250,7 @@ func decodeComponent(n *Node) (Component, error) {
 	if c.Context, err = optionalRelPath(n, "context"); err != nil {
 		return c, err
 	}
-	if c.Platforms, err = optionalString(n, "platforms"); err != nil {
+	if c.Platforms, err = optionalPlatforms(n, "platforms"); err != nil {
 		return c, err
 	}
 	if c.Release, err = optionalBoolPtr(n, "release"); err != nil {
@@ -253,7 +281,7 @@ func decodeComponent(n *Node) (Component, error) {
 			if spec.Context, err = optionalRelPath(item, "context"); err != nil {
 				return c, err
 			}
-			if spec.Platforms, err = optionalString(item, "platforms"); err != nil {
+			if spec.Platforms, err = optionalPlatforms(item, "platforms"); err != nil {
 				return c, err
 			}
 			if spec.Release, err = optionalBoolPtr(item, "release"); err != nil {
@@ -359,6 +387,17 @@ func optionalImage(n *Node, key string) (string, error) {
 	}
 	if !imageRe.MatchString(v) {
 		return "", fmt.Errorf("line %d: image must match %s, got %q", n.Map[key].Line, imageRe.String(), v)
+	}
+	return v, nil
+}
+
+func optionalPlatforms(n *Node, key string) (string, error) {
+	v, err := optionalString(n, key)
+	if err != nil || v == "" {
+		return v, err
+	}
+	if !platformsRe.MatchString(v) {
+		return "", fmt.Errorf("line %d: platforms must be a comma-separated list of os/arch[/variant], got %q", n.Map[key].Line, v)
 	}
 	return v, nil
 }

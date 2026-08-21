@@ -170,6 +170,9 @@ func (p *parser) sequence(indent int) (*Node, error) {
 		if rest == "" {
 			return nil, fmt.Errorf("line %d: empty sequence item", l.no)
 		}
+		if strings.HasPrefix(rest, "- ") || rest == "-" {
+			return nil, fmt.Errorf("line %d: nested sequences are not supported", l.no)
+		}
 		if _, _, isMap := splitKey(rest); isMap && !strings.HasPrefix(rest, "[") && !strings.HasPrefix(rest, "\"") && !strings.HasPrefix(rest, "'") {
 			// `- key: value`: re-home the inline first key at indent+2 and
 			// parse the item as a mapping so continuation keys line up.

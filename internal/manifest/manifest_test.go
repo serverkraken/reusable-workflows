@@ -88,6 +88,22 @@ func TestParseManifestRejects(t *testing.T) {
 		"bad schedule":       {"schema: 1\nworkflows:\n  e2e:\n    script: run.sh\n    schedule: daily\n", "line 5: schedule must be a 5-field cron expression"},
 		"scalar where map":   {"schema: 1\nrelease: true\n", "line 2: expected a mapping"},
 		"yaml error":         {"schema: 1\n\tx: 1\n", "line 2: tabs"},
+		"bad platforms": {"schema: 1\ncomponents:\n  - path: .\n    platforms: linux-amd64\n",
+			`line 4: platforms must be a comma-separated list of os/arch[/variant], got "linux-amd64"`},
+		"bad platforms trailing comma": {"schema: 1\ncomponents:\n  - path: .\n    platforms: linux/amd64,\n",
+			`line 4: platforms must be a comma-separated list of os/arch[/variant], got "linux/amd64,"`},
+		"bad dockerfile platforms": {"schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: Dockerfile\n        platforms: 'linux/amd64 linux/arm64'\n",
+			`line 6: platforms must be a comma-separated list of os/arch[/variant], got "linux/amd64 linux/arm64"`},
+		"script escapes repo": {"schema: 1\nworkflows:\n  e2e:\n    script: ../run.sh\n",
+			"line 4: path must stay inside the repository"},
+		"script bad charset": {"schema: 1\nworkflows:\n  e2e:\n    script: 'run script.sh'\n",
+			`line 4: script must be a repo-relative path matching ^[A-Za-z0-9._/-]+$, got "run script.sh"`},
+		"schedule punctuation": {"schema: 1\nworkflows:\n  e2e:\n    script: run.sh\n    schedule: \"0 3 * * mon;tue\"\n",
+			"line 5: schedule must be a 5-field cron expression"},
+		"schedule too few fields": {"schema: 1\nworkflows:\n  e2e:\n    script: run.sh\n    schedule: \"0 3 * *\"\n",
+			"line 5: schedule must be a 5-field cron expression"},
+		"duplicate package name": {"schema: 1\ncomponents:\n  - path: images/svc\n  - path: charts/svc\n",
+			`line 4: component charts/svc: package name "svc" already used by images/svc`},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -96,6 +112,40 @@ func TestParseManifestRejects(t *testing.T) {
 				t.Fatalf("err=%v want contains %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseManifestPlatformsAccepted(t *testing.T) {
+	for _, p := range []string{"linux/amd64", "linux/amd64,linux/arm64", "linux/arm/v7", "linux/amd64,linux/arm64/v8,windows/amd64"} {
+		src := fmt.Sprintf("schema: 1\ncomponents:\n  - path: .\n    platforms: %s\n", p)
+		m, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("platforms=%s: %v", p, err)
+		}
+		if m.Components[0].Platforms != p {
+			t.Fatalf("platforms=%s got %q", p, m.Components[0].Platforms)
+		}
+	}
+}
+
+// The root component's release-please package name is not derived from its
+// basename (include-component-in-tag: false), so `.` never participates in the
+// non-root basename uniqueness rule.
+func TestParseManifestRootBasenameIsNotAPackageName(t *testing.T) {
+	src := "schema: 1\ncomponents:\n  - path: .\n  - path: images/api\n  - path: charts/web\n"
+	if _, err := Parse([]byte(src)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParseManifestScriptAccepted(t *testing.T) {
+	src := "schema: 1\nworkflows:\n  e2e:\n    script: ./test/e2e/run.sh\n"
+	m, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Workflows.E2E.Script != "test/e2e/run.sh" {
+		t.Fatalf("script=%q want cleaned test/e2e/run.sh", m.Workflows.E2E.Script)
 	}
 }
 

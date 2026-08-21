@@ -587,6 +587,24 @@ func TestManifestErrors(t *testing.T) {
 		{"schema error surfaces", "schema: 1\nfoo: 1\n", nil, "line 2: unknown key"},
 		{"dockerfile already inventoried", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: Dockerfile\n", map[string]string{"go.mod": "module x\n", "Dockerfile": "FROM scratch\n"}, "already inventoried from the component directory"},
 		{"dockerfile outside component", "schema: 1\ncomponents:\n  - path: svc\n    dockerfiles:\n      - path: other/Dockerfile\n", map[string]string{"svc/go.mod": "module x\n", "other/Dockerfile": "FROM scratch\n"}, "is outside component"},
+		{
+			"mixed platforms",
+			"schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: a/Dockerfile\n        platforms: linux/amd64\n      - path: b/Dockerfile\n",
+			map[string]string{"go.mod": "module x\n", "a/Dockerfile": "FROM scratch\n", "b/Dockerfile": "FROM scratch\n"},
+			"Dockerfiles of component . must share one platforms value (docker-build-multi has a single platforms), got linux/amd64 vs (atom default)",
+		},
+		{
+			"dockerfile claimed twice",
+			"schema: 1\ncomponents:\n  - path: .\n    language: go\n    dockerfiles:\n      - path: images/api/Dockerfile\n  - path: images/api\n",
+			map[string]string{"go.mod": "module x\n", "images/api/Dockerfile": "FROM scratch\n"},
+			"line 7: Dockerfile images/api/Dockerfile is claimed by both component . and component images/api",
+		},
+		{
+			"shorthand with attached dockerfiles only",
+			"schema: 1\ncomponents:\n  - path: svc\n    image: a/b\n    dockerfiles:\n      - path: svc/sub/Dockerfile\n",
+			map[string]string{"svc/go.mod": "module x\n", "svc/sub/Dockerfile": "FROM scratch\n"},
+			"component svc has no Dockerfile in its directory; the shorthand fields apply to that file only",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -599,6 +617,57 @@ func TestManifestErrors(t *testing.T) {
 				t.Fatalf("err=%v missing manifest line-number prefix", err)
 			}
 		})
+	}
+}
+
+// The "no Dockerfile in its directory" variant must not tell the adopter to
+// "use dockerfiles[] instead" — they already did, and the shorthand simply has
+// no own-directory file to apply to.
+func TestManifestShorthandErrorDoesNotSuggestDockerfilesWhenPresent(t *testing.T) {
+	tmp := t.TempDir()
+	mustMkdir(t, filepath.Join(tmp, ".github"))
+	mustMkdir(t, filepath.Join(tmp, "svc", "sub"))
+	mustWrite(t, filepath.Join(tmp, ".github", "onboard.yml"),
+		"schema: 1\ncomponents:\n  - path: svc\n    image: a/b\n    dockerfiles:\n      - path: svc/sub/Dockerfile\n")
+	mustWrite(t, filepath.Join(tmp, "svc", "go.mod"), "module x\n")
+	mustWrite(t, filepath.Join(tmp, "svc", "sub", "Dockerfile"), "FROM scratch\n")
+	_, err := (Service{}).Detect(context.Background(), Request{RepoPath: tmp})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), "use dockerfiles[] instead") {
+		t.Fatalf("stale suggestion in %v", err)
+	}
+}
+
+// TestWalkersSkipHiddenDirectories pins that the file-system walkers ignore
+// dot-directories: a `.worktrees/` checkout of this very repo, an editor's
+// `.cache/`, or a vendored `.hidden/` build tree must never contribute a chart
+// signal or an "unassigned Dockerfile" warning.
+func TestWalkersSkipHiddenDirectories(t *testing.T) {
+	tmp := t.TempDir()
+	mustWrite(t, filepath.Join(tmp, "go.mod"), "module x\n")
+	mustMkdir(t, filepath.Join(tmp, ".worktrees", "wt", "charts", "decoy"))
+	mustWrite(t, filepath.Join(tmp, ".worktrees", "wt", "charts", "decoy", "Chart.yaml"),
+		"apiVersion: v2\nname: decoy\nversion: 9.9.9\n")
+	mustMkdir(t, filepath.Join(tmp, ".hidden"))
+	mustWrite(t, filepath.Join(tmp, ".hidden", "Dockerfile"), "FROM scratch\n")
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: tmp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := res.Profile
+	if got := componentPaths(p.Components); !reflect.DeepEqual(got, []string{"."}) {
+		t.Fatalf("paths=%v want [.]", got)
+	}
+	if sig := p.Components[0].ReleaseSignals.ChartYAML; sig != nil {
+		t.Fatalf("hidden chart leaked into release signals: %q", *sig)
+	}
+	for _, w := range p.Warnings {
+		if w.Code == "subdir_dockerfiles_unassigned" {
+			t.Fatalf("hidden Dockerfile reported as orphan: %+v", w)
+		}
 	}
 }
 
