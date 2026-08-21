@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": false,
+  "bump-minor-pre-major": true,
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "refactor", "section": "Refactors" },
+    { "type": "docs", "section": "Documentation", "hidden": false },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "ci", "section": "CI", "hidden": true },
+    { "type": "chore", "section": "Chores", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "release-type": "go",
+      "include-component-in-tag": false
+    },
+    "images/api": {
+      "release-type": "simple",
+      "package-name": "api",
+      "include-component-in-tag": true
+    },
+    "images/worker": {
+      "release-type": "simple",
+      "package-name": "worker",
+      "include-component-in-tag": true
+    },
+    "charts/demo": {
+      "release-type": "helm",
+      "package-name": "demo",
+      "include-component-in-tag": true
+    }
+  }
+}

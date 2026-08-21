@@ -1,0 +1,100 @@
+name: release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+  security-events: write
+  actions: read
+
+jobs:
+  release-please:
+    uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v4
+    secrets: inherit
+
+  docker-build:
+    needs: [release-please]
+    if: contains(fromJSON(needs.release-please.outputs.paths_released), '.')
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
+    with:
+      dockerfile: images/tools/Dockerfile
+      image_name: acme/multi/tools
+      tag: v${{ fromJSON(needs.release-please.outputs.releases)['.'].version }}
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+    secrets: inherit
+
+  scan:
+    needs: [docker-build]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
+    with:
+      image_ref: ${{ needs.docker-build.outputs.image_ref }}
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+    secrets: inherit
+
+  docker-build-images-api:
+    needs: [release-please]
+    if: contains(fromJSON(needs.release-please.outputs.paths_released), 'images/api')
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
+    with:
+      dockerfile: images/api/Dockerfile
+      image_name: acme/multi/api
+      tag: v${{ fromJSON(needs.release-please.outputs.releases)['images/api'].version }}
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+    secrets: inherit
+
+  scan-images-api:
+    needs: [docker-build-images-api]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
+    with:
+      image_ref: ${{ needs.docker-build-images-api.outputs.image_ref }}
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+    secrets: inherit
+
+  docker-build-images-worker:
+    needs: [release-please]
+    if: contains(fromJSON(needs.release-please.outputs.paths_released), 'images/worker')
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
+    with:
+      dockerfile: images/worker/Dockerfile
+      image_name: acme/multi/worker
+      platforms: linux/amd64
+      tag: v${{ fromJSON(needs.release-please.outputs.releases)['images/worker'].version }}
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+    secrets: inherit
+
+  scan-images-worker:
+    needs: [docker-build-images-worker]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
+    with:
+      image_ref: ${{ needs.docker-build-images-worker.outputs.image_ref }}
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+    secrets: inherit
+
+  helm-publish-charts-demo:
+    needs: [release-please]
+    if: contains(fromJSON(needs.release-please.outputs.paths_released), 'charts/demo')
+    uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@v4
+    permissions:
+      contents: read
+      packages: write
+    with:
+      chart_path: charts/demo
+      oci_registry: ghcr.io/go-root-multi-image/charts
+    secrets: inherit

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "catalog_version": "v4",
+  "rendered_against": "v4.14.0",
+  "inputs": {
+    "manifest_sha256": "sha256:f337258f9156471d8a0c890c94d212cb540d336e60c995d6b825cb9c3545268c"
+  },
+  "files": {
+    ".github/workflows/ci.yml": "sha256:1dd42d93b95cc3feb536d96801296c15e164a9ed759318ca77ace2f63dad1b55",
+    ".github/workflows/release.yml": "sha256:89bc9c7c3aef2cb099c64aea220a961d228dcffaa53d6900f29e169001ea4c89",
+    ".github/workflows/prerelease.yml": "sha256:164bf425146e87ce02a40caec1e35a97106ecc0c262c5c5d9e7ec8988911f00e",
+    ".github/workflows/cleanup.yml": "sha256:79e8cb798eb7081d80305a14b0c78a9c0ae7bfe8090e3b07ca0ae32ef5815c78",
+    "release-please-config.json": "sha256:01bb318bfc2551086f8adb0248fb97ea229c9da817f1daab8938b5ba2aaa3a2e",
+    ".release-please-manifest.json": "sha256:b80376d3af71f7b77b9d9194a4dde6706069dc1bd449f237d88eff2abe1f1329",
+    ".github/workflows/e2e.yml": "sha256:67429218492129f2f6dd895889a7764922571777f16989bdf6a7e775a64411fc"
+  }
+}
