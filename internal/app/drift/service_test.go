@@ -319,6 +319,21 @@ func TestDriftManifestHashMatchProceedsToRenderCompare(t *testing.T) {
 	}
 }
 
+func TestDriftManifestUnreadableReturnsError(t *testing.T) {
+	repo := fixtureRepo(t, "v4")
+	// Making .github/onboard.yml a directory forces os.ReadFile to fail with a
+	// non-ErrNotExist error (EISDIR) on every platform, so this exercises the
+	// "unreadable, not absent" branch of manifestChanged.
+	if err := os.MkdirAll(filepath.Join(repo, ".github", "onboard.yml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (Service{Detector: &fakeDetector{profile: []byte(`{"schema_version":1}`)}, Renderer: &fakeRenderer{files: renderedFixtureFiles()}}).Drift(context.Background(), Request{TargetPath: repo, CatalogPath: t.TempDir(), CurrentVersion: "v4"})
+	if err == nil || !strings.Contains(err.Error(), ".github/onboard.yml") {
+		t.Fatalf("err=%v want an error mentioning .github/onboard.yml", err)
+	}
+}
+
 func TestRenderCompareDetectsNetNewRenderedFiles(t *testing.T) {
 	// An adopter onboarded before a profile-conditional template existed has a
 	// lock without that key; lock-keyed comparison alone reports clean. The
