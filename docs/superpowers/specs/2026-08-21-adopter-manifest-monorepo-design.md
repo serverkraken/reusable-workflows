@@ -141,18 +141,24 @@ components:                      # optional; absent → auto-detect as today
     dockerfiles:                 # optional; in addition to those found in `path`
       - path: images/tools/Dockerfile
         image: serverkraken/mailstack/tools
+        context: .                           # optional, repo-relative; default = component path
         platforms: linux/amd64,linux/arm64   # optional; default = atom default
         release: true                        # optional; default by file name
   - path: images/postfix
     image: serverkraken/mailstack/postfix    # shorthand when `path` holds exactly one Dockerfile
+    context: .                               # shorthand form of the same field
   - path: images/dovecot
     image: serverkraken/mailstack/dovecot
+    context: .
   - path: images/unbound
     image: serverkraken/mailstack/unbound
+    context: .
   - path: images/fangfrisch
     image: serverkraken/mailstack/fangfrisch
+    context: .
   - path: images/olefy
     image: serverkraken/mailstack/olefy
+    context: .
   - path: charts/mailstack
     type: helm
     unittest: true
@@ -177,9 +183,15 @@ Semantics:
   came from). Inside a component, absent fields are still detected:
   languages, Dockerfiles in `path` itself, `release_signals` (goreleaser,
   nested `Chart.yaml`, Flutter), `cgo`.
-- **Build context = component path.** Every Dockerfile of a component —
-  in `path` or attached via `dockerfiles[]` — builds with context `path`
-  (`.` for the root). This is what makes mailstack's `COPY images/…` work.
+- **Build context defaults to the component path** and can be overridden
+  per component (`context`, shorthand) or per Dockerfile
+  (`dockerfiles[].context`), repo-relative. All Dockerfiles of one
+  component must resolve to the same context — `docker-build-multi` has a
+  single shared `context` — and detect rejects mixed contexts. mailstack
+  sets `context: .` on every image component because its Dockerfiles
+  `COPY images/<name>/…` from the repo root. (Amended while planning: the
+  first draft's "context = component path" rule would have broken those
+  builds.)
 - **`type: helm`** marks a chart component; `unittest: true` renders the
   `helm-unittest` step (via the new `lint-helm` input). `type` is only
   needed when the directory has no language marker; a `Chart.yaml` at
