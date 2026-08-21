@@ -496,3 +496,16 @@ func contains(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestProfileJSONHasNoNewKeysWithoutManifest(t *testing.T) {
+	p := detectFixture(t, "go-repo").Profile
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"manifest_sha256", "workflows", "gitops_consumers", "\"release\"", "unittest", "\"version\"", "\"context\"", "platforms"} {
+		if strings.Contains(string(raw), key) {
+			t.Fatalf("profile for a manifest-less repo leaks key %s: %s", key, raw)
+		}
+	}
+}
