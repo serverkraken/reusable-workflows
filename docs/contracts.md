@@ -251,6 +251,8 @@ Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
 | output  | `tag_name`                      | string  | —        | —                                         | e.g. `'v1.2.3'` |
 | output  | `major_tag`                     | string  | —        | —                                         | e.g. `'v1'` |
 | output  | `minor_tag`                     | string  | —        | —                                         | e.g. `'v1.2'` |
+| output  | `paths_released`                | string  | —        | —                                         | JSON array of released package paths, e.g. `'["."]'`; `'[]'` when idle |
+| output  | `releases`                      | string  | —        | —                                         | JSON object `{"<path>":{"tag_name","version","major","minor"}}`; `'{}'` when idle |
 
 ---
 

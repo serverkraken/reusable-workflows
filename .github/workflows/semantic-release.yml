@@ -33,6 +33,12 @@ on:
         value: ${{ jobs.release.outputs.major_tag }}
       minor_tag:
         value: ${{ jobs.release.outputs.minor_tag }}
+      paths_released:
+        description: 'JSON array of release-please package paths released in this run ("[]" when none).'
+        value: ${{ jobs.release.outputs.paths_released }}
+      releases:
+        description: 'JSON object path → {tag_name, version, major, minor} for every released path ("{}" when none).'
+        value: ${{ jobs.release.outputs.releases }}
     secrets:
       release_please_app_client_id:
         required: true
@@ -63,6 +69,8 @@ jobs:
       tag_name: ${{ steps.release.outputs.tag_name }}
       major_tag: ${{ steps.float.outputs.major_tag }}
       minor_tag: ${{ steps.float.outputs.minor_tag }}
+      paths_released: ${{ steps.paths.outputs.paths_released }}
+      releases: ${{ steps.paths.outputs.releases }}
     steps:
       - name: Mint GitHub App installation token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -84,6 +92,35 @@ jobs:
           manifest-file: ${{ inputs.release_please_manifest }}
           skip-github-release: ${{ inputs.dry_run }}
           skip-github-pull-request: ${{ inputs.dry_run }}
+
+      # release-please-action emits one output per released path with a
+      # `<path>--` prefix (and, for the root package ".", the bare names).
+      # workflow_call outputs must be declared statically, so the dynamic set
+      # is folded into two JSON strings here: the list of released paths and a
+      # path→{tag_name,version,major,minor} map. Single-package repos get
+      # ["."] / {".": {...}}; idle runs get [] / {}.
+      - name: Collect per-path release outputs
+        id: paths
+        env:
+          RP_OUTPUTS: ${{ toJSON(steps.release.outputs) }}
+        run: |
+          set -euo pipefail
+          paths="$(jq -c '(.paths_released // "[]") | fromjson' <<< "$RP_OUTPUTS")"
+          releases="$(jq -c '
+            . as $o
+            | (($o.paths_released // "[]") | fromjson) as $paths
+            | def pick($p; $k):
+                ($o[$p + "--" + $k]) // (if $p == "." then $o[$k] else null end) // "";
+              reduce $paths[] as $p ({}; . + {($p): {
+                tag_name: pick($p; "tag_name"),
+                version:  pick($p; "version"),
+                major:    pick($p; "major"),
+                minor:    pick($p; "minor")
+              }})' <<< "$RP_OUTPUTS")"
+          {
+            echo "paths_released=$paths"
+            echo "releases=$releases"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Move floating major/minor tags
         id: float
