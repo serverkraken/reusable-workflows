@@ -33,5 +33,16 @@ jobs:
   lint-helm-charts-web:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@v4
     with:
-      working_directory: charts/web
+      working_directory: .
+      charts_dir: charts
+    secrets: inherit
+  helm-publish-dryrun-charts-web:
+    uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@v4
+    permissions:
+      contents: read
+      packages: write
+    with:
+      chart_path: charts/web
+      oci_registry: ghcr.io/serverkraken/svc/charts
+      dry_run: true
     secrets: inherit
