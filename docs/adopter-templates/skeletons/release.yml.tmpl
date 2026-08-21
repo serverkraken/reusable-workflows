@@ -172,7 +172,7 @@ jobs:
       packages: write
     with:
       chart_path: {{ $c.path }}
-      oci_registry: ghcr.io/{{ $.profile.target_repo }}/charts
+      oci_registry: ghcr.io/{{ index (strings.Split "/" $.profile.target_repo) 0 }}/charts
     secrets: inherit
 {{- end }}
 

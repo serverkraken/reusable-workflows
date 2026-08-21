@@ -389,8 +389,13 @@ render_prerelease_for_profile() {
   grep -qF "charts_dir: charts/mailstack" "$ci"
   grep -qF "unittest: true" "$ci"
   grep -q "helm-publish-dryrun-charts-mailstack:" "$ci"
+  # Charts publish to the org-wide namespace (ghcr.io/<owner>/charts), the
+  # path mailstack already used by hand — not ghcr.io/<owner>/<repo>/charts.
+  grep -qF "oci_registry: ghcr.io/serverkraken/charts" "$ci"
   rel=$(render_release_for_profile "$profile")
   grep -q "helm-publish-charts-mailstack:" "$rel"
+  grep -qF "oci_registry: ghcr.io/serverkraken/charts" "$rel"
+  ! grep -qF "ghcr.io/serverkraken/mailstack/charts" "$rel"
 }
 
 # C3: a root chart component declared with `unittest: true` in the manifest
