@@ -101,7 +101,7 @@ jobs:
       # enforced by a Renovate packageRule: 1.1.0 switched plugin.yaml to
       # `platformHooks`, which Helm v3's plugin loader rejects outright.
       - name: Install helm-unittest
-        if: inputs.unittest
+        if: inputs.unittest && success()
         env:
           HELM_PLUGINS: ${{ runner.temp }}/helm-plugins
           # renovate: datasource=github-releases depName=helm-unittest/helm-unittest
@@ -113,7 +113,7 @@ jobs:
             --version "${HELM_UNITTEST_VERSION#v}"
 
       - name: helm unittest
-        if: inputs.unittest
+        if: inputs.unittest && success()
         id: helm_unittest
         working-directory: ${{ inputs.working_directory }}
         env:
@@ -125,9 +125,17 @@ jobs:
           if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
             helm unittest "$CHARTS_DIR"
           else
+            found=0
             for d in "$CHARTS_DIR"/*/; do
-              [[ -f "${d%/}/Chart.yaml" ]] && helm unittest "${d%/}"
+              if [[ -f "${d%/}/Chart.yaml" ]]; then
+                helm unittest "${d%/}"
+                found=1
+              fi
             done
+            if (( found == 0 )); then
+              echo "::error::no chart found in $CHARTS_DIR (no Chart.yaml in $CHARTS_DIR or its immediate subdirs)"
+              exit 1
+            fi
           fi
 
       - name: Summary
