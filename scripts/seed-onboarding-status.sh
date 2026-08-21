@@ -24,8 +24,8 @@ if [[ ! -f "$DOC" ]]; then
 
 _Last updated by the onboarding workflow: ${stamp}_
 
-| Repository | Onboarded | Catalog Version | Add PR | Cleanup PR | Status |
-|---|---|---|---|---|---|
+| Repository | Onboarded | Catalog Version | Add PR | Cleanup PR | Status | Consumers |
+|---|---|---|---|---|---|---|
 EOF
 fi
 
@@ -37,7 +37,7 @@ while IFS= read -r repo; do
   if grep -qE "^\\| ${esc} \\|" "$DOC"; then
     continue
   fi
-  echo "| ${repo} | — | — | — | — | not onboarded |" >> "$DOC"
+  echo "| ${repo} | — | — | — | — | not onboarded | — |" >> "$DOC"
 done <<< "$repos"
 
 echo "Seeded $DOC. Review with git diff before committing."
