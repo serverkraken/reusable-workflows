@@ -52,7 +52,11 @@ func (f *fakeTemplates) Execute(_ context.Context, templatePath, outputPath, con
 	return os.WriteFile(outputPath, []byte(content), 0o644)
 }
 
-func TestRenderSingleServiceWritesFilesSubstitutesRepoAndLock(t *testing.T) {
+// renderSingleService renders the canonical single-service, non-gitops,
+// non-manifest profile used by both the happy-path lock/substitution test
+// and the manifest-less lock-shape guard test.
+func renderSingleService(t *testing.T) (string, *fakeTemplates) {
+	t.Helper()
 	catalog := renderCatalog(t, allTemplateFiles()...)
 	target := t.TempDir()
 	profile := writeProfile(t, target, `{
@@ -89,6 +93,11 @@ func TestRenderSingleServiceWritesFilesSubstitutesRepoAndLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return target, templates
+}
+
+func TestRenderSingleServiceWritesFilesSubstitutesRepoAndLock(t *testing.T) {
+	target, templates := renderSingleService(t)
 
 	wantFiles := []string{
 		".github/workflows/ci.yml",
@@ -125,6 +134,55 @@ func TestRenderSingleServiceWritesFilesSubstitutesRepoAndLock(t *testing.T) {
 	}
 	if calledTemplate(templates.calls, "release-please-config.monorepo.json.tmpl") {
 		t.Fatal("monorepo config rendered for single-service profile")
+	}
+}
+
+func TestRenderManifestProfileAddsE2EAndLockInputs(t *testing.T) {
+	target := t.TempDir()
+	catalog := renderCatalog(t, append(allTemplateFiles(), "skeletons/e2e.yml.tmpl")...)
+	profile := `{"schema_version":1,"target_repo":"acme/multi","default_branch":"main","current_version":"1.0.0","monorepo":true,
+	  "manifest_sha256":"` + strings.Repeat("ab", 32) + `",
+	  "workflows":{"e2e":{"script":"test/e2e/run.sh","schedule":"0 3 * * *"}},
+	  "components":[{"path":".","languages":["go"],"primary_language":"go","release_please_type":"go","role":"service","dockerfiles":[],"release_signals":{"goreleaser_config":null,"chart_yaml":null,"flutter_android":false},"cgo":false},
+	                {"path":"images/api","languages":[],"primary_language":"generic","release_please_type":"simple","role":"service","dockerfiles":[],"release_signals":{"goreleaser_config":null,"chart_yaml":null,"flutter_android":false},"cgo":false}],
+	  "legacy_ci":[],"topics":[],"warnings":[]}`
+	profilePath := filepath.Join(t.TempDir(), "profile.json")
+	if err := os.WriteFile(profilePath, []byte(profile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	templates := &fakeTemplates{content: map[string]string{}}
+	svc := Service{Templates: templates, Now: func() time.Time { return time.Date(2026, 8, 21, 9, 0, 0, 0, time.UTC) }}
+	if err := svc.Render(context.Background(), Request{CatalogPath: catalog, TargetPath: target, ProfileJSONPath: profilePath, PinVersion: "v4", RenderedAgainst: "v4.14.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if !calledTemplate(templates.calls, "e2e.yml.tmpl") {
+		t.Fatal("e2e.yml.tmpl not rendered for a manifest with workflows.e2e")
+	}
+	raw, err := os.ReadFile(filepath.Join(target, ".github", "onboard.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := string(raw)
+	wantInputs := "  \"rendered_at\": \"2026-08-21T09:00:00Z\",\n  \"inputs\": {\n    \"manifest_sha256\": \"sha256:" + strings.Repeat("ab", 32) + "\"\n  },\n  \"files\": {"
+	if !strings.Contains(lock, wantInputs) {
+		t.Fatalf("lock inputs block missing or misplaced:\n%s", lock)
+	}
+	if !strings.Contains(lock, `".github/workflows/e2e.yml": "sha256:`) {
+		t.Fatalf("e2e.yml not tracked in lock:\n%s", lock)
+	}
+}
+
+func TestRenderWithoutManifestWritesNoInputsBlock(t *testing.T) {
+	// reuse the single-service profile fixture used by
+	// TestRenderSingleServiceWritesFilesSubstitutesRepoAndLock
+	target, templates := renderSingleService(t)
+	_ = templates
+	raw, err := os.ReadFile(filepath.Join(target, ".github", "onboard.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"inputs"`) || strings.Contains(string(raw), "e2e.yml") {
+		t.Fatalf("manifest-less lock must be unchanged:\n%s", raw)
 	}
 }
 
@@ -349,7 +407,7 @@ func TestRenderInvalidProfileErrors(t *testing.T) {
 }
 
 func TestWriteLockErrorsWhenRenderedFileMissing(t *testing.T) {
-	err := writeLock(t.TempDir(), "v4", "v4", "2026-06-02T10:11:12Z", []string{".github/workflows/ci.yml"})
+	err := writeLock(t.TempDir(), "v4", "v4", "2026-06-02T10:11:12Z", "", []string{".github/workflows/ci.yml"})
 	if err == nil || !strings.Contains(err.Error(), "expected rendered file missing") {
 		t.Fatalf("err=%v", err)
 	}
@@ -397,14 +455,14 @@ func TestWriteLockReadFileError(t *testing.T) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err := writeLock(target, "v4", "v4", "2026-06-02T10:11:12Z", []string{".github/workflows/ci.yml"})
+	err := writeLock(target, "v4", "v4", "2026-06-02T10:11:12Z", "", []string{".github/workflows/ci.yml"})
 	if err == nil {
 		t.Fatal("expected read directory as file error")
 	}
 }
 
 func TestEncodeLockEmptyFiles(t *testing.T) {
-	content := encodeLock("v4", "v4", "2026-06-02T10:11:12Z", nil, map[string]string{})
+	content := encodeLock("v4", "v4", "2026-06-02T10:11:12Z", "", nil, map[string]string{})
 	if !strings.Contains(string(content), `"files": {`) {
 		t.Fatalf("content=%s", content)
 	}

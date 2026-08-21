@@ -5,7 +5,12 @@ type OnboardLock struct {
 	CatalogVersion  string            `json:"catalog_version"`
 	RenderedAt      string            `json:"rendered_at"`
 	RenderedAgainst string            `json:"rendered_against,omitempty"`
+	Inputs          *LockInputs       `json:"inputs,omitempty"`
 	Files           map[string]string `json:"files"`
+}
+
+type LockInputs struct {
+	ManifestSHA256 string `json:"manifest_sha256"`
 }
 
 type DriftStatus string
