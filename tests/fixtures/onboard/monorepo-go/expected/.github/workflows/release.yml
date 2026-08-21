@@ -21,13 +21,13 @@ jobs:
 
   docker-build-services-api:
     needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    if: contains(fromJSON(needs.release-please.outputs.paths_released), 'services/api')
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
     with:
       context: services/api
       dockerfile: services/api/Dockerfile
       image_name: repo-api
-      tag: ${{ needs.release-please.outputs.tag_name }}
+      tag: v${{ fromJSON(needs.release-please.outputs.releases)['services/api'].version }}
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -44,13 +44,13 @@ jobs:
 
   docker-build-services-worker:
     needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    if: contains(fromJSON(needs.release-please.outputs.paths_released), 'services/worker')
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
     with:
       context: services/worker
       dockerfile: services/worker/Dockerfile
       image_name: repo-worker
-      tag: ${{ needs.release-please.outputs.tag_name }}
+      tag: v${{ fromJSON(needs.release-please.outputs.releases)['services/worker'].version }}
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}

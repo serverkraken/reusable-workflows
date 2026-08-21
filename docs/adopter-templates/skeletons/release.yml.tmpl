@@ -15,10 +15,14 @@
   (docker-build-services-api) so multiple components don't collide.
 */ -}}
 {{- $pin := .pin -}}
+{{- $mono := .profile.monorepo -}}
 name: release
 on:
   push:
     branches: [{{ .profile.default_branch }}]
+{{- if and (index .profile "release") (index .profile.release "dispatch_trigger") }}
+  workflow_dispatch: {}
+{{- end }}
 
 permissions:
   contents: write
@@ -43,6 +47,17 @@ jobs:
 {{- $ctxPath := $c.path -}}
 {{- $isRoot := eq $c.path "." -}}
 
+{{- /* Per-component release gate + image tag. Single-component adopters keep the
+     flat release_created/tag_name contract; monorepo adopters gate on the
+     component's path appearing in paths_released and take the clean semver from
+     releases['<path>'].version (tag_name is prefixed with the package basename). */ -}}
+{{- $gate := "needs.release-please.outputs.release_created == 'true'" -}}
+{{- $tag := "${{ needs.release-please.outputs.tag_name }}" -}}
+{{- if $mono -}}
+  {{- $gate = printf "contains(fromJSON(needs.release-please.outputs.paths_released), '%s')" $c.path -}}
+  {{- $tag = printf "v${{ fromJSON(needs.release-please.outputs.releases)['%s'].version }}" $c.path -}}
+{{- end -}}
+
 {{- /* Filter to release-eligible Dockerfiles only — non-eligible variants (Dockerfile.dev, Dockerfile.debug, …) ship in prerelease.yml only. */ -}}
 {{- $releaseDfs := coll.Slice -}}
 {{- range $c.dockerfiles -}}
@@ -55,17 +70,23 @@ jobs:
 {{- $df := index $releaseDfs 0 }}
   docker-build{{ $suffix }}:
     needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    if: {{ $gate }}
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}
     with:
+    {{- $ctx := $ctxPath }}{{ if (index $df "context") }}{{ $ctx = index $df "context" }}{{ end }}
+    {{- if ne $ctx "." }}
+      context: {{ $ctx }}
+    {{- end }}
     {{- if not $isRoot }}
-      context: {{ $ctxPath }}
       dockerfile: {{ $ctxPath }}/{{ $df.path }}
     {{- else }}
       dockerfile: {{ $df.path }}
     {{- end }}
       image_name: {{ $df.image_name }}
-      tag: {{`${{ needs.release-please.outputs.tag_name }}`}}
+    {{- if (index $df "platforms") }}
+      platforms: {{ index $df "platforms" }}
+    {{- end }}
+      tag: {{ $tag }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
@@ -84,19 +105,22 @@ jobs:
      docker-build-multi atom's expected shape: [{dockerfile, image_name}]. */}}
 {{- $images := coll.Slice -}}
 {{- range $releaseDfs -}}
-  {{- $images = coll.Append (coll.Dict "dockerfile" .path "image_name" .image_name) $images -}}
+  {{- $dfPath := .path -}}
+  {{- if not $isRoot -}}{{- $dfPath = printf "%s/%s" $ctxPath .path -}}{{- end -}}
+  {{- $images = coll.Append (coll.Dict "dockerfile" $dfPath "image_name" .image_name) $images -}}
 {{- end }}
   docker-build{{ $suffix }}:
     needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    if: {{ $gate }}
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@{{ $pin }}
     with:
-    {{- if not $isRoot }}
-      context: {{ $ctxPath }}
+    {{- $ctx := $ctxPath }}{{ if (index (index $releaseDfs 0) "context") }}{{ $ctx = index (index $releaseDfs 0) "context" }}{{ end }}
+    {{- if ne $ctx "." }}
+      context: {{ $ctx }}
     {{- end }}
       images: |
         {{ $images | toJSON }}
-      tag: {{`${{ needs.release-please.outputs.tag_name }}`}}
+      tag: {{ $tag }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
@@ -106,7 +130,7 @@ jobs:
 {{- if $c.release_signals.goreleaser_config }}
   goreleaser{{ $suffix }}:
     needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    if: {{ $gate }}
     uses: serverkraken/reusable-workflows/.github/workflows/goreleaser.yml@{{ $pin }}
 {{- if not $isRoot }}
     with:
@@ -118,7 +142,7 @@ jobs:
 {{- if $c.release_signals.chart_yaml }}
   helm-publish{{ $suffix }}:
     needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    if: {{ $gate }}
     uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@{{ $pin }}
     with:
       chart_path: {{ path.Dir $c.release_signals.chart_yaml }}
@@ -126,16 +150,34 @@ jobs:
     secrets: inherit
 {{- end }}
 
+{{- /* A chart that is itself a component (manifest-declared `charts/<name>` with
+     primary_language helm) publishes from its own path. Root charts keep the
+     release_signals.chart_yaml path above; the chart_yaml guard keeps the two
+     branches from emitting the same job key twice. */ -}}
+{{- if and (eq $c.primary_language "helm") (not $isRoot) (not $c.release_signals.chart_yaml) }}
+  helm-publish{{ $suffix }}:
+    needs: [release-please]
+    if: {{ $gate }}
+    uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@{{ $pin }}
+    permissions:
+      contents: read
+      packages: write
+    with:
+      chart_path: {{ $c.path }}
+      oci_registry: ghcr.io/{{ $.profile.target_repo }}/charts
+    secrets: inherit
+{{- end }}
+
 {{- if and (has $c.release_signals "flutter_android") $c.release_signals.flutter_android }}
   release-flutter-android{{ $suffix }}:
     needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    if: {{ $gate }}
     uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@{{ $pin }}
     with:
     {{- if not $isRoot }}
       working_directory: {{ $ctxPath }}
     {{- end }}
-      version: {{`${{ needs.release-please.outputs.tag_name }}`}}
+      version: {{ $tag }}
       dart_define_secret_names: {{`${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}`}}
     secrets: inherit
 {{- end }}
