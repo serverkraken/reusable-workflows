@@ -77,8 +77,9 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	manifestComponents := hasManifest && man.Components != nil
 	var components []domain.Component
-	if hasManifest && man.Components != nil {
+	if manifestComponents {
 		components, err = componentsFromManifest(req.RepoPath, man)
 	} else {
 		components, err = detectComponents(req.RepoPath)
@@ -90,7 +91,10 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	if hasManifest && man.Workflows != nil && man.Workflows.E2E != nil {
 		declared = append(declared, "e2e.yml")
 	}
-	gitops := classifyGitOps(req.RepoPath, components)
+	var gitops *domain.GitOpsSignal
+	if !manifestComponents {
+		gitops = classifyGitOps(req.RepoPath, components)
+	}
 	if gitops != nil {
 		components[0].PrimaryLanguage = "gitops"
 		components[0].ReleasePleaseType = "simple"
@@ -131,7 +135,7 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 			profile.Consumers = append(profile.Consumers, domain.GitOpsConsumer{Repo: c.Repo, Scope: c.Scope, Mode: c.Mode})
 		}
 	}
-	profile.Warnings = append(profile.Warnings, unsupportedLanguageWarnings(profile.Components, hasManifest)...)
+	profile.Warnings = append(profile.Warnings, unsupportedLanguageWarnings(profile.Components, manifestComponents)...)
 	profile.Warnings = append(profile.Warnings, noReleaseEligibleWarnings(profile.Components)...)
 	if !hasManifest {
 		profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(req.RepoPath, profile.Components)...)
@@ -233,8 +237,8 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 		if mc.Language != "" {
 			langs = append([]string{mc.Language}, without(langs, mc.Language)...)
 		}
-		if mc.Type == "helm" && !containsString(langs, "helm") {
-			langs = append([]string{"helm"}, langs...)
+		if mc.Type == "helm" {
+			langs = append([]string{"helm"}, without(langs, "helm")...)
 		}
 		if langs == nil {
 			langs = []string{}
@@ -251,29 +255,26 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 			}
 			applyDockerfileSpec(&dockerfiles[0], mc.Context, mc.Platforms, mc.Release)
 		}
+		seen := map[string]bool{}
+		for _, d := range dockerfiles {
+			seen[d.Path] = true
+		}
 		for _, spec := range mc.Dockerfiles {
 			full := filepath.Join(repo, spec.Path)
 			if !has(filepath.Dir(full), filepath.Base(full)) {
 				return nil, fmt.Errorf("%s: line %d: %s: no such file", manifest.FileName, spec.Line, spec.Path)
 			}
 			rel, err := filepath.Rel(mc.Path, spec.Path)
-			if err != nil || strings.HasPrefix(rel, "..") {
+			if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
 				return nil, fmt.Errorf("%s: line %d: %s is outside component %s", manifest.FileName, spec.Line, spec.Path, mc.Path)
 			}
-			name := filepath.Base(spec.Path)
-			image, source := spec.Image, "manifest"
-			if image == "" {
-				if image = readImageOverride(full); image != "" {
-					source = "override"
-				} else {
-					image, source = deriveImageName(name, filepath.ToSlash(filepath.Dir(spec.Path))), "derived"
-				}
+			relSlash := filepath.ToSlash(rel)
+			if seen[relSlash] {
+				return nil, fmt.Errorf("%s: line %d: %s is already inventoried from the component directory; use the component-level image/context/platforms/release shorthand instead", manifest.FileName, spec.Line, spec.Path)
 			}
-			eligible := name == "Dockerfile" || name == "Containerfile"
-			if o := readReleaseOverride(full); o != nil {
-				eligible = *o
-			}
-			df := domain.Dockerfile{Path: filepath.ToSlash(rel), ImageName: image, ImageNameSource: source, ReleaseEligible: eligible}
+			seen[relSlash] = true
+			df := resolveDockerfile(full, filepath.Base(spec.Path), filepath.ToSlash(filepath.Dir(spec.Path)), spec.Image)
+			df.Path = relSlash
 			applyDockerfileSpec(&df, spec.Context, spec.Platforms, spec.Release)
 			dockerfiles = append(dockerfiles, df)
 		}
@@ -342,9 +343,15 @@ func sharedContext(componentPath string, dfs []domain.Dockerfile) (string, bool)
 // chartVersion reads `version:` from a Chart.yaml; empty when absent.
 func chartVersion(path string) string {
 	for _, l := range strings.Split(mustRead(path), "\n") {
-		if strings.HasPrefix(l, "version:") {
-			return strings.Trim(strings.TrimSpace(strings.TrimPrefix(l, "version:")), `"'`)
+		l = strings.TrimSpace(l)
+		if !strings.HasPrefix(l, "version:") {
+			continue
 		}
+		v := strings.TrimSpace(strings.TrimPrefix(l, "version:"))
+		if i := strings.Index(v, " #"); i >= 0 {
+			v = strings.TrimSpace(v[:i])
+		}
+		return strings.Trim(v, `"'`)
 	}
 	return ""
 }
@@ -357,15 +364,6 @@ func without(list []string, v string) []string {
 		}
 	}
 	return out
-}
-
-func containsString(list []string, v string) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }
 
 func explicitMonorepoPaths(repo string) []string {
@@ -555,24 +553,34 @@ func inventoryDockerfiles(repo, componentPath, imageOverride string) []domain.Do
 	out := make([]domain.Dockerfile, 0, len(names))
 	for _, name := range names {
 		full := filepath.Join(dir, name)
-		var image, source string
-		if imageOverride != "" {
-			image, source = imageOverride, "manifest"
-		} else {
-			image = readImageOverride(full)
-			source = "override"
-			if image == "" {
-				image = deriveImageName(name, componentPath)
-				source = "derived"
-			}
-		}
-		eligible := name == "Dockerfile" || name == "Containerfile"
-		if override := readReleaseOverride(full); override != nil {
-			eligible = *override
-		}
-		out = append(out, domain.Dockerfile{Path: name, ImageName: image, ImageNameSource: source, ReleaseEligible: eligible})
+		out = append(out, resolveDockerfile(full, name, componentPath, imageOverride))
 	}
 	return out
+}
+
+// resolveDockerfile resolves the image name, its source, and release
+// eligibility for a single Dockerfile file. Shared by the component-directory
+// inventory (inventoryDockerfiles) and manifest-attached dockerfile specs
+// (componentsFromManifest): imageOverride wins when set (source "manifest"),
+// else the `# onboard:image=` header (source "override"), else a derived
+// name (source "derived"). derivePath feeds deriveImageName's component-path
+// segment. The returned Path is name; callers needing a different Path (e.g.
+// component-relative for attached specs) overwrite it afterwards.
+func resolveDockerfile(full, name, derivePath, imageOverride string) domain.Dockerfile {
+	image, source := imageOverride, "manifest"
+	if image == "" {
+		image = readImageOverride(full)
+		source = "override"
+		if image == "" {
+			image = deriveImageName(name, derivePath)
+			source = "derived"
+		}
+	}
+	eligible := name == "Dockerfile" || name == "Containerfile"
+	if override := readReleaseOverride(full); override != nil {
+		eligible = *override
+	}
+	return domain.Dockerfile{Path: name, ImageName: image, ImageNameSource: source, ReleaseEligible: eligible}
 }
 
 func readImageOverride(file string) string {
@@ -798,12 +806,12 @@ func classifyLegacy(path, content string) domain.LegacyCI {
 	return domain.LegacyCI{Path: path, Summary: "unrecognized legacy workflow; manual review needed", ReplacedBy: []string{}}
 }
 
-func unsupportedLanguageWarnings(components []domain.Component, manifest bool) []domain.Warning {
+func unsupportedLanguageWarnings(components []domain.Component, fromManifest bool) []domain.Warning {
 	seen := map[string]bool{}
 	re := regexp.MustCompile("^(" + warningExemptLanguages + ")$")
 	var out []domain.Warning
 	for _, c := range components {
-		if manifest && c.PrimaryLanguage == "generic" && len(c.Dockerfiles) > 0 {
+		if fromManifest && c.PrimaryLanguage == "generic" && len(c.Dockerfiles) > 0 {
 			continue // image-only component declared by the manifest
 		}
 		if seen[c.PrimaryLanguage] || re.MatchString(c.PrimaryLanguage) {

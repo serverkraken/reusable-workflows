@@ -585,6 +585,8 @@ func TestManifestErrors(t *testing.T) {
 		{"mixed contexts", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: a/Dockerfile\n        context: a\n      - path: b/Dockerfile\n", map[string]string{"go.mod": "module x\n", "a/Dockerfile": "FROM scratch\n", "b/Dockerfile": "FROM scratch\n"}, "must share one build context"},
 		{"missing component dir", "schema: 1\ncomponents:\n  - path: nope\n", nil, "component path nope does not exist"},
 		{"schema error surfaces", "schema: 1\nfoo: 1\n", nil, "line 2: unknown key"},
+		{"dockerfile already inventoried", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: Dockerfile\n", map[string]string{"go.mod": "module x\n", "Dockerfile": "FROM scratch\n"}, "already inventoried from the component directory"},
+		{"dockerfile outside component", "schema: 1\ncomponents:\n  - path: svc\n    dockerfiles:\n      - path: other/Dockerfile\n", map[string]string{"svc/go.mod": "module x\n", "other/Dockerfile": "FROM scratch\n"}, "is outside component"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -593,7 +595,30 @@ func TestManifestErrors(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err=%v want %q", err, tt.want)
 			}
+			if !strings.HasPrefix(err.Error(), ".github/onboard.yml: line ") {
+				t.Fatalf("err=%v missing manifest line-number prefix", err)
+			}
 		})
+	}
+}
+
+// TestManifestTypeHelmOverridesLanguage guards against type: helm being a
+// no-op when another language marker (go.mod) already sorts ahead of helm
+// in languagesAt's output: the manifest's type: helm must still win.
+func TestManifestTypeHelmOverridesLanguage(t *testing.T) {
+	tmp := t.TempDir()
+	mustMkdir(t, filepath.Join(tmp, ".github"))
+	mustMkdir(t, filepath.Join(tmp, "chart"))
+	mustWrite(t, filepath.Join(tmp, ".github", "onboard.yml"), "schema: 1\ncomponents:\n  - path: chart\n    type: helm\n")
+	mustWrite(t, filepath.Join(tmp, "chart", "go.mod"), "module chart\n")
+	mustWrite(t, filepath.Join(tmp, "chart", "Chart.yaml"), "apiVersion: v2\nname: chart\nversion: 1.2.3\ntype: application\n")
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: tmp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := res.Profile.Components[0]
+	if c.PrimaryLanguage != "helm" || c.ReleasePleaseType != "helm" || c.Version != "1.2.3" {
+		t.Fatalf("component=%+v", c)
 	}
 }
 
