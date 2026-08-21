@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/serverkraken/reusable-workflows/internal/domain"
+	"github.com/serverkraken/reusable-workflows/internal/manifest"
 	"github.com/serverkraken/reusable-workflows/internal/ports"
 )
 
@@ -72,9 +73,22 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 
-	components, err := detectComponents(req.RepoPath)
+	man, manifestSHA, hasManifest, err := manifest.Load(req.RepoPath)
 	if err != nil {
 		return Result{}, err
+	}
+	var components []domain.Component
+	if hasManifest && man.Components != nil {
+		components, err = componentsFromManifest(req.RepoPath, man)
+	} else {
+		components, err = detectComponents(req.RepoPath)
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	var declared []string
+	if hasManifest && man.Workflows != nil && man.Workflows.E2E != nil {
+		declared = append(declared, "e2e.yml")
 	}
 	gitops := classifyGitOps(req.RepoPath, components)
 	if gitops != nil {
@@ -82,7 +96,7 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		components[0].ReleasePleaseType = "simple"
 		components[0].Role = "gitops"
 	}
-	legacy, err := detectLegacyCI(req.RepoPath)
+	legacy, err := detectLegacyCI(req.RepoPath, declared)
 	if err != nil {
 		return Result{}, err
 	}
@@ -105,9 +119,23 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		Warnings:       []domain.Warning{},
 		GitOps:         gitops,
 	}
-	profile.Warnings = append(profile.Warnings, unsupportedLanguageWarnings(profile.Components)...)
+	if hasManifest {
+		profile.ManifestSHA256 = manifestSHA
+		if man.Workflows != nil && man.Workflows.E2E != nil {
+			profile.Workflows = &domain.WorkflowsSpec{E2E: &domain.E2ESpec{Script: man.Workflows.E2E.Script, Schedule: man.Workflows.E2E.Schedule}}
+		}
+		if man.Release != nil {
+			profile.Release = &domain.ReleaseSpec{DispatchTrigger: man.Release.DispatchTrigger}
+		}
+		for _, c := range man.GitOps {
+			profile.Consumers = append(profile.Consumers, domain.GitOpsConsumer{Repo: c.Repo, Scope: c.Scope, Mode: c.Mode})
+		}
+	}
+	profile.Warnings = append(profile.Warnings, unsupportedLanguageWarnings(profile.Components, hasManifest)...)
 	profile.Warnings = append(profile.Warnings, noReleaseEligibleWarnings(profile.Components)...)
-	profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(req.RepoPath, profile.Components)...)
+	if !hasManifest {
+		profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(req.RepoPath, profile.Components)...)
+	}
 
 	legacyLanguage, err := legacyLanguage(req.RepoPath, req.LanguageOverride)
 	if err != nil {
@@ -168,7 +196,7 @@ func detectComponents(repo string) ([]domain.Component, error) {
 		if len(langs) > 0 {
 			primary = langs[0]
 		}
-		dockerfiles := inventoryDockerfiles(repo, p)
+		dockerfiles := inventoryDockerfiles(repo, p, "")
 		if dockerfiles == nil {
 			dockerfiles = []domain.Dockerfile{}
 		}
@@ -184,6 +212,160 @@ func detectComponents(repo string) ([]domain.Component, error) {
 		})
 	}
 	return components, nil
+}
+
+// componentsFromManifest builds the component list from an authoritative
+// manifest. Per component, anything the manifest leaves out is detected the
+// same way detectComponents would (languages, Dockerfiles in the component
+// directory, release signals, cgo).
+func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Component, error) {
+	paths := map[string]bool{}
+	for _, mc := range m.Components {
+		paths[mc.Path] = true
+	}
+	out := make([]domain.Component, 0, len(m.Components))
+	for _, mc := range m.Components {
+		dir := filepath.Join(repo, mc.Path)
+		if !dirExists(dir) {
+			return nil, fmt.Errorf("%s: line %d: component path %s does not exist", manifest.FileName, mc.Line, mc.Path)
+		}
+		langs := languagesAt(dir)
+		if mc.Language != "" {
+			langs = append([]string{mc.Language}, without(langs, mc.Language)...)
+		}
+		if mc.Type == "helm" && !containsString(langs, "helm") {
+			langs = append([]string{"helm"}, langs...)
+		}
+		if langs == nil {
+			langs = []string{}
+		}
+		primary := "generic"
+		if len(langs) > 0 {
+			primary = langs[0]
+		}
+
+		dockerfiles := inventoryDockerfiles(repo, mc.Path, mc.Image)
+		if mc.Image != "" || mc.Context != "" || mc.Platforms != "" || mc.Release != nil {
+			if len(dockerfiles) != 1 {
+				return nil, fmt.Errorf("%s: line %d: component %s declares image/context/platforms/release but has %d Dockerfiles; use dockerfiles[] instead", manifest.FileName, mc.Line, mc.Path, len(dockerfiles))
+			}
+			applyDockerfileSpec(&dockerfiles[0], mc.Context, mc.Platforms, mc.Release)
+		}
+		for _, spec := range mc.Dockerfiles {
+			full := filepath.Join(repo, spec.Path)
+			if !has(filepath.Dir(full), filepath.Base(full)) {
+				return nil, fmt.Errorf("%s: line %d: %s: no such file", manifest.FileName, spec.Line, spec.Path)
+			}
+			rel, err := filepath.Rel(mc.Path, spec.Path)
+			if err != nil || strings.HasPrefix(rel, "..") {
+				return nil, fmt.Errorf("%s: line %d: %s is outside component %s", manifest.FileName, spec.Line, spec.Path, mc.Path)
+			}
+			name := filepath.Base(spec.Path)
+			image, source := spec.Image, "manifest"
+			if image == "" {
+				if image = readImageOverride(full); image != "" {
+					source = "override"
+				} else {
+					image, source = deriveImageName(name, filepath.ToSlash(filepath.Dir(spec.Path))), "derived"
+				}
+			}
+			eligible := name == "Dockerfile" || name == "Containerfile"
+			if o := readReleaseOverride(full); o != nil {
+				eligible = *o
+			}
+			df := domain.Dockerfile{Path: filepath.ToSlash(rel), ImageName: image, ImageNameSource: source, ReleaseEligible: eligible}
+			applyDockerfileSpec(&df, spec.Context, spec.Platforms, spec.Release)
+			dockerfiles = append(dockerfiles, df)
+		}
+		sort.Slice(dockerfiles, func(i, j int) bool { return dockerfiles[i].Path < dockerfiles[j].Path })
+		if ctx, ok := sharedContext(mc.Path, dockerfiles); !ok {
+			return nil, fmt.Errorf("%s: line %d: Dockerfiles of component %s must share one build context (docker-build-multi has a single context), got %s", manifest.FileName, mc.Line, mc.Path, ctx)
+		}
+
+		signals := releaseSignals(repo, mc.Path)
+		if signals.ChartYAML != nil && paths[filepath.ToSlash(filepath.Dir(*signals.ChartYAML))] {
+			signals.ChartYAML = nil // the chart is its own component
+		}
+		c := domain.Component{
+			Path:              mc.Path,
+			Languages:         langs,
+			PrimaryLanguage:   primary,
+			ReleasePleaseType: releasePleaseType(primary),
+			Role:              role(repo, mc.Path, dockerfiles),
+			Dockerfiles:       dockerfiles,
+			ReleaseSignals:    signals,
+			CGO:               detectCGO(repo, mc.Path, primary),
+			Unittest:          mc.Unittest,
+		}
+		if primary == "helm" {
+			c.Version = chartVersion(filepath.Join(dir, "Chart.yaml"))
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+func applyDockerfileSpec(df *domain.Dockerfile, ctx, platforms string, release *bool) {
+	if ctx != "" {
+		df.Context = ctx
+	}
+	if platforms != "" {
+		df.Platforms = platforms
+	}
+	if release != nil {
+		df.ReleaseEligible = *release
+	}
+}
+
+// sharedContext returns the effective build context of a component's
+// Dockerfiles and whether they all agree. Empty Context means the component
+// path.
+func sharedContext(componentPath string, dfs []domain.Dockerfile) (string, bool) {
+	effective := func(d domain.Dockerfile) string {
+		if d.Context != "" {
+			return d.Context
+		}
+		return componentPath
+	}
+	if len(dfs) == 0 {
+		return componentPath, true
+	}
+	first := effective(dfs[0])
+	for _, d := range dfs[1:] {
+		if effective(d) != first {
+			return first + " vs " + effective(d), false
+		}
+	}
+	return first, true
+}
+
+// chartVersion reads `version:` from a Chart.yaml; empty when absent.
+func chartVersion(path string) string {
+	for _, l := range strings.Split(mustRead(path), "\n") {
+		if strings.HasPrefix(l, "version:") {
+			return strings.Trim(strings.TrimSpace(strings.TrimPrefix(l, "version:")), `"'`)
+		}
+	}
+	return ""
+}
+
+func without(list []string, v string) []string {
+	var out []string
+	for _, x := range list {
+		if x != v {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func containsString(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 func explicitMonorepoPaths(repo string) []string {
@@ -353,7 +535,7 @@ func isFlutter(dir string) bool {
 	return has(dir, "pubspec.yaml") && strings.Contains(mustRead(filepath.Join(dir, "pubspec.yaml")), "sdk: flutter")
 }
 
-func inventoryDockerfiles(repo, componentPath string) []domain.Dockerfile {
+func inventoryDockerfiles(repo, componentPath, imageOverride string) []domain.Dockerfile {
 	dir := filepath.Join(repo, componentPath)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -373,11 +555,16 @@ func inventoryDockerfiles(repo, componentPath string) []domain.Dockerfile {
 	out := make([]domain.Dockerfile, 0, len(names))
 	for _, name := range names {
 		full := filepath.Join(dir, name)
-		image := readImageOverride(full)
-		source := "override"
-		if image == "" {
-			image = deriveImageName(name, componentPath)
-			source = "derived"
+		var image, source string
+		if imageOverride != "" {
+			image, source = imageOverride, "manifest"
+		} else {
+			image = readImageOverride(full)
+			source = "override"
+			if image == "" {
+				image = deriveImageName(name, componentPath)
+				source = "derived"
+			}
 		}
 		eligible := name == "Dockerfile" || name == "Containerfile"
 		if override := readReleaseOverride(full); override != nil {
@@ -558,7 +745,7 @@ func gitOpsManifestPaths(repo string) []string {
 	return out
 }
 
-func detectLegacyCI(repo string) ([]domain.LegacyCI, error) {
+func detectLegacyCI(repo string, declared []string) ([]domain.LegacyCI, error) {
 	dir := filepath.Join(repo, ".github", "workflows")
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -568,6 +755,9 @@ func detectLegacyCI(repo string) ([]domain.LegacyCI, error) {
 		return nil, err
 	}
 	owned := map[string]bool{"ci.yml": true, "release.yml": true, "prerelease.yml": true, "prerelease-on-push.yml": true, "cleanup.yml": true}
+	for _, d := range declared {
+		owned[d] = true
+	}
 	var out []domain.LegacyCI
 	for _, e := range entries {
 		if e.IsDir() || owned[e.Name()] || (!strings.HasSuffix(e.Name(), ".yml") && !strings.HasSuffix(e.Name(), ".yaml")) {
@@ -608,11 +798,14 @@ func classifyLegacy(path, content string) domain.LegacyCI {
 	return domain.LegacyCI{Path: path, Summary: "unrecognized legacy workflow; manual review needed", ReplacedBy: []string{}}
 }
 
-func unsupportedLanguageWarnings(components []domain.Component) []domain.Warning {
+func unsupportedLanguageWarnings(components []domain.Component, manifest bool) []domain.Warning {
 	seen := map[string]bool{}
 	re := regexp.MustCompile("^(" + warningExemptLanguages + ")$")
 	var out []domain.Warning
 	for _, c := range components {
+		if manifest && c.PrimaryLanguage == "generic" && len(c.Dockerfiles) > 0 {
+			continue // image-only component declared by the manifest
+		}
 		if seen[c.PrimaryLanguage] || re.MatchString(c.PrimaryLanguage) {
 			continue
 		}

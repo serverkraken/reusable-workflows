@@ -1,0 +1,7 @@
+suite: cm
+templates: [configmap.yaml]
+tests:
+  - it: exists
+    asserts:
+      - isKind:
+          of: ConfigMap

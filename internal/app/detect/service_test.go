@@ -401,7 +401,7 @@ func TestLegacyCIAllClassifiers(t *testing.T) {
 	for _, c := range cases {
 		mustWrite(t, filepath.Join(dir, c.name), c.content)
 	}
-	entries, err := detectLegacyCI(tmp)
+	entries, err := detectLegacyCI(tmp, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,6 +514,87 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestManifestDrivesComponents(t *testing.T) {
+	p := detectFixture(t, "go-root-multi-image").Profile
+	if len(p.ManifestSHA256) != 64 || !p.Monorepo || len(p.Components) != 4 {
+		t.Fatalf("profile=%+v", p)
+	}
+	want := []string{".", "images/api", "images/worker", "charts/demo"}
+	if got := componentPaths(p.Components); !reflect.DeepEqual(got, want) {
+		t.Fatalf("paths=%v want %v", got, want)
+	}
+	root := p.Components[0]
+	if root.PrimaryLanguage != "go" || len(root.Dockerfiles) != 1 {
+		t.Fatalf("root=%+v", root)
+	}
+	if d := root.Dockerfiles[0]; d.Path != "images/tools/Dockerfile" || d.ImageName != "acme/multi/tools" || d.ImageNameSource != "manifest" || d.Context != "" || !d.ReleaseEligible {
+		t.Fatalf("tools=%+v", d)
+	}
+	if root.ReleaseSignals.ChartYAML != nil {
+		t.Fatalf("chart owned by charts/demo must not be a root signal: %+v", root.ReleaseSignals)
+	}
+	api := p.Components[1]
+	if api.PrimaryLanguage != "generic" || len(api.Dockerfiles) != 1 || api.Dockerfiles[0].Path != "Dockerfile" || api.Dockerfiles[0].ImageName != "acme/multi/api" || api.Dockerfiles[0].Context != "." {
+		t.Fatalf("api=%+v", api)
+	}
+	if w := p.Components[2]; w.Dockerfiles[0].Platforms != "linux/amd64" || w.Dockerfiles[0].Context != "." {
+		t.Fatalf("worker=%+v", w)
+	}
+	chart := p.Components[3]
+	if chart.PrimaryLanguage != "helm" || chart.ReleasePleaseType != "helm" || chart.Role != "helm-app" || !chart.Unittest || chart.Version != "0.3.0" {
+		t.Fatalf("chart=%+v", chart)
+	}
+	if p.Workflows == nil || p.Workflows.E2E == nil || p.Workflows.E2E.Script != "test/e2e/run.sh" || p.Release == nil || !p.Release.DispatchTrigger {
+		t.Fatalf("workflows=%+v release=%+v", p.Workflows, p.Release)
+	}
+	if len(p.Consumers) != 2 || p.Consumers[0].Repo != "acme/gitops-prod" || p.Consumers[1].Mode != "renovate" {
+		t.Fatalf("consumers=%+v", p.Consumers)
+	}
+	for _, l := range p.LegacyCI {
+		if l.Path == ".github/workflows/e2e.yml" {
+			t.Fatalf("manifest-declared e2e.yml reported as legacy: %+v", l)
+		}
+	}
+	for _, w := range p.Warnings {
+		if w.Code == "subdir_dockerfiles_unassigned" || w.Code == "no_lint_test_atom" {
+			t.Fatalf("unexpected warning %+v", w)
+		}
+	}
+}
+
+func TestManifestErrors(t *testing.T) {
+	write := func(t *testing.T, manifest string, files map[string]string) string {
+		tmp := t.TempDir()
+		mustMkdir(t, filepath.Join(tmp, ".github"))
+		mustWrite(t, filepath.Join(tmp, ".github", "onboard.yml"), manifest)
+		for p, c := range files {
+			mustMkdir(t, filepath.Dir(filepath.Join(tmp, p)))
+			mustWrite(t, filepath.Join(tmp, p), c)
+		}
+		return tmp
+	}
+	tests := []struct {
+		name, manifest string
+		files          map[string]string
+		want           string
+	}{
+		{"missing attached dockerfile", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: images/x/Dockerfile\n", map[string]string{"go.mod": "module x\n"}, "images/x/Dockerfile: no such file"},
+		{"shorthand without dockerfile", "schema: 1\ncomponents:\n  - path: svc\n    image: a/b\n", map[string]string{"svc/go.mod": "module x\n"}, "but has 0 Dockerfiles"},
+		{"mixed contexts", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: a/Dockerfile\n        context: a\n      - path: b/Dockerfile\n", map[string]string{"go.mod": "module x\n", "a/Dockerfile": "FROM scratch\n", "b/Dockerfile": "FROM scratch\n"}, "must share one build context"},
+		{"missing component dir", "schema: 1\ncomponents:\n  - path: nope\n", nil, "component path nope does not exist"},
+		{"schema error surfaces", "schema: 1\nfoo: 1\n", nil, "line 2: unknown key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := write(t, tt.manifest, tt.files)
+			_, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err=%v want %q", err, tt.want)
+			}
+		})
+	}
 }
 
 func TestProfileJSONHasNoNewKeysWithoutManifest(t *testing.T) {
