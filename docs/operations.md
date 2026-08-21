@@ -641,6 +641,14 @@ Semantics:
   (`internal/app/detect/service.go`, `componentsFromManifest`), so the
   chart renders exactly one `helm-publish` job — from its own component —
   instead of a duplicate under the parent.
+- **Chart components publish to the org-wide OCI namespace
+  `ghcr.io/<owner>/charts`** (the chart name from `Chart.yaml` becomes the
+  final segment, e.g. `ghcr.io/serverkraken/charts/mailstack`). This is the
+  path mailstack already published to by hand; it is intentionally *not*
+  `ghcr.io/<owner>/<repo>/charts`. The legacy block for a chart that is only
+  a *signal* on a non-chart component (`release_signals.chart_yaml`, no
+  manifest) keeps its pre-v4.14 `ghcr.io/<owner>/<repo>/charts` target for
+  byte identity.
 - **Chart-component CI and publish jobs are a manifest feature.** The
   `charts_dir` form of `lint-helm`, the `helm-publish` dry-run in `ci.yml`
   and the per-component `helm-publish` job in `release.yml` are rendered
