@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.14.0](https://github.com/serverkraken/reusable-workflows/compare/v4.13.2...v4.14.0) (2026-08-21)
+
+
+### Features
+
+* **onboard:** adopter manifest and per-component releases ([#223](https://github.com/serverkraken/reusable-workflows/issues/223)) ([c7140f6](https://github.com/serverkraken/reusable-workflows/commit/c7140f653a19658ca3c12498e0e38894fa12fb1c))
+
+
+### Documentation
+
+* **operations:** § 11 accuracy ([c7140f6](https://github.com/serverkraken/reusable-workflows/commit/c7140f653a19658ca3c12498e0e38894fa12fb1c))
+
 ## [4.13.2](https://github.com/serverkraken/reusable-workflows/compare/v4.13.1...v4.13.2) (2026-08-20)
 
 
