@@ -113,7 +113,7 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@{{ $pin }}
     with:
       working_directory: .
-      charts_dir: {{ path.Dir $c.path }}
+      charts_dir: {{ $c.path }}
     {{- if index $c "unittest" }}
       unittest: true
     {{- end }}

@@ -7,7 +7,6 @@ components:
         image: acme/multi/tools
   - path: images/api
     image: acme/multi/api
-    context: .
   - path: images/worker
     image: acme/multi/worker
     context: .

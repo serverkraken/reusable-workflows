@@ -90,10 +90,24 @@ jobs:
       - name: ct lint
         id: ct_lint
         working-directory: ${{ inputs.working_directory }}
+        env:
+          CHARTS_DIR: ${{ inputs.charts_dir }}
+          TARGET_BRANCH: ${{ github.base_ref || 'main' }}
         run: |
-          ct lint --all --validate-maintainers=false \
-            --chart-dirs="${{ inputs.charts_dir }}" \
-            --target-branch="${{ github.base_ref || 'main' }}"
+          set -euo pipefail
+          # If charts_dir is itself a chart, lint just that chart; else let ct
+          # discover every chart under charts_dir. Mirrors the helm-lint /
+          # helm-unittest branch above — a chart-shaped charts_dir must never
+          # be treated as "a directory containing charts" (that would make ct
+          # sweep in sibling charts under the same parent directory).
+          if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
+            ct lint --charts "$CHARTS_DIR" --validate-maintainers=false \
+              --target-branch="$TARGET_BRANCH"
+          else
+            ct lint --all --validate-maintainers=false \
+              --chart-dirs="$CHARTS_DIR" \
+              --target-branch="$TARGET_BRANCH"
+          fi
 
       # Third-party plugin on a long-lived runner: pinned release into a
       # job-private plugin dir, so neither a plugin left behind by an earlier

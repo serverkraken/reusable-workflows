@@ -1,2 +1,2 @@
 FROM scratch
-COPY images/api/entrypoint.sh /
+COPY entrypoint.sh /

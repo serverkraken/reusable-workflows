@@ -34,7 +34,7 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@v4
     with:
       working_directory: .
-      charts_dir: charts
+      charts_dir: charts/web
     secrets: inherit
   helm-publish-dryrun-charts-web:
     uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@v4

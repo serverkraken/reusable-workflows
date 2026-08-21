@@ -45,6 +45,7 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
+      context: images/api
       dockerfile: images/api/Dockerfile
       image_name: acme/multi/api
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}

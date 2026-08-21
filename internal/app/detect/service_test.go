@@ -536,7 +536,7 @@ func TestManifestDrivesComponents(t *testing.T) {
 		t.Fatalf("chart owned by charts/demo must not be a root signal: %+v", root.ReleaseSignals)
 	}
 	api := p.Components[1]
-	if api.PrimaryLanguage != "generic" || len(api.Dockerfiles) != 1 || api.Dockerfiles[0].Path != "Dockerfile" || api.Dockerfiles[0].ImageName != "acme/multi/api" || api.Dockerfiles[0].Context != "." {
+	if api.PrimaryLanguage != "generic" || len(api.Dockerfiles) != 1 || api.Dockerfiles[0].Path != "Dockerfile" || api.Dockerfiles[0].ImageName != "acme/multi/api" || api.Dockerfiles[0].Context != "" {
 		t.Fatalf("api=%+v", api)
 	}
 	if w := p.Components[2]; w.Dockerfiles[0].Platforms != "linux/amd64" || w.Dockerfiles[0].Context != "." {
