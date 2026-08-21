@@ -724,6 +724,22 @@ package-name prefix:
   `Chart.yaml`'s `version` directly); the chart's package name and prefix
   follow the same directory-basename rule as any sub-directory component.
 
+**What the `helm` release strategy touches.** On each release of the chart
+package, release-please rewrites `version:` in `Chart.yaml` through the YAML
+document API — comments and formatting survive — and **never touches
+`appVersion`**. That is correct for the decoupled model this catalog uses:
+`appVersion` carries no meaning, because image tags live in `values.yaml`
+and are bumped by Renovate, not by the chart's own release. The chart's
+current `version` is seeded into `.release-please-manifest.json` at
+onboarding, so the first release continues from where the chart already is.
+
+Adopters migrating from a **root package with `Chart.yaml` in
+`extra-files`** — which only rewrote the `appVersion` marker line — should
+drop that `extra-files` entry (and the `x-release-please-version` marker
+comment in `Chart.yaml`) when the chart becomes its own component. Leaving
+it in place makes the root package keep editing a file the chart package now
+owns.
+
 **The root package excludes every sub-component path.** Release-please
 feeds each package the commits that touch its path — and the root package's
 path is `.`, which matches *every* commit in the repo. Without a guard a
