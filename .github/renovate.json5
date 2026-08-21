@@ -26,6 +26,11 @@
         'security',
       ],
     },
+    {
+      description: 'helm-unittest >=1.1.0 uses plugin.yaml platformHooks, rejected by Helm v3 (lint-helm default v3.16.3)',
+      matchDepNames: ['helm-unittest/helm-unittest'],
+      allowedVersions: '<1.1.0',
+    },
   ],
   customManagers: [
     {
@@ -104,6 +109,15 @@
       ],
       datasourceTemplate: 'github-releases',
       depNameTemplate: 'helm/helm',
+    },
+    {
+      customType: 'regex',
+      fileMatch: ['^\\.github/workflows/lint-helm\\.ya?ml$'],
+      matchStrings: [
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*HELM_UNITTEST_VERSION:\\s*[\'"]?(?<currentValue>v\\S+?)[\'"]?\\s',
+      ],
+      datasourceTemplate: 'github-releases',
+      depNameTemplate: 'helm-unittest/helm-unittest',
     },
   ],
 }

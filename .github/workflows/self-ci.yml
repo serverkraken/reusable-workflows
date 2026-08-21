@@ -55,6 +55,14 @@ jobs:
       working_directory: tests/fixtures
       charts_dir: helm-only
 
+  lint-helm-unittest-happy:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures
+      charts_dir: helm-unittest
+      unittest: true
+
   # ----- lint-python: 3 happy paths (poetry/uv/pip) -----
   lint-python-poetry-happy:
     uses: ./.github/workflows/lint-python.yml
@@ -468,6 +476,7 @@ jobs:
       - lint-go-self
       - test-go-self
       - lint-helm-happy
+      - lint-helm-unittest-happy
       - lint-python-poetry-happy
       - lint-python-uv-happy
       - lint-python-pip-happy

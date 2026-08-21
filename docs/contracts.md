@@ -180,6 +180,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | input | `charts_dir`        | string  | no       | `'charts'`                  | Directory containing one or more charts (relative to `working_directory`). |
 | input | `helm_version`      | string  | no       | `'v3.16.3'`                 | Helm CLI version. |
 | input | `ct_version`        | string  | no       | `'v3.11.0'`                 | chart-testing (`ct`) version. |
+| input | `unittest`          | boolean | no       | `false`                     | Run helm-unittest (`tests/*_test.yaml` in each chart) after linting. |
 
 ---
 
