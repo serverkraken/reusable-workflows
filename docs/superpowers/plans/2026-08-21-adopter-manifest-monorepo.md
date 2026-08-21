@@ -675,6 +675,9 @@ func (p *parser) mapping(indent int) (*Node, error) {
 				return nil, fmt.Errorf("line %d: key %q has no value", l.no, key)
 			}
 			child, err = p.block(p.lines[p.pos].indent)
+			if err == nil {
+				child.Line = l.no // a block value is reported at its key's line
+			}
 		} else {
 			child, err = scalarOrFlow(rest, l.no)
 		}
@@ -1750,7 +1753,7 @@ func TestManifestErrors(t *testing.T) {
 		want           string
 	}{
 		{"missing attached dockerfile", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: images/x/Dockerfile\n", map[string]string{"go.mod": "module x\n"}, "images/x/Dockerfile: no such file"},
-		{"shorthand without dockerfile", "schema: 1\ncomponents:\n  - path: svc\n    image: a/b\n", map[string]string{"svc/go.mod": "module x\n"}, "declares image but has 0 Dockerfiles"},
+		{"shorthand without dockerfile", "schema: 1\ncomponents:\n  - path: svc\n    image: a/b\n", map[string]string{"svc/go.mod": "module x\n"}, "but has 0 Dockerfiles"},
 		{"mixed contexts", "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: a/Dockerfile\n        context: a\n      - path: b/Dockerfile\n", map[string]string{"go.mod": "module x\n", "a/Dockerfile": "FROM scratch\n", "b/Dockerfile": "FROM scratch\n"}, "must share one build context"},
 		{"missing component dir", "schema: 1\ncomponents:\n  - path: nope\n", nil, "component path nope does not exist"},
 		{"schema error surfaces", "schema: 1\nfoo: 1\n", nil, "line 2: unknown key"},
@@ -1821,6 +1824,19 @@ change `legacy, err := detectLegacyCI(req.RepoPath)` to `detectLegacyCI(req.Repo
 	}
 ```
 and make the Task-6 warning conditional: `if !hasManifest { profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(...)...) }`.
+
+Image-only components (a manifest component with Dockerfiles but no language marker, like `images/api`) are build units, not code — they must not trigger `no_lint_test_atom`. Change the `unsupportedLanguageWarnings` call to pass `hasManifest` and skip such components:
+
+```go
+func unsupportedLanguageWarnings(components []domain.Component, manifest bool) []domain.Warning {
+	…
+	for _, c := range components {
+		if manifest && c.PrimaryLanguage == "generic" && len(c.Dockerfiles) > 0 {
+			continue // image-only component declared by the manifest
+		}
+		if seen[c.PrimaryLanguage] || re.MatchString(c.PrimaryLanguage) {
+```
+(non-manifest detection is unchanged: fallback Dockerfile monorepos keep their warning).
 
 `detectLegacyCI` signature → `func detectLegacyCI(repo string, declared []string) ([]domain.LegacyCI, error)`; after the `owned` map literal add `for _, d := range declared { owned[d] = true }`.
 
@@ -2689,7 +2705,7 @@ git commit -m "feat(templates): e2e.yml skeleton for manifest-declared kind e2e 
 ```bash
 go build -o /tmp/skw ./cmd/sk-workflows
 OUT=$(mktemp -d)
-/tmp/skw preview -catalog-path . -repo-path tests/fixtures/onboard/go-root-multi-image -target-repo acme/multi -pin-version v4 -rendered-against v4.14.0 -out "$OUT"
+/tmp/skw preview -catalog-path . -repo-path tests/fixtures/onboard/go-root-multi-image -pin-version v4 -rendered-against v4.14.0 -out "$OUT"
 rm "$OUT/profile.json"
 jq 'del(.rendered_at)' "$OUT/.github/onboard.lock.json" > "$OUT/lock.tmp" && mv "$OUT/lock.tmp" "$OUT/.github/onboard.lock.json"
 mkdir -p tests/fixtures/onboard/go-root-multi-image/expected
@@ -2736,7 +2752,9 @@ Run `actionlint` on every rendered workflow. Fix templates (Tasks 12-15) until t
         run: |
           set -euo pipefail
           out="$(mktemp -d)"
-          sk-workflows preview -catalog-path . -repo-path "$FIX" -target-repo acme/multi \
+          # no -target-repo: that would call `gh` for branch/release metadata;
+          # target_repo falls back to the fixture basename (deterministic).
+          sk-workflows preview -catalog-path . -repo-path "$FIX" \
             -pin-version v4 -rendered-against v4.14.0 -out "$out"
           rm "$out/profile.json"
           jq 'del(.rendered_at)' "$out/.github/onboard.lock.json" > "$out/lock.tmp" && mv "$out/lock.tmp" "$out/.github/onboard.lock.json"
