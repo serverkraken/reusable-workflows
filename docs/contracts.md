@@ -60,6 +60,7 @@ release semantics — no signing, no upload, no version handling. Complements
 | input   | `runs_on_amd64` | string  | no       | `'["self-hosted","Linux","X64","performance"]'`| Runner for amd64 build job |
 | input   | `runs_on_arm64` | string  | no       | `'["self-hosted","Linux","ARM64"]'`            | Runner for arm64 build job |
 | input   | `runs_on_merge` | string  | no       | `'["self-hosted","Linux","low-performance"]'`  | Runner for version + merge jobs |
+| input   | `ref`           | string  | no       | `''`                                           | Git ref (tag/branch/SHA) to check out before building. Release callers whose run creates the bump commit and tag (release-please) should pass the released tag; empty keeps the default event-SHA checkout. |
 | output  | `image_ref`     | string  | —        | —                                              | `ghcr.io/<image_name>:<tag>` |
 | output  | `digest`        | string  | —        | —                                              | Manifest-list digest `sha256:…` |
 | output  | `tag`           | string  | —        | —                                              | Final tag (auto-computed if input was empty) |
@@ -84,6 +85,7 @@ release semantics — no signing, no upload, no version handling. Complements
 | input   | `runs_on_amd64`   | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | Runner for amd64 build job (forwarded). |
 | input   | `runs_on_arm64`   | string  | no       | `'["self-hosted","Linux","ARM64"]'`             | Runner for arm64 build job (forwarded). |
 | input   | `runs_on_merge`   | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Runner for version + merge jobs (forwarded). |
+| input   | `ref`             | string  | no       | `''`                                            | Git ref to check out before building (forwarded to docker-build). Release callers should pass the released tag; empty keeps the default event-SHA checkout. |
 | input   | `runs_on_parse`   | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Runner for the parse job (pure shell; low-performance is fine). |
 | input   | `caller_id`       | string  | no       | `''`                                            | Optional caller identifier appended to the concurrency group for parallel callers. |
 | secret  | `release_please_app_client_id`  | — | **yes** | — | GitHub App Client ID with `contents:read` on the catalog repo. Forwarded to docker-build.yml. |
@@ -137,6 +139,7 @@ runner pods.
 | input   | `helm_version` | string  | no       | `'v3.15.0'`                 | Helm CLI version to install (e.g. `v3.15.0`, `latest`). |
 | input   | `dry_run`      | boolean | no       | `false`                     | Lint and package only; skip registry login + push. |
 | input   | `runs_on`      | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
+| input   | `ref`          | string  | no       | `''`                        | Git ref (tag/branch/SHA) to check out before packaging. Callers whose release job creates the version-bump commit and tag in the same run (release-please) must pass the released tag here; empty keeps the default event-SHA checkout. |
 
 ---
 

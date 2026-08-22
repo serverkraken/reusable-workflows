@@ -94,6 +94,15 @@ on:
         required: false
         type: string
         default: ''
+      ref:
+        description: >-
+          Git ref (tag/branch/SHA) to check out before building; forwarded
+          to docker-build.yml. Release callers (release-please) should pass
+          the released tag so back-to-back merges cannot build the images
+          from the pre-bump event SHA. Empty = default checkout.
+        required: false
+        type: string
+        default: ''
     secrets:
       release_please_app_client_id:
         required: true
@@ -186,6 +195,7 @@ jobs:
       runs_on_amd64: ${{ inputs.runs_on_amd64 }}
       runs_on_arm64: ${{ inputs.runs_on_arm64 }}
       runs_on_merge: ${{ inputs.runs_on_merge }}
+      ref: ${{ inputs.ref }}
 
   # Per-image digests/tags are not surfaced by the matrix call to
   # docker-build.yml — adopters needing per-image refs invoke docker-build.yml

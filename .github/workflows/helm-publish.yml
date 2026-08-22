@@ -44,6 +44,18 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux"]'
+      ref:
+        description: >-
+          Git ref (tag/branch/SHA) to check out before packaging. Callers
+          whose release job creates the version-bump commit and tag in the
+          SAME run (release-please) MUST pass the released tag here:
+          the default checkout resolves the triggering event's SHA, which
+          predates the bump commit when merges land back-to-back — the
+          chart then packages the PREVIOUS version and the new tag never
+          gets published (seen: mailstack v1.5.8). Empty = default checkout.
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -63,6 +75,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
         with:

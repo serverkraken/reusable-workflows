@@ -53,9 +53,15 @@ jobs:
      releases['<path>'].version (tag_name is prefixed with the package basename). */ -}}
 {{- $gate := "needs.release-please.outputs.release_created == 'true'" -}}
 {{- $tag := "${{ needs.release-please.outputs.tag_name }}" -}}
+{{- /* $ref is the GIT tag for checkouts (docker-build, helm-publish). It differs from $tag:
+     monorepo components tag as <package-name>-vX.Y.Z (include-component-in-tag),
+     so the image-style "v<version>" string is NOT a checkoutable ref there —
+     releases['<path>'].tag_name carries the real tag. */ -}}
+{{- $ref := "${{ needs.release-please.outputs.tag_name }}" -}}
 {{- if $mono -}}
   {{- $gate = printf "contains(fromJSON(needs.release-please.outputs.paths_released), '%s')" $c.path -}}
   {{- $tag = printf "v${{ fromJSON(needs.release-please.outputs.releases)['%s'].version }}" $c.path -}}
+  {{- $ref = printf "${{ fromJSON(needs.release-please.outputs.releases)['%s'].tag_name }}" $c.path -}}
 {{- end -}}
 
 {{- /* Filter to release-eligible Dockerfiles only — non-eligible variants (Dockerfile.dev, Dockerfile.debug, …) ship in prerelease.yml only. */ -}}
@@ -87,6 +93,7 @@ jobs:
       platforms: {{ index $df "platforms" }}
     {{- end }}
       tag: {{ $tag }}
+      ref: {{ $ref }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
@@ -127,6 +134,7 @@ jobs:
       platforms: {{ index (index $releaseDfs 0) "platforms" }}
     {{- end }}
       tag: {{ $tag }}
+      ref: {{ $ref }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
@@ -153,6 +161,10 @@ jobs:
     with:
       chart_path: {{ path.Dir $c.release_signals.chart_yaml }}
       oci_registry: ghcr.io/{{ $.profile.target_repo }}/charts
+      # Checkout the released tag, not the triggering event's SHA: with
+      # back-to-back merges the event SHA predates release-please's bump
+      # commit and the job silently republishes the PREVIOUS chart version.
+      ref: {{ $ref }}
     secrets: inherit
 {{- end }}
 
@@ -173,6 +185,7 @@ jobs:
     with:
       chart_path: {{ $c.path }}
       oci_registry: ghcr.io/{{ index (strings.Split "/" $.profile.target_repo) 0 }}/charts
+      ref: {{ $ref }}
     secrets: inherit
 {{- end }}
 
