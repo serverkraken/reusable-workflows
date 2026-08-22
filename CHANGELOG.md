@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.15.1](https://github.com/serverkraken/reusable-workflows/compare/v4.15.0...v4.15.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **helm-publish:** optional ref input — checkout the released tag, not the event SHA ([#230](https://github.com/serverkraken/reusable-workflows/issues/230)) ([66efc76](https://github.com/serverkraken/reusable-workflows/commit/66efc76d085208fc11fdc9d02e938f33c11e0590))
+
 ## [4.15.0](https://github.com/serverkraken/reusable-workflows/compare/v4.14.1...v4.15.0) (2026-08-22)
 
 
