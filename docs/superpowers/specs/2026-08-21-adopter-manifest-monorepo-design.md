@@ -292,7 +292,10 @@ pre-tag live-adopter render diff (see § Test strategy) is the release gate.
   they are — CI is not path-filtered.
 - **`e2e.yml.tmpl` (new).** Calls `e2e-kind.yml` with `script` from the
   manifest; triggers: `schedule` (if set), `workflow_dispatch`, tag push
-  `v*`. Mirrors mailstack's hand-written `e2e.yml`.
+  `v*.*.*` (full semver only — the floating `v1`/`v1.2` tags and component
+  tags like `postfix-v1.2.0` must not start a run), under a single
+  `concurrency` group `e2e-kind` without cancel-in-progress. Mirrors
+  mailstack's hand-written `e2e.yml` after its 2026-08-21 hardening.
 
 ### 5. Lock and drift
 
