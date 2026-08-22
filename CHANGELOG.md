@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.15.0](https://github.com/serverkraken/reusable-workflows/compare/v4.14.1...v4.15.0) (2026-08-22)
+
+
+### Features
+
+* **version-badges:** static SVG version badges and README table per release-please package ([#228](https://github.com/serverkraken/reusable-workflows/issues/228)) ([acbcfa0](https://github.com/serverkraken/reusable-workflows/commit/acbcfa00b1def7b2d2c8d58f2330c5a06d6b1de1))
+
+
+### Bug Fixes
+
+* **templates:** e2e.yml triggers on full-semver tags only and serialises runs ([#227](https://github.com/serverkraken/reusable-workflows/issues/227)) ([7544dd0](https://github.com/serverkraken/reusable-workflows/commit/7544dd07c214cafb78228fb48141ed4d4a56a727))
+
 ## [4.14.1](https://github.com/serverkraken/reusable-workflows/compare/v4.14.0...v4.14.1) (2026-08-21)
 
 
