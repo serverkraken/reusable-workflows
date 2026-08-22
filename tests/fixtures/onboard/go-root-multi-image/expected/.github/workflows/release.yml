@@ -28,6 +28,7 @@ jobs:
       dockerfile: images/tools/Dockerfile
       image_name: acme/multi/tools
       tag: v${{ fromJSON(needs.release-please.outputs.releases)['.'].version }}
+      ref: ${{ fromJSON(needs.release-please.outputs.releases)['.'].tag_name }}
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -51,6 +52,7 @@ jobs:
       dockerfile: images/api/Dockerfile
       image_name: acme/multi/api
       tag: v${{ fromJSON(needs.release-please.outputs.releases)['images/api'].version }}
+      ref: ${{ fromJSON(needs.release-please.outputs.releases)['images/api'].tag_name }}
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -74,6 +76,7 @@ jobs:
       image_name: acme/multi/worker
       platforms: linux/amd64
       tag: v${{ fromJSON(needs.release-please.outputs.releases)['images/worker'].version }}
+      ref: ${{ fromJSON(needs.release-please.outputs.releases)['images/worker'].tag_name }}
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}

@@ -53,7 +53,7 @@ jobs:
      releases['<path>'].version (tag_name is prefixed with the package basename). */ -}}
 {{- $gate := "needs.release-please.outputs.release_created == 'true'" -}}
 {{- $tag := "${{ needs.release-please.outputs.tag_name }}" -}}
-{{- /* $ref is the GIT tag for checkouts (helm-publish). It differs from $tag:
+{{- /* $ref is the GIT tag for checkouts (docker-build, helm-publish). It differs from $tag:
      monorepo components tag as <package-name>-vX.Y.Z (include-component-in-tag),
      so the image-style "v<version>" string is NOT a checkoutable ref there —
      releases['<path>'].tag_name carries the real tag. */ -}}
@@ -93,6 +93,7 @@ jobs:
       platforms: {{ index $df "platforms" }}
     {{- end }}
       tag: {{ $tag }}
+      ref: {{ $ref }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
@@ -133,6 +134,7 @@ jobs:
       platforms: {{ index (index $releaseDfs 0) "platforms" }}
     {{- end }}
       tag: {{ $tag }}
+      ref: {{ $ref }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}

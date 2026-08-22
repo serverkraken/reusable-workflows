@@ -44,6 +44,9 @@ jobs:
       context: tests/fixtures/minimal-go
       dockerfile: tests/fixtures/minimal-go/Dockerfile
       image_name: ${{ github.repository }}/test-fixture
+      # Exercises the optional ref input end-to-end (same SHA the default
+      # checkout would resolve, so the build itself stays unchanged).
+      ref: ${{ github.sha }}
       sign: true
       attest: true
       sbom: true

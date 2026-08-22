@@ -68,6 +68,18 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux","low-performance"]'
+      ref:
+        description: >-
+          Git ref (tag/branch/SHA) to check out before building. Callers
+          whose release job creates the version-bump commit and tag in the
+          SAME run (release-please) should pass the released tag here: the
+          default checkout resolves the triggering event's SHA, which
+          predates the bump commit when merges land back-to-back — the image
+          (and its provenance attestation) is then built from the pre-bump
+          tree. Empty = default checkout.
+        required: false
+        type: string
+        default: ''
     outputs:
       image_ref:
         description: 'Pushed image reference with tag.'
@@ -109,6 +121,8 @@ jobs:
       image_name: ${{ steps.resolve.outputs.image_name }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.ref }}
       - name: Mint catalog-scoped App token
         id: catalog-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -205,6 +219,8 @@ jobs:
 
       - if: steps.check.outputs.selected == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.ref }}
       - name: Mint catalog-scoped App token
         if: steps.check.outputs.selected == 'true'
         id: catalog-token
@@ -302,6 +318,8 @@ jobs:
       digest: ${{ steps.merge_step.outputs.digest }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.ref }}
       - name: Mint catalog-scoped App token
         id: catalog-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
