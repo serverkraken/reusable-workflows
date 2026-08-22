@@ -137,6 +137,7 @@ runner pods.
 | input   | `helm_version` | string  | no       | `'v3.15.0'`                 | Helm CLI version to install (e.g. `v3.15.0`, `latest`). |
 | input   | `dry_run`      | boolean | no       | `false`                     | Lint and package only; skip registry login + push. |
 | input   | `runs_on`      | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
+| input   | `ref`          | string  | no       | `''`                        | Git ref (tag/branch/SHA) to check out before packaging. Callers whose release job creates the version-bump commit and tag in the same run (release-please) must pass the released tag here; empty keeps the default event-SHA checkout. |
 
 ---
 
