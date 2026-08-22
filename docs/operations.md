@@ -552,7 +552,13 @@ Reach for the adopter manifest (`.github/onboard.yml`) when any of the following
   with Go/Python/Rust/Flutter code gets recognized and gets its own
   `lint-helm` + dry-run `helm-publish` jobs and release-please package.
 - **An e2e suite.** There is no file-system signal for "run this kind-based
-  e2e script on a schedule" — `workflows.e2e` is the only way in.
+  e2e script on a schedule" — `workflows.e2e` is the only way in. The
+  rendered `e2e.yml` runs on the optional schedule, on `workflow_dispatch`
+  and on full-semver tag pushes (`v*.*.*`) only — the floating `v1`/`v1.2`
+  tags and component tags (`postfix-v1.2.0`) do not trigger it — and it is
+  serialised through one `concurrency` group (`e2e-kind`, no
+  cancel-in-progress): a kind run claims the performance pool exclusively
+  enough that parallel runs starve each other.
 - **Declaring GitOps consumers.** Repos that other repos deploy from (via
   Renovate-managed image references) can inventory those consumers so they
   show up in the onboarding PR body and `docs/onboarding-status.md`.
@@ -594,7 +600,7 @@ components:                      # optional; absent → auto-detect as today
 workflows:                       # optional
   e2e:
     script: test/e2e/run.sh
-    schedule: "0 3 * * *"        # optional; dispatch + tag push are always on
+    schedule: "0 3 * * *"        # optional; dispatch + full-semver tag push (v*.*.*) are always on
 release:                         # optional
   dispatch_trigger: true         # adds `workflow_dispatch: {}` to release.yml
   badges: true                   # version-badges job after each release (README markers required)

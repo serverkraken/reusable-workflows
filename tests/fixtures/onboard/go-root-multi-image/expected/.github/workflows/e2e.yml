@@ -5,7 +5,20 @@ on:
   workflow_dispatch: {}
   push:
     tags:
-      - 'v*'
+      # Full semver only. semantic-release also pushes the floating tags
+      # (v1, v1.2) for every release; with 'v*' one release started three
+      # identical e2e runs that starved each other on the performance pool
+      # (mailstack, 2026-08-21: all three died in the Cilium setup timeout).
+      # Component tags (postfix-v1.2.0) do not match either — only a root
+      # release exercises the stack.
+      - 'v*.*.*'
+
+# One e2e at a time: a run claims the performance pool exclusively enough
+# that parallel runs eat each other's wait budgets. No cancel-in-progress —
+# a running suite finishes, newer ones queue behind it.
+concurrency:
+  group: e2e-kind
+  cancel-in-progress: false
 
 jobs:
   e2e:
