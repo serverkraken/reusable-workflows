@@ -190,3 +190,14 @@ jobs:
     secrets: inherit
 {{- end }}
 {{ end }}
+{{- /* Manifest `release.badges: true`: after anything was released, rewrite
+     the README badge block + table and commit it ([skip ci]). */ -}}
+{{- if and (index .profile "release") (index .profile.release "badges") }}
+  version-badges:
+    needs: [release-please]
+    if: needs.release-please.outputs.paths_released != '[]'
+    uses: serverkraken/reusable-workflows/.github/workflows/version-badges.yml@{{ $pin }}
+    permissions:
+      contents: write
+    secrets: inherit
+{{- end }}

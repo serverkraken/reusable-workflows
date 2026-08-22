@@ -129,7 +129,7 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 			profile.Workflows = &domain.WorkflowsSpec{E2E: &domain.E2ESpec{Script: man.Workflows.E2E.Script, Schedule: man.Workflows.E2E.Schedule}}
 		}
 		if man.Release != nil {
-			profile.Release = &domain.ReleaseSpec{DispatchTrigger: man.Release.DispatchTrigger}
+			profile.Release = &domain.ReleaseSpec{DispatchTrigger: man.Release.DispatchTrigger, Badges: man.Release.Badges}
 		}
 		for _, c := range man.GitOps {
 			profile.Consumers = append(profile.Consumers, domain.GitOpsConsumer{Repo: c.Repo, Scope: c.Scope, Mode: c.Mode})

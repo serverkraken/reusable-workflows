@@ -1,0 +1,5 @@
+{
+  ".": "1.4.0",
+  "images/postfix": "1.4.1",
+  "charts/mailstack": "1.4.2"
+}

@@ -39,7 +39,7 @@ type DockerfileSpec struct {
 
 type Workflows struct{ E2E *E2E }
 type E2E struct{ Script, Schedule string }
-type Release struct{ DispatchTrigger bool }
+type Release struct{ DispatchTrigger, Badges bool }
 type Consumer struct {
 	Repo  string
 	Scope []string
@@ -172,10 +172,13 @@ func decode(root *Node) (*Manifest, error) {
 		}
 	}
 	if n, ok := root.Map["release"]; ok {
-		if err := allowKeys(n, "dispatch_trigger"); err != nil {
+		if err := allowKeys(n, "dispatch_trigger", "badges"); err != nil {
 			return nil, err
 		}
 		m.Release = &Release{}
+		if m.Release.Badges, err = optionalBool(n, "badges"); err != nil {
+			return nil, err
+		}
 		if m.Release.DispatchTrigger, err = optionalBool(n, "dispatch_trigger"); err != nil {
 			return nil, err
 		}

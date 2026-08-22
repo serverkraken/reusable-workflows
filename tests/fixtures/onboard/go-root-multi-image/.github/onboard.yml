@@ -20,6 +20,7 @@ workflows:
     schedule: "0 3 * * *"
 release:
   dispatch_trigger: true
+  badges: true
 gitops:
   - repo: acme/gitops-prod
     scope: [kubernetes/apps/multi/**]

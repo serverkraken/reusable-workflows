@@ -63,6 +63,33 @@ jobs:
       charts_dir: helm-unittest
       unittest: true
 
+  # ----- version-badges: render badges + README block for a three-package
+  #       fixture without committing; the assert job checks the outputs.
+  version-badges-happy:
+    uses: ./.github/workflows/version-badges.yml
+    secrets: inherit
+    permissions:
+      contents: write
+    with:
+      manifest_path: tests/fixtures/version-badges/.release-please-manifest.json
+      config_path: tests/fixtures/version-badges/release-please-config.json
+      readme_path: tests/fixtures/version-badges/README.md
+      badges_dir: tests/fixtures/version-badges/badges
+      commit: false
+
+  assert-version-badges:
+    needs: version-badges-happy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          CHANGED: ${{ needs.version-badges-happy.outputs.changed }}
+          BADGES: ${{ needs.version-badges-happy.outputs.badges }}
+        run: |
+          set -euo pipefail
+          [[ "$CHANGED" == "true" ]] || { echo "::error::expected changed=true, got '$CHANGED'"; exit 1; }
+          [[ "$BADGES" == "3" ]] || { echo "::error::expected badges=3, got '$BADGES'"; exit 1; }
+
   # ----- lint-python: 3 happy paths (poetry/uv/pip) -----
   lint-python-poetry-happy:
     uses: ./.github/workflows/lint-python.yml
@@ -518,6 +545,8 @@ jobs:
       - test-go-self
       - lint-helm-happy
       - lint-helm-unittest-happy
+      - version-badges-happy
+      - assert-version-badges
       - lint-python-poetry-happy
       - lint-python-uv-happy
       - lint-python-pip-happy

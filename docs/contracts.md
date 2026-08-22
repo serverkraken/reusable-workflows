@@ -352,6 +352,24 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 
 ---
 
+### `version-badges.yml`
+
+| Kind    | Name                             | Type    | Required | Default                                        | Description |
+|---------|----------------------------------|---------|----------|------------------------------------------------|-------------|
+| input   | `runs_on`                        | string  | no       | `'["self-hosted","Linux","low-performance"]'`  | JSON-encoded runner labels |
+| input   | `manifest_path`                  | string  | no       | `'.release-please-manifest.json'`              | release-please manifest (package path → version) |
+| input   | `config_path`                    | string  | no       | `'release-please-config.json'`                 | release-please config (optional; release-type, package-name, include-component-in-tag) |
+| input   | `readme_path`                    | string  | no       | `'README.md'`                                  | README carrying the `<!-- version-badges:start/end -->` markers |
+| input   | `badges_dir`                     | string  | no       | `'docs/badges'`                                | Output directory for the SVG files |
+| input   | `commit`                         | boolean | no       | `true`                                         | Commit + push the result (false for dry runs / self-CI) |
+| input   | `commit_message`                 | string  | no       | `'chore(badges): update version badges [skip ci]'` | Commit message |
+| secret  | `release_please_app_client_id`   | —       | **yes**  | —                                              | App Client ID (catalog checkout + badge commit) |
+| secret  | `release_please_app_private_key` | —       | **yes**  | —                                              | App private key |
+| output  | `changed`                        | string  | —        | —                                              | `'true'` when README or a badge file changed |
+| output  | `badges`                         | string  | —        | —                                              | Number of badges rendered |
+
+---
+
 ## Orchestrator
 
 ### `release.yml`
