@@ -1,0 +1,7 @@
+{
+  "packages": {
+    ".": { "release-type": "go", "include-component-in-tag": false },
+    "images/postfix": { "release-type": "simple", "package-name": "postfix", "include-component-in-tag": true },
+    "charts/mailstack": { "release-type": "helm", "package-name": "mailstack", "include-component-in-tag": true }
+  }
+}

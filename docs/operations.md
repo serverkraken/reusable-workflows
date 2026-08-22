@@ -338,6 +338,7 @@ Per-language lint and test atoms callable via `workflow_call`. Each atom accepts
 | `test-rust.yml`       | `cargo test` + `cargo-llvm-cov` coverage gate      |
 | `lint-helm.yml`       | `helm lint` + `ct lint`                            |
 | `e2e-kind.yml`        | Consumer-owned kind e2e script; diagnostics artifact on failure; guaranteed cluster cleanup |
+| `version-badges.yml`  | Static SVG version badges + Component/Version/Tag table from the release-please manifest, committed to the repo (no external services) |
 
 The test atoms expose a `coverage_threshold` input (default `80`) so consumers can tighten or loosen the gate per repo. The Python atoms reuse the `actions/setup-python-deps` composite to auto-detect Poetry / uv / pip-bare project layouts.
 
@@ -602,6 +603,7 @@ workflows:                       # optional
     schedule: "0 3 * * *"        # optional; dispatch + full-semver tag push (v*.*.*) are always on
 release:                         # optional
   dispatch_trigger: true         # adds `workflow_dispatch: {}` to release.yml
+  badges: true                   # version-badges job after each release (README markers required)
 gitops:                          # optional; list of consuming repos
   - repo: serverkraken/homelab-mail-nue
     scope:                       # optional file globs; default = whole repo
@@ -809,6 +811,15 @@ Prerelease (`prerelease.yml`, manual `workflow_dispatch`) has no such
 gating — it loops every release-eligible component and builds all of them,
 since a prerelease is a manual, PR-scoped action rather than a
 release-please decision.
+
+`release.badges: true` renders a `version-badges` job after `release-please`
+(gated on `paths_released != '[]'`). It calls `version-badges.yml`, which
+writes one static SVG per package into `docs/badges/` and rewrites the README
+block between `<!-- version-badges:start -->` and `<!-- version-badges:end -->`
+with a badge line plus a Component | Version | Tag table, then commits with
+`[skip ci]` via the release-bot App. Add the two markers to the README once —
+the job fails loudly instead of touching a README without them. No external
+services are involved, so the badges render in private repos.
 
 `release.dispatch_trigger: true` adds `workflow_dispatch: {}` to the
 rendered `release.yml` so a monorepo release can be re-run by hand.

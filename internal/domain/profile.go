@@ -83,6 +83,7 @@ type E2ESpec struct {
 
 type ReleaseSpec struct {
 	DispatchTrigger bool `json:"dispatch_trigger"`
+	Badges          bool `json:"badges,omitempty"`
 }
 
 type GitOpsConsumer struct {

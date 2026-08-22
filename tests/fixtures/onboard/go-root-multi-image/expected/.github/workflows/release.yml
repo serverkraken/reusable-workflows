@@ -99,3 +99,11 @@ jobs:
       chart_path: charts/demo
       oci_registry: ghcr.io/go-root-multi-image/charts
     secrets: inherit
+
+  version-badges:
+    needs: [release-please]
+    if: needs.release-please.outputs.paths_released != '[]'
+    uses: serverkraken/reusable-workflows/.github/workflows/version-badges.yml@v4
+    permissions:
+      contents: write
+    secrets: inherit

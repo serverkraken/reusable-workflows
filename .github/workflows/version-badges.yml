@@ -1,0 +1,210 @@
+# .github/workflows/version-badges.yml
+# Reusable workflow: render one static SVG badge per release-please package
+# into the adopter repo and rewrite the README block between
+# `<!-- version-badges:start -->` and `<!-- version-badges:end -->` with a
+# badge line plus a Component | Version | Tag table. Stability surface: the
+# shape of `inputs`, `outputs` and `secrets` below is the contract — changes
+# are SemVer-significant.
+#
+# Everything is generated from the repo itself (.release-please-manifest.json
+# + release-please-config.json) — no shields.io, no external requests, no
+# fonts — so the badges render inside private repos through GitHub's own
+# image proxy. The generator lives in the catalog (scripts/version-badges.sh,
+# bats-tested) and is reached via the catalog checkout below.
+#
+# Consumer responsibility:
+#   - Put the two markers into the README once; the atom refuses to touch a
+#     README without them.
+#   - Call it after semantic-release.yml, gated on
+#     `needs.release-please.outputs.paths_released != '[]'` (the rendered
+#     release.yml does this when the adopter manifest sets
+#     `release.badges: true`).
+#   - The commit is pushed with the release-bot App token and carries
+#     `[skip ci]`, so it neither re-triggers release.yml nor bumps anything
+#     (release-please ignores `chore:`).
+#
+# Auth: `secrets: inherit` is REQUIRED on callers — the App token is used
+# both to clone the private catalog and to push the badge commit.
+# Summary convention: docs/conventions/step-summary.md
+name: version-badges
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","low-performance"]'
+      manifest_path:
+        description: 'release-please manifest (package path → version).'
+        required: false
+        type: string
+        default: '.release-please-manifest.json'
+      config_path:
+        description: 'release-please config; optional, supplies release-type / package-name / include-component-in-tag per package.'
+        required: false
+        type: string
+        default: 'release-please-config.json'
+      readme_path:
+        description: 'README that carries the version-badges markers.'
+        required: false
+        type: string
+        default: 'README.md'
+      badges_dir:
+        description: 'Directory for the generated SVG files (repo-relative).'
+        required: false
+        type: string
+        default: 'docs/badges'
+      commit:
+        description: 'Commit and push the result to the default branch. Set false for dry runs and self-CI.'
+        required: false
+        type: boolean
+        default: true
+      commit_message:
+        description: 'Commit message; keep `[skip ci]` unless you want release.yml to run again.'
+        required: false
+        type: string
+        default: 'chore(badges): update version badges [skip ci]'
+    outputs:
+      changed:
+        description: '"true" when the README or any badge file changed.'
+        value: ${{ jobs.badges.outputs.changed }}
+      badges:
+        description: 'Number of badges rendered.'
+        value: ${{ jobs.badges.outputs.badges }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID (catalog checkout + push of the badge commit).'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-badges-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  badges:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.render.outputs.changed }}
+      badges: ${{ steps.render.outputs.badges }}
+    steps:
+      - name: Mint App token for this repository
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        # Self-CI (caller == catalog): the caller's SHA is a catalog commit.
+        # Cross-repo: the floating major tag, so adopters at @v4.x.y get the
+        # matching generator. Bump the hardcoded major on a new major release.
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for the generator
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+
+      - name: Render badges and README block
+        id: render
+        env:
+          MANIFEST: ${{ inputs.manifest_path }}
+          CONFIG: ${{ inputs.config_path }}
+          README: ${{ inputs.readme_path }}
+          BADGES_DIR: ${{ inputs.badges_dir }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          bash .catalog/scripts/version-badges.sh \
+            --manifest "$MANIFEST" --config "$CONFIG" \
+            --readme "$README" --badges-dir "$BADGES_DIR" \
+            --repo "$REPO" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Commit and push
+        id: push
+        if: inputs.commit && steps.render.outputs.changed == 'true'
+        env:
+          README: ${{ inputs.readme_path }}
+          BADGES_DIR: ${{ inputs.badges_dir }}
+          MESSAGE: ${{ inputs.commit_message }}
+        run: |
+          set -euo pipefail
+          git config user.name "serverkraken-release-bot[bot]"
+          git config user.email "serverkraken-release-bot[bot]@users.noreply.github.com"
+          git add -- "$README" "$BADGES_DIR"
+          git commit -m "$MESSAGE"
+          git push
+
+      - name: Summary
+        if: always()
+        env:
+          BADGES: ${{ steps.render.outputs.badges }}
+          CHANGED: ${{ steps.render.outputs.changed }}
+          COMMIT: ${{ inputs.commit }}
+          RENDER_OUTCOME: ${{ steps.render.outcome }}
+          PUSH_OUTCOME: ${{ steps.push.outcome }}
+          README: ${{ inputs.readme_path }}
+          BADGES_DIR: ${{ inputs.badges_dir }}
+        run: |
+          glyph() {
+            case "$1" in
+              success) echo "✓" ;;
+              failure) echo "✗" ;;
+              skipped) echo "−" ;;
+              *)       echo "?" ;;
+            esac
+          }
+          if [[ "$RENDER_OUTCOME" != "success" ]]; then
+            result="✗ failed"
+          elif [[ "$CHANGED" == "true" && "$COMMIT" == "true" ]]; then
+            result="✓ updated and pushed"
+          elif [[ "$CHANGED" == "true" ]]; then
+            result="✓ updated (not committed)"
+          else
+            result="✓ up to date"
+          fi
+          {
+            echo "## version-badges"
+            echo ""
+            echo "**Tool:** version-badges.sh"
+            echo "**README:** \`${README}\`"
+            echo "**Badges dir:** \`${BADGES_DIR}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|---|---|"
+            echo "| render (${BADGES:-0} badges) | $(glyph "$RENDER_OUTCOME") |"
+            echo "| commit + push | $(glyph "$PUSH_OUTCOME") |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

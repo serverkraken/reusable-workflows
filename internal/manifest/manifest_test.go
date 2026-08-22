@@ -544,3 +544,16 @@ components: notalist
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestParseManifestReleaseBadges(t *testing.T) {
+	m, err := Parse([]byte("schema: 1\nrelease:\n  badges: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Release == nil || !m.Release.Badges || m.Release.DispatchTrigger {
+		t.Fatalf("release=%+v", m.Release)
+	}
+	if _, err := Parse([]byte("schema: 1\nrelease:\n  badges: yes\n")); err == nil || !strings.Contains(err.Error(), "line 3: expected true or false") {
+		t.Fatalf("err=%v", err)
+	}
+}
