@@ -153,6 +153,10 @@ jobs:
     with:
       chart_path: {{ path.Dir $c.release_signals.chart_yaml }}
       oci_registry: ghcr.io/{{ $.profile.target_repo }}/charts
+      # Checkout the released tag, not the triggering event's SHA: with
+      # back-to-back merges the event SHA predates release-please's bump
+      # commit and the job silently republishes the PREVIOUS chart version.
+      ref: {{ $tag }}
     secrets: inherit
 {{- end }}
 
@@ -173,6 +177,7 @@ jobs:
     with:
       chart_path: {{ $c.path }}
       oci_registry: ghcr.io/{{ index (strings.Split "/" $.profile.target_repo) 0 }}/charts
+      ref: {{ $tag }}
     secrets: inherit
 {{- end }}
 
