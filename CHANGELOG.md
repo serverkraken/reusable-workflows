@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.15.2](https://github.com/serverkraken/reusable-workflows/compare/v4.15.1...v4.15.2) (2026-08-23)
+
+
+### Bug Fixes
+
+* **templates:** cleanup.yml cleans every image package, not just the repo-name default ([#232](https://github.com/serverkraken/reusable-workflows/issues/232)) ([66c7fb4](https://github.com/serverkraken/reusable-workflows/commit/66c7fb4c9c5eb41d0719d3186a5deb037ab6e6cc))
+
 ## [4.15.1](https://github.com/serverkraken/reusable-workflows/compare/v4.15.0...v4.15.1) (2026-08-22)
 
 
