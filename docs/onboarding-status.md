@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-08-19T13:35:17Z_
+_Last updated by the onboarding workflow: 2026-08-23T22:22:51Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -44,3 +44,4 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/renovate-config | 2026-08-03 | v4 | [PR](https://github.com/serverkraken/renovate-config/pull/1) | — | add-open, no-legacy | — |
 | serverkraken/wartung | 2026-08-17 | v4 | [PR](https://github.com/serverkraken/wartung/pull/34) | — | add-open, no-legacy | — |
 | serverkraken/oracle-cloud | 2026-08-17 | v4 | [PR](https://github.com/serverkraken/oracle-cloud/pull/2) | — | add-open, no-legacy | — |
+| serverkraken/mailstack | 2026-08-23 | v4 | [PR](https://github.com/serverkraken/mailstack/pull/72) | — | add-open, no-legacy | serverkraken/homelab-mail-nue |
