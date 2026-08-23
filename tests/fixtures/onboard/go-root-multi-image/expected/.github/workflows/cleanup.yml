@@ -5,5 +5,15 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  cleanup:
+  cleanup-multi-tools:
     uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v4
+    with:
+      package_name: multi/tools
+  cleanup-multi-api:
+    uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v4
+    with:
+      package_name: multi/api
+  cleanup-multi-worker:
+    uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v4
+    with:
+      package_name: multi/worker
