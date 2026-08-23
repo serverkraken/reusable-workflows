@@ -1,10 +1,57 @@
 {{- /*
   cleanup.yml — weekly GHCR image retention.
 
-  Rendered for every adopter; cleanup-images.yml is a no-op when no images
-  exist for the package, so it's safe for library/cli roles too.
+  cleanup-images.yml cleans exactly one GHCR package and defaults to the
+  repo name. That default only matches when the repo publishes a single
+  image named <owner>/<repo>. Repos that publish several images, or images
+  under path-style packages (<owner>/<repo>/<name>), get one explicit job
+  per distinct package — the bare default would 404 on a package that does
+  not exist (`set -euo pipefail` in the atom turns that into a weekly red
+  run) and would never touch the real sub-packages.
+
+  Package derivation per release-eligible Dockerfile:
+    image "$REPO"          -> the repo name itself (the atom's default)
+    image "$REPO-worker"   -> ${{ github.event.repository.name }}-worker
+                              (the $REPO placeholder is only substituted in
+                              release/prerelease files, so the runtime
+                              expression stands in for the repo basename)
+    image "owner/repo/x"   -> repo/x (first segment is the GHCR owner)
+    image "plain-name"     -> plain-name
+
+  The bare job survives whenever the repo publishes exactly one image and
+  that image is "$REPO" — the runtime default resolves identically, so
+  existing single-image adopters render byte-identically and stay
+  drift-clean.
 */ -}}
 {{- $pin := .pin -}}
+{{- $repoExpr := "${{ github.event.repository.name }}" -}}
+{{- $pkgs := coll.Slice -}}
+{{- $slugs := coll.Slice -}}
+{{- range .profile.components -}}
+  {{- range .dockerfiles -}}
+    {{- if .release_eligible -}}
+      {{- $img := .image_name -}}
+      {{- $pkg := "" -}}
+      {{- $slug := "" -}}
+      {{- if strings.HasPrefix "$REPO" $img -}}
+        {{- $tail := strings.TrimPrefix "$REPO" $img -}}
+        {{- $pkg = printf "%s%s" $repoExpr $tail -}}
+        {{- $slug = printf "repo%s" $tail -}}
+      {{- else if strings.Contains "/" $img -}}
+        {{- $pkg = index (strings.SplitN "/" 2 $img) 1 -}}
+        {{- $slug = $pkg -}}
+      {{- else -}}
+        {{- $pkg = $img -}}
+        {{- $slug = $img -}}
+      {{- end -}}
+      {{- if not (coll.Has $pkgs $pkg) -}}
+        {{- $pkgs = coll.Append $pkg $pkgs -}}
+        {{- $slugs = coll.Append (strings.ReplaceAll "." "-" (strings.ReplaceAll "/" "-" $slug)) $slugs -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- $bare := or (eq (len $pkgs) 0) (and (eq (len $pkgs) 1) (eq (index $pkgs 0) $repoExpr)) -}}
 name: cleanup
 on:
   schedule:
@@ -12,5 +59,14 @@ on:
   workflow_dispatch: {}
 
 jobs:
+{{- if $bare }}
   cleanup:
     uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@{{ $pin }}
+{{- else }}
+{{- range $i, $pkg := $pkgs }}
+  cleanup-{{ index $slugs $i }}:
+    uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@{{ $pin }}
+    with:
+      package_name: {{ $pkg }}
+{{- end }}
+{{- end }}
