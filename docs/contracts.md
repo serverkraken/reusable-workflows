@@ -41,6 +41,10 @@ release semantics — no signing, no upload, no version handling. Complements
 | input   | `prerelease_age_days`  | number | no       | `14`                        | Delete non-semver tags older than N days |
 | input   | `runs_on`              | string | no       | `'["self-hosted","Linux"]'` | JSON-encoded runner labels |
 
+A package that does not exist is a no-op: the job logs `not published (yet)`
+and succeeds. Retention on a repo that has not cut its first release yet is
+not an error, and a red weekly cron there would train people to ignore it.
+
 ---
 
 ### `docker-build.yml`
