@@ -693,3 +693,31 @@ func TestParseManifestChartPinsRejected(t *testing.T) {
 		})
 	}
 }
+
+// workflows.keep protects a hand-maintained workflow from the legacy scan.
+// Without it the scan proposes deleting whatever it did not render, and its
+// signatures misfire: wartung's quality.yml was flagged as "replaced by
+// test-go.yml" because it contains `go test -race`, though it also runs
+// ansible-lint, shellcheck and an Ansible test suite with no catalog atom.
+func TestParseManifestWorkflowsKeep(t *testing.T) {
+	m, err := Parse([]byte("schema: 1\nworkflows:\n  keep:\n    - quality.yml\n    - nightly.yaml\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Workflows.Keep) != 2 || m.Workflows.Keep[0] != "quality.yml" {
+		t.Fatalf("keep=%v", m.Workflows.Keep)
+	}
+}
+
+func TestParseManifestWorkflowsKeepRejected(t *testing.T) {
+	for name, src := range map[string]string{
+		"path":         "schema: 1\nworkflows:\n  keep:\n    - .github/workflows/quality.yml\n",
+		"no extension": "schema: 1\nworkflows:\n  keep:\n    - quality\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Parse([]byte(src)); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}

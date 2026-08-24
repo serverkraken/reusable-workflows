@@ -39,7 +39,16 @@ type DockerfileSpec struct {
 	Line                                      int
 }
 
-type Workflows struct{ E2E *E2E }
+type Workflows struct {
+	E2E *E2E
+	// Keep lists workflow files the adopter maintains itself. Without it the
+	// legacy scan proposes deleting anything it did not render — wartung's
+	// hand-written quality.yml was flagged as "go test pipeline; replaced by
+	// test-go.yml" because it happens to contain `go test -race`, while it
+	// really runs ansible-lint, yamllint, shellcheck and the Ansible tests,
+	// none of which the catalog covers.
+	Keep []string
+}
 type E2E struct{ Script, Schedule string }
 type Release struct {
 	DispatchTrigger, Badges bool
@@ -159,10 +168,26 @@ func decode(root *Node) (*Manifest, error) {
 		}
 	}
 	if n, ok := root.Map["workflows"]; ok {
-		if err := allowKeys(n, "e2e"); err != nil {
+		if err := allowKeys(n, "e2e", "keep"); err != nil {
 			return nil, err
 		}
 		m.Workflows = &Workflows{}
+		if k, ok := n.Map["keep"]; ok {
+			seq, err := seqValue(k)
+			if err != nil {
+				return nil, err
+			}
+			for _, item := range seq {
+				name, err := stringValue(item)
+				if err != nil {
+					return nil, err
+				}
+				if strings.ContainsAny(name, "/\\") || !(strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml")) {
+					return nil, fmt.Errorf("line %d: workflows.keep takes bare file names under .github/workflows, got %q", item.Line, name)
+				}
+				m.Workflows.Keep = append(m.Workflows.Keep, name)
+			}
+		}
 		if e, ok := n.Map["e2e"]; ok {
 			if err := allowKeys(e, "script", "schedule"); err != nil {
 				return nil, err

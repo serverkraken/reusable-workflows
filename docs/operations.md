@@ -600,6 +600,8 @@ components:                      # optional; absent → auto-detect as today
     type: helm
     unittest: true
 workflows:                       # optional
+  keep:                          # workflow files the adopter maintains itself
+    - quality.yml
   e2e:
     script: test/e2e/run.sh
     schedule: "0 3 * * *"        # optional; dispatch + full-semver tag push (v*.*.*) are always on
@@ -655,6 +657,14 @@ Semantics:
   `kubernetes` Ansible collection, whose bundled example manifests produce 41
   unfixable HIGH `misconfig` findings (KSV-0014, KSV-0118); `scanners:
   vuln,secret` is what keeps that image scannable at all.
+- **`workflows.keep` protects hand-maintained workflows from the legacy scan.**
+  The scan treats every workflow file it did not render as legacy, and its
+  signatures misfire: wartung's `quality.yml` was proposed for deletion as
+  "go test pipeline; replaced by test-go.yml" because it contains
+  `go test -race`, although it also runs ansible-lint, yamllint, shellcheck
+  and an Ansible test suite the catalog has no atom for. Deleting it would
+  have been worse than noise — the file is a required status check, so its
+  removal would have blocked every future merge. List such files here.
 - **`release.chart_pins` moves the chart's own image pins after a release.**
   A repo whose chart deploys images built in the same repo has to bump those
   pins on every image release. Renovate cannot: its `helm-values` manager only

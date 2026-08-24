@@ -112,6 +112,14 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 	var declared []string
+	// Workflows the adopter maintains itself are not legacy: the scan would
+	// otherwise propose deleting them, and its signatures produce false
+	// positives (a hand-written quality gate containing `go test -race` reads
+	// as "replaced by test-go.yml" even when it also runs ansible-lint,
+	// shellcheck and a test suite the catalog has no atom for).
+	if man != nil && man.Workflows != nil {
+		declared = append(declared, man.Workflows.Keep...)
+	}
 	if hasManifest && man.Workflows != nil && man.Workflows.E2E != nil {
 		declared = append(declared, "e2e.yml")
 	}
