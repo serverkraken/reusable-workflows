@@ -447,6 +447,10 @@ func (failingMetadata) LatestStableRelease(context.Context, string) (string, err
 	return "", os.ErrNotExist
 }
 
+func (failingMetadata) ReleaseTags(context.Context, string) ([]string, error) {
+	return nil, os.ErrNotExist
+}
+
 func (failingMetadata) Topics(context.Context, string) ([]string, error) {
 	return nil, os.ErrNotExist
 }
@@ -709,5 +713,91 @@ func TestProfileJSONHasNoNewKeysWithoutManifest(t *testing.T) {
 		if strings.Contains(string(raw), key) {
 			t.Fatalf("profile for a manifest-less repo leaks key %s: %s", key, raw)
 		}
+	}
+}
+
+// `gh release list` is ordered by date, so in a monorepo the newest release is
+// whatever component shipped last. Seeding the root from it wrote a TAG NAME
+// where a version belongs — wartung would have received
+// {".": "ansible-v2.6.0", "controller": "ansible-v2.6.0", …}.
+func TestLatestRootVersionIgnoresComponentTags(t *testing.T) {
+	tags := []string{"ansible-v2.6.0", "v2.7.0", "controller-v2.5.2", "v2.6.0"}
+	if got := latestRootVersion(tags); got != "2.7.0" {
+		t.Fatalf("root version = %q, want 2.7.0", got)
+	}
+	if got := latestRootVersion([]string{"ansible-v2.6.0"}); got != "" {
+		t.Fatalf("component-only repo returned %q, want empty", got)
+	}
+}
+
+func TestLatestComponentVersion(t *testing.T) {
+	tags := []string{"ansible-v2.6.0", "v2.7.0", "controller-v2.5.2", "ansible-v2.5.2"}
+	for pkg, want := range map[string]string{
+		"ansible":    "2.6.0", // newest of the two ansible tags
+		"controller": "2.5.2",
+		"unknown":    "",
+	} {
+		if got := latestComponentVersion(tags, pkg); got != want {
+			t.Fatalf("%s = %q, want %q", pkg, got, want)
+		}
+	}
+	// A root tag must never be mistaken for a component release.
+	if got := latestComponentVersion([]string{"v2.7.0"}, "v2"); got != "" {
+		t.Fatalf("root tag matched a component: %q", got)
+	}
+}
+
+// End to end: a monorepo that already released per component must re-detect
+// with each component on ITS OWN version, so re-onboarding is idempotent
+// instead of dragging everything up to the root version.
+func TestDetectSeedsComponentVersionsFromTheirOwnTags(t *testing.T) {
+	repo := t.TempDir()
+	write := func(p, body string) {
+		t.Helper()
+		full := filepath.Join(repo, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".github/onboard.yml", "schema: 1\ncomponents:\n  - path: .\n  - path: controller\n    language: go\n    image: acme/controller\n    context: .\n  - path: ansible\n    image: acme/ansible\n    context: .\n")
+	write("controller/go.mod", "module x\n")
+	write("controller/Dockerfile", "FROM scratch\n")
+	write("ansible/Dockerfile", "FROM scratch\n")
+
+	svc := Service{GitHub: ports.StaticGitHubMetadata{
+		Branch: "main",
+		Tags:   []string{"ansible-v2.6.0", "v2.7.0", "controller-v2.5.2"},
+	}}
+	res, err := svc.Detect(context.Background(), Request{RepoPath: repo, TargetRepo: "acme/repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Profile.CurrentVersion != "2.7.0" {
+		t.Fatalf("current_version = %q, want 2.7.0", res.Profile.CurrentVersion)
+	}
+	got := map[string]string{}
+	for _, c := range res.Profile.Components {
+		got[c.Path] = c.Version
+	}
+	want := map[string]string{".": "", "controller": "2.5.2", "ansible": "2.6.0"}
+	for path, wantVersion := range want {
+		if got[path] != wantVersion {
+			t.Fatalf("component %s version = %q, want %q (all: %v)", path, got[path], wantVersion, got)
+		}
+	}
+}
+
+// Tag listings have no meaningful order, and string comparison would rank
+// 2.10.0 below 2.9.0 — pick the highest version numerically.
+func TestVersionSelectionIsNumericAndOrderIndependent(t *testing.T) {
+	tags := []string{"v2.9.0", "v2.10.0", "v2", "v2.10", "api-v1.9.0", "api-v1.10.0"}
+	if got := latestRootVersion(tags); got != "2.10.0" {
+		t.Fatalf("root = %q, want 2.10.0 (floating v2/v2.10 must not match)", got)
+	}
+	if got := latestComponentVersion(tags, "api"); got != "1.10.0" {
+		t.Fatalf("api = %q, want 1.10.0", got)
 	}
 }
