@@ -68,6 +68,29 @@ jobs:
     outputs:
       findings_count: ${{ steps.count.outputs.findings_count }}
     steps:
+      # Every artifact name and SARIF category below has to be unique per
+      # image: a release run scans one image per component, and with a fixed
+      # name they all land as indistinguishable siblings. Live evidence
+      # (mailstack release 32675842176): four artifacts called
+      # `trivy-image-sarif` and four called `sbom-spdx` in one run — an SBOM
+      # nobody can attribute to an image is worthless. Worse for SARIF: one
+      # shared `category` makes each upload REPLACE the previous image's
+      # findings in code scanning, so image A's findings show as fixed the
+      # moment image B uploads.
+      - name: Derive per-image report slug
+        id: slug
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+        run: |
+          set -euo pipefail
+          # ghcr.io/serverkraken/mailstack/postfix:v1.6.7 -> mailstack-postfix
+          name="${IMAGE_REF%%@*}"   # drop a digest, if any
+          name="${name%:*}"         # drop the tag
+          name="${name#*/}"         # drop the registry host
+          slug="$(printf '%s' "$name" | tr '/' '-' | tr -cd 'A-Za-z0-9._-')"
+          [ -n "$slug" ] || slug="image"
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          echo "Report slug: $slug"
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Mint catalog-scoped App token
         id: catalog-token
@@ -147,12 +170,14 @@ jobs:
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
           sarif_file: trivy-image.sarif
-          category: trivy-image
+          # Per image, so parallel scans in one run do not overwrite each
+          # other's code-scanning results.
+          category: trivy-image:${{ steps.slug.outputs.slug }}
 
       - name: Upload SARIF as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: trivy-image-sarif
+          name: trivy-image-sarif-${{ steps.slug.outputs.slug }}
           path: trivy-image.sarif
           if-no-files-found: error
           retention-days: 7

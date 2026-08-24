@@ -357,6 +357,13 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | secret  | `release_please_app_client_id`  | — | **yes** | — | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
 
+The SARIF `category` and the SARIF artifact name carry a slug derived from
+`image_ref` (`ghcr.io/org/repo/postfix:v1` → `repo-postfix`), so several scans
+in one run stay separable. A shared category would make each upload replace the
+previous image's code-scanning results; a shared artifact name leaves reports
+nobody can attribute to an image. `docker-build.yml` suffixes its SBOM artifact
+the same way.
+
 ---
 
 ### `version-badges.yml`
