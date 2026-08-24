@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.16.0](https://github.com/serverkraken/reusable-workflows/compare/v4.15.3...v4.16.0) (2026-08-24)
+
+
+### Features
+
+* **onboard:** per-image scan options (scanners, upload_sarif) im Adopter-Manifest ([#236](https://github.com/serverkraken/reusable-workflows/issues/236)) ([5f0a1e2](https://github.com/serverkraken/reusable-workflows/commit/5f0a1e2f25179ac2697749734f4d2e02790113c4))
+
 ## [4.15.3](https://github.com/serverkraken/reusable-workflows/compare/v4.15.2...v4.15.3) (2026-08-24)
 
 
