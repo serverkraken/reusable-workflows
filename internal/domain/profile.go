@@ -87,8 +87,16 @@ type E2ESpec struct {
 }
 
 type ReleaseSpec struct {
-	DispatchTrigger bool `json:"dispatch_trigger"`
-	Badges          bool `json:"badges,omitempty"`
+	DispatchTrigger bool           `json:"dispatch_trigger"`
+	Badges          bool           `json:"badges,omitempty"`
+	ChartPins       *ChartPinsSpec `json:"chart_pins,omitempty"`
+}
+
+// ChartPinsSpec drives the chart-image-bump job: after a release built new
+// images, their tags are pinned in the chart that ships in the same repo.
+type ChartPinsSpec struct {
+	Values string `json:"values"`
+	Key    string `json:"key"`
 }
 
 type GitOpsConsumer struct {

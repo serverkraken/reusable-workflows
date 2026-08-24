@@ -4,8 +4,7 @@
   Composes release-please (via semantic-release.yml) with the build/sign atoms
   the adopter actually needs. The job set is decided per component from
   profile.components[].dockerfiles and release_signals:
-    - dockerfiles[] of length 1   → docker-build.yml
-    - dockerfiles[] of length >1  → docker-build-multi.yml
+    - every release-eligible dockerfile → docker-build.yml + trivy-image.yml
     - release_signals.goreleaser_config → goreleaser.yml
     - release_signals.chart_yaml         → helm-publish.yml
 
@@ -72,9 +71,34 @@ jobs:
   {{- end -}}
 {{- end -}}
 
-{{- if eq (len $releaseDfs) 1 }}
-{{- $df := index $releaseDfs 0 }}
-  docker-build{{ $suffix }}:
+{{- /* One build+scan pair per release-eligible Dockerfile. The multi-image
+     path used to collapse them into a single docker-build-multi call, which
+     exposes no per-image outputs — so no scan job could be wired up and those
+     images shipped unscanned (mailstack's tools and crowdsec-sync did, while
+     its five single-image components were scanned). docker-build-multi still
+     exists for hand-written callers; the renderer no longer uses it.
+
+     Job suffix: single-image components keep the bare name so every existing
+     adopter renders byte-identically. Only a component with several images
+     appends the image's own name, sanitised to what GitHub accepts as a job
+     ID — `$` is dropped rather than replaced so `$REPO-worker` stays a valid
+     id AND no longer matches the literal `$REPO` that substituteRepo would
+     otherwise rewrite into an `owner/repo` string containing a slash. */ -}}
+{{- range $idx, $df := $releaseDfs }}
+{{- $imgSuffix := "" }}
+{{- if gt (len $releaseDfs) 1 }}
+  {{- $base := path.Base $df.image_name -}}
+  {{- $base = regexp.Replace "[$]" "" $base -}}
+  {{- $base = regexp.Replace "[^A-Za-z0-9_-]" "-" $base -}}
+  {{- /* Lowercase so the job id matches the image it builds: the `$REPO`
+       placeholder is substituted to the lowercase `owner/repo` later, and a
+       job called docker-build-REPO next to `image_name: repo` reads like a
+       different thing. */ -}}
+  {{- $imgSuffix = printf "-%s" (strings.ToLower $base) -}}
+{{- end }}
+{{- if gt $idx 0 }}
+{{ end }}
+  docker-build{{ $suffix }}{{ $imgSuffix }}:
     needs: [release-please]
     if: {{ $gate }}
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}
@@ -99,15 +123,23 @@ jobs:
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
     secrets: inherit
 
-  scan{{ $suffix }}:
-    needs: [docker-build{{ $suffix }}]
+  scan{{ $suffix }}{{ $imgSuffix }}:
+    needs: [docker-build{{ $suffix }}{{ $imgSuffix }}]
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
     with:
-      image_ref: {{ printf "${{ needs.docker-build%s.outputs.image_ref }}" $suffix }}
+      image_ref: {{ printf "${{ needs.docker-build%s%s.outputs.image_ref }}" $suffix $imgSuffix }}
     {{- /* Emitted only when the manifest sets them, so adopters that take the
          atom's defaults keep rendering byte-identically. */}}
     {{- if (index $df "scanners") }}
       scanners: {{ index $df "scanners" }}
+    {{- end }}
+    {{- /* Scan the architectures that were actually built. Trivy picks a
+         single platform for a multi-arch tag (default linux/amd64), so
+         without this the other published arch ships unscanned. */}}
+    {{- if (index $df "platforms") }}
+      platforms: {{ index $df "platforms" }}
+    {{- else }}
+      platforms: linux/amd64,linux/arm64
     {{- end }}
       severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
       trivy_version: {{`${{ vars.SK_TRIVY_VERSION || '' }}`}}
@@ -115,40 +147,7 @@ jobs:
       upload_sarif: {{ index $df "upload_sarif" }}
     {{- end }}
     secrets: inherit
-{{- else if gt (len $releaseDfs) 1 -}}
-{{/* Translate profile.json's dockerfiles[{path, image_name, ...}] into the
-     docker-build-multi atom's expected shape: [{dockerfile, image_name}]. */}}
-{{- $images := coll.Slice -}}
-{{- range $releaseDfs -}}
-  {{- $dfPath := .path -}}
-  {{- if not $isRoot -}}{{- $dfPath = printf "%s/%s" $ctxPath .path -}}{{- end -}}
-  {{- $images = coll.Append (coll.Dict "dockerfile" $dfPath "image_name" .image_name) $images -}}
 {{- end }}
-  docker-build{{ $suffix }}:
-    needs: [release-please]
-    if: {{ $gate }}
-    uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@{{ $pin }}
-    with:
-    {{- $ctx := $ctxPath }}{{ if (index (index $releaseDfs 0) "context") }}{{ $ctx = index (index $releaseDfs 0) "context" }}{{ end }}
-    {{- if ne $ctx "." }}
-      context: {{ $ctx }}
-    {{- end }}
-      images: |
-        {{ $images | toJSON }}
-    {{- /* detect enforces one platforms value across a component's Dockerfiles
-         (docker-build-multi has a single platforms input), so index 0 speaks
-         for all of them. */ -}}
-    {{- if (index (index $releaseDfs 0) "platforms") }}
-      platforms: {{ index (index $releaseDfs 0) "platforms" }}
-    {{- end }}
-      tag: {{ $tag }}
-      ref: {{ $ref }}
-      sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
-      attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
-      sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
-    secrets: inherit
-{{- end }}
-
 {{- if $c.release_signals.goreleaser_config }}
   goreleaser{{ $suffix }}:
     needs: [release-please]
@@ -211,6 +210,53 @@ jobs:
     secrets: inherit
 {{- end }}
 {{ end }}
+{{- /* Manifest `release.chart_pins`: after the images are actually pushed,
+     pin them in the chart that ships in the same repo. `needs:` the build
+     jobs is the whole point — a pin that moves ahead of a ~25 min multi-arch
+     build leaves the cluster in ImagePullBackOff (mailstack, v1.6.2). The
+     builds of components that did not release are skipped, so the job needs
+     `!cancelled()` to run at all, and the atom bumps only what is present in
+     `releases`. */ -}}
+{{- if and (index .profile "release") (index .profile.release "chart_pins") }}
+{{- $buildJobs := coll.Slice "release-please" -}}
+{{- $imageMap := coll.Dict -}}
+{{- range $c := .profile.components -}}
+  {{- $slug := strings.ReplaceAll "/" "-" $c.path -}}
+  {{- if eq $slug "." }}{{ $slug = "" }}{{ end -}}
+  {{- $sfx := "" -}}
+  {{- if $slug }}{{ $sfx = printf "-%s" $slug }}{{ end -}}
+  {{- $dfs := coll.Slice -}}
+  {{- range $c.dockerfiles -}}{{- if .release_eligible -}}{{- $dfs = coll.Append . $dfs -}}{{- end -}}{{- end -}}
+  {{- if gt (len $dfs) 0 -}}
+    {{- $names := coll.Slice -}}
+    {{- range $df := $dfs -}}
+      {{- $names = coll.Append $df.image_name $names -}}
+      {{- $imgSuffix := "" -}}
+      {{- if gt (len $dfs) 1 -}}
+        {{- $base := regexp.Replace "[^A-Za-z0-9_-]" "-" (regexp.Replace "[$]" "" (path.Base $df.image_name)) -}}
+        {{- $imgSuffix = printf "-%s" (strings.ToLower $base) -}}
+      {{- end -}}
+      {{- $buildJobs = coll.Append (printf "docker-build%s%s" $sfx $imgSuffix) $buildJobs -}}
+    {{- end -}}
+    {{- $imageMap = coll.Merge $imageMap (coll.Dict $c.path $names) -}}
+  {{- end -}}
+{{- end }}
+  chart-image-pins:
+    needs: [{{ join $buildJobs ", " }}]
+    {{- /* One expression, not a mix: text outside ${{ }} makes the whole
+         condition constant-true, which actionlint rejects. */}}
+    if: {{`${{ !cancelled() && needs.release-please.outputs.paths_released != '[]' }}`}}
+    uses: serverkraken/reusable-workflows/.github/workflows/chart-image-bump.yml@{{ $pin }}
+    permissions:
+      contents: write
+    with:
+      values_file: {{ .profile.release.chart_pins.values }}
+      key_template: {{ .profile.release.chart_pins.key }}
+      images: |
+        {{ $imageMap | toJSON }}
+      releases: {{`${{ needs.release-please.outputs.releases }}`}}
+    secrets: inherit
+{{- end }}
 {{- /* Manifest `release.badges: true`: after anything was released, rewrite
      the README badge block + table and commit it ([skip ci]). */ -}}
 {{- if and (index .profile "release") (index .profile.release "badges") }}

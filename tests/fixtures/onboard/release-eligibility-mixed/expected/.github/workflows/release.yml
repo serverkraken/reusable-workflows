@@ -19,16 +19,50 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v2
     secrets: inherit
 
-  docker-build:
+  docker-build-repo:
     needs: [release-please]
     if: needs.release-please.outputs.release_created == 'true'
-    uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@v2
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
     with:
-      images: |
-        [{"dockerfile":"Dockerfile","image_name":"repo"},{"dockerfile":"Dockerfile.worker","image_name":"repo-worker"}]
+      dockerfile: Dockerfile
+      image_name: repo
       tag: ${{ needs.release-please.outputs.tag_name }}
       ref: ${{ needs.release-please.outputs.tag_name }}
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+    secrets: inherit
+
+  scan-repo:
+    needs: [docker-build-repo]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
+    with:
+      image_ref: ${{ needs.docker-build-repo.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+    secrets: inherit
+
+  docker-build-repo-worker:
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
+    with:
+      dockerfile: Dockerfile.worker
+      image_name: repo-worker
+      tag: ${{ needs.release-please.outputs.tag_name }}
+      ref: ${{ needs.release-please.outputs.tag_name }}
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+    secrets: inherit
+
+  scan-repo-worker:
+    needs: [docker-build-repo-worker]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
+    with:
+      image_ref: ${{ needs.docker-build-repo-worker.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
     secrets: inherit

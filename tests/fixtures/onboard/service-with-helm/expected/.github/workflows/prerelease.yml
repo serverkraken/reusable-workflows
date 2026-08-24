@@ -31,5 +31,6 @@ jobs:
     secrets: inherit
     with:
       image_ref: ${{ needs.build.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}

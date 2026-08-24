@@ -39,6 +39,7 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
     with:
       image_ref: ${{ needs.docker-build-services-api.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
     secrets: inherit
@@ -63,6 +64,7 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
     with:
       image_ref: ${{ needs.docker-build-services-worker.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
     secrets: inherit

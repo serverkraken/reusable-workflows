@@ -39,9 +39,30 @@ type DockerfileSpec struct {
 	Line                                      int
 }
 
-type Workflows struct{ E2E *E2E }
+type Workflows struct {
+	E2E *E2E
+	// Keep lists workflow files the adopter maintains itself. Without it the
+	// legacy scan proposes deleting anything it did not render — wartung's
+	// hand-written quality.yml was flagged as "go test pipeline; replaced by
+	// test-go.yml" because it happens to contain `go test -race`, while it
+	// really runs ansible-lint, yamllint, shellcheck and the Ansible tests,
+	// none of which the catalog covers.
+	Keep []string
+}
 type E2E struct{ Script, Schedule string }
-type Release struct{ DispatchTrigger, Badges bool }
+type Release struct {
+	DispatchTrigger, Badges bool
+	// ChartPins moves the chart's own image pins after a release built new
+	// images. Nil when the adopter does not ship a chart for its own images.
+	ChartPins *ChartPins
+}
+
+// ChartPins names the values file and the dotted path that holds an image tag.
+// `Key` carries a {name} placeholder for the image basename.
+type ChartPins struct {
+	Values, Key string
+	Line        int
+}
 type Consumer struct {
 	Repo  string
 	Scope []string
@@ -147,10 +168,26 @@ func decode(root *Node) (*Manifest, error) {
 		}
 	}
 	if n, ok := root.Map["workflows"]; ok {
-		if err := allowKeys(n, "e2e"); err != nil {
+		if err := allowKeys(n, "e2e", "keep"); err != nil {
 			return nil, err
 		}
 		m.Workflows = &Workflows{}
+		if k, ok := n.Map["keep"]; ok {
+			seq, err := seqValue(k)
+			if err != nil {
+				return nil, err
+			}
+			for _, item := range seq {
+				name, err := stringValue(item)
+				if err != nil {
+					return nil, err
+				}
+				if strings.ContainsAny(name, "/\\") || (!strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml")) {
+					return nil, fmt.Errorf("line %d: workflows.keep takes bare file names under .github/workflows, got %q", item.Line, name)
+				}
+				m.Workflows.Keep = append(m.Workflows.Keep, name)
+			}
+		}
 		if e, ok := n.Map["e2e"]; ok {
 			if err := allowKeys(e, "script", "schedule"); err != nil {
 				return nil, err
@@ -177,7 +214,7 @@ func decode(root *Node) (*Manifest, error) {
 		}
 	}
 	if n, ok := root.Map["release"]; ok {
-		if err := allowKeys(n, "dispatch_trigger", "badges"); err != nil {
+		if err := allowKeys(n, "dispatch_trigger", "badges", "chart_pins"); err != nil {
 			return nil, err
 		}
 		m.Release = &Release{}
@@ -186,6 +223,27 @@ func decode(root *Node) (*Manifest, error) {
 		}
 		if m.Release.DispatchTrigger, err = optionalBool(n, "dispatch_trigger"); err != nil {
 			return nil, err
+		}
+		if cp, ok := n.Map["chart_pins"]; ok {
+			if err := allowKeys(cp, "values", "key"); err != nil {
+				return nil, err
+			}
+			pins := &ChartPins{Line: cp.Line, Key: "images.{name}.tag"}
+			if pins.Values, err = requiredString(cp, "values"); err != nil {
+				return nil, err
+			}
+			if pins.Values, err = cleanRelPath(pins.Values, cp.Map["values"].Line); err != nil {
+				return nil, err
+			}
+			if key, err := optionalString(cp, "key"); err != nil {
+				return nil, err
+			} else if key != "" {
+				pins.Key = key
+			}
+			if !strings.Contains(pins.Key, "{name}") {
+				return nil, fmt.Errorf("line %d: chart_pins.key must contain {name}, got %q", cp.Line, pins.Key)
+			}
+			m.Release.ChartPins = pins
 		}
 	}
 	if n, ok := root.Map["gitops"]; ok {

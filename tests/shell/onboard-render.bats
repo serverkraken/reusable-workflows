@@ -97,11 +97,25 @@ release-please-config.json"
 
 # ---- Variant-aware rendering (3.4) ----
 
-@test "render: multi-image service produces docker-build-multi reference" {
+# Every release-eligible image gets its OWN build and its OWN scan. The
+# renderer used to collapse several images into one docker-build-multi call,
+# which exposes no per-image outputs — so no scan job could be attached and
+# those images shipped unscanned. The atom still exists for hand-written
+# callers; the renderer must not reach for it.
+@test "render: multi-image service produces one build+scan pair per image" {
   seed_profile "multi-dockerfile"
   "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
-  grep -q "docker-build-multi.yml@v2" "$TARGET/.github/workflows/release.yml"
-  refute_grep -qE "docker-build\.yml@v2" "$TARGET/.github/workflows/release.yml"
+  local wf="$TARGET/.github/workflows/release.yml"
+  refute_grep -q "docker-build-multi" "$wf"
+  grep -q "docker-build.yml@v2" "$wf"
+  # multi-dockerfile ships Dockerfile ($REPO) and Dockerfile.worker
+  # (custom-worker); both must build AND scan, under valid job ids.
+  [ "$(grep -cE '^  docker-build-[A-Za-z0-9_-]+:$' "$wf")" -eq 2 ]
+  [ "$(grep -cE '^  scan-[A-Za-z0-9_-]+:$' "$wf")" -eq 2 ]
+  [ "$(grep -c "trivy-image.yml@v2" "$wf")" -eq 2 ]
+  # A `$` in an image name would produce an invalid job id and would also be
+  # rewritten by the $REPO substitution into a slash-bearing string.
+  refute_grep -qE '^  (docker-build|scan)[^:]*\$' "$wf"
 }
 
 @test "render: library-go has no docker job" {

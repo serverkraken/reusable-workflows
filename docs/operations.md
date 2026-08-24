@@ -600,12 +600,17 @@ components:                      # optional; absent → auto-detect as today
     type: helm
     unittest: true
 workflows:                       # optional
+  keep:                          # workflow files the adopter maintains itself
+    - quality.yml
   e2e:
     script: test/e2e/run.sh
     schedule: "0 3 * * *"        # optional; dispatch + full-semver tag push (v*.*.*) are always on
 release:                         # optional
   dispatch_trigger: true         # adds `workflow_dispatch: {}` to release.yml
   badges: true                   # version-badges job after each release (README markers required)
+  chart_pins:                    # optional; pin the repo's own images in its chart
+    values: charts/app/values.yaml
+    key: images.{name}.tag       # optional; {name} = image basename
 gitops:                          # optional; list of consuming repos
   - repo: serverkraken/homelab-mail-nue
     scope:                       # optional file globs; default = whole repo
@@ -643,14 +648,36 @@ Semantics:
   shorthand available) and both are emitted **only when set**, so an adopter
   that takes the atom's defaults keeps rendering byte-identically. `scanners`
   must be a comma-separated subset of `vuln`, `secret`, `misconfig`,
-  `license`, without repeats. The templates render a per-image scan job only
-  for a component with exactly one release-eligible Dockerfile — the
-  multi-image path goes through `docker-build-multi`, which has no scan job —
-  so detect **rejects** the fields on a multi-image component rather than
-  silently ignoring them. Real case: wartung's ansible image ships the
+  `license`, without repeats. Every release-eligible Dockerfile gets its own
+  build and its own scan job, so the fields apply on any component. (Through
+  v4.16.x a component with several images rendered as a single
+  `docker-build-multi` call, which exposes no per-image outputs and therefore
+  carried no scan job at all — those images shipped unscanned.) Real case:
+  wartung's ansible image ships the
   `kubernetes` Ansible collection, whose bundled example manifests produce 41
   unfixable HIGH `misconfig` findings (KSV-0014, KSV-0118); `scanners:
   vuln,secret` is what keeps that image scannable at all.
+- **`workflows.keep` protects hand-maintained workflows from the legacy scan.**
+  The scan treats every workflow file it did not render as legacy, and its
+  signatures misfire: wartung's `quality.yml` was proposed for deletion as
+  "go test pipeline; replaced by test-go.yml" because it contains
+  `go test -race`, although it also runs ansible-lint, yamllint, shellcheck
+  and an Ansible test suite the catalog has no atom for. Deleting it would
+  have been worse than noise — the file is a required status check, so its
+  removal would have blocked every future merge. List such files here.
+- **`release.chart_pins` moves the chart's own image pins after a release.**
+  A repo whose chart deploys images built in the same repo has to bump those
+  pins on every image release. Renovate cannot: its `helm-values` manager only
+  recognises an `image:` key, so an `images.<name>.{repository,tag}` layout is
+  invisible to it — mailstack accumulated three "Image-Pins nachziehen"
+  commits by hand in one day before this existed. The rendered
+  `chart-image-pins` job `needs:` every build job, so a pin can only move once
+  the image is actually pushed; a pin bumped ahead of a ~25 min multi-arch
+  build is what once left the cluster in ImagePullBackOff behind an Argo hook
+  finalizer. The commit is a `fix(chart):` **without** `[skip ci]`, so
+  release-please cuts the chart release that publishes the new pins. A key
+  that does not exist in the values file fails the job rather than silently
+  leaving a stale pin.
 - **`type: helm`** marks a chart component; `unittest: true` renders the
   `helm-unittest` step (via the new `lint-helm` input). `type` is only
   needed when the directory has no language marker; a `Chart.yaml` at

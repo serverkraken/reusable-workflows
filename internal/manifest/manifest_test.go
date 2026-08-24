@@ -659,3 +659,65 @@ func TestParseManifestSecondDocumentRejected(t *testing.T) {
 		t.Fatal("expected an error for a second document")
 	}
 }
+
+// chart_pins drives the job that moves a chart's own image pins after the
+// images were built. Renovate cannot do it: its helm-values manager only
+// recognises an `image:` key, so an images.<name>.{repository,tag} layout is
+// invisible to it — mailstack ended up bumping its pins by hand.
+func TestParseManifestChartPins(t *testing.T) {
+	m, err := Parse([]byte("schema: 1\nrelease:\n  chart_pins:\n    values: charts/app/values.yaml\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp := m.Release.ChartPins
+	if cp == nil || cp.Values != "charts/app/values.yaml" {
+		t.Fatalf("chart_pins=%+v", cp)
+	}
+	if cp.Key != "images.{name}.tag" {
+		t.Fatalf("default key=%q", cp.Key)
+	}
+}
+
+func TestParseManifestChartPinsRejected(t *testing.T) {
+	cases := map[string]string{
+		"missing values":  "schema: 1\nrelease:\n  chart_pins:\n    key: images.{name}.tag\n",
+		"key without name": "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    key: images.tag\n",
+		"escaping path":   "schema: 1\nrelease:\n  chart_pins:\n    values: ../outside.yaml\n",
+		"unknown key":     "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    nope: 1\n",
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Parse([]byte(src)); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
+// workflows.keep protects a hand-maintained workflow from the legacy scan.
+// Without it the scan proposes deleting whatever it did not render, and its
+// signatures misfire: wartung's quality.yml was flagged as "replaced by
+// test-go.yml" because it contains `go test -race`, though it also runs
+// ansible-lint, shellcheck and an Ansible test suite with no catalog atom.
+func TestParseManifestWorkflowsKeep(t *testing.T) {
+	m, err := Parse([]byte("schema: 1\nworkflows:\n  keep:\n    - quality.yml\n    - nightly.yaml\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Workflows.Keep) != 2 || m.Workflows.Keep[0] != "quality.yml" {
+		t.Fatalf("keep=%v", m.Workflows.Keep)
+	}
+}
+
+func TestParseManifestWorkflowsKeepRejected(t *testing.T) {
+	for name, src := range map[string]string{
+		"path":         "schema: 1\nworkflows:\n  keep:\n    - .github/workflows/quality.yml\n",
+		"no extension": "schema: 1\nworkflows:\n  keep:\n    - quality\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Parse([]byte(src)); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}

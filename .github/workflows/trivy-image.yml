@@ -32,6 +32,15 @@ on:
         required: false
         type: boolean
         default: true
+      platforms:
+        description: >-
+          Comma-separated platforms to scan (e.g. linux/amd64,linux/arm64).
+          Empty scans whichever single platform Trivy picks for a multi-arch
+          tag — its default is linux/amd64, which leaves every other published
+          architecture unchecked.
+        required: false
+        type: string
+        default: ''
       trivy_version:
         required: false
         type: string
@@ -68,6 +77,29 @@ jobs:
     outputs:
       findings_count: ${{ steps.count.outputs.findings_count }}
     steps:
+      # Every artifact name and SARIF category below has to be unique per
+      # image: a release run scans one image per component, and with a fixed
+      # name they all land as indistinguishable siblings. Live evidence
+      # (mailstack release 32675842176): four artifacts called
+      # `trivy-image-sarif` and four called `sbom-spdx` in one run — an SBOM
+      # nobody can attribute to an image is worthless. Worse for SARIF: one
+      # shared `category` makes each upload REPLACE the previous image's
+      # findings in code scanning, so image A's findings show as fixed the
+      # moment image B uploads.
+      - name: Derive per-image report slug
+        id: slug
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+        run: |
+          set -euo pipefail
+          # ghcr.io/serverkraken/mailstack/postfix:v1.6.7 -> mailstack-postfix
+          name="${IMAGE_REF%%@*}"   # drop a digest, if any
+          name="${name%:*}"         # drop the tag
+          name="${name#*/}"         # drop the registry host
+          slug="$(printf '%s' "$name" | tr '/' '-' | tr -cd 'A-Za-z0-9._-')"
+          [ -n "$slug" ] || slug="image"
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          echo "Report slug: $slug"
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Mint catalog-scoped App token
         id: catalog-token
@@ -112,31 +144,51 @@ jobs:
           SCANNERS: ${{ inputs.scanners }}
           SEVERITY: ${{ inputs.severity }}
           IGNORE_UNFIXED: ${{ inputs.ignore_unfixed }}
+          PLATFORMS: ${{ inputs.platforms }}
         run: |
-          set -e
+          set -euo pipefail
           UNFIXED_FLAG=""
           [[ "$IGNORE_UNFIXED" == "true" ]] && UNFIXED_FLAG="--ignore-unfixed"
-          trivy image \
-            --scanners "$SCANNERS" \
-            --severity "$SEVERITY" \
-            --exit-code 0 \
-            $UNFIXED_FLAG \
-            --format sarif \
-            --output trivy-image.sarif \
-            "$IMAGE"
-          trivy image \
-            --scanners "$SCANNERS" \
-            --severity "$SEVERITY" \
-            --exit-code 0 \
-            $UNFIXED_FLAG \
-            --format json \
-            --output trivy-image.json \
-            "$IMAGE"
+          mkdir -p trivy-sarif
+          # For a multi-arch tag Trivy picks ONE platform — its default is
+          # linux/amd64. Scanning only that leaves every other published
+          # architecture unchecked, and for an arm64 cluster that is precisely
+          # the image that ships (verified: a scan of mailstack's postfix tag
+          # without --platform reports architecture amd64, while the cluster
+          # runs arm64). Callers that publish multi-arch pass the same list
+          # they built.
+          scan_one() {
+            local plat="$1" slug="$2" flag=()
+            [[ -n "$plat" ]] && flag=(--platform "$plat")
+            trivy image --scanners "$SCANNERS" --severity "$SEVERITY" --exit-code 0 \
+              $UNFIXED_FLAG "${flag[@]}" --format sarif \
+              --output "trivy-sarif/trivy-image-${slug}.sarif" "$IMAGE"
+            trivy image --scanners "$SCANNERS" --severity "$SEVERITY" --exit-code 0 \
+              $UNFIXED_FLAG "${flag[@]}" --format json \
+              --output "trivy-image-${slug}.json" "$IMAGE"
+          }
+          if [[ -z "${PLATFORMS:-}" ]]; then
+            scan_one "" "default"
+          else
+            IFS=',' read -ra PLATS <<< "$PLATFORMS"
+            for p in "${PLATS[@]}"; do
+              p="$(echo "$p" | tr -d ' ')"
+              [[ -n "$p" ]] || continue
+              echo "Scanning $IMAGE for $p"
+              scan_one "$p" "$(echo "$p" | tr '/' '-')"
+            done
+          fi
+          # The single-platform case keeps its historical file name so nothing
+          # downstream has to care which branch ran.
+          for f in trivy-sarif/*.sarif; do cp "$f" trivy-image.sarif; break; done
 
       - name: Count findings
         id: count
         run: |
-          COUNT=$(jq '[.Results[]? | (.Vulnerabilities // []) + (.Secrets // []) + (.Misconfigurations // []) | length] | add // 0' trivy-image.json)
+          set -euo pipefail
+          # Sum across platforms: a finding present only on arm64 must still
+          # fail the gate.
+          COUNT=$(jq -s '[.[].Results[]? | (.Vulnerabilities // []) + (.Secrets // []) + (.Misconfigurations // []) | length] | add // 0' trivy-image-*.json)
           echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
 
       - name: Upload SARIF to code-scanning
@@ -146,14 +198,19 @@ jobs:
         if: inputs.upload_sarif && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
-          sarif_file: trivy-image.sarif
-          category: trivy-image
+          # A directory uploads every platform's SARIF under one category —
+          # they describe the same image, so merging them is what a reader
+          # wants; splitting by platform would only fragment the alert list.
+          sarif_file: trivy-sarif
+          # Per image, so parallel scans in one run do not overwrite each
+          # other's code-scanning results.
+          category: trivy-image:${{ steps.slug.outputs.slug }}
 
       - name: Upload SARIF as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: trivy-image-sarif
-          path: trivy-image.sarif
+          name: trivy-image-sarif-${{ steps.slug.outputs.slug }}
+          path: trivy-sarif
           if-no-files-found: error
           retention-days: 7
 

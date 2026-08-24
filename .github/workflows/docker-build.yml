@@ -485,7 +485,12 @@ jobs:
         if: inputs.sbom
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: sbom-spdx
+          # Per image — the digest artifacts above already do this. Without
+          # the suffix a release run that builds several images leaves that
+          # many artifacts all called `sbom-spdx` (live: mailstack run
+          # 32675842176 had four), and an SBOM nobody can attribute to an
+          # image cannot answer the one question an SBOM exists for.
+          name: sbom-spdx-${{ steps.suffix.outputs.value }}
           path: sbom.spdx.json
           if-no-files-found: error
           retention-days: 30

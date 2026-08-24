@@ -112,6 +112,14 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 	var declared []string
+	// Workflows the adopter maintains itself are not legacy: the scan would
+	// otherwise propose deleting them, and its signatures produce false
+	// positives (a hand-written quality gate containing `go test -race` reads
+	// as "replaced by test-go.yml" even when it also runs ansible-lint,
+	// shellcheck and a test suite the catalog has no atom for).
+	if man != nil && man.Workflows != nil {
+		declared = append(declared, man.Workflows.Keep...)
+	}
 	if hasManifest && man.Workflows != nil && man.Workflows.E2E != nil {
 		declared = append(declared, "e2e.yml")
 	}
@@ -154,6 +162,9 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		}
 		if man.Release != nil {
 			profile.Release = &domain.ReleaseSpec{DispatchTrigger: man.Release.DispatchTrigger, Badges: man.Release.Badges}
+			if cp := man.Release.ChartPins; cp != nil {
+				profile.Release.ChartPins = &domain.ChartPinsSpec{Values: cp.Values, Key: cp.Key}
+			}
 		}
 		for _, c := range man.GitOps {
 			profile.Consumers = append(profile.Consumers, domain.GitOpsConsumer{Repo: c.Repo, Scope: c.Scope, Mode: c.Mode})
@@ -321,14 +332,6 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 		if pf, ok := sharedPlatforms(dockerfiles); !ok {
 			return nil, fmt.Errorf("%s: line %d: Dockerfiles of component %s must share one platforms value (docker-build-multi has a single platforms), got %s", manifest.FileName, mc.Line, mc.Path, pf)
 		}
-		// scanners/upload_sarif configure the per-image scan job, and the
-		// templates render one only for a single release-eligible Dockerfile —
-		// the multi-image path goes through docker-build-multi, which has no
-		// scan job at all. Accepting the fields there would silently do
-		// nothing, so say so instead.
-		if df, ok := scanOptionsUnused(dockerfiles); !ok {
-			return nil, fmt.Errorf("%s: line %d: component %s sets scanners/upload_sarif on %s, but a component with %d release-eligible Dockerfiles renders no per-image scan job", manifest.FileName, mc.Line, mc.Path, df, releaseEligibleCount(dockerfiles))
-		}
 		for _, d := range dockerfiles {
 			rel := d.Path
 			if mc.Path != "." {
@@ -458,34 +461,6 @@ func latestComponentVersion(tags []string, packageName string) string {
 		}
 	}
 	return best
-}
-
-// releaseEligibleCount counts the Dockerfiles a component actually releases —
-// the number the templates branch on when deciding between docker-build and
-// docker-build-multi.
-func releaseEligibleCount(dfs []domain.Dockerfile) int {
-	n := 0
-	for _, d := range dfs {
-		if d.ReleaseEligible {
-			n++
-		}
-	}
-	return n
-}
-
-// scanOptionsUnused reports whether every scanners/upload_sarif setting in the
-// component can actually reach a rendered scan job. It returns the offending
-// Dockerfile path when one cannot.
-func scanOptionsUnused(dfs []domain.Dockerfile) (string, bool) {
-	if releaseEligibleCount(dfs) <= 1 {
-		return "", true
-	}
-	for _, d := range dfs {
-		if d.Scanners != "" || d.UploadSARIF != nil {
-			return d.Path, false
-		}
-	}
-	return "", true
 }
 
 // sharedPlatforms returns the effective platforms list of a component's
