@@ -26,8 +26,16 @@ type Manifest struct {
 type Component struct {
 	Path, Language, Type, Image, Context, Platforms, Scanners string
 	UploadSARIF *bool
-	Release     *bool
-	Unittest    bool
+	Release  *bool
+	Unittest bool
+	// AppVersion keeps a chart's appVersion in step with its own chart
+	// version. release-please's helm strategy only rewrites `version:` —
+	// mailstack's chart reached 1.10.0 while appVersion sat at v1.6.5, and
+	// that value is what every resource's app.kubernetes.io/version label and
+	// the install notes show. Opt-in because it renders an extra-files entry,
+	// and a chart without the x-release-please-version marker on its
+	// appVersion line has nothing for that updater to do.
+	AppVersion  bool
 	Dockerfiles []DockerfileSpec
 	Line        int
 }
@@ -287,7 +295,7 @@ func decode(root *Node) (*Manifest, error) {
 }
 
 func decodeComponent(n *Node) (Component, error) {
-	if err := allowKeys(n, "path", "language", "type", "image", "context", "platforms", "scanners", "upload_sarif", "release", "unittest", "dockerfiles"); err != nil {
+	if err := allowKeys(n, "path", "language", "type", "image", "context", "platforms", "scanners", "upload_sarif", "release", "unittest", "app_version", "dockerfiles"); err != nil {
 		return Component{}, err
 	}
 	c := Component{Line: n.Line}
@@ -329,6 +337,9 @@ func decodeComponent(n *Node) (Component, error) {
 		return c, err
 	}
 	if c.Unittest, err = optionalBool(n, "unittest"); err != nil {
+		return c, err
+	}
+	if c.AppVersion, err = optionalBool(n, "app_version"); err != nil {
 		return c, err
 	}
 	if d, ok := n.Map["dockerfiles"]; ok {

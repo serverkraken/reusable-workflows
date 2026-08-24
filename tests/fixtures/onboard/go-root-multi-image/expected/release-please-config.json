@@ -31,6 +31,7 @@
     "charts/demo": {
       "release-type": "helm",
       "package-name": "demo",
+      "extra-files": [{ "type": "generic", "path": "charts/demo/Chart.yaml" }],
       "include-component-in-tag": true
     }
   }

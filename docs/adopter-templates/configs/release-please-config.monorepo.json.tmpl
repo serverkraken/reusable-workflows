@@ -39,6 +39,14 @@
     "{{ .path }}": {
       "release-type": "{{ .release_please_type }}",
       "package-name": "{{ path.Base .path }}",
+{{- /* Manifest `app_version: true`: release-please's helm strategy rewrites
+     only `version:`, so a chart's appVersion otherwise freezes at whatever it
+     held when the chart became its own package — and that stale value is what
+     app.kubernetes.io/version and the install notes show. The generic updater
+     picks up the x-release-please-version marker on the appVersion line. */}}
+{{- if (index . "app_version") }}
+      "extra-files": [{ "type": "generic", "path": "{{ .path }}/Chart.yaml" }],
+{{- end }}
       "include-component-in-tag": true
     }
 {{- end }}

@@ -28,6 +28,7 @@ type Component struct {
 	CGO               bool          `json:"cgo"`
 	Unittest          bool          `json:"unittest,omitempty"`
 	Version           string        `json:"version,omitempty"`
+	AppVersion        bool          `json:"app_version,omitempty"`
 }
 
 type Dockerfile struct {
