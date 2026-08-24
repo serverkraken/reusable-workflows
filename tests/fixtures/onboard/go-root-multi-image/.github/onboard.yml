@@ -18,6 +18,9 @@ components:
   - path: charts/demo
     type: helm
     unittest: true
+    # Covers the extra-files emit: without it a chart's appVersion freezes
+    # while its version keeps moving.
+    app_version: true
 workflows:
   e2e:
     script: test/e2e/run.sh

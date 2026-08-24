@@ -357,6 +357,7 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 			ReleaseSignals:    signals,
 			CGO:               detectCGO(repo, mc.Path, primary),
 			Unittest:          mc.Unittest,
+			AppVersion:        mc.AppVersion,
 		}
 		if primary == "helm" {
 			c.Version = chartVersion(filepath.Join(dir, "Chart.yaml"))

@@ -599,6 +599,7 @@ components:                      # optional; absent → auto-detect as today
   - path: charts/mailstack
     type: helm
     unittest: true
+    app_version: true            # optional; keep Chart.yaml's appVersion in step
 workflows:                       # optional
   keep:                          # workflow files the adopter maintains itself
     - quality.yml
@@ -657,6 +658,14 @@ Semantics:
   `kubernetes` Ansible collection, whose bundled example manifests produce 41
   unfixable HIGH `misconfig` findings (KSV-0014, KSV-0118); `scanners:
   vuln,secret` is what keeps that image scannable at all.
+- **`app_version: true` keeps a chart's `appVersion` in step with its chart
+  version.** release-please's `helm` strategy rewrites only `version:` —
+  mailstack's chart reached 1.10.0 while its `appVersion` still read `v1.6.5`,
+  and that stale value is what every resource's `app.kubernetes.io/version`
+  label and the install notes show. The flag renders an `extra-files` entry so
+  the generic updater picks up the `x-release-please-version` marker on the
+  `appVersion` line; the marker has to be there, which is why this is opt-in
+  rather than the default for every chart component.
 - **`workflows.keep` protects hand-maintained workflows from the legacy scan.**
   The scan treats every workflow file it did not render as legacy, and its
   signatures misfire: wartung's `quality.yml` was proposed for deletion as

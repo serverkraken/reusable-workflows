@@ -721,3 +721,26 @@ func TestParseManifestWorkflowsKeepRejected(t *testing.T) {
 		})
 	}
 }
+
+// app_version couples a chart's appVersion to its own chart version.
+// release-please's helm strategy rewrites only `version:`; mailstack's chart
+// reached 1.10.0 while appVersion sat at v1.6.5, and that stale value is what
+// app.kubernetes.io/version and the install notes display.
+func TestParseManifestAppVersion(t *testing.T) {
+	m, err := Parse([]byte("schema: 1\ncomponents:\n  - path: charts/app\n    type: helm\n    app_version: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Components[0].AppVersion {
+		t.Fatal("app_version not parsed")
+	}
+	// Opt-in: unset must stay false so no other chart adopter suddenly gets an
+	// extra-files entry for a Chart.yaml that carries no marker.
+	m2, err := Parse([]byte("schema: 1\ncomponents:\n  - path: charts/app\n    type: helm\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m2.Components[0].AppVersion {
+		t.Fatal("app_version must default to false")
+	}
+}
