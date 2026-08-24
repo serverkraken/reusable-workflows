@@ -625,3 +625,37 @@ func TestParseManifestScannersRejected(t *testing.T) {
 		})
 	}
 }
+
+// A strict yamllint (`document-start`) forces `---` on every YAML file in the
+// tree, manifests included — wartung runs exactly that config. One document
+// per manifest, so the marker is skipped rather than interpreted.
+func TestParseManifestDocumentStart(t *testing.T) {
+	m, err := Parse([]byte("---\nschema: 1\ncomponents:\n- path: .\n  image: acme/app\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Components) != 1 || m.Components[0].Image != "acme/app" {
+		t.Fatalf("components=%+v", m.Components)
+	}
+}
+
+// Zero-indented block sequences are what yamllint's default indentation rules
+// produce; the manifest reader must accept them next to the indented style.
+func TestParseManifestZeroIndentedSequence(t *testing.T) {
+	src := "---\nschema: 1\ncomponents:\n- path: images/api\n  image: acme/api\ngitops:\n- repo: acme/prod\n  scope:\n  - kubernetes/apps/**\n"
+	m, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.GitOps) != 1 || len(m.GitOps[0].Scope) != 1 || m.GitOps[0].Scope[0] != "kubernetes/apps/**" {
+		t.Fatalf("gitops=%+v", m.GitOps)
+	}
+}
+
+// A document separator in the middle is a second document, which this subset
+// does not support — it must fail loudly instead of silently dropping data.
+func TestParseManifestSecondDocumentRejected(t *testing.T) {
+	if _, err := Parse([]byte("schema: 1\ncomponents:\n- path: .\n---\nschema: 1\n")); err == nil {
+		t.Fatal("expected an error for a second document")
+	}
+}
