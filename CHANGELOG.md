@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.15.3](https://github.com/serverkraken/reusable-workflows/compare/v4.15.2...v4.15.3) (2026-08-24)
+
+
+### Bug Fixes
+
+* **cleanup-images:** a package that was never published is a no-op, not a failure ([#234](https://github.com/serverkraken/reusable-workflows/issues/234)) ([5fc363f](https://github.com/serverkraken/reusable-workflows/commit/5fc363f77d42638d6dd79adbc8e79ae3caa87def))
+
 ## [4.15.2](https://github.com/serverkraken/reusable-workflows/compare/v4.15.1...v4.15.2) (2026-08-23)
 
 
