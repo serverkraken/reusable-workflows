@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.16.1](https://github.com/serverkraken/reusable-workflows/compare/v4.16.0...v4.16.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **onboard:** Versions-Seed aus Root- bzw. Komponenten-Tags statt aus dem neuesten Release ([#238](https://github.com/serverkraken/reusable-workflows/issues/238)) ([60362cb](https://github.com/serverkraken/reusable-workflows/commit/60362cbeaa124474de31b5d3bba48395de6847ab))
+
 ## [4.16.0](https://github.com/serverkraken/reusable-workflows/compare/v4.15.3...v4.16.0) (2026-08-24)
 
 
