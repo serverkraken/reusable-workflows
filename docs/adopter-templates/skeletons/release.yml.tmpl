@@ -202,6 +202,53 @@ jobs:
     secrets: inherit
 {{- end }}
 {{ end }}
+{{- /* Manifest `release.chart_pins`: after the images are actually pushed,
+     pin them in the chart that ships in the same repo. `needs:` the build
+     jobs is the whole point — a pin that moves ahead of a ~25 min multi-arch
+     build leaves the cluster in ImagePullBackOff (mailstack, v1.6.2). The
+     builds of components that did not release are skipped, so the job needs
+     `!cancelled()` to run at all, and the atom bumps only what is present in
+     `releases`. */ -}}
+{{- if and (index .profile "release") (index .profile.release "chart_pins") }}
+{{- $buildJobs := coll.Slice "release-please" -}}
+{{- $imageMap := coll.Dict -}}
+{{- range $c := .profile.components -}}
+  {{- $slug := strings.ReplaceAll "/" "-" $c.path -}}
+  {{- if eq $slug "." }}{{ $slug = "" }}{{ end -}}
+  {{- $sfx := "" -}}
+  {{- if $slug }}{{ $sfx = printf "-%s" $slug }}{{ end -}}
+  {{- $dfs := coll.Slice -}}
+  {{- range $c.dockerfiles -}}{{- if .release_eligible -}}{{- $dfs = coll.Append . $dfs -}}{{- end -}}{{- end -}}
+  {{- if gt (len $dfs) 0 -}}
+    {{- $names := coll.Slice -}}
+    {{- range $df := $dfs -}}
+      {{- $names = coll.Append $df.image_name $names -}}
+      {{- $imgSuffix := "" -}}
+      {{- if gt (len $dfs) 1 -}}
+        {{- $base := regexp.Replace "[^A-Za-z0-9_-]" "-" (regexp.Replace "[$]" "" (path.Base $df.image_name)) -}}
+        {{- $imgSuffix = printf "-%s" (strings.ToLower $base) -}}
+      {{- end -}}
+      {{- $buildJobs = coll.Append (printf "docker-build%s%s" $sfx $imgSuffix) $buildJobs -}}
+    {{- end -}}
+    {{- $imageMap = coll.Merge $imageMap (coll.Dict $c.path $names) -}}
+  {{- end -}}
+{{- end }}
+  chart-image-pins:
+    needs: [{{ join $buildJobs ", " }}]
+    {{- /* One expression, not a mix: text outside ${{ }} makes the whole
+         condition constant-true, which actionlint rejects. */}}
+    if: {{`${{ !cancelled() && needs.release-please.outputs.paths_released != '[]' }}`}}
+    uses: serverkraken/reusable-workflows/.github/workflows/chart-image-bump.yml@{{ $pin }}
+    permissions:
+      contents: write
+    with:
+      values_file: {{ .profile.release.chart_pins.values }}
+      key_template: {{ .profile.release.chart_pins.key }}
+      images: |
+        {{ $imageMap | toJSON }}
+      releases: {{`${{ needs.release-please.outputs.releases }}`}}
+    secrets: inherit
+{{- end }}
 {{- /* Manifest `release.badges: true`: after anything was released, rewrite
      the README badge block + table and commit it ([skip ci]). */ -}}
 {{- if and (index .profile "release") (index .profile.release "badges") }}

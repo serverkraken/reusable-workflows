@@ -606,6 +606,9 @@ workflows:                       # optional
 release:                         # optional
   dispatch_trigger: true         # adds `workflow_dispatch: {}` to release.yml
   badges: true                   # version-badges job after each release (README markers required)
+  chart_pins:                    # optional; pin the repo's own images in its chart
+    values: charts/app/values.yaml
+    key: images.{name}.tag       # optional; {name} = image basename
 gitops:                          # optional; list of consuming repos
   - repo: serverkraken/homelab-mail-nue
     scope:                       # optional file globs; default = whole repo
@@ -652,6 +655,19 @@ Semantics:
   `kubernetes` Ansible collection, whose bundled example manifests produce 41
   unfixable HIGH `misconfig` findings (KSV-0014, KSV-0118); `scanners:
   vuln,secret` is what keeps that image scannable at all.
+- **`release.chart_pins` moves the chart's own image pins after a release.**
+  A repo whose chart deploys images built in the same repo has to bump those
+  pins on every image release. Renovate cannot: its `helm-values` manager only
+  recognises an `image:` key, so an `images.<name>.{repository,tag}` layout is
+  invisible to it — mailstack accumulated three "Image-Pins nachziehen"
+  commits by hand in one day before this existed. The rendered
+  `chart-image-pins` job `needs:` every build job, so a pin can only move once
+  the image is actually pushed; a pin bumped ahead of a ~25 min multi-arch
+  build is what once left the cluster in ImagePullBackOff behind an Argo hook
+  finalizer. The commit is a `fix(chart):` **without** `[skip ci]`, so
+  release-please cuts the chart release that publishes the new pins. A key
+  that does not exist in the values file fails the job rather than silently
+  leaving a stale pin.
 - **`type: helm`** marks a chart component; `unittest: true` renders the
   `helm-unittest` step (via the new `lint-helm` input). `type` is only
   needed when the directory has no language marker; a `Chart.yaml` at

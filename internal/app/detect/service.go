@@ -154,6 +154,9 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		}
 		if man.Release != nil {
 			profile.Release = &domain.ReleaseSpec{DispatchTrigger: man.Release.DispatchTrigger, Badges: man.Release.Badges}
+			if cp := man.Release.ChartPins; cp != nil {
+				profile.Release.ChartPins = &domain.ChartPinsSpec{Values: cp.Values, Key: cp.Key}
+			}
 		}
 		for _, c := range man.GitOps {
 			profile.Consumers = append(profile.Consumers, domain.GitOpsConsumer{Repo: c.Repo, Scope: c.Scope, Mode: c.Mode})

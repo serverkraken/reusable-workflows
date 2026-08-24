@@ -1,0 +1,192 @@
+# .github/workflows/chart-image-bump.yml
+# Reusable workflow: after a release built new images, pin them in the chart
+# that ships in the same repo. Stability surface: the shape of `inputs`,
+# `outputs` and `secrets` below is the contract — changes are SemVer-significant.
+#
+# Why this exists: a repo whose chart deploys its own images has to move the
+# pins after every image release. Leaving that to Renovate looked fine on
+# paper and was not — Renovate's helm-values manager only recognises an
+# `image:` key, so a `images.<name>.{repository,tag}` layout is invisible to
+# it, and mailstack ended up with three "Image-Pins nachziehen" commits by
+# hand in a single day.
+#
+# Ordering is the point: this job runs `needs:` the build jobs, so the pin can
+# only move once the image is actually pushed. The hazard is documented in
+# mailstack's own values.yaml — a pin bumped ahead of a ~25 min multi-arch
+# build left the cluster in ImagePullBackOff behind an Argo hook finalizer.
+#
+# The commit is a `fix(chart):` on the default branch, deliberately WITHOUT
+# `[skip ci]`: release-please must see it to cut the chart release that
+# publishes the new pins.
+#
+# Consumer responsibility:
+#   - `values_file` must already contain every targeted key; a missing key
+#     fails the job rather than silently leaving a stale pin.
+#   - Call with `secrets: inherit` — the App token both checks out and pushes.
+# Summary convention: docs/conventions/step-summary.md
+name: chart-image-bump
+on:
+  workflow_call:
+    inputs:
+      values_file:
+        description: 'Helm values file holding the image pins.'
+        required: true
+        type: string
+      images:
+        description: >-
+          JSON map of component path → image names, e.g.
+          {"images/postfix": ["serverkraken/mailstack/postfix"]}. Rendered from
+          the adopter manifest.
+        required: true
+        type: string
+      releases:
+        description: >-
+          The `releases` output of semantic-release.yml. Only components listed
+          there are bumped, so a component that did not release keeps its pin.
+        required: true
+        type: string
+      key_template:
+        description: 'Dotted path to the tag, with {name} for the image basename.'
+        required: false
+        type: string
+        default: 'images.{name}.tag'
+      commit:
+        description: 'Commit and push. Set false for dry runs and self-CI.'
+        required: false
+        type: boolean
+        default: true
+      commit_message:
+        description: 'Commit message. Keep the fix(chart) prefix or release-please will not cut a chart release.'
+        required: false
+        type: string
+        default: 'fix(chart): Image-Pins auf die frisch gebauten Versionen'
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux","low-performance"]'
+    outputs:
+      changed:
+        description: '"true" when at least one pin moved.'
+        value: ${{ jobs.bump.outputs.changed }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID (catalog checkout + push of the pin commit).'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: write
+
+concurrency:
+  # Serialise with itself per repo: two release runs pinning the same file
+  # would otherwise race on the push.
+  group: chart-image-bump-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.bump.outputs.changed }}
+    steps:
+      - name: Mint App token for this repository
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+
+      - name: Resolve catalog ref
+        # See version-badges.yml for the rationale: self-CI uses the caller's
+        # SHA, adopters the floating major tag.
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout catalog for the bump script
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+
+      - name: Pin image tags
+        id: bump
+        env:
+          VALUES: ${{ inputs.values_file }}
+          KEY_TEMPLATE: ${{ inputs.key_template }}
+          RELEASES: ${{ inputs.releases }}
+          IMAGES: ${{ inputs.images }}
+        run: |
+          set -euo pipefail
+          python3 .catalog/scripts/chart-image-bump.py \
+            "$VALUES" "$KEY_TEMPLATE" "$RELEASES" "$IMAGES" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Commit and push
+        id: push
+        if: inputs.commit && steps.bump.outputs.changed == 'true'
+        env:
+          VALUES: ${{ inputs.values_file }}
+          MESSAGE: ${{ inputs.commit_message }}
+        run: |
+          set -euo pipefail
+          git config user.name "serverkraken-release-bot[bot]"
+          git config user.email "serverkraken-release-bot[bot]@users.noreply.github.com"
+          git add -- "$VALUES"
+          git commit -m "$MESSAGE"
+          # The build jobs ran for minutes; main may have moved meanwhile.
+          git pull --rebase
+          git push
+
+      - name: Summary
+        if: always()
+        env:
+          CHANGED: ${{ steps.bump.outputs.changed }}
+          COMMIT: ${{ inputs.commit }}
+          BUMP_OUTCOME: ${{ steps.bump.outcome }}
+          PUSH_OUTCOME: ${{ steps.push.outcome }}
+          VALUES: ${{ inputs.values_file }}
+        run: |
+          if [[ "$BUMP_OUTCOME" != "success" ]]; then
+            result="✗ failed"
+          elif [[ "$CHANGED" == "true" && "$COMMIT" == "true" ]]; then
+            result="✓ pinned and pushed"
+          elif [[ "$CHANGED" == "true" ]]; then
+            result="✓ pinned (not committed)"
+          else
+            result="✓ already current"
+          fi
+          {
+            echo "## chart-image-bump"
+            echo ""
+            echo "**Tool:** scripts/chart-image-bump.py"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "**Values file:** \`${VALUES}\`"
+          } >> "$GITHUB_STEP_SUMMARY" || true

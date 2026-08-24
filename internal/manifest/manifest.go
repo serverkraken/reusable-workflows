@@ -41,7 +41,19 @@ type DockerfileSpec struct {
 
 type Workflows struct{ E2E *E2E }
 type E2E struct{ Script, Schedule string }
-type Release struct{ DispatchTrigger, Badges bool }
+type Release struct {
+	DispatchTrigger, Badges bool
+	// ChartPins moves the chart's own image pins after a release built new
+	// images. Nil when the adopter does not ship a chart for its own images.
+	ChartPins *ChartPins
+}
+
+// ChartPins names the values file and the dotted path that holds an image tag.
+// `Key` carries a {name} placeholder for the image basename.
+type ChartPins struct {
+	Values, Key string
+	Line        int
+}
 type Consumer struct {
 	Repo  string
 	Scope []string
@@ -177,7 +189,7 @@ func decode(root *Node) (*Manifest, error) {
 		}
 	}
 	if n, ok := root.Map["release"]; ok {
-		if err := allowKeys(n, "dispatch_trigger", "badges"); err != nil {
+		if err := allowKeys(n, "dispatch_trigger", "badges", "chart_pins"); err != nil {
 			return nil, err
 		}
 		m.Release = &Release{}
@@ -186,6 +198,27 @@ func decode(root *Node) (*Manifest, error) {
 		}
 		if m.Release.DispatchTrigger, err = optionalBool(n, "dispatch_trigger"); err != nil {
 			return nil, err
+		}
+		if cp, ok := n.Map["chart_pins"]; ok {
+			if err := allowKeys(cp, "values", "key"); err != nil {
+				return nil, err
+			}
+			pins := &ChartPins{Line: cp.Line, Key: "images.{name}.tag"}
+			if pins.Values, err = requiredString(cp, "values"); err != nil {
+				return nil, err
+			}
+			if pins.Values, err = cleanRelPath(pins.Values, cp.Map["values"].Line); err != nil {
+				return nil, err
+			}
+			if key, err := optionalString(cp, "key"); err != nil {
+				return nil, err
+			} else if key != "" {
+				pins.Key = key
+			}
+			if !strings.Contains(pins.Key, "{name}") {
+				return nil, fmt.Errorf("line %d: chart_pins.key must contain {name}, got %q", cp.Line, pins.Key)
+			}
+			m.Release.ChartPins = pins
 		}
 	}
 	if n, ok := root.Map["gitops"]; ok {
