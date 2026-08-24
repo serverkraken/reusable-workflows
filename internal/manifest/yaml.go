@@ -69,6 +69,16 @@ func tokenize(src string) ([]line, error) {
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
+		// A leading `---` document start is idiomatic YAML and mandatory under
+		// a strict yamllint (`document-start`), which several adopters run over
+		// their whole tree — wartung's .yamllint.yml rejects the manifest
+		// without it. There is exactly one document per manifest, so the marker
+		// carries no meaning here beyond satisfying the linter: skip it.
+		// A second `---` would start a new document, which this subset does not
+		// support, so it still falls through to the parser and fails loudly.
+		if len(out) == 0 && strings.TrimSpace(text) == "---" {
+			continue
+		}
 		indent := len(text) - len(strings.TrimLeft(text, " "))
 		if indent%2 != 0 {
 			return nil, fmt.Errorf("line %d: indentation must be a multiple of two spaces", no)
@@ -134,7 +144,15 @@ func (p *parser) mapping(indent int) (*Node, error) {
 		var child *Node
 		var err error
 		if rest == "" {
-			if p.pos >= len(p.lines) || p.lines[p.pos].indent <= indent {
+			// A block sequence may sit at its key's own indentation — YAML
+			// allows both, and yamllint's `indentation` rule pushes whole
+			// repos to this style (wartung's config rejects the indented
+			// form outright). Only a sequence may do this: a mapping at the
+			// key's indent is the next key, not a value.
+			zeroIndented := p.pos < len(p.lines) &&
+				p.lines[p.pos].indent == indent &&
+				(strings.HasPrefix(p.lines[p.pos].text, "- ") || p.lines[p.pos].text == "-")
+			if !zeroIndented && (p.pos >= len(p.lines) || p.lines[p.pos].indent <= indent) {
 				return nil, fmt.Errorf("line %d: key %q has no value", l.no, key)
 			}
 			child, err = p.block(p.lines[p.pos].indent)
@@ -164,7 +182,12 @@ func (p *parser) sequence(indent int) (*Node, error) {
 			return nil, fmt.Errorf("line %d: unexpected indentation", l.no)
 		}
 		if !strings.HasPrefix(l.text, "- ") && l.text != "-" {
-			return nil, fmt.Errorf("line %d: expected sequence item", l.no)
+			// End of the sequence. For a zero-indented one this is the owning
+			// mapping's next key, which that mapping then parses normally. For
+			// an indented one the line sits deeper than the mapping, which
+			// rejects it as unexpected indentation — either way the caller
+			// produces the better message than a blanket error here would.
+			break
 		}
 		rest := strings.TrimSpace(strings.TrimPrefix(l.text, "-"))
 		if rest == "" {

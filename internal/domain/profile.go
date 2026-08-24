@@ -37,6 +37,11 @@ type Dockerfile struct {
 	ReleaseEligible bool   `json:"release_eligible"`
 	Context         string `json:"context,omitempty"`
 	Platforms       string `json:"platforms,omitempty"`
+	// Scanners and UploadSARIF feed the per-image scan job. They are pointers
+	// to nothing but the atom's own defaults when unset, so omitting them keeps
+	// every existing adopter's render byte-identical.
+	Scanners    string `json:"scanners,omitempty"`
+	UploadSARIF *bool  `json:"upload_sarif,omitempty"`
 }
 
 type ReleaseSignal struct {

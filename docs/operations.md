@@ -578,6 +578,8 @@ components:                      # optional; absent → auto-detect as today
         image: serverkraken/mailstack/tools
         context: .                           # optional, repo-relative; default = component path
         platforms: linux/amd64,linux/arm64   # optional; default = atom default
+        scanners: vuln,secret                # optional; default = trivy-image default
+        upload_sarif: false                  # optional; default = trivy-image default
         release: true                        # optional; default by file name
   - path: images/postfix
     image: serverkraken/mailstack/postfix    # shorthand when `path` holds exactly one Dockerfile
@@ -636,6 +638,19 @@ Semantics:
   value must be a comma-separated `os/arch[/variant]` list
   (`linux/amd64,linux/arm64/v8`); leave it out to take the atom's default,
   which is what nearly every adopter wants.
+- **`scanners` / `upload_sarif` configure the per-image scan job** and are
+  forwarded verbatim to `trivy-image`. Both are per Dockerfile (component
+  shorthand available) and both are emitted **only when set**, so an adopter
+  that takes the atom's defaults keeps rendering byte-identically. `scanners`
+  must be a comma-separated subset of `vuln`, `secret`, `misconfig`,
+  `license`, without repeats. The templates render a per-image scan job only
+  for a component with exactly one release-eligible Dockerfile — the
+  multi-image path goes through `docker-build-multi`, which has no scan job —
+  so detect **rejects** the fields on a multi-image component rather than
+  silently ignoring them. Real case: wartung's ansible image ships the
+  `kubernetes` Ansible collection, whose bundled example manifests produce 41
+  unfixable HIGH `misconfig` findings (KSV-0014, KSV-0118); `scanners:
+  vuln,secret` is what keeps that image scannable at all.
 - **`type: helm`** marks a chart component; `unittest: true` renders the
   `helm-unittest` step (via the new `lint-helm` input). `type` is only
   needed when the directory has no language marker; a `Chart.yaml` at

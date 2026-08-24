@@ -557,3 +557,105 @@ func TestParseManifestReleaseBadges(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+// Scan options exist because an image that vendors third-party manifests
+// cannot pass the atom's default scanner set: wartung's ansible image ships
+// the kubernetes ansible collection, whose example manifests produce 41
+// unfixable HIGH misconfig findings.
+func TestParseManifestScanOptions(t *testing.T) {
+	src := `schema: 1
+components:
+  - path: ansible
+    image: acme/ansible
+    context: .
+    scanners: vuln,secret
+    upload_sarif: false
+  - path: worker
+    dockerfiles:
+      - path: Dockerfile
+        image: acme/worker
+        scanners: vuln,secret,misconfig,license
+        upload_sarif: true
+`
+	m, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := m.Components[0]
+	if c.Scanners != "vuln,secret" {
+		t.Fatalf("component scanners=%q", c.Scanners)
+	}
+	if c.UploadSARIF == nil || *c.UploadSARIF {
+		t.Fatalf("component upload_sarif=%v", c.UploadSARIF)
+	}
+	d := m.Components[1].Dockerfiles[0]
+	if d.Scanners != "vuln,secret,misconfig,license" {
+		t.Fatalf("dockerfile scanners=%q", d.Scanners)
+	}
+	if d.UploadSARIF == nil || !*d.UploadSARIF {
+		t.Fatalf("dockerfile upload_sarif=%v", d.UploadSARIF)
+	}
+}
+
+// Unset must stay distinguishable from false: the templates emit the input
+// only when the key is present, so an omitted upload_sarif keeps every
+// existing adopter's render byte-identical.
+func TestParseManifestScanOptionsUnset(t *testing.T) {
+	m, err := Parse([]byte("schema: 1\ncomponents:\n  - path: .\n    image: acme/app\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := m.Components[0]; c.Scanners != "" || c.UploadSARIF != nil {
+		t.Fatalf("expected unset, got scanners=%q upload_sarif=%v", c.Scanners, c.UploadSARIF)
+	}
+}
+
+func TestParseManifestScannersRejected(t *testing.T) {
+	cases := map[string]string{
+		"unknown scanner": "schema: 1\ncomponents:\n  - path: .\n    scanners: vuln,rootkit\n",
+		"duplicate":       "schema: 1\ncomponents:\n  - path: .\n    scanners: vuln,vuln\n",
+		"trailing comma":  "schema: 1\ncomponents:\n  - path: .\n    scanners: vuln,\n",
+		"spaced":          "schema: 1\ncomponents:\n  - path: .\n    scanners: 'vuln, secret'\n",
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Parse([]byte(src)); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
+// A strict yamllint (`document-start`) forces `---` on every YAML file in the
+// tree, manifests included — wartung runs exactly that config. One document
+// per manifest, so the marker is skipped rather than interpreted.
+func TestParseManifestDocumentStart(t *testing.T) {
+	m, err := Parse([]byte("---\nschema: 1\ncomponents:\n- path: .\n  image: acme/app\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Components) != 1 || m.Components[0].Image != "acme/app" {
+		t.Fatalf("components=%+v", m.Components)
+	}
+}
+
+// Zero-indented block sequences are what yamllint's default indentation rules
+// produce; the manifest reader must accept them next to the indented style.
+func TestParseManifestZeroIndentedSequence(t *testing.T) {
+	src := "---\nschema: 1\ncomponents:\n- path: images/api\n  image: acme/api\ngitops:\n- repo: acme/prod\n  scope:\n  - kubernetes/apps/**\n"
+	m, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.GitOps) != 1 || len(m.GitOps[0].Scope) != 1 || m.GitOps[0].Scope[0] != "kubernetes/apps/**" {
+		t.Fatalf("gitops=%+v", m.GitOps)
+	}
+}
+
+// A document separator in the middle is a second document, which this subset
+// does not support — it must fail loudly instead of silently dropping data.
+func TestParseManifestSecondDocumentRejected(t *testing.T) {
+	if _, err := Parse([]byte("schema: 1\ncomponents:\n- path: .\n---\nschema: 1\n")); err == nil {
+		t.Fatal("expected an error for a second document")
+	}
+}

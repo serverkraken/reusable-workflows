@@ -254,7 +254,7 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 		}
 
 		dockerfiles := inventoryDockerfiles(repo, mc.Path, mc.Image)
-		if mc.Image != "" || mc.Context != "" || mc.Platforms != "" || mc.Release != nil {
+		if mc.Image != "" || mc.Context != "" || mc.Platforms != "" || mc.Scanners != "" || mc.UploadSARIF != nil || mc.Release != nil {
 			// The shorthand always targets the single Dockerfile in the
 			// component's own directory. When dockerfiles[] is already carrying
 			// the images, pointing at it as the fix is misleading — the real
@@ -265,7 +265,7 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 			if len(dockerfiles) != 1 {
 				return nil, fmt.Errorf("%s: line %d: component %s declares image/context/platforms/release but has %d Dockerfiles; use dockerfiles[] instead", manifest.FileName, mc.Line, mc.Path, len(dockerfiles))
 			}
-			applyDockerfileSpec(&dockerfiles[0], mc.Context, mc.Platforms, mc.Release)
+			applyDockerfileSpec(&dockerfiles[0], mc.Context, mc.Platforms, mc.Scanners, mc.UploadSARIF, mc.Release)
 		}
 		seen := map[string]bool{}
 		for _, d := range dockerfiles {
@@ -287,7 +287,7 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 			seen[relSlash] = true
 			df := resolveDockerfile(full, filepath.Base(spec.Path), filepath.ToSlash(filepath.Dir(spec.Path)), spec.Image)
 			df.Path = relSlash
-			applyDockerfileSpec(&df, spec.Context, spec.Platforms, spec.Release)
+			applyDockerfileSpec(&df, spec.Context, spec.Platforms, spec.Scanners, spec.UploadSARIF, spec.Release)
 			dockerfiles = append(dockerfiles, df)
 		}
 		sort.Slice(dockerfiles, func(i, j int) bool { return dockerfiles[i].Path < dockerfiles[j].Path })
@@ -296,6 +296,14 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 		}
 		if pf, ok := sharedPlatforms(dockerfiles); !ok {
 			return nil, fmt.Errorf("%s: line %d: Dockerfiles of component %s must share one platforms value (docker-build-multi has a single platforms), got %s", manifest.FileName, mc.Line, mc.Path, pf)
+		}
+		// scanners/upload_sarif configure the per-image scan job, and the
+		// templates render one only for a single release-eligible Dockerfile —
+		// the multi-image path goes through docker-build-multi, which has no
+		// scan job at all. Accepting the fields there would silently do
+		// nothing, so say so instead.
+		if df, ok := scanOptionsUnused(dockerfiles); !ok {
+			return nil, fmt.Errorf("%s: line %d: component %s sets scanners/upload_sarif on %s, but a component with %d release-eligible Dockerfiles renders no per-image scan job", manifest.FileName, mc.Line, mc.Path, df, releaseEligibleCount(dockerfiles))
 		}
 		for _, d := range dockerfiles {
 			rel := d.Path
@@ -331,12 +339,18 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 	return out, nil
 }
 
-func applyDockerfileSpec(df *domain.Dockerfile, ctx, platforms string, release *bool) {
+func applyDockerfileSpec(df *domain.Dockerfile, ctx, platforms, scanners string, uploadSARIF, release *bool) {
 	if ctx != "" {
 		df.Context = ctx
 	}
 	if platforms != "" {
 		df.Platforms = platforms
+	}
+	if scanners != "" {
+		df.Scanners = scanners
+	}
+	if uploadSARIF != nil {
+		df.UploadSARIF = uploadSARIF
 	}
 	if release != nil {
 		df.ReleaseEligible = *release
@@ -363,6 +377,34 @@ func sharedContext(componentPath string, dfs []domain.Dockerfile) (string, bool)
 		}
 	}
 	return first, true
+}
+
+// releaseEligibleCount counts the Dockerfiles a component actually releases —
+// the number the templates branch on when deciding between docker-build and
+// docker-build-multi.
+func releaseEligibleCount(dfs []domain.Dockerfile) int {
+	n := 0
+	for _, d := range dfs {
+		if d.ReleaseEligible {
+			n++
+		}
+	}
+	return n
+}
+
+// scanOptionsUnused reports whether every scanners/upload_sarif setting in the
+// component can actually reach a rendered scan job. It returns the offending
+// Dockerfile path when one cannot.
+func scanOptionsUnused(dfs []domain.Dockerfile) (string, bool) {
+	if releaseEligibleCount(dfs) <= 1 {
+		return "", true
+	}
+	for _, d := range dfs {
+		if d.Scanners != "" || d.UploadSARIF != nil {
+			return d.Path, false
+		}
+	}
+	return "", true
 }
 
 // sharedPlatforms returns the effective platforms list of a component's
