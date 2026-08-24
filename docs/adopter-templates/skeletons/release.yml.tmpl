@@ -4,8 +4,7 @@
   Composes release-please (via semantic-release.yml) with the build/sign atoms
   the adopter actually needs. The job set is decided per component from
   profile.components[].dockerfiles and release_signals:
-    - dockerfiles[] of length 1   → docker-build.yml
-    - dockerfiles[] of length >1  → docker-build-multi.yml
+    - every release-eligible dockerfile → docker-build.yml + trivy-image.yml
     - release_signals.goreleaser_config → goreleaser.yml
     - release_signals.chart_yaml         → helm-publish.yml
 
@@ -72,9 +71,34 @@ jobs:
   {{- end -}}
 {{- end -}}
 
-{{- if eq (len $releaseDfs) 1 }}
-{{- $df := index $releaseDfs 0 }}
-  docker-build{{ $suffix }}:
+{{- /* One build+scan pair per release-eligible Dockerfile. The multi-image
+     path used to collapse them into a single docker-build-multi call, which
+     exposes no per-image outputs — so no scan job could be wired up and those
+     images shipped unscanned (mailstack's tools and crowdsec-sync did, while
+     its five single-image components were scanned). docker-build-multi still
+     exists for hand-written callers; the renderer no longer uses it.
+
+     Job suffix: single-image components keep the bare name so every existing
+     adopter renders byte-identically. Only a component with several images
+     appends the image's own name, sanitised to what GitHub accepts as a job
+     ID — `$` is dropped rather than replaced so `$REPO-worker` stays a valid
+     id AND no longer matches the literal `$REPO` that substituteRepo would
+     otherwise rewrite into an `owner/repo` string containing a slash. */ -}}
+{{- range $idx, $df := $releaseDfs }}
+{{- $imgSuffix := "" }}
+{{- if gt (len $releaseDfs) 1 }}
+  {{- $base := path.Base $df.image_name -}}
+  {{- $base = regexp.Replace "[$]" "" $base -}}
+  {{- $base = regexp.Replace "[^A-Za-z0-9_-]" "-" $base -}}
+  {{- /* Lowercase so the job id matches the image it builds: the `$REPO`
+       placeholder is substituted to the lowercase `owner/repo` later, and a
+       job called docker-build-REPO next to `image_name: repo` reads like a
+       different thing. */ -}}
+  {{- $imgSuffix = printf "-%s" (strings.ToLower $base) -}}
+{{- end }}
+{{- if gt $idx 0 }}
+{{ end }}
+  docker-build{{ $suffix }}{{ $imgSuffix }}:
     needs: [release-please]
     if: {{ $gate }}
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}
@@ -99,11 +123,11 @@ jobs:
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
     secrets: inherit
 
-  scan{{ $suffix }}:
-    needs: [docker-build{{ $suffix }}]
+  scan{{ $suffix }}{{ $imgSuffix }}:
+    needs: [docker-build{{ $suffix }}{{ $imgSuffix }}]
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
     with:
-      image_ref: {{ printf "${{ needs.docker-build%s.outputs.image_ref }}" $suffix }}
+      image_ref: {{ printf "${{ needs.docker-build%s%s.outputs.image_ref }}" $suffix $imgSuffix }}
     {{- /* Emitted only when the manifest sets them, so adopters that take the
          atom's defaults keep rendering byte-identically. */}}
     {{- if (index $df "scanners") }}
@@ -115,40 +139,7 @@ jobs:
       upload_sarif: {{ index $df "upload_sarif" }}
     {{- end }}
     secrets: inherit
-{{- else if gt (len $releaseDfs) 1 -}}
-{{/* Translate profile.json's dockerfiles[{path, image_name, ...}] into the
-     docker-build-multi atom's expected shape: [{dockerfile, image_name}]. */}}
-{{- $images := coll.Slice -}}
-{{- range $releaseDfs -}}
-  {{- $dfPath := .path -}}
-  {{- if not $isRoot -}}{{- $dfPath = printf "%s/%s" $ctxPath .path -}}{{- end -}}
-  {{- $images = coll.Append (coll.Dict "dockerfile" $dfPath "image_name" .image_name) $images -}}
 {{- end }}
-  docker-build{{ $suffix }}:
-    needs: [release-please]
-    if: {{ $gate }}
-    uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@{{ $pin }}
-    with:
-    {{- $ctx := $ctxPath }}{{ if (index (index $releaseDfs 0) "context") }}{{ $ctx = index (index $releaseDfs 0) "context" }}{{ end }}
-    {{- if ne $ctx "." }}
-      context: {{ $ctx }}
-    {{- end }}
-      images: |
-        {{ $images | toJSON }}
-    {{- /* detect enforces one platforms value across a component's Dockerfiles
-         (docker-build-multi has a single platforms input), so index 0 speaks
-         for all of them. */ -}}
-    {{- if (index (index $releaseDfs 0) "platforms") }}
-      platforms: {{ index (index $releaseDfs 0) "platforms" }}
-    {{- end }}
-      tag: {{ $tag }}
-      ref: {{ $ref }}
-      sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
-      attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
-      sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
-    secrets: inherit
-{{- end }}
-
 {{- if $c.release_signals.goreleaser_config }}
   goreleaser{{ $suffix }}:
     needs: [release-please]
