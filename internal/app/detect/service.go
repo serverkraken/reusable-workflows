@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/serverkraken/reusable-workflows/internal/domain"
@@ -59,13 +60,23 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	}
 
 	branch, version, topics := "main", "0.0.0", []string(nil)
+	var releaseTags []string
 	if req.TargetRepo != "" {
 		if b, err := gh.DefaultBranch(ctx, req.TargetRepo); err != nil {
 			return Result{}, fmt.Errorf("repo not accessible: %s", req.TargetRepo)
 		} else if b != "" {
 			branch = b
 		}
-		if v, err := gh.LatestStableRelease(ctx, req.TargetRepo); err == nil && v != "" {
+		if t, err := gh.ReleaseTags(ctx, req.TargetRepo); err == nil && len(t) > 0 {
+			releaseTags = t
+		}
+		// The root version must come from a ROOT tag. `gh release list` is
+		// ordered by date, so in a monorepo its newest entry is whatever
+		// component released last (`ansible-v2.6.0`) — seeding from that wrote
+		// a tag name where a version belongs, for every package at once.
+		if v := latestRootVersion(releaseTags); v != "" {
+			version = v
+		} else if v, err := gh.LatestStableRelease(ctx, req.TargetRepo); err == nil && v != "" && rootTagRe.MatchString("v"+strings.TrimPrefix(v, "v")) {
 			version = strings.TrimPrefix(v, "v")
 		}
 		if t, err := gh.Topics(ctx, req.TargetRepo); err == nil {
@@ -86,6 +97,19 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	}
 	if err != nil {
 		return Result{}, err
+	}
+	// Seed each non-root component from its own `<package>-vX.Y.Z` tags. The
+	// manifest template falls back to current_version, which is the ROOT
+	// version — without this a re-onboard would drag every component up to it
+	// and jump their next releases forward. A helm component keeps the version
+	// release-please already wrote into its Chart.yaml.
+	for i := range components {
+		if components[i].Path == "." || components[i].Version != "" {
+			continue
+		}
+		if v := latestComponentVersion(releaseTags, filepath.Base(components[i].Path)); v != "" {
+			components[i].Version = v
+		}
 	}
 	var declared []string
 	if hasManifest && man.Workflows != nil && man.Workflows.E2E != nil {
@@ -377,6 +401,63 @@ func sharedContext(componentPath string, dfs []domain.Dockerfile) (string, bool)
 		}
 	}
 	return first, true
+}
+
+var (
+	// rootTagRe matches a root release tag: `v1.2.3`, no component prefix.
+	rootTagRe = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+	// componentTagRe splits `<package>-v1.2.3` into package and version.
+	componentTagRe = regexp.MustCompile(`^(.+)-v([0-9]+\.[0-9]+\.[0-9]+)$`)
+)
+
+// latestRootVersion returns the highest root release version (no leading `v`),
+// ignoring per-component tags and the floating `v1`/`v1.2` aliases.
+func latestRootVersion(tags []string) string {
+	best := ""
+	for _, t := range tags {
+		if rootTagRe.MatchString(t) {
+			best = higherVersion(best, strings.TrimPrefix(t, "v"))
+		}
+	}
+	return best
+}
+
+// higherVersion compares two dotted triples numerically and returns the larger.
+// Sorting matters because the tag listing has no meaningful order — and string
+// comparison would rank 2.10.0 below 2.9.0.
+func higherVersion(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < 3; i++ {
+		x, _ := strconv.Atoi(pa[i])
+		y, _ := strconv.Atoi(pb[i])
+		if x != y {
+			if x > y {
+				return a
+			}
+			return b
+		}
+	}
+	return a
+}
+
+// latestComponentVersion returns the newest release version of one package,
+// read from its `<package>-vX.Y.Z` tags. Without it a re-onboard would seed
+// every component from the ROOT version and silently jump their next releases
+// forward — mailstack's postfix would go from 1.6.7 to the root's 1.7.0.
+func latestComponentVersion(tags []string, packageName string) string {
+	best := ""
+	for _, t := range tags {
+		if m := componentTagRe.FindStringSubmatch(t); m != nil && m[1] == packageName {
+			best = higherVersion(best, m[2])
+		}
+	}
+	return best
 }
 
 // releaseEligibleCount counts the Dockerfiles a component actually releases —

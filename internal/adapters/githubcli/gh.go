@@ -39,6 +39,25 @@ func (Client) LatestStableRelease(ctx context.Context, repo string) (string, err
 	return tag, nil
 }
 
+// ReleaseTags lists the repo's tags. Tags, not releases: release-please keys
+// off tags, and a component can legitimately be seeded with a bare tag and no
+// GitHub Release object — wartung's controller-v2.5.2 was created exactly that
+// way, and reading releases would have missed it. Callers select by semver,
+// so the API's ordering does not matter.
+func (Client) ReleaseTags(ctx context.Context, repo string) ([]string, error) {
+	out, err := run(ctx, "gh", "api", "--paginate", "/repos/"+repo+"/tags", "-q", ".[].name")
+	if err != nil {
+		return nil, nil
+	}
+	var tags []string
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if l = strings.TrimSpace(l); l != "" && l != "null" {
+			tags = append(tags, l)
+		}
+	}
+	return tags, nil
+}
+
 func (Client) Topics(ctx context.Context, repo string) ([]string, error) {
 	out, err := run(ctx, "gh", "api", "/repos/"+repo+"/topics", "-q", ".names")
 	if err != nil {
