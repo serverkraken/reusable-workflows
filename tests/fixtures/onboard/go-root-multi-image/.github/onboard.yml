@@ -11,6 +11,10 @@ components:
     image: acme/multi/worker
     context: .
     platforms: linux/amd64
+    # Covers the scan-option emit path: an image that vendors third-party
+    # manifests cannot pass the atom's default scanner set.
+    scanners: vuln,secret
+    upload_sarif: false
   - path: charts/demo
     type: helm
     unittest: true

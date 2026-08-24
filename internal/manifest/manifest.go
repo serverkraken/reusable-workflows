@@ -24,7 +24,8 @@ type Manifest struct {
 }
 
 type Component struct {
-	Path, Language, Type, Image, Context, Platforms string
+	Path, Language, Type, Image, Context, Platforms, Scanners string
+	UploadSARIF *bool
 	Release     *bool
 	Unittest    bool
 	Dockerfiles []DockerfileSpec
@@ -32,9 +33,10 @@ type Component struct {
 }
 
 type DockerfileSpec struct {
-	Path, Image, Context, Platforms string
-	Release                         *bool
-	Line                            int
+	Path, Image, Context, Platforms, Scanners string
+	UploadSARIF                               *bool
+	Release                                   *bool
+	Line                                      int
 }
 
 type Workflows struct{ E2E *E2E }
@@ -61,6 +63,9 @@ var (
 	languages = []string{"go", "python", "rust", "helm", "flutter", "node", "generic"}
 	types     = []string{"helm"}
 	modes     = []string{"renovate"}
+	// scanners mirrors trivy's own `--scanners` vocabulary (trivy-image passes
+	// the value through unchanged).
+	scanners = []string{"vuln", "secret", "misconfig", "license"}
 )
 
 func Load(repoPath string) (*Manifest, string, bool, error) {
@@ -224,7 +229,7 @@ func decode(root *Node) (*Manifest, error) {
 }
 
 func decodeComponent(n *Node) (Component, error) {
-	if err := allowKeys(n, "path", "language", "type", "image", "context", "platforms", "release", "unittest", "dockerfiles"); err != nil {
+	if err := allowKeys(n, "path", "language", "type", "image", "context", "platforms", "scanners", "upload_sarif", "release", "unittest", "dockerfiles"); err != nil {
 		return Component{}, err
 	}
 	c := Component{Line: n.Line}
@@ -256,6 +261,12 @@ func decodeComponent(n *Node) (Component, error) {
 	if c.Platforms, err = optionalPlatforms(n, "platforms"); err != nil {
 		return c, err
 	}
+	if c.Scanners, err = optionalScanners(n, "scanners"); err != nil {
+		return c, err
+	}
+	if c.UploadSARIF, err = optionalBoolPtr(n, "upload_sarif"); err != nil {
+		return c, err
+	}
 	if c.Release, err = optionalBoolPtr(n, "release"); err != nil {
 		return c, err
 	}
@@ -268,7 +279,7 @@ func decodeComponent(n *Node) (Component, error) {
 			return c, err
 		}
 		for _, item := range seq {
-			if err := allowKeys(item, "path", "image", "context", "platforms", "release"); err != nil {
+			if err := allowKeys(item, "path", "image", "context", "platforms", "scanners", "upload_sarif", "release"); err != nil {
 				return c, err
 			}
 			spec := DockerfileSpec{Line: item.Line}
@@ -285,6 +296,12 @@ func decodeComponent(n *Node) (Component, error) {
 				return c, err
 			}
 			if spec.Platforms, err = optionalPlatforms(item, "platforms"); err != nil {
+				return c, err
+			}
+			if spec.Scanners, err = optionalScanners(item, "scanners"); err != nil {
+				return c, err
+			}
+			if spec.UploadSARIF, err = optionalBoolPtr(item, "upload_sarif"); err != nil {
 				return c, err
 			}
 			if spec.Release, err = optionalBoolPtr(item, "release"); err != nil {
@@ -401,6 +418,28 @@ func optionalPlatforms(n *Node, key string) (string, error) {
 	}
 	if !platformsRe.MatchString(v) {
 		return "", fmt.Errorf("line %d: platforms must be a comma-separated list of os/arch[/variant], got %q", n.Map[key].Line, v)
+	}
+	return v, nil
+}
+
+// optionalScanners validates the trivy `--scanners` list the trivy-image atom
+// forwards verbatim. Each element is checked against trivy's own vocabulary so
+// a typo fails at render time rather than silently disabling a scanner in a
+// weekly release run.
+func optionalScanners(n *Node, key string) (string, error) {
+	v, err := optionalString(n, key)
+	if err != nil || v == "" {
+		return v, err
+	}
+	seen := map[string]bool{}
+	for _, s := range strings.Split(v, ",") {
+		if !contains(scanners, s) {
+			return "", fmt.Errorf("line %d: scanners must be a comma-separated subset of %v, got %q", n.Map[key].Line, scanners, v)
+		}
+		if seen[s] {
+			return "", fmt.Errorf("line %d: scanners lists %q twice", n.Map[key].Line, s)
+		}
+		seen[s] = true
 	}
 	return v, nil
 }

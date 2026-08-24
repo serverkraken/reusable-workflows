@@ -594,6 +594,14 @@ func TestManifestErrors(t *testing.T) {
 			"Dockerfiles of component . must share one platforms value (docker-build-multi has a single platforms), got linux/amd64 vs (atom default)",
 		},
 		{
+			// The multi-image path renders docker-build-multi, which has no
+			// scan job — accepting scan options there would silently do nothing.
+			"scan options on a multi-image component",
+			"schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: a/Dockerfile\n        scanners: vuln,secret\n      - path: b/Dockerfile\n",
+			map[string]string{"go.mod": "module x\n", "a/Dockerfile": "FROM scratch\n", "b/Dockerfile": "FROM scratch\n"},
+			"renders no per-image scan job",
+		},
+		{
 			"dockerfile claimed twice",
 			"schema: 1\ncomponents:\n  - path: .\n    language: go\n    dockerfiles:\n      - path: images/api/Dockerfile\n  - path: images/api\n",
 			map[string]string{"go.mod": "module x\n", "images/api/Dockerfile": "FROM scratch\n"},

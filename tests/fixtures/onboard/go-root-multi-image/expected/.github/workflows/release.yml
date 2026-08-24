@@ -87,8 +87,10 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
     with:
       image_ref: ${{ needs.docker-build-images-worker.outputs.image_ref }}
+      scanners: vuln,secret
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+      upload_sarif: false
     secrets: inherit
 
   helm-publish-charts-demo:

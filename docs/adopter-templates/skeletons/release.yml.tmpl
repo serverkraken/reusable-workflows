@@ -104,8 +104,16 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
     with:
       image_ref: {{ printf "${{ needs.docker-build%s.outputs.image_ref }}" $suffix }}
+    {{- /* Emitted only when the manifest sets them, so adopters that take the
+         atom's defaults keep rendering byte-identically. */}}
+    {{- if (index $df "scanners") }}
+      scanners: {{ index $df "scanners" }}
+    {{- end }}
       severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
       trivy_version: {{`${{ vars.SK_TRIVY_VERSION || '' }}`}}
+    {{- if has $df "upload_sarif" }}
+      upload_sarif: {{ index $df "upload_sarif" }}
+    {{- end }}
     secrets: inherit
 {{- else if gt (len $releaseDfs) 1 -}}
 {{/* Translate profile.json's dockerfiles[{path, image_name, ...}] into the

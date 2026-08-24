@@ -93,5 +93,7 @@ jobs:
     secrets: inherit
     with:
       image_ref: ${{ needs.build-images-worker.outputs.image_ref }}
+      scanners: vuln,secret
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+      upload_sarif: false
