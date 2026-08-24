@@ -182,7 +182,7 @@ func decode(root *Node) (*Manifest, error) {
 				if err != nil {
 					return nil, err
 				}
-				if strings.ContainsAny(name, "/\\") || !(strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml")) {
+				if strings.ContainsAny(name, "/\\") || (!strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml")) {
 					return nil, fmt.Errorf("line %d: workflows.keep takes bare file names under .github/workflows, got %q", item.Line, name)
 				}
 				m.Workflows.Keep = append(m.Workflows.Keep, name)
