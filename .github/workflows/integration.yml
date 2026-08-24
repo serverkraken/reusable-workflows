@@ -201,6 +201,18 @@ jobs:
       prerelease_age_days: 365
       runs_on: '["ubuntu-latest"]'
 
+  # ----- cleanup-images edge case: a package that was never published is a
+  #       no-op, not a failure. Before the existence probe this exact call
+  #       ended in "Package not found. (HTTP 404)" -> jq error -> exit 5,
+  #       which is what turned krakenchores' weekly cron red from its
+  #       onboarding until its first release. The job passing IS the
+  #       assertion; the name is deliberately one that can never exist. -----
+  test-cleanup-images-missing-package:
+    uses: ./.github/workflows/cleanup-images.yml
+    with:
+      package_name: ${{ github.event.repository.name }}/never-published-fixture
+      runs_on: '["ubuntu-latest"]'
+
   # ----- docker-build-multi happy path: matrix build of 2 images from
   #       the multi-image fixture, manifest stitched, push by digest. -----
   test-docker-build-multi:
