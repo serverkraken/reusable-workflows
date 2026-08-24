@@ -133,6 +133,14 @@ jobs:
     {{- if (index $df "scanners") }}
       scanners: {{ index $df "scanners" }}
     {{- end }}
+    {{- /* Scan the architectures that were actually built. Trivy picks a
+         single platform for a multi-arch tag (default linux/amd64), so
+         without this the other published arch ships unscanned. */}}
+    {{- if (index $df "platforms") }}
+      platforms: {{ index $df "platforms" }}
+    {{- else }}
+      platforms: linux/amd64,linux/arm64
+    {{- end }}
       severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
       trivy_version: {{`${{ vars.SK_TRIVY_VERSION || '' }}`}}
     {{- if has $df "upload_sarif" }}

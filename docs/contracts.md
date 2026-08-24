@@ -330,6 +330,7 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input   | `paths_ignore`    | string  | no       | `''`                         | Newline-separated paths to skip |
 | input   | `files_ignore`    | string  | no       | `''`                         | Newline-separated files to skip |
 | input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks) |
+| input   | `platforms`       | string  | no       | `''`                         | Comma-separated platforms to scan; empty scans only the one Trivy picks (`linux/amd64`) |
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `ignore_unfixed`  | boolean | no       | `true`                       | Pass `--ignore-unfixed` to Trivy |
 | input   | `fail_on_findings`| boolean | no       | `true`                       | Exit non-zero when findings exist |

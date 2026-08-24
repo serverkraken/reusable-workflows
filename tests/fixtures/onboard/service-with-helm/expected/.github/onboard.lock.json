@@ -4,8 +4,8 @@
   "rendered_against": "v2",
   "files": {
     ".github/workflows/ci.yml": "sha256:957537515b20aebfa6ab6d3b4f26ca9a09929610601e0b44dc09b90710f05b01",
-    ".github/workflows/release.yml": "sha256:c1e5da49d1b495d0a7cc7d3b808a5cffc6758171b2f46659155f260d17f3639f",
-    ".github/workflows/prerelease.yml": "sha256:dafbe994d1f987e1298346188997f4cc1af7b2715c9d249b6357c81857ce5dca",
+    ".github/workflows/release.yml": "sha256:da03ce86d3ffbf088e95192f24098e5ab6cdcf2b9a006f840f83b54abe60bb4f",
+    ".github/workflows/prerelease.yml": "sha256:9703bb14be6928efdbf1352ca24e8f8ba49e622b50aaea398c9a8726f251f15c",
     ".github/workflows/cleanup.yml": "sha256:43f599b4827f8fdeceaae67d7b7db1174d0cc68b5f482a24364b75990edec0db",
     "release-please-config.json": "sha256:8f778f4c911fc97e2d5e97aec7b12186d1503b2f7703a14657864598dbb10472",
     ".release-please-manifest.json": "sha256:b9c66e0126774ab9fa34536f15972438356e7035724a2c0f0ca3b125967e6399"

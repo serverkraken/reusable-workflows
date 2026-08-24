@@ -32,6 +32,7 @@ jobs:
     secrets: inherit
     with:
       image_ref: ${{ needs.build-services-api.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
   build-services-worker:
@@ -63,5 +64,6 @@ jobs:
     secrets: inherit
     with:
       image_ref: ${{ needs.build-services-worker.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
