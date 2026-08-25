@@ -32,6 +32,28 @@ release semantics — no signing, no upload, no version handling. Complements
 
 ---
 
+### `chart-image-bump.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `values_file` | string | yes | — | Helm values file holding the image pins. |
+| input | `images` | string | yes | — | JSON map of component path → image names, e.g. {"images/postfix": ["serverkraken/mailstack/postfix"]}. Rendered from the adopter manifest. |
+| input | `releases` | string | yes | — | The `releases` output of semantic-release.yml. Only components listed there are bumped, so a component that did not release keeps its pin. |
+| input | `key_template` | string | no | `images.{name}.tag` | Dotted path to the tag, with {name} for the image basename. |
+| input | `commit` | boolean | no | `true` | Commit and push. Set false for dry runs and self-CI. |
+| input | `commit_message` | string | no | `fix(chart): Image-Pins auf die frisch gebauten Versionen` | Commit message. Keep the fix(chart) prefix or release-please will not cut a chart release. |
+| input | `runs_on` | string | no | `["self-hosted","Linux","low-performance"]` | JSON-encoded array of runner labels. |
+| output | `changed` | — | — | — | "true" when at least one pin moved. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID (catalog checkout + push of the pin commit). |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+
+Only components present in `releases` are touched, so a component that did
+not release in this run keeps its existing pin. The key is derived from the
+image BASENAME; two images whose names differ only in owner or namespace
+collide on the same key and the workflow fails rather than guessing.
+
+---
+
 ### `cleanup-images.yml`
 
 | Kind    | Name                   | Type   | Required | Default                     | Description |
@@ -147,6 +169,43 @@ runner pods.
 
 ---
 
+### `kube-lint.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `manifests_path` | string | no | `kubernetes/apps` | Path to lint (passed to kube-linter lint). |
+| input | `config_path` | string | no | `''` | Path to a .kube-linter.yaml. Empty → catalog baseline. |
+| input | `kube_linter_version` | string | no | `''` | Override kube-linter version (empty → composite default). |
+| input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when kube-linter reports findings. |
+| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks. |
+| input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow: GitHub keeps one analysis per category, so a shared category makes the second upload REPLACE the first, and the shared artifact name fails the run outright. Empty (the default) keeps the historical names, so single-call adopters are unaffected. |
+| input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `findings_count` | — | — | — | Number of kube-linter findings. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+
+---
+
+### `kube-validate.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `manifests_paths` | string | no | `kubernetes` | Newline-separated validate roots (e.g. kubernetes/apps). |
+| input | `kustomize_args` | string | no | `--load-restrictor=LoadRestrictionsNone --enable-helm --enable-alpha-plugins --enable-exec` | Args passed verbatim to `kustomize build`. |
+| input | `schema_locations` | string | no | `default https://kubernetes-schemas.pages.dev/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json` | Newline-separated kubeconform -schema-location values. |
+| input | `skip_kinds` | string | no | `Secret` | Comma-separated kinds passed to kubeconform -skip. |
+| input | `strict` | boolean | no | `true` | Pass -strict to kubeconform. |
+| input | `ignore_missing_schemas` | boolean | no | `true` | Pass -ignore-missing-schemas to kubeconform. |
+| input | `sops` | boolean | no | `false` | Decrypt in-tree SOPS generators via ksops during build. Requires the sops_age_key secret. |
+| input | `kustomize_version` | string | no | `''` | Override kustomize version (empty → composite default). |
+| input | `kubeconform_version` | string | no | `''` | Override kubeconform version (empty → composite default). |
+| input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| secret | `sops_age_key` | — | no | — | AGE secret key for SOPS decryption (required only when sops: true). |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+
+---
+
 ### `lint-flutter.yml`
 
 Runs `dart format --set-exit-if-changed` + `flutter analyze`.
@@ -242,6 +301,29 @@ Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
 | secret  | `ANDROID_STORE_PASSWORD`         | — | **yes** | — | Keystore store password |
 | secret  | `ANDROID_KEY_ALIAS`              | — | **yes** | — | Key alias inside the keystore |
 | secret  | `ANDROID_KEY_PASSWORD`           | — | **yes** | — | Key password |
+
+---
+
+### `secret-scan.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `config_path` | string | no | `''` | Path to a .gitleaks.toml. Empty → gitleaks built-in ruleset. |
+| input | `gitleaks_version` | string | no | `''` | Override gitleaks version (empty → composite default). |
+| input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when gitleaks reports findings. |
+| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks. |
+| input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow: GitHub keeps one analysis per category, so a shared category makes the second upload REPLACE the first, and the shared artifact name fails the run outright. Empty (the default) keeps the historical names, so single-call adopters are unaffected. |
+| input | `fetch_depth` | number | no | `0` | Checkout fetch-depth (0 = full history; needed for PR-diff/full scans). |
+| input | `no_git` | boolean | no | `false` | Scan files under scan_path without git history (gitleaks --no-git). |
+| input | `scan_path` | string | no | `.` | Directory to scan when no_git: true. |
+| input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `findings_count` | — | — | — | Number of gitleaks findings. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+
+`report_slug` is required when a repo calls this atom more than once in the
+same run: GitHub's code-scanning API refuses two SARIF uploads under one
+category, and two artifacts of the same name are equally ambiguous.
 
 ---
 
@@ -413,6 +495,29 @@ the same way.
 
 ---
 
+## Operational Workflows
+
+`onboard.yml` is an operational tool, not an atom adopters compose into their
+CI. It is listed here because it does expose a `workflow_call` surface, and an
+undocumented callable surface is exactly what the contract gate exists to
+catch. Its inputs are **not** semver-protected — they may change without a
+major bump.
+
+### `onboard.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `target_repos` | string | yes | — | Comma-separated owner/repo list (e.g. serverkraken/blupod-ui,serverkraken/flow) |
+| input | `language` | string | no | `auto` | auto = detect, otherwise force release-type (go, python, rust, helm, node, flutter, gitops, simple) |
+| input | `dry_run` | boolean | no | `true` | Render + log diff; do NOT push or open PRs. Defaults to true here (unlike the dispatch form) so a programmatic caller has to opt IN to mutating adopter repos. |
+| input | `use_go_cli` | boolean | no | `true` | Use sk-workflows for detect, render, and repo-default application. Set false to use the Bash fallback. |
+| input | `pin_version` | string | no | `v4` | Catalog @version that rendered templates pin to |
+| input | `rendered_against` | string | no | `''` | Full catalog tag for the lock file. Empty → fall back to pin_version. |
+| input | `add_branch_name` | string | no | `chore/onboard-reusable-workflows` | Branch for PR A (add new workflows) |
+| input | `cleanup_branch_name` | string | no | `chore/remove-legacy-workflows` | Branch for PR B (remove legacy workflows) |
+
+---
+
 ## Composite Actions
 
 ### `actions/install-trivy`
@@ -420,6 +525,18 @@ the same way.
 | Kind  | Name      | Type   | Required | Default | Description |
 |-------|-----------|--------|----------|---------|-------------|
 | input | `version` | string | no       | `''`    | Trivy version to install; empty → uses pinned default |
+
+### `actions/install-gitleaks`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `version` | string | no | `''` | gitleaks version (with or without leading v). Empty → pinned default. |
+
+### `actions/install-kube-linter`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `version` | string | no | `''` | kube-linter version (with or without leading v). Empty → pinned default. |
 
 ### `actions/setup-sk-workflows`
 
@@ -498,6 +615,24 @@ job-private dir prepended onto PATH.
 
 ---
 
+### `actions/setup-kube-toolchain`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `kustomize_version` | string | no | `''` | kustomize version (no leading v). Empty → pinned default. |
+| input | `kubeconform_version` | string | no | `''` | kubeconform version (no leading v). Empty → pinned default. |
+| input | `sops` | string | no | `false` | When "true", also install sops + ksops for SOPS decryption. |
+
+### `actions/setup-python-deps`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `working_directory` | string | no | `.` | Project directory containing the lockfile or pyproject.toml. |
+| input | `python_version` | string | no | `''` | Python version. Empty → read from <working_directory>/pyproject.toml. |
+| input | `install_test_extras` | string | no | `false` | When true, install pytest + pytest-cov on the pip-bare path. |
+| output | `pm` | — | — | — | Detected package manager. |
+| output | `run_prefix` | — | — | — | Prefix to invoke tools. |
+
 ## Internal Composite Actions
 
 These are not intended for external consumption — they exist to factor `onboard.yml`. Their inputs/outputs are not part of the catalog's semver-protected surface.
@@ -539,3 +674,18 @@ These are not intended for external consumption — they exist to factor `onboar
 | output | `modified` | string | — | — | Comma-separated list of paths whose hash differs from lock (or has the `(missing)` suffix) |
 | output | `lock_version` | string | — | — | `catalog_version` field from `.github/onboard.lock.json` (empty when `no-lock`) |
 | output | `render_error` | string | — | — | Render-and-compare failure reason when stale-lock detection could not run |
+
+### `actions/onboard-apply-defaults`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `token` | string | yes | — | GitHub token with administration:write on the target repo |
+| input | `target_repo` | string | yes | — | owner/repo of the target adopter |
+| input | `target_path` | string | yes | — | Path to the checked-out adopter repo on the runner |
+| input | `prev_defaults_applied_at` | string | no | `''` | Snapshot of the target lock's defaults_applied_at field BEFORE render. Empty string means first-onboard or re-baseline. |
+| input | `dry_run` | string | no | `false` | When true, no API mutations and no lock write — only diff summary. |
+| input | `use_go_cli` | string | no | `false` | When true, run sk-workflows apply-defaults (Go) instead of scripts/apply-repo-defaults.sh (Bash). |
+| output | `defaults_applied` | — | — | — | true if script ran end-to-end in live mode; false in dry-run |
+| output | `tier_2_applied` | — | — | — | true if Tier 2 (comfort) fields were processed this run (live mode only) |
+| output | `modified` | — | — | — | Live mode only: csv of mutated field-categories (branch_protection,delete_branch_on_merge,topics,merge_hygiene,repo_settings) |
+| output | `would_change` | — | — | — | Dry-run only: csv of field-categories that would be mutated |
