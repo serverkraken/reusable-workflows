@@ -304,6 +304,8 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input  | `working_directory`             | string | no       | `'.'`                       | Component sub-path. |
 | input  | `python_version`                | string | no       | `''`                        | Python version. Empty → read from `<working_directory>/pyproject.toml`. |
 | input  | `coverage_threshold`            | number | no       | `80`                        | Minimum line coverage percentage (integer 0-100). |
+| input  | `coverage_source`               | string | no       | `''`                        | What coverage measures (`--cov=<value>`). Leave empty when the project configures it itself via `[tool.coverage.run] source` or pytest `addopts`; with neither, the run fails loudly instead of reporting a gate it never ran. |
+| output | `coverage_pct`                  | string | —        | —                           | Measured line coverage, or `N/A` when no report was produced. |
 | secret | `release_please_app_client_id`  | —      | **yes**  | —                           | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret | `release_please_app_private_key`| —      | **yes**  | —                           | App private key for the catalog-checkout token (since v2.0.0) |
 

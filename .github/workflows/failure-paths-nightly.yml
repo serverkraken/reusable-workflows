@@ -187,15 +187,32 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Assert test job failed
+      - name: Assert the COVERAGE gate failed, not something else
         env:
           RESULT: ${{ needs.test-test-python-cov-fail.result }}
+          PCT: ${{ needs.test-test-python-cov-fail.outputs.coverage_pct }}
+          THRESHOLD: '90'
         run: |
+          set -euo pipefail
           if [[ "$RESULT" != "failure" ]]; then
             echo "::error::expected test job to fail (coverage gate), got: $RESULT"
             exit 1
           fi
-          echo "test-python-cov-fail: correctly observed failure"
+          # `result == failure` alone proves nothing about WHY. Until
+          # 2026-08-25 this fixture carried no tests at all, so pytest exited 5
+          # ("no tests collected") and this assertion went green while the
+          # coverage gate itself was never exercised — which is exactly how the
+          # bare `--cov` bug survived. Requiring a real, sub-threshold
+          # percentage proves coverage ran and measured something.
+          if [[ -z "$PCT" || "$PCT" == "N/A" ]]; then
+            echo "::error::no coverage percentage reported — the job failed for some other reason, so the coverage gate is unverified"
+            exit 1
+          fi
+          if ! awk -v p="$PCT" -v t="$THRESHOLD" 'BEGIN{exit !(p+0 < t+0)}'; then
+            echo "::error::coverage was ${PCT}%, not below the ${THRESHOLD}% threshold — the fixture no longer exercises the gate"
+            exit 1
+          fi
+          echo "test-python-cov-fail: coverage ${PCT}% < ${THRESHOLD}% — gate verified"
 
   # ----- test-rust: cov-fail-path -----
   test-test-rust-cov-fail:
