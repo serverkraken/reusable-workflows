@@ -62,11 +62,38 @@ jobs:
                    || date -u -v-"${DAYS}"d '+%Y-%m-%dT%H:%M:%SZ')
           echo "Cutoff date: $CUTOFF"
 
-          # Determine owner type (org vs user) by checking org membership of the owner.
-          if gh api "/orgs/${OWNER}" >/dev/null 2>&1; then
+          # Both probes below must tell "the API answered: no" apart from "the
+          # API did not answer". `2>&1` cannot: it discards the reason, and
+          # every failure then reads as "nothing to clean" (audit D-12).
+          # Measured against the live API, both give rc=1:
+          #
+          #   absent package   gh: Package not found. (HTTP 404)
+          #   expired token    gh: Bad credentials   (HTTP 401)
+          #
+          # A weekly cron whose token lapsed therefore reported success while
+          # retaining nothing, indefinitely and in green — the one failure mode
+          # a retention job must not have. gh writes the JSON body to stdout and
+          # a line like `gh: Not Found (HTTP 404)` to stderr, so the status is
+          # only reachable as text.
+          PROBE_ERR=$(mktemp)
+          trap 'rm -f "$PROBE_ERR"' EXIT
+
+          probe_is_404() { [[ "$(<"$PROBE_ERR")" == *"(HTTP 404)"* ]]; }
+          probe_died() {
+            echo "::error::$1 failed: $(tr -d '\n' < "$PROBE_ERR")" >&2
+            echo "::error::an unanswered API call is not 'nothing to clean' — refusing to report success" >&2
+            exit 1
+          }
+
+          # Owner type (org vs user). A transient failure here used to
+          # reclassify an org as a user; the package lookup then 404'd and
+          # landed back in "not published".
+          if gh api "/orgs/${OWNER}" >/dev/null 2>"$PROBE_ERR"; then
             OWNER_PATH="orgs/${OWNER}"
-          else
+          elif probe_is_404; then
             OWNER_PATH="users/${OWNER}"
+          else
+            probe_died "owner lookup for ${OWNER}"
           fi
 
           # URL-encode the package name (may contain slashes for path-style names).
@@ -78,16 +105,19 @@ jobs:
           # the error body and set -euo pipefail turns the weekly cron red
           # forever (live: krakenchores, every Sunday since 2026-08-09 — the
           # repo has never cut a release, so neither container package exists).
-          # Any other API failure still fails the job.
-          if ! gh api "/${OWNER_PATH}/packages/container/${PKG_ENC}" >/dev/null 2>&1; then
+          # Only 404 means that. Anything else stops the job.
+          if gh api "/${OWNER_PATH}/packages/container/${PKG_ENC}" >/dev/null 2>"$PROBE_ERR"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif probe_is_404; then
             echo "Package ${PKG} not published (yet) — nothing to clean."
             {
               echo "exists=false"
               echo "ids="
             } >> "$GITHUB_OUTPUT"
             exit 0
+          else
+            probe_died "package probe for ${PKG}"
           fi
-          echo "exists=true" >> "$GITHUB_OUTPUT"
 
           # Fetch once, evaluate twice (prereleases below, stable prune after).
           gh api --paginate "/${OWNER_PATH}/packages/container/${PKG_ENC}/versions" \
