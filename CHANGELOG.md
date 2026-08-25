@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.18.4](https://github.com/serverkraken/reusable-workflows/compare/v4.18.3...v4.18.4) (2026-08-25)
+
+
+### Bug Fixes
+
+* **templates:** Prerelease pushte Images, die nie gescannt wurden ([#280](https://github.com/serverkraken/reusable-workflows/issues/280)) ([c52f051](https://github.com/serverkraken/reusable-workflows/commit/c52f051863d67dce05ec072a3b9974fa18423a22))
+
 ## [4.18.3](https://github.com/serverkraken/reusable-workflows/compare/v4.18.2...v4.18.3) (2026-08-25)
 
 
