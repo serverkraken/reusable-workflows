@@ -14,7 +14,9 @@ teardown() {
 }
 
 run_gate() {
-  REPO_ROOT="$FIXTURE_DIR" run bash "$SCRIPT" .github/workflows/demo.yml
+  # Eintraege sind jetzt <datei>:<aggregator>, weil nicht jeder Workflow
+  # seinen Sammeljob "summary" nennt.
+  REPO_ROOT="$FIXTURE_DIR" run bash "$SCRIPT" ".github/workflows/demo.yml:${1:-summary}"
 }
 
 @test "passes when every job is reachable from summary" {
@@ -185,4 +187,51 @@ EOF2
   run_gate
   [ "$status" -ne 0 ]
   [[ "$output" =~ "no 'summary' job" ]]
+}
+
+@test "an aggregator that is not called summary is honoured" {
+  # nightly-runner-parity sammelt in assert-parity, failure-paths-nightly in
+  # report-regressions. Waere "summary" fest verdrahtet, waeren beide fuer das
+  # Gate unsichtbar — und genau dort lag eine echte Luecke.
+  cat > "$WF" <<'EOF2'
+name: demo
+on: [schedule]
+jobs:
+  work-a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
+  work-b:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
+  assert-parity:
+    needs: [work-a]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
+EOF2
+  run_gate assert-parity
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "'work-b' is not reachable from 'assert-parity'" ]]
+
+  # Mit beiden im Sammeljob ist es sauber.
+  sed -i.bak 's/needs: \[work-a\]/needs: [work-a, work-b]/' "$WF"
+  run_gate assert-parity
+  [ "$status" -eq 0 ]
+}
+
+@test "a workflow whose named aggregator does not exist fails" {
+  cat > "$WF" <<'EOF2'
+name: demo
+on: [schedule]
+jobs:
+  work:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
+EOF2
+  run_gate report-regressions
+  [ "$status" -ne 0 ]
+  [[ "$output" =~ "no 'report-regressions' job" ]]
 }

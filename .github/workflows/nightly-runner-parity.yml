@@ -48,7 +48,11 @@ jobs:
       sbom: true
 
   assert-parity:
-    needs: selfhosted-docker-build
+    # Beide self-hosted Jobs, nicht nur der Build. Ohne e2e-kind pruefte der
+    # Waechter genau die Haelfte dessen, wofuer es diesen Nightly gibt: ein
+    # rotes e2e faerbte zwar den Lauf, tauchte aber in der Zusammenfassung
+    # nicht auf — und die ist das, was morgens jemand liest.
+    needs: [selfhosted-docker-build, selfhosted-e2e-kind]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -58,6 +62,7 @@ jobs:
           RESULT: ${{ needs.selfhosted-docker-build.result }}
           IMG: ${{ needs.selfhosted-docker-build.outputs.image_ref }}
           DIGEST: ${{ needs.selfhosted-docker-build.outputs.digest }}
+          E2E: ${{ needs.selfhosted-e2e-kind.result }}
         run: |
           set -euo pipefail
           fail=0
@@ -76,6 +81,13 @@ jobs:
             echo "::error::digest is not a sha256 reference: '${DIGEST:-<empty>}'"
             fail=1
           fi
+          # e2e-kind gibt keine Outputs heraus — das Ergebnis IST die Aussage.
+          # kind laeuft im dind-Sidecar des Runner-Pods, diese Zusicherung gilt
+          # also nur hier und nirgends sonst.
+          if [[ "$E2E" != "success" ]]; then
+            echo "::error::e2e-kind on the self-hosted pool ended as '$E2E'"
+            fail=1
+          fi
           {
             echo "## nightly-runner-parity"
             echo ""
@@ -86,6 +98,7 @@ jobs:
             echo "|---|---|"
             echo "| image_ref | \`${IMG:-<none>}\` |"
             echo "| digest | \`${DIGEST:-<none>}\` |"
+            echo "| e2e-kind | \`${E2E}\` |"
           } >> "$GITHUB_STEP_SUMMARY" || true
           exit "$fail"
 
