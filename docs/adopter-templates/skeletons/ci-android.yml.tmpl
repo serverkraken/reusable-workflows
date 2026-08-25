@@ -37,7 +37,12 @@ jobs:
 {{- if eq $c.path "." -}}
 {{- $suffix = "root" -}}
 {{- else -}}
-{{- $suffix = $c.path | replaceAll "/" "-" -}}
+{{- /* Job-ID-sicher: GitHub erlaubt nur [A-Za-z0-9_-]. Ein Pfad wie
+     `services/v2.api` ergab ohne diese Bereinigung die Job-ID
+     `lint-go-services-v2.api`, und actionlint weist sie zurueck:
+     "invalid job ID". GitHub verwirft dann die GANZE Datei, nicht nur
+     den Job. Gleiche Bereinigung wie beim $imgSuffix weiter unten. */ -}}
+{{- $suffix = $c.path | replaceAll "/" "-" | regexp.Replace "[^A-Za-z0-9_-]" "-" -}}
 {{- end }}
   build-flutter-{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/build-flutter-android.yml@{{ $pin }}

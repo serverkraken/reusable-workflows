@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -50,6 +51,9 @@ func (s Service) Render(ctx context.Context, req Request) error {
 	}
 	rawProfile, profile, err := readProfile(req.ProfileJSONPath)
 	if err != nil {
+		return err
+	}
+	if err := checkSlugCollisions(profile); err != nil {
 		return err
 	}
 
@@ -350,4 +354,43 @@ func sha256File(path string) (string, error) {
 	}
 	sum := sha256.Sum256(content)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// jobIDSlug bildet einen Komponentenpfad auf das ab, was die Templates als
+// Job-ID-Suffix verwenden: Slashes zu Bindestrichen, dann alles, was GitHub in
+// einer Job-ID nicht erlaubt, ebenfalls zu Bindestrichen.
+func jobIDSlug(path string) string {
+	s := strings.ReplaceAll(path, "/", "-")
+	return notJobIDChar.ReplaceAllString(s, "-")
+}
+
+var notJobIDChar = regexp.MustCompile(`[^A-Za-z0-9_-]`)
+
+// checkSlugCollisions weist ein Profil zurueck, dessen Komponenten auf dieselbe
+// Job-ID abgebildet wuerden.
+//
+// Die Bereinigung ist nicht injektiv: `svc/x.y` und `svc/x-y` ergeben beide
+// `svc-x-y`. Gerendert wird daraus zweimal derselbe Job-Key, und GitHub bzw.
+// actionlint melden "key ... is duplicated in jobs section" — der Adopter
+// bekommt eine Datei, die gar nicht laeuft. Gemessen an einem Profil mit genau
+// diesen beiden Pfaden.
+//
+// Hier abzubrechen ist die ehrlichere Antwort als ein angehaengter Hash: der
+// wuerde die Job-IDs aller bestehenden Adopter stabil halten muessen und waere
+// fuer den Menschen, der den Lauf liest, nicht mehr zuzuordnen.
+func checkSlugCollisions(profile domain.Profile) error {
+	seen := map[string]string{}
+	for _, c := range profile.Components {
+		if c.Path == "." {
+			continue
+		}
+		slug := jobIDSlug(c.Path)
+		if other, dup := seen[slug]; dup {
+			return fmt.Errorf(
+				"Komponenten %q und %q ergeben beide die Job-ID %q — GitHub wuerde den Workflow wegen doppelter Job-Keys verwerfen; eine der beiden umbenennen",
+				other, c.Path, slug)
+		}
+		seen[slug] = c.Path
+	}
+	return nil
 }
