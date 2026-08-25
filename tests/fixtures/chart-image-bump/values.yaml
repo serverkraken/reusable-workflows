@@ -1,0 +1,21 @@
+# Fixture fuer den Self-CI-Aufruf von chart-image-bump.yml.
+#
+# Absichtlich mit Kommentaren, Leerzeilen und einem GLEICHNAMIGEN
+# verschachtelten Schluessel: das Atom soll `images.api.tag` treffen und
+# `images.wrapper.api.tag` in Ruhe lassen. Genau diese Verwechslung war I-4.
+#
+# `worker` wird vom Aufrufer NICHT als released gemeldet und muss deshalb
+# stehenbleiben — das ist die Zusicherung, die `releases` ueberhaupt hat.
+
+images:
+
+  wrapper:
+    api:
+      tag: v0.0.1        # Falle: gleicher Blattname, andere Ebene
+
+  api:
+    tag: v0.0.1          # wird gebumpt
+    pullPolicy: IfNotPresent
+
+  worker:
+    tag: v0.0.1          # bleibt: nicht in `releases`

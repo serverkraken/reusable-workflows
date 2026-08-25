@@ -389,6 +389,51 @@ jobs:
       dry_run: true
 
   # ----- kube-validate happy path: valid fixture tree must succeed -----
+  # ----- chart-image-bump: bis zum K-2-Fix rief KEIN Self-CI-Workflow dieses
+  #       Atom auf. Getestet war nur die Python-Logik in
+  #       tests/shell/chart-image-bump.bats — das Wiring drumherum (App-Token,
+  #       Katalog-Checkout am Aufrufer-SHA, Skriptaufruf mit echten Inputs,
+  #       `changed`-Output, Summary) lief nie. Der einzige Aufrufer war das
+  #       Adopter-Template. -----
+  test-chart-image-bump:
+    uses: ./.github/workflows/chart-image-bump.yml
+    secrets: inherit
+    with:
+      values_file: tests/fixtures/chart-image-bump/values.yaml
+      key_template: 'images.{name}.tag'
+      # Nur `api` gilt als released. `worker` steht im images-Mapping, fehlt
+      # aber in `releases` — genau die Unterscheidung, fuer die es den Input
+      # gibt, und der Fixture-Kommentar haelt sie fest.
+      releases: '{"images/api": {"version": "9.9.9"}}'
+      images: >-
+        {"images/api": ["serverkraken/reusable-workflows/api"],
+         "images/worker": ["serverkraken/reusable-workflows/worker"]}
+      # commit:false — das Atom checkt das AUFRUFENDE Repo aus und pusht
+      # dorthin; aus einem PR-Lauf des Katalogs heraus ist das weder moeglich
+      # (detached HEAD) noch wuenschenswert. Der Push-Pfad bleibt damit
+      # ungetestet; das ist K-11 und ausdruecklich nicht mit erledigt.
+      commit: false
+      runs_on: '["ubuntu-latest"]'
+
+  assert-chart-image-bump:
+    needs: test-chart-image-bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert the atom reported a pin change
+        env:
+          CHANGED: ${{ needs.test-chart-image-bump.outputs.changed }}
+        run: |
+          set -euo pipefail
+          # `result == success` allein waere zu schwach: das Atom ist auch dann
+          # gruen, wenn es nichts zu tun fand. Die Fixture MUSS eine Aenderung
+          # ergeben — sonst hat der Bump die falsche Zeile gesucht.
+          if [[ "$CHANGED" != "true" ]]; then
+            echo "::error::changed='${CHANGED:-<leer>}', erwartet 'true' — der Bump hat nichts gefunden"
+            exit 1
+          fi
+          echo "chart-image-bump meldete changed=true"
+
   test-kube-validate-happy:
     uses: ./.github/workflows/kube-validate.yml
     secrets: inherit
@@ -636,6 +681,8 @@ jobs:
       - test-goreleaser
       - test-helm-publish
       - test-release-flutter-android
+      - test-chart-image-bump
+      - assert-chart-image-bump
       - test-kube-validate-happy
       - test-kube-lint-happy
       - assert-kube-lint-clean
