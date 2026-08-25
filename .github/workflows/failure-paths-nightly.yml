@@ -261,6 +261,11 @@ jobs:
       attest: false
       sbom: false
       caller_id: fail
+      # Input-Validierung, kein echter Build — der billigste Runner reicht.
+      runs_on_parse: '["ubuntu-latest"]'
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
 
   assert-docker-build-multi-fail:
     needs: test-docker-build-multi-fail
