@@ -950,6 +950,16 @@ monorepo (the fallback bug this feature also fixes). Instead it yields the
 root component plus a `subdir_dockerfiles_unassigned` warning listing the
 orphaned Dockerfiles and pointing at the manifest — honest instead of wrong.
 
+**`path_unreadable`.** Detection walks the repo to find components and
+Dockerfiles. If a directory cannot be read — a root-owned artifact tree left
+behind on a self-hosted runner is the realistic case — everything below it is
+missing from the profile. Detection does **not** abort: one unreadable
+directory should not make onboarding impossible. It emits a `path_unreadable`
+warning naming the path instead, because the alternative is worse: a component
+silently absent from the profile renders no lint, test, scan or cleanup job,
+and nothing says so. The warning appears in the onboarding PR body and the
+run's step summary.
+
 ### 11.5 Lock and drift
 
 `.github/onboard.lock.json` gains `inputs.manifest_sha256` (`sha256:<hex>`),

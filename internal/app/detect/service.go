@@ -114,11 +114,12 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 	manifestComponents := hasManifest && man.Components != nil
+	fe := &fsErrors{}
 	var components []domain.Component
 	if manifestComponents {
-		components, err = componentsFromManifest(req.RepoPath, man)
+		components, err = componentsFromManifest(req.RepoPath, man, fe)
 	} else {
-		components, err = detectComponents(req.RepoPath)
+		components, err = detectComponents(req.RepoPath, fe)
 	}
 	if err != nil {
 		return Result{}, err
@@ -195,6 +196,9 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 			profile.Consumers = append(profile.Consumers, domain.GitOpsConsumer{Repo: c.Repo, Scope: c.Scope, Mode: c.Mode})
 		}
 	}
+	// Zuerst die Dateisystemfehler: wenn ein Verzeichnis nicht gelesen werden
+	// konnte, sind alle folgenden Aussagen ueber das Repo unter Vorbehalt.
+	profile.Warnings = append(profile.Warnings, fe.seen...)
 	profile.Warnings = append(profile.Warnings, unsupportedLanguageWarnings(profile.Components, manifestComponents)...)
 	profile.Warnings = append(profile.Warnings, noReleaseEligibleWarnings(profile.Components)...)
 	if !hasManifest {
@@ -236,14 +240,14 @@ func legacyLanguage(repo, override string) (string, error) {
 	return matches[0], nil
 }
 
-func detectComponents(repo string) ([]domain.Component, error) {
+func detectComponents(repo string, fe *fsErrors) ([]domain.Component, error) {
 	paths := explicitMonorepoPaths(repo)
 	rootHasMarker := hasAny(repo, "go.mod", "pyproject.toml", "Cargo.toml", "Chart.yaml", "Dockerfile", "Containerfile", "package.json", "pubspec.yaml")
 	if len(paths) == 0 && !rootHasMarker {
-		paths = fallbackMarkerPaths(repo)
+		paths = fallbackMarkerPaths(repo, fe)
 	}
 	if len(paths) == 0 && !rootHasMarker {
-		paths = fallbackDockerfilePaths(repo)
+		paths = fallbackDockerfilePaths(repo, fe)
 	}
 	if len(paths) == 0 {
 		paths = []string{"."}
@@ -260,7 +264,7 @@ func detectComponents(repo string) ([]domain.Component, error) {
 		if len(langs) > 0 {
 			primary = langs[0]
 		}
-		dockerfiles := inventoryDockerfiles(repo, p, "")
+		dockerfiles := inventoryDockerfiles(repo, p, "", fe)
 		if dockerfiles == nil {
 			dockerfiles = []domain.Dockerfile{}
 		}
@@ -282,7 +286,7 @@ func detectComponents(repo string) ([]domain.Component, error) {
 // manifest. Per component, anything the manifest leaves out is detected the
 // same way detectComponents would (languages, Dockerfiles in the component
 // directory, release signals, cgo).
-func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Component, error) {
+func componentsFromManifest(repo string, m *manifest.Manifest, fe *fsErrors) ([]domain.Component, error) {
 	paths := map[string]bool{}
 	for _, mc := range m.Components {
 		paths[mc.Path] = true
@@ -313,7 +317,7 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 			primary = langs[0]
 		}
 
-		dockerfiles := inventoryDockerfiles(repo, mc.Path, mc.Image)
+		dockerfiles := inventoryDockerfiles(repo, mc.Path, mc.Image, fe)
 		mcOverrides := imageOverrides{
 			context: mc.Context, platforms: mc.Platforms, scanners: mc.Scanners, severity: mc.Severity,
 			uploadSARIF: mc.UploadSARIF, failOnFindings: mc.FailOnFindings, release: mc.Release,
@@ -657,6 +661,42 @@ func expandPNPM(repo, content string) []string {
 	return out
 }
 
+// fsErrors sammelt Dateisystemfehler, die waehrend der Erkennung auftreten.
+//
+// Vorher wurden sie an drei Stellen zweifach verworfen (Audit B-6, B-10): der
+// WalkDirFunc gab bei `err != nil` einfach `nil` zurueck, und der Rueckgabewert
+// von WalkDir landete in `_`. Gemessen an einem Repo mit zwei Go-Komponenten,
+// von denen eine per `chmod 000` unlesbar war:
+//
+//	lesbar:            ["services/api", "services/worker"]
+//	worker unlesbar:   ["services/api"]        warnings: []   rc=0
+//
+// Die Komponente verschwand also lautlos aus dem Profil, und die gerenderten
+// Workflows haetten fuer sie keinen einzigen Job gehabt - kein Lint, kein Test,
+// kein Scan. Dasselbe fuer Dockerfiles: eine unlesbare Komponente ergab
+// `dockerfiles: []`, das Image waere nie gebaut und nie gescannt worden.
+//
+// Gesammelt statt abgebrochen: ein einzelnes unlesbares Verzeichnis (etwa ein
+// root-eigenes Artefaktverzeichnis auf einem self-hosted Runner) soll das
+// Onboarding nicht unmoeglich machen. Es soll nur nicht unsichtbar sein. Die
+// Warnungen erscheinen im Onboarding-PR-Body, wo ein Mensch sie sieht.
+type fsErrors struct{ seen []domain.Warning }
+
+func (e *fsErrors) note(repo, path string, err error) {
+	if e == nil || err == nil {
+		return
+	}
+	rel, rerr := filepath.Rel(repo, path)
+	if rerr != nil || strings.HasPrefix(rel, "..") {
+		rel = path
+	}
+	e.seen = append(e.seen, domain.Warning{
+		Code:    "path_unreadable",
+		Path:    filepath.ToSlash(rel),
+		Message: "could not be read during detection, so anything below it is missing from this profile: " + err.Error(),
+	})
+}
+
 // skipHidden is the shared WalkDirFunc preamble for every repo walker: it
 // prunes dot-directories (`.git/`, `.worktrees/`, `.venv/`, editor caches, …)
 // so a nested checkout or build tree can never contribute a component, a chart
@@ -672,10 +712,11 @@ func skipHidden(root, path string, d fs.DirEntry) error {
 	return nil
 }
 
-func fallbackMarkerPaths(repo string) []string {
+func fallbackMarkerPaths(repo string, fe *fsErrors) []string {
 	var out []string
-	_ = filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			fe.note(repo, path, err)
 			return nil
 		}
 		if skip := skipHidden(repo, path, d); skip != nil {
@@ -694,15 +735,18 @@ func fallbackMarkerPaths(repo string) []string {
 			out = append(out, filepath.ToSlash(rel))
 		}
 		return nil
-	})
+	}); err != nil {
+		fe.note(repo, repo, err)
+	}
 	sort.Strings(out)
 	return out
 }
 
-func fallbackDockerfilePaths(repo string) []string {
+func fallbackDockerfilePaths(repo string, fe *fsErrors) []string {
 	var out []string
-	_ = filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			fe.note(repo, path, err)
 			return nil
 		}
 		if skip := skipHidden(repo, path, d); skip != nil {
@@ -721,7 +765,9 @@ func fallbackDockerfilePaths(repo string) []string {
 			out = append(out, filepath.ToSlash(rel))
 		}
 		return nil
-	})
+	}); err != nil {
+		fe.note(repo, repo, err)
+	}
 	sort.Strings(out)
 	if len(out) < 2 {
 		return nil
@@ -783,10 +829,14 @@ func isFlutter(dir string) bool {
 	return has(dir, "pubspec.yaml") && flutterSDKDep.MatchString(mustRead(filepath.Join(dir, "pubspec.yaml")))
 }
 
-func inventoryDockerfiles(repo, componentPath, imageOverride string) []domain.Dockerfile {
+func inventoryDockerfiles(repo, componentPath, imageOverride string, fe *fsErrors) []domain.Dockerfile {
 	dir := filepath.Join(repo, componentPath)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		// Nicht mit "keine Dockerfiles" verwechseln (Audit B-10): ein
+		// unlesbares Komponentenverzeichnis ergab `dockerfiles: []`, und das
+		// Image waere nie gebaut und nie gescannt worden.
+		fe.note(repo, dir, err)
 		return []domain.Dockerfile{}
 	}
 	var names []string
