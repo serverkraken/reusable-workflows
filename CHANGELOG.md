@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.17.0](https://github.com/serverkraken/reusable-workflows/compare/v4.16.1...v4.17.0) (2026-08-25)
+
+
+### Features
+
+* **onboard:** app_version haelt die appVersion eines Charts auf Stand ([#241](https://github.com/serverkraken/reusable-workflows/issues/241)) ([ca28167](https://github.com/serverkraken/reusable-workflows/commit/ca281673343b5dba5ac0c88e93f9bdff20d860e2))
+
+
+### Bug Fixes
+
+* **templates:** chart-image-pins klebt am folgenden Job ([#243](https://github.com/serverkraken/reusable-workflows/issues/243)) ([403dc08](https://github.com/serverkraken/reusable-workflows/commit/403dc081640fc03d239a60002d6f98189b09e01a))
+
 ## [4.16.1](https://github.com/serverkraken/reusable-workflows/compare/v4.16.0...v4.16.1) (2026-08-24)
 
 
