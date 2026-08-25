@@ -102,9 +102,29 @@ emit_profile_json() {
   # called via --profile-json (legacy callers), they are unset and we do the
   # lookups ourselves.
   if [[ -z "${OVERRIDE_DEFAULT_BRANCH:-}" && -n "$target_repo" ]]; then
-    default_branch=$(gh api "/repos/$target_repo" -q '.default_branch' 2>/dev/null || echo "main")
+    # Ein fehlgeschlagener API-Aufruf darf nicht wie eine Antwort aussehen
+    # (Audit H-5, H-10). Frueher stand hier `|| echo "main"` und `|| echo ""`:
+    # ein Rate-Limit, ein 500er oder ein abgelaufener Token ergaben damit
+    # "Default-Branch heisst main" und "es gibt keine Releases" - beides
+    # plausibel, beides frei erfunden.
+    #
+    # `onboard-detect.sh` bricht an der gleichen Stelle laengst mit exit 1 ab;
+    # diese Engine tat es nicht. Zwei Codepfade desselben Repos waren sich also
+    # uneinig, was ein API-Fehler bedeutet.
+    if ! default_branch=$(gh api "/repos/$target_repo" -q '.default_branch' 2>/dev/null); then
+      echo "::error::repo not accessible: $target_repo" >&2
+      return 1
+    fi
     local tag
-    tag=$(gh release list --repo "$target_repo" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+    # rc trennt die Faelle sauber, gemessen:
+    #   Repo mit Releases     rc=0, Tag
+    #   Repo OHNE Releases    rc=0, leer      <- gueltig, current_version bleibt 0.0.0
+    #   Repo existiert nicht  rc=1, leer
+    #   Token ungueltig       rc=1, leer
+    if ! tag=$(gh release list --repo "$target_repo" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null); then
+      echo "::error::could not list releases for $target_repo; refusing to seed the version from a failed API call" >&2
+      return 1
+    fi
     # jq '.[0].tagName' on an empty release list returns the literal string
     # "null" (exit 0, not an error). Treat "null" as no-release-found.
     [[ -n "$tag" && "$tag" != "null" ]] && current_version="${tag#v}"
@@ -117,7 +137,15 @@ emit_profile_json() {
   # array as compact JSON.
   local topics='[]'
   if [[ -n "$target_repo" ]]; then
-    topics=$(gh api "/repos/$target_repo/topics" -q '.names' 2>/dev/null) || topics='[]'
+    # Topics steuern Opt-ins, allen voran `sk-prerelease-on-push`. Ein
+    # verschluckter Fehler hiess "das Repo hat keine Topics" und damit
+    # "prerelease-on-push.yml wird nicht gerendert" - ein Adopter haette das
+    # Opt-in still verloren (Audit H-10). Ein Repo OHNE Topics antwortet mit
+    # rc=0 und einer leeren Liste; das bleibt gueltig.
+    if ! topics=$(gh api "/repos/$target_repo/topics" -q '.names' 2>/dev/null); then
+      echo "::error::could not read topics for $target_repo; refusing to render as if it had none" >&2
+      return 1
+    fi
     [[ -z "$topics" || "$topics" == "null" ]] && topics='[]'
   fi
 

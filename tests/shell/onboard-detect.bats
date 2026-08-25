@@ -650,6 +650,10 @@ DOCKER
   cat > "$GH_MOCK/gh" <<'GHEOF'
 #!/usr/bin/env bash
 case "$1 $2" in
+  # Der Topics-Aufruf MUSS beantwortet werden. Frueher fiel er in den
+  # Fehlerzweig, und der Detektor las das als "keine Topics" - der Mock trug
+  # damit die Fehlfunktion mit, die H-10 beschreibt.
+  "api /repos/owner/repo/topics") echo "[]" ;;
   "api /repos/owner/repo") echo "main" ;;
   "release list")          echo "null" ;;
   *) echo "::error::unexpected gh call: $*" >&2; exit 1 ;;
@@ -668,9 +672,10 @@ GHEOF
   cat > "$GH_MOCK/gh" <<'GHEOF'
 #!/usr/bin/env bash
 case "$1 $2" in
+  "api /repos/owner/repo/topics") echo "[]" ;;
   "api /repos/owner/repo") echo "main" ;;
   "release list")          echo "null" ;;
-  *) exit 1 ;;
+  *) echo "::error::unexpected gh call: $*" >&2; exit 1 ;;
 esac
 GHEOF
   chmod +x "$GH_MOCK/gh"
@@ -1049,4 +1054,77 @@ _legacy_one() {
   [ "$status" -eq 1 ]
   run "$DETECT" --emit-both "$FIX/go-root-multi-image"
   [ "$status" -eq 1 ]
+}
+
+# === API-Fehler duerfen nicht wie Antworten aussehen (Audit H-5, H-10) ===
+#
+# Vier Aufrufe fielen frueher auf plausible Vorgaben zurueck:
+#
+#   gh api /repos/<r>          -> "main"     (Default-Branch frei erfunden)
+#   gh release list            -> ""         -> current_version bleibt 0.0.0
+#   gh api /repos/<r>/topics   -> []         -> Opt-ins still verloren
+#
+# Gemessen an der echten API trennt der Exit-Status die Faelle sauber:
+#
+#   Repo mit Releases     rc=0, Tag
+#   Repo OHNE Releases    rc=0, leer     <- gueltig
+#   Repo existiert nicht  rc=1, leer
+#   Token ungueltig       rc=1, leer
+#
+# Aus current_version wird `.release-please-manifest.json` geseedet. Ein Repo
+# auf 1.10.0, dessen Release-Abfrage scheitert, haette dort 0.0.0 bekommen und
+# beim naechsten Release rueckwaerts versioniert.
+
+# Schreibt einen gh-Mock, der $1 beantwortet und bei $2 fehlschlaegt.
+# $1 = "ok"|"fail" je Aufrufart, in der Reihenfolge branch,releases,topics
+_gh_mock() {
+  local branch="$1" releases="$2" topics="$3"
+  GH_MOCK=$(mktemp -d)
+  cat > "$GH_MOCK/gh" <<GHEOF
+#!/usr/bin/env bash
+case "\$1 \$2" in
+  "api /repos/owner/repo/topics") [[ "$topics"  == ok ]] && { echo '[]'; exit 0; }; exit 1 ;;
+  "api /repos/owner/repo")        [[ "$branch"  == ok ]] && { echo main; exit 0; }; exit 1 ;;
+  "release list")                 [[ "$releases" == ok ]] && { echo null; exit 0; }; exit 1 ;;
+esac
+echo "::error::unexpected gh call: \$*" >&2
+exit 1
+GHEOF
+  chmod +x "$GH_MOCK/gh"
+}
+
+@test "gescheiterte Release-Abfrage seedet NICHT 0.0.0, sondern bricht ab" {
+  _gh_mock ok fail ok
+  PATH="$GH_MOCK:$PATH" TARGET_REPO=owner/repo GH_TOKEN=stub run "$DETECT" --profile-json "$FIX/go-repo"
+  rm -rf "$GH_MOCK"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"could not list releases"* ]]
+}
+
+@test "gescheiterte Topics-Abfrage gilt nicht als 'keine Topics'" {
+  # Topics steuern Opt-ins wie `sk-prerelease-on-push`; ein verschluckter
+  # Fehler haette das Opt-in still fallen lassen.
+  _gh_mock ok ok fail
+  PATH="$GH_MOCK:$PATH" TARGET_REPO=owner/repo GH_TOKEN=stub run "$DETECT" --profile-json "$FIX/go-repo"
+  rm -rf "$GH_MOCK"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"could not read topics"* ]]
+}
+
+@test "gescheiterte Branch-Abfrage bricht ab, statt 'main' zu erfinden" {
+  _gh_mock fail ok ok
+  PATH="$GH_MOCK:$PATH" TARGET_REPO=owner/repo GH_TOKEN=stub run "$DETECT" --profile-json "$FIX/go-repo"
+  rm -rf "$GH_MOCK"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not accessible"* ]]
+}
+
+@test "ein Repo ohne Releases bleibt gueltig und ergibt 0.0.0" {
+  # Gegenprobe: die drei Abbrueche oben duerfen den legitimen Fall nicht
+  # mitreissen. Ein Repo vor seinem ersten Release antwortet mit rc=0.
+  _gh_mock ok ok ok
+  PATH="$GH_MOCK:$PATH" TARGET_REPO=owner/repo GH_TOKEN=stub run "$DETECT" --profile-json "$FIX/go-repo"
+  rm -rf "$GH_MOCK"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq -r '.current_version')" = "0.0.0" ]
 }
