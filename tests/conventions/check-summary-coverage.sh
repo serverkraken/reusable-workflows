@@ -31,13 +31,29 @@ else
   cd "$(git rev-parse --show-toplevel)"
 fi
 
-# The workflows whose `summary` is a required status check. Kept explicit
-# rather than derived: the branch-protection API is not reachable from every
-# context this gate runs in, and a check that silently degrades to "nothing to
-# do" would be worse than one that has to be edited when the list changes.
-WORKFLOWS=("${@:-}")
-if [[ -z "${WORKFLOWS[0]}" ]]; then
-  WORKFLOWS=(.github/workflows/integration.yml .github/workflows/self-ci.yml)
+# Workflows with an aggregating job, as `<file>:<aggregator-job>`.
+#
+# Kept explicit rather than derived: the branch-protection API is not reachable
+# from every context this gate runs in, and a check that silently degrades to
+# "nothing to do" would be worse than one that has to be edited when the list
+# changes.
+#
+# The first two are the required status checks — a job outside their graph
+# cannot fail a pull request. The rest are scheduled runs whose aggregator
+# writes the report a human actually reads; a job outside THAT graph turns the
+# run red but never appears in the report, which is how it gets ignored. The
+# aggregator is not always called `summary`, so the root is part of the entry:
+# nightly-runner-parity's assert-parity covered only half its own jobs, and
+# that is exactly the kind of gap this list exists to surface.
+WORKFLOW_ROOTS=(
+  ".github/workflows/integration.yml:summary"
+  ".github/workflows/self-ci.yml:summary"
+  ".github/workflows/failure-paths-nightly.yml:report-regressions"
+  ".github/workflows/nightly-runner-parity.yml:assert-parity"
+  ".github/workflows/drift-check.yml:publish"
+)
+if [[ $# -gt 0 ]]; then
+  WORKFLOW_ROOTS=("$@")
 fi
 
 FAILED=0
@@ -91,7 +107,9 @@ parse_jobs() {
   ' "$1"
 }
 
-for workflow in "${WORKFLOWS[@]}"; do
+for entry in "${WORKFLOW_ROOTS[@]}"; do
+  workflow="${entry%:*}"
+  root="${entry##*:}"
   if [[ ! -f "$workflow" ]]; then
     echo "FAIL: $workflow not found."
     FAILED=1
@@ -105,15 +123,15 @@ for workflow in "${WORKFLOWS[@]}"; do
   awk -F '\t' '$1 == "EDGE"   { print $2 "\t" $3 }' "$parsed" | sort -u > "$tmpdir/edges.tsv"
   awk -F '\t' '$1 == "EXEMPT" { print $2 "\t" $3 }' "$parsed" | sort -u > "$tmpdir/exempt.tsv"
 
-  if ! grep -qxF 'summary' "$tmpdir/jobs.txt"; then
-    echo "FAIL: $workflow has no 'summary' job, but is listed as a required check."
+  if ! grep -qxF "$root" "$tmpdir/jobs.txt"; then
+    echo "FAIL: $workflow has no '$root' job, but is listed with that aggregator."
     FAILED=1
     continue
   fi
 
   # Reachability from `summary`, walked backwards along needs edges: a job is
   # covered when something already covered lists it in its needs.
-  echo 'summary' > "$tmpdir/reached.txt"
+  echo "$root" > "$tmpdir/reached.txt"
   while :; do
     join -t "$(printf '\t')" -1 1 -2 1 -o 2.2 \
       <(sort -u "$tmpdir/reached.txt") <(sort -k1,1 "$tmpdir/edges.tsv") \
@@ -130,8 +148,8 @@ for workflow in "${WORKFLOWS[@]}"; do
     if grep -qxF "$job" "$tmpdir/exempt-names.txt"; then
       continue
     fi
-    echo "FAIL: $workflow job '$job' is not reachable from 'summary' — it cannot fail the required check."
-    echo "      Add it to the summary job's needs:, or mark it '# summary-exempt: <reason>'."
+    echo "FAIL: $workflow job '$job' is not reachable from '$root' — it is outside the aggregator."
+    echo "      Add it to ${root}'s needs:, or mark it '# summary-exempt: <reason>'."
     FAILED=1
   done < <(comm -23 "$tmpdir/jobs.txt" "$tmpdir/reached.txt")
 
@@ -144,18 +162,18 @@ for workflow in "${WORKFLOWS[@]}"; do
       FAILED=1
     fi
     if grep -qxF "$job" "$tmpdir/reached.txt"; then
-      echo "FAIL: $workflow job '$job' is marked summary-exempt but IS reachable from 'summary'. Drop the marker."
+      echo "FAIL: $workflow job '$job' is marked summary-exempt but IS reachable from '$root'. Drop the marker."
       FAILED=1
     fi
   done < "$tmpdir/exempt.tsv"
 
   if [[ $FAILED -eq 0 ]]; then
-    echo "OK: $workflow — $(wc -l < "$tmpdir/jobs.txt" | tr -d ' ') jobs, $(wc -l < "$tmpdir/exempt-names.txt" | tr -d ' ') exempt, rest reachable from summary."
+    echo "OK: $workflow — $(wc -l < "$tmpdir/jobs.txt" | tr -d ' ') jobs, $(wc -l < "$tmpdir/exempt-names.txt" | tr -d ' ') exempt, rest reachable from '$root'."
   fi
 done
 
 if [[ $FAILED -ne 0 ]]; then
   echo ""
-  echo "Jobs outside the required check found."
+  echo "Jobs outside their workflow's aggregator found."
   exit 1
 fi
