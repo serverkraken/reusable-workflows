@@ -357,3 +357,28 @@ _catalog_with_config() {
   run bash "$root/scripts/apply-repo-defaults.sh" --repo acme/x --target-path "$root/tgt"
   [[ "$output" != *"_schema_version ist"* ]]
 }
+
+# === Bypass-Allowances (Audit H-2) ===
+#
+# `bypass_pull_request_allowances` faellt bei der Normalisierung weg: die
+# Vergleichsform von `required_pull_request_reviews` kennt nur vier Felder.
+# Wer sich also einen Bypass eintraegt, macht die erzwungenen Reviews hohl -
+# und der Sweep meldet das Repo weiter als sauber, ohne je ein PUT zu senden.
+
+@test "tier_1 bp: bypass allowances sind Drift, nicht sauber" {
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-bypass --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
+}
+
+@test "tier_1 bp: ein leerer Bypass-Block bleibt sauber" {
+  # Gegenprobe: die API liefert `bypass_pull_request_allowances` auch mit
+  # leeren Listen. Das ist kein Bypass und darf kein PUT ausloesen - sonst
+  # schriebe der Sweep bei jedem Lauf, und niemand sieht mehr, wann sich
+  # wirklich etwas geaendert hat.
+  tgt=$(prepare_target "lock-v2-with-marker.json")
+  run_with_stub api-bypass-empty --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  refute_grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
+}

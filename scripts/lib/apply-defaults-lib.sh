@@ -74,7 +74,23 @@ diff_branch_protection() {
           required_approving_review_count: ($c.required_pull_request_reviews.required_approving_review_count // 0),
           dismiss_stale_reviews: ($c.required_pull_request_reviews.dismiss_stale_reviews // false),
           require_code_owner_reviews: ($c.required_pull_request_reviews.require_code_owner_reviews // false),
-          require_last_push_approval: ($c.required_pull_request_reviews.require_last_push_approval // false)
+          require_last_push_approval: ($c.required_pull_request_reviews.require_last_push_approval // false),
+          # Audit H-2: `bypass_pull_request_allowances` fiel bei der
+          # Normalisierung weg. Wer sich dort eintraegt, umgeht die erzwungenen
+          # Reviews - und der Vergleich sah es nicht, also kein PUT, also blieb
+          # der Bypass. Nachgestellt: eine Fixture mit einem Nutzer in
+          # `users` lief als "clean" durch.
+          #
+          # Verglichen wird ein BOOL, nicht die Liste: die Zielkonfiguration
+          # deklariert keine Bypaesse, die Absicht ist also "keine". Ein
+          # Listenvergleich wuerde bei jeder Umsortierung durch die API
+          # ausschlagen.
+          bypass_allowances_present: (
+            [ ($c.required_pull_request_reviews.bypass_pull_request_allowances.users // []),
+              ($c.required_pull_request_reviews.bypass_pull_request_allowances.teams // []),
+              ($c.required_pull_request_reviews.bypass_pull_request_allowances.apps // []) ]
+            | flatten | length > 0
+          )
         }
         end
       ),
@@ -101,7 +117,15 @@ diff_branch_protection() {
           required_approving_review_count: ($clean.required_pull_request_reviews.required_approving_review_count // 0),
           dismiss_stale_reviews: ($clean.required_pull_request_reviews.dismiss_stale_reviews // false),
           require_code_owner_reviews: ($clean.required_pull_request_reviews.require_code_owner_reviews // false),
-          require_last_push_approval: ($clean.required_pull_request_reviews.require_last_push_approval // false)
+          require_last_push_approval: ($clean.required_pull_request_reviews.require_last_push_approval // false),
+          # Dieselbe Herleitung wie oben, damit ein spaeter doch deklarierter
+          # Bypass sinnvoll verglichen wird statt hart auf false zu stehen.
+          bypass_allowances_present: (
+            [ ($clean.required_pull_request_reviews.bypass_pull_request_allowances.users // []),
+              ($clean.required_pull_request_reviews.bypass_pull_request_allowances.teams // []),
+              ($clean.required_pull_request_reviews.bypass_pull_request_allowances.apps // []) ]
+            | flatten | length > 0
+          )
         }
         end
       ),
