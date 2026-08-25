@@ -92,8 +92,53 @@ teardown() { rm -rf "$TESTDIR"; }
   grep -q -- "-schema-location https://example.test" "$ARGLOG"
 }
 
-@test "missing root warns and does not fail" {
+@test "missing root faellt durch, statt Erfolg zu melden" {
+  # Hiess bis zum F-4/I-13-Fix "missing root warns and does not fail" und
+  # schrieb damit fest, dass ein Tippfehler in manifests_paths ein gruenes
+  # Gate ergibt. Gemessen: der Lauf endete mit "all manifests valid", rc=0 —
+  # ohne eine einzige Validierung.
   MANIFESTS_PATHS="$TREE/does-not-exist" run bash "$SCRIPT"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
   [[ "$output" == *"not found"* ]]
+  [[ "$output" != *"alle gueltig"* ]]
+}
+
+@test "ein leerer Root faellt durch — null Validierungen sind kein Erfolg" {
+  mkdir -p "$TREE/leer"
+  MANIFESTS_PATHS="$TREE/leer" run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"nichts validiert"* ]]
+}
+
+@test "standalone .yml wird gefunden, nicht nur .yaml" {
+  # Ein Repo, das durchgaengig `.yml` benutzt, validierte null Dateien und
+  # meldete Erfolg. Nachgestellt mit einem absichtlich kaputten Deployment:
+  # es kam nie bei kubeconform an.
+  mkdir -p "$TREE/ymlonly"
+  printf 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: a}\n' > "$TREE/ymlonly/cm.yml"
+  MANIFESTS_PATHS="$TREE/ymlonly" run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cm.yml"* ]]
+  [[ "$output" == *"1 Manifest"* ]]
+}
+
+@test "kustomization.yml und Kustomization werden gefunden" {
+  # kustomize akzeptiert drei Dateinamen; gesucht wurde nur einer.
+  for name in kustomization.yml Kustomization; do
+    rm -rf "$TREE/k-$name"; mkdir -p "$TREE/k-$name"
+    printf 'resources: []\n' > "$TREE/k-$name/$name"
+    MANIFESTS_PATHS="$TREE/k-$name" run bash "$SCRIPT"
+    [ "$status" -eq 0 ] || { echo "fehlgeschlagen fuer $name: $output"; return 1; }
+    [[ "$output" == *"kustomize build"* ]] || { echo "kein build fuer $name"; return 1; }
+  done
+}
+
+@test "die Erfolgsmeldung nennt die Anzahl der Validierungen" {
+  # "all manifests valid" liess offen, ob ueberhaupt etwas geprueft wurde.
+  mkdir -p "$TREE/zaehlung"
+  printf 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: a}\n' > "$TREE/zaehlung/a.yaml"
+  MANIFESTS_PATHS="$TREE/zaehlung" run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *" validiert, alle gueltig"* ]]
+  [[ "$output" == *"1 Manifest"* ]]
 }
