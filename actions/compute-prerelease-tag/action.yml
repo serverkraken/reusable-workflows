@@ -33,5 +33,10 @@ runs:
         BRANCH: ${{ inputs.branch }}
         SHORT_SHA: ${{ inputs.short_sha }}
       run: |
-        bash "${GITHUB_ACTION_PATH}/sanitize.sh" "$BRANCH" "$SHORT_SHA" \
-          | tee -a "$GITHUB_OUTPUT"
+        # Not piped straight into tee: in a pipeline the exit status is tee's,
+        # so without pipefail a failing sanitizer left the step green with no
+        # outputs at all. Whether composite `shell: bash` carries pipefail is
+        # not something this action should have to bet on — capture first,
+        # then write.
+        out=$(bash "${GITHUB_ACTION_PATH}/sanitize.sh" "$BRANCH" "$SHORT_SHA")
+        printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
