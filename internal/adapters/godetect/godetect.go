@@ -57,9 +57,20 @@ func (a Adapter) ProfileJSON(ctx context.Context, _ string, repoPath, targetRepo
 // (`gh api … || echo "main"` in emit_profile_json), so failing hard here would
 // have turned every drift run without a token into a render error.
 //
-// Only DefaultBranch needs the treatment: detect already guards the other three
-// with `err == nil`, so they fall back on their own. Returning an empty branch
-// (rather than a literal "main") leaves detect's own default in charge.
+// ALLE vier Methoden brauchen die Behandlung. Frueher stand hier "nur
+// DefaultBranch, detect guards the other three with `err == nil`" — genau diese
+// Guards waren aber der Fund C-4/C-5: sie liessen einen API-Fehler wie "keine
+// Releases" beziehungsweise "keine Topics" aussehen, und daraus wurde die
+// Version 0.0.0 geseedet. Beim Onboarding ist das falsch und bricht jetzt ab.
+//
+// Die Toleranz gehoert damit hierher, wo sie gebraucht wird, statt in den Kern,
+// durch den auch das Onboarding laeuft. Der Unterschied ist der Zweck:
+// Onboarding rendert ein Repo zum ERSTEN Mal und darf dabei nicht raten; Drift
+// rendert ein bereits onboardetes Repo erneut, nur um zu vergleichen, und ein
+// fehlendes Token macht den Vergleich nicht wertlos.
+//
+// Zurueckgegeben werden Nullwerte statt erfundener Vorgaben ("" statt "main"),
+// damit detects eigene Defaults zustaendig bleiben.
 type tolerantMetadata struct{ inner ports.GitHubMetadata }
 
 func (t tolerantMetadata) DefaultBranch(ctx context.Context, repo string) (string, error) {
@@ -71,13 +82,25 @@ func (t tolerantMetadata) DefaultBranch(ctx context.Context, repo string) (strin
 }
 
 func (t tolerantMetadata) LatestStableRelease(ctx context.Context, repo string) (string, error) {
-	return t.inner.LatestStableRelease(ctx, repo)
+	v, err := t.inner.LatestStableRelease(ctx, repo)
+	if err != nil {
+		return "", nil
+	}
+	return v, nil
 }
 
 func (t tolerantMetadata) ReleaseTags(ctx context.Context, repo string) ([]string, error) {
-	return t.inner.ReleaseTags(ctx, repo)
+	tags, err := t.inner.ReleaseTags(ctx, repo)
+	if err != nil {
+		return nil, nil
+	}
+	return tags, nil
 }
 
 func (t tolerantMetadata) Topics(ctx context.Context, repo string) ([]string, error) {
-	return t.inner.Topics(ctx, repo)
+	topics, err := t.inner.Topics(ctx, repo)
+	if err != nil {
+		return nil, nil
+	}
+	return topics, nil
 }

@@ -91,3 +91,41 @@ func TestProfileJSONReportsDetectionFailure(t *testing.T) {
 		t.Fatal("expected an error for a non-existent repo path")
 	}
 }
+
+// Die Toleranz muss ALLE vier Metadaten-Aufrufe umfassen, nicht nur
+// DefaultBranch. Seit C-4/C-5 sind Release- und Topics-Fehler im Kern fatal —
+// richtig fuer das Onboarding, das ein Repo zum ersten Mal rendert. Drift
+// rendert ein bereits onboardetes Repo nur erneut, um zu vergleichen, und
+// laeuft in Jobs ohne Token.
+//
+// Ohne diesen Test wuerde eine spaetere Verengung der Toleranz erst auffallen,
+// wenn der naechste tokenlose Drift-Lauf einen Render-Fehler statt eines
+// Vergleichs meldet.
+func TestProfileJSONDegradesOnEveryMetadataCall(t *testing.T) {
+	repo := filepath.Join("..", "..", "..", "tests", "fixtures", "onboard", "go-root-multi-image")
+
+	got, err := Adapter{GitHub: unreachableGitHub{}}.ProfileJSON(context.Background(), "", repo, "serverkraken/fixture")
+	if err != nil {
+		t.Fatalf("ProfileJSON should degrade on every failing call, not fail: %v", err)
+	}
+
+	var profile struct {
+		DefaultBranch  string   `json:"default_branch"`
+		CurrentVersion string   `json:"current_version"`
+		Topics         []string `json:"topics"`
+	}
+	if err := json.Unmarshal(got, &profile); err != nil {
+		t.Fatalf("unmarshal profile: %v\n%s", err, got)
+	}
+	if profile.DefaultBranch != "main" {
+		t.Errorf("default_branch = %q, want the \"main\" fallback", profile.DefaultBranch)
+	}
+	// Genau der Wert, der beim Onboarding NICHT geraten werden darf — hier ist
+	// er richtig, weil Drift ihn nur vergleicht und nichts damit seedet.
+	if profile.CurrentVersion != "0.0.0" {
+		t.Errorf("current_version = %q, want the 0.0.0 fallback", profile.CurrentVersion)
+	}
+	if len(profile.Topics) != 0 {
+		t.Errorf("topics = %v, want empty", profile.Topics)
+	}
+}
