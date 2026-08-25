@@ -990,3 +990,54 @@ EOF2
   [ "$status" -ne 0 ]
   [[ "$output" == *"dieselbe Job-ID"* ]]
 }
+
+# === .workflows: abweisen statt still weglassen (Audit M-5) ===
+#
+# `.workflows.e2e` entsteht nur aus einem Adopter-Manifest. Der Go-Renderer
+# rendert daraus zusaetzlich `.github/workflows/e2e.yml` und nimmt sie in den
+# Lock auf; diese Engine kennt das Feld nicht.
+#
+# Gemessen vor der Aenderung, dasselbe Profil durch beide Engines:
+#   bash: rc=0, 4 Workflows  (ci, cleanup, prerelease, release)
+#   go:   rc=0, 5 Workflows  (… + e2e.yml)
+# Der Lock behauptete danach, vier Dateien seien der vollstaendige Stand — die
+# Drift-Pruefung haette dem nie widersprochen.
+
+@test "render: profile with .workflows is refused, not silently truncated" {
+  seed_profile "go-repo"
+  jq '. + {workflows: {e2e: {script: "./scripts/e2e.sh", schedule: "0 3 * * *"}}}' \
+    "$TARGET/profile.json" > "$TARGET/profile-e2e.json"
+
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile-e2e.json" "v4"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *".workflows"* ]]
+  # Der Grund muss im Text stehen: ein blosses rc=1 laesst offen, ob gomplate
+  # fehlte oder das Profil unlesbar war.
+  [[ "$output" == *"use_go_cli"* ]]
+
+  # Nichts angefangen: kein halb gerenderter Baum, kein Lock, der einen
+  # unvollstaendigen Stand als vollstaendig ausweist.
+  [ ! -f "$TARGET/.github/workflows/ci.yml" ]
+  [ ! -f "$TARGET/.github/onboard.lock.json" ]
+}
+
+@test "render: an empty workflows object is not a declaration" {
+  # `"workflows": {}` steht in vielen Manifest-Profilen und erklaert nichts.
+  # Ein Guard auf blosse Anwesenheit hat genau hier fuenf bestehende Tests
+  # abgewiesen, die zu Recht durch diese Engine rendern.
+  seed_profile "go-repo"
+  jq '. + {workflows: {}}' "$TARGET/profile.json" > "$TARGET/profile-empty.json"
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile-empty.json" "v4"
+  [ "$status" -eq 0 ]
+  [ -f "$TARGET/.github/workflows/ci.yml" ]
+}
+
+@test "render: profile without .workflows is unaffected" {
+  # Gegenprobe zur Abweisung — sonst koennte der Guard alles ablehnen und beide
+  # Tests waeren trotzdem gruen.
+  seed_profile "go-repo"
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
+  [ "$status" -eq 0 ]
+  [ -f "$TARGET/.github/workflows/ci.yml" ]
+  [ ! -f "$TARGET/.github/workflows/e2e.yml" ]
+}
