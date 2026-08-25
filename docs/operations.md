@@ -753,9 +753,12 @@ Semantics:
   Their deprecation is a separate major-version step.
 - **Unknown keys are errors,** not warnings. A typo must not silently fall
   back to a default. Unknown `schema` values are errors too.
-- **`gitops[]`** is an inventory in v1: validated, copied into the profile
-  and the lock, surfaced in the onboarding PR body and
-  `docs/onboarding-status.md` ("consumed by"). `mode: renovate` means the
+- **`gitops[]`** is an inventory in v1: validated, copied into the profile,
+  and surfaced in the onboarding PR body and `docs/onboarding-status.md`
+  ("consumed by"). It is **not** written into the lock — the lock records
+  `inputs.manifest_sha256`, so editing the `gitops` block already makes the
+  lock stale; copying the list in as well would be a second place to keep in
+  step for no gain. `mode: renovate` means the
   catalog does nothing active — rollout latency is governed by the
   consumer repo's Renovate preset. `mode: push` is reserved; v1 rejects it
   with "gitops mode push is not yet supported". `scope` is expressed in

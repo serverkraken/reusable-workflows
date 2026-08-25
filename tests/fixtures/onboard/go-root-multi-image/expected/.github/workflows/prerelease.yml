@@ -3,7 +3,7 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  build:
+  build-tools:
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
     permissions:
       contents: read
@@ -20,8 +20,8 @@ jobs:
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
-  scan:
-    needs: build
+  scan-tools:
+    needs: build-tools
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
     permissions:
       contents: read
@@ -30,7 +30,39 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build.outputs.image_ref }}
+      image_ref: ${{ needs.build-tools.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+
+  build-tools-debug:
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+      pull-requests: write
+    secrets: inherit
+    with:
+      prerelease: true
+      dockerfile: images/tools/Dockerfile.debug
+      image_name: acme/multi/tools-debug
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+  scan-tools-debug:
+    needs: build-tools-debug
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    secrets: inherit
+    with:
+      image_ref: ${{ needs.build-tools-debug.outputs.image_ref }}
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}

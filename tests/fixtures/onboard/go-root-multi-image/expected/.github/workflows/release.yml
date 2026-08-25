@@ -20,7 +20,7 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v4
     secrets: inherit
 
-  docker-build:
+  docker-build-tools:
     needs: [release-please]
     if: contains(fromJSON(needs.release-please.outputs.paths_released), '.')
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
@@ -34,11 +34,35 @@ jobs:
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
     secrets: inherit
 
-  scan:
-    needs: [docker-build]
+  scan-tools:
+    needs: [docker-build-tools]
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
     with:
-      image_ref: ${{ needs.docker-build.outputs.image_ref }}
+      image_ref: ${{ needs.docker-build-tools.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+    secrets: inherit
+
+  docker-build-tools-debug:
+    needs: [release-please]
+    if: contains(fromJSON(needs.release-please.outputs.paths_released), '.')
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
+    with:
+      dockerfile: images/tools/Dockerfile.debug
+      image_name: acme/multi/tools-debug
+      tag: v${{ fromJSON(needs.release-please.outputs.releases)['.'].version }}
+      ref: ${{ fromJSON(needs.release-please.outputs.releases)['.'].tag_name }}
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+    secrets: inherit
+
+  scan-tools-debug:
+    needs: [docker-build-tools-debug]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
+    with:
+      image_ref: ${{ needs.docker-build-tools-debug.outputs.image_ref }}
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
@@ -107,6 +131,20 @@ jobs:
       chart_path: charts/demo
       oci_registry: ghcr.io/go-root-multi-image/charts
       ref: ${{ fromJSON(needs.release-please.outputs.releases)['charts/demo'].tag_name }}
+    secrets: inherit
+
+  chart-image-pins:
+    needs: [release-please, docker-build-tools, docker-build-tools-debug, docker-build-images-api, docker-build-images-worker]
+    if: ${{ !failure() && !cancelled() && needs.release-please.outputs.paths_released != '[]' }}
+    uses: serverkraken/reusable-workflows/.github/workflows/chart-image-bump.yml@v4
+    permissions:
+      contents: write
+    with:
+      values_file: charts/demo/values.yaml
+      key_template: images.{name}.tag
+      images: |
+        {".":["acme/multi/tools","acme/multi/tools-debug"],"images/api":["acme/multi/api"],"images/worker":["acme/multi/worker"]}
+      releases: ${{ needs.release-please.outputs.releases }}
     secrets: inherit
 
   version-badges:

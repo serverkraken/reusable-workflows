@@ -1,0 +1,7 @@
+# onboard:release=true
+# Zweites release-faehiges Image DERSELBEN Komponente. Erst ab zwei greift die
+# $imgSuffix-Herleitung - und release.yml.tmpl leitet sie an zwei Stellen her,
+# die synchron bleiben muessen (Audit J-0c).
+FROM scratch
+COPY go.mod go.sum ./
+COPY . .
