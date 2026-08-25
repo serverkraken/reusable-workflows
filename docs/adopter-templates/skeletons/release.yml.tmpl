@@ -256,6 +256,10 @@ jobs:
         {{ $imageMap | toJSON }}
       releases: {{`${{ needs.release-please.outputs.releases }}`}}
     secrets: inherit
+{{- /* Blank line as action output, not literal text: the next construct's
+     `{{-` trims literal whitespace greedily, so a plain empty line here would
+     vanish and glue this block onto the following job. */}}
+{{- "\n" -}}
 {{- end }}
 {{- /* Manifest `release.badges: true`: after anything was released, rewrite
      the README badge block + table and commit it ([skip ci]). */ -}}
