@@ -1,0 +1,102 @@
+# .github/workflows/nightly-runner-parity.yml
+#
+# Exercises docker-build on the SELF-HOSTED pool that adopters actually run on.
+#
+# Why this exists as its own nightly rather than as a PR job: the amd64 pool is
+# permanently short (2 of 8 runners; the remaining capacity is not coming back),
+# so a self-hosted job on the PR path makes every pull request wait hours. But
+# dropping self-hosted coverage entirely is not an option either — a whole class
+# of defects exists ONLY on persistent runners, where /tmp, caches and the
+# Docker daemon survive between jobs. The /tmp/digests contamination fixed on
+# 2026-08-25 is the worked example: GitHub-hosted runners get a fresh /tmp per
+# job, so that bug was invisible there and shipped to an adopter.
+#
+# So: PRs run fast on GitHub-hosted runners, and this job proves once a night
+# that the atoms still work where they are actually deployed.
+# Summary convention: docs/conventions/step-summary.md
+name: nightly-runner-parity
+on:
+  schedule:
+    # 05:00 UTC — an hour after failure-paths-nightly, so the two do not
+    # contend for the same scarce amd64 runners.
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: nightly-runner-parity
+  cancel-in-progress: false
+
+jobs:
+  # No runs_on overrides on purpose: this takes the atom's own defaults, which
+  # are the self-hosted labels every adopter inherits. That is the whole point.
+  selfhosted-docker-build:
+    uses: ./.github/workflows/docker-build.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/minimal-go
+      dockerfile: tests/fixtures/minimal-go/Dockerfile
+      image_name: ${{ github.repository }}/nightly-parity
+      sign: true
+      attest: true
+      sbom: true
+
+  assert-parity:
+    needs: selfhosted-docker-build
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Assert the self-hosted build produced a real image
+        env:
+          RESULT: ${{ needs.selfhosted-docker-build.result }}
+          IMG: ${{ needs.selfhosted-docker-build.outputs.image_ref }}
+          DIGEST: ${{ needs.selfhosted-docker-build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [[ "$RESULT" != "success" ]]; then
+            echo "::error::docker-build on the self-hosted pool ended as '$RESULT'"
+            fail=1
+          fi
+          # `result == success` alone is too weak: a job can succeed while
+          # producing nothing usable. Require the outputs the merge job is
+          # supposed to emit — that is what a caller consumes.
+          if [[ -z "$IMG" ]]; then
+            echo "::error::no image_ref returned"
+            fail=1
+          fi
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::digest is not a sha256 reference: '${DIGEST:-<empty>}'"
+            fail=1
+          fi
+          {
+            echo "## nightly-runner-parity"
+            echo ""
+            echo "**Pool:** self-hosted (atom defaults, as adopters inherit them)"
+            echo "**Result:** $([ "$fail" -eq 0 ] && echo '✓ parity holds' || echo '✗ self-hosted path broken')"
+            echo ""
+            echo "| Output | Value |"
+            echo "|---|---|"
+            echo "| image_ref | \`${IMG:-<none>}\` |"
+            echo "| digest | \`${DIGEST:-<none>}\` |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+          exit "$fail"
+
+  # Moved off the PR path with the same reasoning as the docker-build above:
+  # kind runs inside the runner pod's dind sidecar, so this proves the ARC
+  # topology specifically — and nothing else can prove it. Config is
+  # unchanged from what integration.yml used, including the atom's own
+  # self-hosted default.
+  selfhosted-e2e-kind:
+    uses: ./.github/workflows/e2e-kind.yml
+    secrets: inherit
+    with:
+      script: tests/fixtures/kind-smoke/e2e.sh
+      timeout_minutes: 15
