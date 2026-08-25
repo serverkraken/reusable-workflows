@@ -293,6 +293,46 @@ jobs:
             echo "::error::merged SARIF carries $runs runs; code-scanning rejects more than one per category"
             exit 1
           fi
+          # How MANY results survived. Without this every check below is
+          # vacuously true on an empty merge: one run, no mismatched rule
+          # indices, `.Results` present — a merge that dropped everything used
+          # to pass the whole assertion (audit K-19). Reproduced against three
+          # synthetic merges before this line existed; all three passed.
+          merged=$(jq '.runs[0].results | length' report/trivy-image.sarif)
+          if [[ "$merged" == "0" ]]; then
+            echo "::error::merged SARIF carries 0 results — the CVE fixture must produce findings"
+            exit 1
+          fi
+
+          # No result may appear twice. The merger collapses a finding seen on
+          # both platforms using [ruleId, level, message.text, locations]
+          # (scripts/merge-sarif-runs.py:_result_key); the same key twice means
+          # it concatenated instead of deduplicating, and every alert would be
+          # filed twice in code-scanning.
+          dupes=$(jq '[.runs[0].results[]? | [.ruleId, .level, .message.text, .locations]]
+                      | group_by(.) | map(select(length > 1)) | length' report/trivy-image.sarif)
+          if [[ "$dupes" != "0" ]]; then
+            echo "::error::$dupes finding(s) appear twice in the merged SARIF — dedup did not run"
+            exit 1
+          fi
+
+          # Bracket the count by what the platforms actually reported: never
+          # more than both together, never fewer than one alone.
+          sum=0; max=0
+          for f in report/trivy-sarif/*.sarif; do
+            n=$(jq '[.runs[]?.results[]?] | length' "$f")
+            sum=$(( sum + n ))
+            (( n > max )) && max=$n
+          done
+          if (( merged > sum )); then
+            echo "::error::merged SARIF has $merged results but the platforms reported $sum in total"
+            exit 1
+          fi
+          if (( merged < max )); then
+            echo "::error::merged SARIF has $merged results, fewer than the $max a single platform reported"
+            exit 1
+          fi
+
           # Every result must point at its own rule: ruleIndex is a position in
           # tool.driver.rules, so a copied index mislabels the alert.
           bad=$(jq -r '.runs[0] as $r | [$r.results[]? | select($r.tool.driver.rules[.ruleIndex].id != .ruleId) | .ruleId] | length' report/trivy-image.sarif)
@@ -309,7 +349,7 @@ jobs:
             echo "::error::expected 2 per-platform SARIFs, found ${#per_platform[@]}"
             exit 1
           fi
-          echo "merged SARIF: 1 run, rule indices consistent, JSON report present, 2 platforms scanned"
+          echo "merged SARIF: 1 run, $merged results (<= $sum reported, >= $max per platform), no duplicates, rule indices consistent, JSON report present, 2 platforms scanned"
 
   # ----- cleanup-images smoke: verify the workflow accepts inputs -----
   # Runs after all image scans complete so prerelease tags aren't deleted
