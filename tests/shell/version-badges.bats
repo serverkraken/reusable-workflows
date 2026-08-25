@@ -147,3 +147,87 @@ EOF
   [ "$status" -eq 0 ]
   [ -f "$WORK/docs/badges/api-v2.svg" ]
 }
+
+# === Markerstellung und Manifestfehler (Audit I-7, I-8) ===
+#
+# Die bestehende Pruefung ZAEHLT die Marker. Der Umschreibvorgang ist ein
+# awk-Lauf, der beim Startmarker anfaengt zu ueberspringen und beim Endmarker
+# aufhoert - und beide Regeln verlangen den Marker in SPALTE 1
+# (`index($0, m) == 1`). Zwei Anordnungen bestehen die Zaehlung und zerstoeren
+# die Datei trotzdem. Beide gegen den Stand davor nachgestellt: exit 0, Badges
+# geschrieben, Text unterhalb des Blocks weg.
+
+@test "Endmarker vor Startmarker wird abgewiesen, statt den Rest zu loeschen" {
+  cat > "$WORK/README.md" <<'EOF'
+# demo
+
+<!-- version-badges:end -->
+<!-- version-badges:start -->
+
+WICHTIGER TEXT
+EOF
+  cp "$WORK/README.md" "$WORK/README.orig"
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"before"* ]]
+  # Die README darf nicht angefasst worden sein - ein Abbruch, der die Datei
+  # halb umgeschrieben hinterlaesst, waere kein Fortschritt.
+  diff "$WORK/README.md" "$WORK/README.orig"
+}
+
+@test "eingerueckter Endmarker wird abgewiesen" {
+  # Zaehlt genau einmal, wird vom Umschreibvorgang aber nie getroffen: das
+  # Ueberspringen endet dann erst am Dateiende.
+  cat > "$WORK/README.md" <<'EOF'
+# demo
+
+<!-- version-badges:start -->
+  <!-- version-badges:end -->
+
+WICHTIGER TEXT
+EOF
+  cp "$WORK/README.md" "$WORK/README.orig"
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"beginning of a line"* ]]
+  diff "$WORK/README.md" "$WORK/README.orig"
+}
+
+@test "ein Marker mit Text dahinter bleibt erlaubt" {
+  # Gegenprobe zur Spaltenpruefung: der Umschreibvorgang kommt mit Text hinter
+  # dem Marker zurecht, also darf die Validierung ihn nicht abweisen.
+  cat > "$WORK/README.md" <<'EOF'
+# demo
+
+<!-- version-badges:start --> (automatisch gepflegt)
+<!-- version-badges:end -->
+
+WICHTIGER TEXT
+EOF
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q "WICHTIGER TEXT" "$WORK/README.md"
+}
+
+@test "beschaedigtes Manifest schreibt den Block NICHT leer" {
+  # `done < <(jq ...)`: der Exit-Status einer Prozesssubstitution ist fuer
+  # `set -e` unsichtbar. Vorher lief die Schleife null Mal und der Block wurde
+  # durch eine leere Tabelle ersetzt - badges=0, changed=true, exit 0.
+  printf '{".": "1.4.0"\n' > "$WORK/.release-please-manifest.json"
+  cp "$WORK/README.md" "$WORK/README.orig"
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"could not be read"* ]]
+  diff "$WORK/README.md" "$WORK/README.orig"
+}
+
+@test "leeres, aber gueltiges Manifest laesst die README in Ruhe" {
+  # Kein Fehler - aber auch kein Grund, eine bestehende Tabelle durch eine
+  # leere zu ersetzen.
+  printf '{}\n' > "$WORK/.release-please-manifest.json"
+  cp "$WORK/README.md" "$WORK/README.orig"
+  run_script
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"changed=false"* ]]
+  diff "$WORK/README.md" "$WORK/README.orig"
+}
