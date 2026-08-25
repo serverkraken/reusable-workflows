@@ -141,11 +141,17 @@ jobs:
         # aus Code und Ausgabe schon: rc != 0 bei leerer Ausgabe heisst, dass
         # gar nicht geprueft wurde.
         run: |
-          set -uo pipefail
+          # `set +e` ist hier nicht Bequemlichkeit, sondern noetig: GitHub
+          # startet run-Bloecke mit `bash -e`, und kube-linter beendet bei
+          # FUNDEN mit rc=1. Ohne +e stirbt der Schritt, bevor `rc=$?`
+          # ueberhaupt laeuft - genau daran ist der erste Anlauf dieses Fixes in
+          # test-kube-lint-findings gescheitert.
+          set +e
           # shellcheck disable=SC2086
           kube-linter lint $CFG_ARGS --format sarif "$MANIFESTS_PATH" \
             > kube-linter.sarif 2> kube-linter.err
           rc=$?
+          set -e
           cat kube-linter.err >&2 || true
           if [[ "$rc" -ne 0 && ! -s kube-linter.sarif ]]; then
             echo "::error::kube-linter exited $rc without producing a report — it did not lint anything: $(tr -d '\n' < kube-linter.err)" >&2

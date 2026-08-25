@@ -74,8 +74,11 @@ teardown() {
   rm -rf "$WORK"
 }
 
+# `bash -e` ist Absicht: GitHub startet run-Bloecke so. Eine erste Fassung
+# dieses Harness rief `bash` ohne -e auf und war deshalb gruen, waehrend der
+# echte Schritt in CI abbrach - der Test gab falsche Sicherheit.
 run_body() {
-  ( cd "$WORK" && MANIFESTS_PATH="$1" CFG_ARGS="$2" bash "$WORK/body.sh" )
+  ( cd "$WORK" && MANIFESTS_PATH="$1" CFG_ARGS="$2" bash -e "$WORK/body.sh" )
 }
 
 @test "ein nicht existierender Pfad ist ein Fehler, keine 'null Funde'" {
