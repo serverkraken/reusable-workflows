@@ -91,3 +91,52 @@ bump() {
   [[ "$output" == *"changed=false"* ]]
   diff "$BATS_TEST_TMPDIR/before.yaml" "$VALUES"
 }
+
+# The bug the 2026-08-25 audit found: a non-matching sibling was passed over
+# without descending, so ITS children were compared against the next path
+# component. Looking for images.tools.tag rewrote images.wrapper.tools.tag,
+# left the real pin stale, and reported success.
+@test "a nested key of the same name does not shadow the real one" {
+  cat > "$VALUES" <<'YAML'
+images:
+  wrapper:
+    tools:
+      tag: v0.0.1
+  tools:
+    repository: ghcr.io/acme/app/tools
+    tag: v1.0.0
+YAML
+  run bump '{".":{"version":"2.0.0"}}' '{".":["acme/app/tools"]}'
+  [ "$status" -eq 0 ]
+
+  # The decoy keeps its value ...
+  [ "$(grep -c 'tag: v0.0.1' "$VALUES")" -eq 1 ]
+  # ... and the real pin moved.
+  [ "$(grep -c 'tag: v2.0.0' "$VALUES")" -eq 1 ]
+}
+
+# YAML permits duplicate keys and Helm's parser takes the LAST one. Editing the
+# first and reporting success would deploy the old tag.
+@test "a duplicated key fails loudly instead of guessing" {
+  cat > "$VALUES" <<'YAML'
+images:
+  tools:
+    tag: v1.0.0
+  tools:
+    tag: v1.0.0
+YAML
+  run bump '{".":{"version":"2.0.0"}}' '{".":["acme/app/tools"]}'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"appears 2 times"* ]]
+  [ "$(grep -c 'tag: v2.0.0' "$VALUES")" -eq 0 ]
+}
+
+# The key comes from the image BASENAME, so two images differing only in owner
+# collide on one key and the later one would silently win.
+@test "two images sharing a basename fail loudly" {
+  run bump '{".":{"version":"2.0.0"}}' '{".":["acme/app/tools","other/app/tools"]}'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"basename"* ]]
+  [[ "$output" == *"acme/app/tools"* ]]
+  [[ "$output" == *"other/app/tools"* ]]
+}

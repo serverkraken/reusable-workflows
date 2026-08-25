@@ -52,6 +52,7 @@ jobs:
         env:
           PKG: ${{ steps.pkg.outputs.name }}
           DAYS: ${{ inputs.prerelease_age_days }}
+          KEEP: ${{ inputs.keep_stable_versions }}
           OWNER: ${{ github.repository_owner }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -88,9 +89,12 @@ jobs:
           fi
           echo "exists=true" >> "$GITHUB_OUTPUT"
 
+          # Fetch once, evaluate twice (prereleases below, stable prune after).
+          gh api --paginate "/${OWNER_PATH}/packages/container/${PKG_ENC}/versions" \
+            | jq -s 'add' > /tmp/pkg-versions.json
+
           # List all versions, filter non-semver tags older than cutoff, extract IDs.
-          IDS=$(gh api --paginate "/${OWNER_PATH}/packages/container/${PKG_ENC}/versions" \
-            | jq -r --arg cutoff "$CUTOFF" '
+          IDS=$(jq -r --arg cutoff "$CUTOFF" '
                 .[] |
                 select(.metadata.container.tags // [] | length > 0) |
                 select(
@@ -98,10 +102,37 @@ jobs:
                 ) |
                 select(.updated_at < $cutoff) |
                 .id
-              ' \
+              ' /tmp/pkg-versions.json \
             | paste -sd, -)
           echo "Matching version IDs: ${IDS:-<none>}"
           echo "ids=$IDS" >> "$GITHUB_OUTPUT"
+
+          # Stable prune, by explicit ID rather than the action's own counting.
+          # `min-versions-to-keep` counts VERSION OBJECTS, not releases: one
+          # signed, attested, multi-arch release produces roughly five of them
+          # (the index, one manifest per architecture, the cosign signature and
+          # the attestation). "keep 10" therefore retained about two releases.
+          # Worse, with delete-only-untagged-versions:false it could delete an
+          # untagged architecture manifest that a still-tagged index points at,
+          # leaving a tag that is visible in GHCR but fails to pull
+          # (actions/delete-package-versions#162).
+          #
+          # So: rank only the SEMVER-TAGGED versions, keep the newest $KEEP of
+          # them, and delete the rest by id. Untagged objects are never touched
+          # here — an orphaned layer costs storage, an unpullable release tag
+          # costs an outage.
+          STABLE_IDS=$(jq -r --argjson keep "$KEEP" '
+                [ .[]
+                  | select(.metadata.container.tags // [] | length > 0)
+                  | select(.metadata.container.tags | map(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | any)
+                ]
+                | sort_by(.created_at) | reverse
+                | .[$keep:]
+                | .[].id
+              ' /tmp/pkg-versions.json \
+            | paste -sd, -)
+          echo "Stable versions over the keep threshold: ${STABLE_IDS:-<none>}"
+          echo "stable_ids=$STABLE_IDS" >> "$GITHUB_OUTPUT"
 
       - name: Delete stale prerelease versions
         if: steps.stale.outputs.ids != ''
@@ -115,15 +146,15 @@ jobs:
           package-version-ids: ${{ steps.stale.outputs.ids }}
 
       - name: Prune oldest stable versions over keep threshold
-        # Same reason as the probe above: the action fails on a package that
-        # does not exist, so an unpublished package must skip this too.
-        if: steps.stale.outputs.exists == 'true'
+        # Deletes explicit ids computed above. Skips when nothing qualifies —
+        # which also covers the unpublished-package case, since the probe then
+        # emits an empty list.
+        if: steps.stale.outputs.stable_ids != ''
         uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5
         with:
           package-name: ${{ steps.pkg.outputs.name }}
           package-type: container
-          min-versions-to-keep: ${{ inputs.keep_stable_versions }}
-          delete-only-untagged-versions: false
+          package-version-ids: ${{ steps.stale.outputs.stable_ids }}
 
       - name: Summary
         env:

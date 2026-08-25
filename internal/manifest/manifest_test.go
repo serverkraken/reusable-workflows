@@ -744,3 +744,81 @@ func TestParseManifestAppVersion(t *testing.T) {
 		t.Fatal("app_version must default to false")
 	}
 }
+
+// severity and fail_on_findings configure the GATE rather than the scan. They
+// exist because an image can be worth scanning while its findings must not
+// block a release — mailstack's crowdsec-sync ships upstream CrowdSec binaries
+// carrying 62 CVEs its own Dockerfile cannot fix.
+func TestParseManifestGateOptions(t *testing.T) {
+	src := `schema: 1
+components:
+  - path: ansible
+    image: acme/ansible
+    context: .
+    severity: CRITICAL
+    fail_on_findings: false
+  - path: worker
+    dockerfiles:
+      - path: Dockerfile
+        image: acme/worker
+        severity: HIGH,CRITICAL
+        fail_on_findings: true
+`
+	m, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := m.Components[0]
+	if c.Severity != "CRITICAL" {
+		t.Fatalf("component severity=%q", c.Severity)
+	}
+	if c.FailOnFindings == nil || *c.FailOnFindings {
+		t.Fatalf("component fail_on_findings=%v", c.FailOnFindings)
+	}
+	d := m.Components[1].Dockerfiles[0]
+	if d.Severity != "HIGH,CRITICAL" {
+		t.Fatalf("dockerfile severity=%q", d.Severity)
+	}
+	if d.FailOnFindings == nil || !*d.FailOnFindings {
+		t.Fatalf("dockerfile fail_on_findings=%v", d.FailOnFindings)
+	}
+}
+
+// Unset stays distinguishable from false, same rule as upload_sarif: the
+// templates emit the input only when the key is present, so an adopter that
+// takes the atom's defaults keeps rendering byte-identically.
+func TestParseManifestGateOptionsUnset(t *testing.T) {
+	m, err := Parse([]byte("schema: 1\ncomponents:\n  - path: .\n    image: acme/app\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := m.Components[0]
+	if c.Severity != "" {
+		t.Fatalf("severity=%q, want empty", c.Severity)
+	}
+	if c.FailOnFindings != nil {
+		t.Fatalf("fail_on_findings=%v, want nil", c.FailOnFindings)
+	}
+}
+
+// A typo must not scan at a threshold nobody asked for. Trivy takes uppercase
+// only, so lowercase is rejected rather than silently corrected.
+func TestParseManifestSeverityRejectsUnknownValues(t *testing.T) {
+	for _, tc := range []struct{ name, value, want string }{
+		{"unknown level", "SEVERE", "severity must be"},
+		{"lowercase", "critical", "severity must be"},
+		{"duplicate", "HIGH,HIGH", "twice"},
+		{"stray spaces", "HIGH, CRITICAL", "severity must be"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "schema: 1\ncomponents:\n  - path: .\n    image: acme/app\n    severity: " + tc.value + "\n"
+			_, err := Parse([]byte(src))
+			if err == nil {
+				t.Fatalf("severity %q was accepted", tc.value)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %q does not mention %q", err, tc.want)
+			}
+		})
+	}
+}

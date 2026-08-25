@@ -1,20 +1,20 @@
 package domain
 
 type Profile struct {
-	SchemaVersion  int               `json:"schema_version"`
-	TargetRepo     string            `json:"target_repo"`
-	DefaultBranch  string            `json:"default_branch"`
-	CurrentVersion string            `json:"current_version"`
-	Monorepo       bool              `json:"monorepo"`
-	Components     []Component       `json:"components"`
-	LegacyCI       []LegacyCI        `json:"legacy_ci"`
-	Topics         []string          `json:"topics"`
-	Warnings       []Warning         `json:"warnings"`
-	GitOps         *GitOpsSignal     `json:"gitops,omitempty"`
-	ManifestSHA256 string            `json:"manifest_sha256,omitempty"`
-	Workflows      *WorkflowsSpec    `json:"workflows,omitempty"`
-	Release        *ReleaseSpec      `json:"release,omitempty"`
-	Consumers      []GitOpsConsumer  `json:"gitops_consumers,omitempty"`
+	SchemaVersion  int              `json:"schema_version"`
+	TargetRepo     string           `json:"target_repo"`
+	DefaultBranch  string           `json:"default_branch"`
+	CurrentVersion string           `json:"current_version"`
+	Monorepo       bool             `json:"monorepo"`
+	Components     []Component      `json:"components"`
+	LegacyCI       []LegacyCI       `json:"legacy_ci"`
+	Topics         []string         `json:"topics"`
+	Warnings       []Warning        `json:"warnings"`
+	GitOps         *GitOpsSignal    `json:"gitops,omitempty"`
+	ManifestSHA256 string           `json:"manifest_sha256,omitempty"`
+	Workflows      *WorkflowsSpec   `json:"workflows,omitempty"`
+	Release        *ReleaseSpec     `json:"release,omitempty"`
+	Consumers      []GitOpsConsumer `json:"gitops_consumers,omitempty"`
 }
 
 type Component struct {
@@ -43,6 +43,11 @@ type Dockerfile struct {
 	// every existing adopter's render byte-identical.
 	Scanners    string `json:"scanners,omitempty"`
 	UploadSARIF *bool  `json:"upload_sarif,omitempty"`
+	// Severity and FailOnFindings configure the GATE rather than the scan:
+	// which findings count, and whether they stop the release. Same
+	// emitted-only-when-set rule as the two above.
+	Severity       string `json:"severity,omitempty"`
+	FailOnFindings *bool  `json:"fail_on_findings,omitempty"`
 }
 
 type ReleaseSignal struct {

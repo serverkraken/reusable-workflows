@@ -300,7 +300,15 @@ jobs:
       - name: Export digest
         if: steps.check.outputs.selected == 'true'
         run: |
-          mkdir -p /tmp/digests
+          # Clear first, don't just mkdir -p. Self-hosted runners keep /tmp
+          # across jobs, so a digest left behind by an earlier build on this
+          # same runner would be picked up by the `path: /tmp/digests/*` upload
+          # below and land in the merge job's manifest list — either failing
+          # `imagetools create` with `manifest unknown` (foreign image) or,
+          # worse, silently pointing one architecture of the new tag at an
+          # older release. The merge job already does exactly this; the build
+          # jobs were missing it.
+          rm -rf /tmp/digests && mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
