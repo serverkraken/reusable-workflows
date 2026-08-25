@@ -579,7 +579,9 @@ components:                      # optional; absent → auto-detect as today
         context: .                           # optional, repo-relative; default = component path
         platforms: linux/amd64,linux/arm64   # optional; default = atom default
         scanners: vuln,secret                # optional; default = trivy-image default
+        severity: CRITICAL                   # optional; default = SK_TRIVY_SEVERITY or HIGH,CRITICAL
         upload_sarif: false                  # optional; default = trivy-image default
+        fail_on_findings: false              # optional; default = trivy-image default (true)
         release: true                        # optional; default by file name
   - path: images/postfix
     image: serverkraken/mailstack/postfix    # shorthand when `path` holds exactly one Dockerfile
@@ -658,6 +660,30 @@ Semantics:
   `kubernetes` Ansible collection, whose bundled example manifests produce 41
   unfixable HIGH `misconfig` findings (KSV-0014, KSV-0118); `scanners:
   vuln,secret` is what keeps that image scannable at all.
+- **`severity` / `fail_on_findings` configure the GATE**, not the scan. The
+  distinction matters: `scanners` decides what is looked for, these two decide
+  which findings count and whether they stop the release. Same per-Dockerfile
+  scope, same component shorthand, same emitted-only-when-set rule as above.
+  `severity` must be a comma-separated subset of `UNKNOWN`, `LOW`, `MEDIUM`,
+  `HIGH`, `CRITICAL`, uppercase and without repeats — trivy accepts nothing
+  else, and a threshold that silently differs from what the manifest reads
+  would be worse than a render-time error.
+
+  A manifest `severity` **wins over the repo-wide `SK_TRIVY_SEVERITY` var**:
+  it was written for that one image, and a repo-wide value overriding it would
+  defeat the reason it exists. Images without it keep rendering the var
+  expression unchanged.
+
+  Real case: mailstack's `crowdsec-sync` builds `FROM
+  crowdsecurity/crowdsec`, and the upstream image's own binaries carry 62
+  distinct CVEs (19 CRITICAL on v1.6.8, still 2 on v1.7.8) in the Go stdlib
+  and `golang.org/x/*` they were compiled against. Nothing in that Dockerfile
+  can fix them, `ignore_unfixed` does not help (the fixes exist upstream, they
+  are just not in the image), and the repo's own build stage is clean. Scanning
+  it is still worth it — the findings belong in code-scanning — but gating the
+  mail stack's releases on someone else's build schedule is not. That is
+  `fail_on_findings: false`, optionally with `severity: CRITICAL` to keep the
+  step summary focused.
 - **`app_version: true` keeps a chart's `appVersion` in step with its chart
   version.** release-please's `helm` strategy rewrites only `version:` —
   mailstack's chart reached 1.10.0 while its `appVersion` still read `v1.6.5`,

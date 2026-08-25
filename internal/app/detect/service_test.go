@@ -793,3 +793,130 @@ func TestVersionSelectionIsNumericAndOrderIndependent(t *testing.T) {
 		t.Fatalf("api = %q, want 1.10.0", got)
 	}
 }
+
+// writeManifestRepo builds a throwaway repo carrying an adopter manifest and
+// the Dockerfiles it names.
+func writeManifestRepo(t *testing.T, manifestYAML string, dockerfiles ...string) string {
+	t.Helper()
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".github"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".github", "onboard.yml"), []byte(manifestYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/app\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, df := range dockerfiles {
+		full := filepath.Join(repo, filepath.FromSlash(df))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("FROM scratch\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return repo
+}
+
+func dockerfileByPath(t *testing.T, res Result, path string) domain.Dockerfile {
+	t.Helper()
+	for _, c := range res.Profile.Components {
+		for _, df := range c.Dockerfiles {
+			if df.Path == path {
+				return df
+			}
+		}
+	}
+	t.Fatalf("no Dockerfile %q in profile", path)
+	return domain.Dockerfile{}
+}
+
+// The gate settings have to survive the trip from the manifest into the
+// profile — the templates read them from there, and nothing else would notice
+// if they were dropped on the way.
+func TestGateOptionsReachTheProfile(t *testing.T) {
+	repo := writeManifestRepo(t, `schema: 1
+components:
+  - path: .
+    language: go
+    dockerfiles:
+      - path: images/gated/Dockerfile
+        image: acme/gated
+        severity: CRITICAL
+        fail_on_findings: false
+      - path: images/plain/Dockerfile
+        image: acme/plain
+`, "images/gated/Dockerfile", "images/plain/Dockerfile")
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+
+	gated := dockerfileByPath(t, res, "images/gated/Dockerfile")
+	if gated.Severity != "CRITICAL" {
+		t.Errorf("severity=%q, want CRITICAL", gated.Severity)
+	}
+	if gated.FailOnFindings == nil || *gated.FailOnFindings {
+		t.Errorf("fail_on_findings=%v, want an explicit false", gated.FailOnFindings)
+	}
+
+	// The neighbouring image must stay untouched, or one image's exemption
+	// would quietly relax the gate for the whole component.
+	plain := dockerfileByPath(t, res, "images/plain/Dockerfile")
+	if plain.Severity != "" || plain.FailOnFindings != nil {
+		t.Errorf("plain image picked up gate settings: severity=%q fail_on_findings=%v", plain.Severity, plain.FailOnFindings)
+	}
+}
+
+// The component-level shorthand covers the common single-Dockerfile case.
+func TestGateOptionsViaComponentShorthand(t *testing.T) {
+	repo := writeManifestRepo(t, `schema: 1
+components:
+  - path: .
+    language: go
+    image: acme/app
+    severity: HIGH,CRITICAL
+    fail_on_findings: false
+`, "Dockerfile")
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	df := dockerfileByPath(t, res, "Dockerfile")
+	if df.Severity != "HIGH,CRITICAL" {
+		t.Errorf("severity=%q", df.Severity)
+	}
+	if df.FailOnFindings == nil || *df.FailOnFindings {
+		t.Errorf("fail_on_findings=%v, want an explicit false", df.FailOnFindings)
+	}
+}
+
+// Omitting the keys must leave them absent, not zero: the profile is
+// serialised with omitempty and the templates emit the input only when
+// present, so a false-instead-of-absent would change every adopter's render.
+func TestGateOptionsOmittedStayAbsentInJSON(t *testing.T) {
+	repo := writeManifestRepo(t, `schema: 1
+components:
+  - path: .
+    language: go
+    image: acme/app
+`, "Dockerfile")
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	raw, err := json.Marshal(res.Profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"severity", "fail_on_findings"} {
+		if strings.Contains(string(raw), key) {
+			t.Errorf("profile JSON carries %q although the manifest omits it", key)
+		}
+	}
+}

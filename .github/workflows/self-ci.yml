@@ -28,6 +28,8 @@ jobs:
     uses: ./.github/workflows/lint-go.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/go-happy
 
   # ----- lint-go + test-go: dogfood on the catalog's own sk-workflows module.
@@ -38,12 +40,16 @@ jobs:
     uses: ./.github/workflows/lint-go.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: .
 
   test-go-self:
     uses: ./.github/workflows/test-go.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: .
       coverage_threshold: 90
 
@@ -52,6 +58,8 @@ jobs:
     uses: ./.github/workflows/lint-helm.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures
       charts_dir: helm-only
 
@@ -59,6 +67,8 @@ jobs:
     uses: ./.github/workflows/lint-helm.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures
       charts_dir: helm-unittest
       unittest: true
@@ -71,6 +81,8 @@ jobs:
     permissions:
       contents: write
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       manifest_path: tests/fixtures/version-badges/.release-please-manifest.json
       config_path: tests/fixtures/version-badges/release-please-config.json
       readme_path: tests/fixtures/version-badges/README.md
@@ -95,24 +107,27 @@ jobs:
     uses: ./.github/workflows/lint-python.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/python-poetry-happy
 
   lint-python-uv-happy:
-    # Pinned to X64: uv's reflink/CoW clone hits EAGAIN reliably on the
-    # serverkraken-runner-arm64 pool (Oracle Cloud Ampere; observed in
-    # PR #143). Other Python managers (poetry, pip) and other languages
-    # don't trip the same path. Investigate arm64 runner FS limits as a
-    # separate task; for now keep self-CI deterministic by pinning.
+    # GitHub-hosted rather than the self-hosted X64 pool. The pin existed to
+    # dodge uv's reflink/CoW EAGAIN on the arm64 pool (Oracle Ampere, PR #143);
+    # ubuntu-latest is x64 and sidesteps that just as well, while freeing a slot
+    # in the amd64 pool that the docker-build matrix actually needs.
     uses: ./.github/workflows/lint-python.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/python-uv-happy
-      runs_on: '["self-hosted","Linux","X64"]'
+      runs_on: '["ubuntu-latest"]'
 
   lint-python-pip-happy:
     uses: ./.github/workflows/lint-python.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/python-pip-happy
 
   # ----- lint-rust: happy -----
@@ -120,6 +135,8 @@ jobs:
     uses: ./.github/workflows/lint-rust.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/rust-happy
 
   # ----- test-go: happy -----
@@ -127,6 +144,8 @@ jobs:
     uses: ./.github/workflows/test-go.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/go-happy
       coverage_threshold: 90
 
@@ -135,23 +154,26 @@ jobs:
     uses: ./.github/workflows/test-python.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/python-poetry-happy
       coverage_threshold: 90
 
   test-python-uv-happy:
-    # Pinned to X64: same arm64-pool EAGAIN as lint-python-uv-happy.
-    # See comment there for context.
+    # GitHub-hosted, same reasoning as lint-python-uv-happy.
     uses: ./.github/workflows/test-python.yml
     secrets: inherit
     with:
       working_directory: tests/fixtures/lint-test/python-uv-happy
       coverage_threshold: 90
-      runs_on: '["self-hosted","Linux","X64"]'
+      runs_on: '["ubuntu-latest"]'
 
   test-python-pip-happy:
     uses: ./.github/workflows/test-python.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/python-pip-happy
       coverage_threshold: 90
 
@@ -160,6 +182,8 @@ jobs:
     uses: ./.github/workflows/test-rust.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/rust-happy
       coverage_threshold: 90
 
@@ -181,6 +205,8 @@ jobs:
     uses: ./.github/workflows/test-go.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/minimal-go
       go_version: '1.22'
       coverage_threshold: ${{ fromJSON(vars.NONEXISTENT_NUMBER_FOR_COERCION_TEST || '70') }}
@@ -515,6 +541,8 @@ jobs:
     uses: ./.github/workflows/lint-flutter.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
       use_build_runner: false
 
@@ -522,6 +550,8 @@ jobs:
     uses: ./.github/workflows/test-flutter.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
       use_build_runner: false
       coverage_threshold: 80
@@ -531,6 +561,8 @@ jobs:
     uses: ./.github/workflows/build-flutter-android.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
       use_build_runner: false
 

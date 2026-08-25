@@ -141,10 +141,23 @@ jobs:
     {{- else }}
       platforms: linux/amd64,linux/arm64
     {{- end }}
+    {{- /* A manifest `severity` wins over the repo-wide var: it was written for
+         THIS image, and a repo-wide setting overriding it would defeat the
+         reason it exists — one image whose threshold has to differ. */}}
+    {{- if (index $df "severity") }}
+      severity: {{ index $df "severity" }}
+    {{- else }}
       severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
+    {{- end }}
       trivy_version: {{`${{ vars.SK_TRIVY_VERSION || '' }}`}}
     {{- if has $df "upload_sarif" }}
       upload_sarif: {{ index $df "upload_sarif" }}
+    {{- end }}
+    {{- /* Scanning and GATING are separate decisions: an image can be worth
+         scanning while its findings must not block a release, e.g. CVEs in
+         vendored upstream binaries that its own Dockerfile cannot fix. */}}
+    {{- if has $df "fail_on_findings" }}
+      fail_on_findings: {{ index $df "fail_on_findings" }}
     {{- end }}
     secrets: inherit
 {{- end }}
