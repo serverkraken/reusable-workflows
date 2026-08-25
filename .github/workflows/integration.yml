@@ -36,12 +36,16 @@ jobs:
   # bakes gettext-base, so flipping these true also serves as the proof
   # that downstream repos (actions-runner-image, etc.) can run sign:true.
   test-docker-build:
-    # ANKER: dieser eine Aufruf bleibt bewusst auf den self-hosted Runnern.
-    # Die Atome laufen bei den Adoptern dort, und ein Teil ihrer Fehlerklassen
-    # existiert NUR auf persistenten Runnern — der /tmp/digests-Fund vom
-    # 2026-08-25 etwa waere auf GitHub-Runnern unsichtbar geblieben, weil deren
-    # /tmp je Job frisch ist. Eine CI, die ausschliesslich gehostet testet,
-    # prueft etwas anderes als das, was ausgeliefert wird.
+    # GitHub-hosted wie alle Docker-Tests hier: der amd64-Pool ist dauerhaft
+    # knapp (2 von 8; die Kapazitaet kommt nicht zurueck), und ein
+    # self-hosted Job im PR-Pfad laesst jeden Pull Request Stunden warten.
+    #
+    # Die self-hosted-Abdeckung ist damit NICHT aufgegeben, sondern verschoben:
+    # nightly-runner-parity.yml baut dieselbe Fixture einmal pro Nacht auf dem
+    # Pool, den die Adopter erben. Das ist noetig, weil eine ganze Fehlerklasse
+    # nur auf persistenten Runnern existiert — der /tmp/digests-Fund vom
+    # 2026-08-25 war auf GitHub-Runnern unsichtbar, weil deren /tmp je Job
+    # frisch ist, und ging deshalb bis in ein Adopter-Release durch.
     uses: ./.github/workflows/docker-build.yml
     secrets: inherit
     with:
@@ -56,6 +60,9 @@ jobs:
       sign: true
       attest: true
       sbom: true
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
 
   # ----- attestation verification (proves the cosign attest step produced
   # a sigstore-bundled SLSA predicate at the OCI sidecar location) -----
