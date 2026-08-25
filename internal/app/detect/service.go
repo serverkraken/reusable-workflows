@@ -289,7 +289,11 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 		}
 
 		dockerfiles := inventoryDockerfiles(repo, mc.Path, mc.Image)
-		if mc.Image != "" || mc.Context != "" || mc.Platforms != "" || mc.Scanners != "" || mc.UploadSARIF != nil || mc.Release != nil {
+		mcOverrides := imageOverrides{
+			context: mc.Context, platforms: mc.Platforms, scanners: mc.Scanners, severity: mc.Severity,
+			uploadSARIF: mc.UploadSARIF, failOnFindings: mc.FailOnFindings, release: mc.Release,
+		}
+		if mc.Image != "" || mcOverrides.set() {
 			// The shorthand always targets the single Dockerfile in the
 			// component's own directory. When dockerfiles[] is already carrying
 			// the images, pointing at it as the fix is misleading — the real
@@ -300,7 +304,7 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 			if len(dockerfiles) != 1 {
 				return nil, fmt.Errorf("%s: line %d: component %s declares image/context/platforms/release but has %d Dockerfiles; use dockerfiles[] instead", manifest.FileName, mc.Line, mc.Path, len(dockerfiles))
 			}
-			applyDockerfileSpec(&dockerfiles[0], mc.Context, mc.Platforms, mc.Scanners, mc.UploadSARIF, mc.Release)
+			applyDockerfileSpec(&dockerfiles[0], mcOverrides)
 		}
 		seen := map[string]bool{}
 		for _, d := range dockerfiles {
@@ -322,7 +326,10 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 			seen[relSlash] = true
 			df := resolveDockerfile(full, filepath.Base(spec.Path), filepath.ToSlash(filepath.Dir(spec.Path)), spec.Image)
 			df.Path = relSlash
-			applyDockerfileSpec(&df, spec.Context, spec.Platforms, spec.Scanners, spec.UploadSARIF, spec.Release)
+			applyDockerfileSpec(&df, imageOverrides{
+				context: spec.Context, platforms: spec.Platforms, scanners: spec.Scanners, severity: spec.Severity,
+				uploadSARIF: spec.UploadSARIF, failOnFindings: spec.FailOnFindings, release: spec.Release,
+			})
 			dockerfiles = append(dockerfiles, df)
 		}
 		sort.Slice(dockerfiles, func(i, j int) bool { return dockerfiles[i].Path < dockerfiles[j].Path })
@@ -367,21 +374,41 @@ func componentsFromManifest(repo string, m *manifest.Manifest) ([]domain.Compone
 	return out, nil
 }
 
-func applyDockerfileSpec(df *domain.Dockerfile, ctx, platforms, scanners string, uploadSARIF, release *bool) {
-	if ctx != "" {
-		df.Context = ctx
+// imageOverrides carries the per-image manifest fields that the component
+// shorthand and dockerfiles[] both accept. A struct rather than a row of
+// positional arguments: they are nearly all strings, so a new key added in the
+// wrong slot would compile and silently configure something else.
+type imageOverrides struct {
+	context, platforms, scanners, severity string
+	uploadSARIF, failOnFindings, release   *bool
+}
+
+func (o imageOverrides) set() bool {
+	return o.context != "" || o.platforms != "" || o.scanners != "" || o.severity != "" ||
+		o.uploadSARIF != nil || o.failOnFindings != nil || o.release != nil
+}
+
+func applyDockerfileSpec(df *domain.Dockerfile, o imageOverrides) {
+	if o.context != "" {
+		df.Context = o.context
 	}
-	if platforms != "" {
-		df.Platforms = platforms
+	if o.platforms != "" {
+		df.Platforms = o.platforms
 	}
-	if scanners != "" {
-		df.Scanners = scanners
+	if o.scanners != "" {
+		df.Scanners = o.scanners
 	}
-	if uploadSARIF != nil {
-		df.UploadSARIF = uploadSARIF
+	if o.severity != "" {
+		df.Severity = o.severity
 	}
-	if release != nil {
-		df.ReleaseEligible = *release
+	if o.uploadSARIF != nil {
+		df.UploadSARIF = o.uploadSARIF
+	}
+	if o.failOnFindings != nil {
+		df.FailOnFindings = o.failOnFindings
+	}
+	if o.release != nil {
+		df.ReleaseEligible = *o.release
 	}
 }
 

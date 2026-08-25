@@ -33,13 +33,29 @@ FINDING_KEYS = ("Vulnerabilities", "Secrets", "Misconfigurations")
 IDENTITY_FIELDS = {
     "Vulnerabilities": ("VulnerabilityID", "PkgID", "PkgName", "InstalledVersion"),
     "Secrets": ("RuleID", "Category", "Title", "StartLine", "EndLine"),
-    "Misconfigurations": ("ID", "AVDID", "Namespace", "Query"),
+    # Location included on purpose. Keying a misconfiguration on the rule alone
+    # collapses two violations of the same rule at different places in one file
+    # into one, which under-counts the gate and loses an annotation. Secrets
+    # already carry StartLine/EndLine for the same reason; misconfigurations
+    # keep theirs under CauseMetadata, so that is pulled out below.
+    "Misconfigurations": ("ID", "AVDID", "Namespace", "Query", "_where"),
 }
+
+
+def _where(finding: dict):
+    """The location of a misconfiguration, as Trivy records it.
+
+    Trivy keeps it under CauseMetadata rather than on the finding itself, so it
+    has to be lifted out before it can take part in the identity.
+    """
+    cause = finding.get("CauseMetadata") or {}
+    where = [cause.get("StartLine"), cause.get("EndLine"), cause.get("Resource")]
+    return where if any(v is not None for v in where) else None
 
 
 def _identity(kind: str, finding: dict) -> str:
     fields = IDENTITY_FIELDS[kind]
-    key = [finding.get(f) for f in fields]
+    key = [_where(finding) if f == "_where" else finding.get(f) for f in fields]
     if not any(v is not None for v in key):
         # Nothing recognisable to key on — fall back to the whole object rather
         # than collapsing unrelated findings into one.

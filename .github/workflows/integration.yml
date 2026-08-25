@@ -36,6 +36,16 @@ jobs:
   # bakes gettext-base, so flipping these true also serves as the proof
   # that downstream repos (actions-runner-image, etc.) can run sign:true.
   test-docker-build:
+    # GitHub-hosted wie alle Docker-Tests hier: der amd64-Pool ist dauerhaft
+    # knapp (2 von 8; die Kapazitaet kommt nicht zurueck), und ein
+    # self-hosted Job im PR-Pfad laesst jeden Pull Request Stunden warten.
+    #
+    # Die self-hosted-Abdeckung ist damit NICHT aufgegeben, sondern verschoben:
+    # nightly-runner-parity.yml baut dieselbe Fixture einmal pro Nacht auf dem
+    # Pool, den die Adopter erben. Das ist noetig, weil eine ganze Fehlerklasse
+    # nur auf persistenten Runnern existiert — der /tmp/digests-Fund vom
+    # 2026-08-25 war auf GitHub-Runnern unsichtbar, weil deren /tmp je Job
+    # frisch ist, und ging deshalb bis in ein Adopter-Release durch.
     uses: ./.github/workflows/docker-build.yml
     secrets: inherit
     with:
@@ -50,6 +60,9 @@ jobs:
       sign: true
       attest: true
       sbom: true
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
 
   # ----- attestation verification (proves the cosign attest step produced
   # a sigstore-bundled SLSA predicate at the OCI sidecar location) -----
@@ -92,6 +105,8 @@ jobs:
     uses: ./.github/workflows/trivy-image.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       image_ref: ${{ needs.test-docker-build.outputs.image_ref }}
       fail_on_findings: false
       upload_sarif: false
@@ -115,6 +130,8 @@ jobs:
     uses: ./.github/workflows/trivy-fs.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       paths_ignore: |
         tests/fixtures/with-secret
         tests/fixtures/lint-test/helm-lint-fail
@@ -127,6 +144,8 @@ jobs:
     uses: ./.github/workflows/trivy-fs.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       paths_ignore: |
         tests/fixtures/lint-test/helm-lint-fail
         tests/fixtures/gitops-planted-secret
@@ -161,12 +180,24 @@ jobs:
       sign: false
       attest: false
       sbom: false
+      # GitHub-hosted: dieses Repo ist oeffentlich, also sind sie kostenlos und
+      # sofort verfuegbar, waehrend der self-hosted amd64-Pool der Engpass ist
+      # (zeitweise 2 von 8 online). arm64 via ubuntu-24.04-arm, seit 2025 fuer
+      # oeffentliche Repos ebenfalls kostenlos.
+      # Bewusst NICHT alle Aufrufe: test-docker-build bleibt self-hosted, siehe
+      # den Kommentar dort.
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
+
 
   test-trivy-image-cve:
     needs: test-docker-build-cve
     uses: ./.github/workflows/trivy-image.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       image_ref: ${{ needs.test-docker-build-cve.outputs.image_ref }}
       ignore_unfixed: false   # alpine:3.15 HIGH/CRITICAL CVEs all have upstream fixes; without this the test detects 0
       fail_on_findings: false   # don't fail the job; we assert on findings_count below
@@ -285,6 +316,12 @@ jobs:
       attest: true
       sbom: true
       caller_id: happy
+      # GitHub-hosted, siehe Begruendung bei test-docker-build-cve.
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
+      runs_on_parse: '["ubuntu-latest"]'
+
 
   # ----- goreleaser happy path: snapshot build against the cli-go fixture
   #       with a valid .goreleaser.yaml. No artifacts published. -----
@@ -292,6 +329,8 @@ jobs:
     uses: ./.github/workflows/goreleaser.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/cli-go-with-goreleaser
       snapshot: true
 
@@ -301,6 +340,8 @@ jobs:
     uses: ./.github/workflows/helm-publish.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       chart_path: tests/fixtures/helm-only
       oci_registry: ghcr.io/serverkraken/test
       dry_run: true
@@ -310,6 +351,8 @@ jobs:
     uses: ./.github/workflows/kube-validate.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       manifests_paths: |-
         tests/fixtures/gitops-cluster/kubernetes/apps
         tests/fixtures/gitops-cluster/kubernetes/argo
@@ -320,6 +363,8 @@ jobs:
     uses: ./.github/workflows/kube-lint.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       manifests_path: tests/fixtures/gitops-cluster/kubernetes/apps
       config_path: tests/fixtures/gitops-cluster/.kube-linter.yaml
       fail_on_findings: false
@@ -344,6 +389,8 @@ jobs:
     uses: ./.github/workflows/kube-lint.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       manifests_path: tests/fixtures/gitops-lint-violation/kubernetes/apps
       fail_on_findings: false
       upload_sarif: false
@@ -368,6 +415,8 @@ jobs:
     uses: ./.github/workflows/secret-scan.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       no_git: true
       scan_path: tests/fixtures/gitops-cluster
       fail_on_findings: false
@@ -392,6 +441,8 @@ jobs:
     uses: ./.github/workflows/secret-scan.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       no_git: true
       scan_path: tests/fixtures/gitops-planted-secret
       fail_on_findings: false
@@ -424,6 +475,8 @@ jobs:
     uses: ./.github/workflows/semantic-release.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       dry_run: true
 
   assert-semantic-release-outputs:
@@ -475,6 +528,8 @@ jobs:
     uses: ./.github/workflows/release-flutter-android.yml
     secrets: inherit
     with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
       version: v0.0.1-fixture-${{ github.run_id }}
       create_release: true
@@ -496,16 +551,13 @@ jobs:
           TAG: v0.0.1-fixture-${{ github.run_id }}
         run: gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag || true
 
-  # ----- e2e-kind happy path: fixture creates a 1-node kind cluster in
-  # the runner pod's dind sidecar, asserts Ready, deletes it. Runs on the
-  # performance pool (atom default) — this is the PR-time proof that kind
-  # works inside the ARC topology. -----
-  test-e2e-kind:
-    uses: ./.github/workflows/e2e-kind.yml
-    secrets: inherit
-    with:
-      script: tests/fixtures/kind-smoke/e2e.sh
-      timeout_minutes: 15
+  # ----- e2e-kind moved to nightly-runner-parity.yml -----
+  # It creates a kind cluster in the runner pod's dind sidecar, so it only
+  # proves anything on the self-hosted ARC topology — GitHub-hosted runners
+  # have a different container setup entirely. That makes it a genuine
+  # self-hosted anchor, but the amd64 pool is permanently short, so keeping
+  # it on the PR path would leave every pull request waiting on it. It runs
+  # unchanged once a night instead. -----
 
   # ----- Summary: aggregates ALL happy-path children into a single status.
   #       Branch-protection will require ONLY this check. Atom-failure-path
@@ -537,7 +589,6 @@ jobs:
       - test-goreleaser
       - test-helm-publish
       - test-release-flutter-android
-      - test-e2e-kind
       - test-kube-validate-happy
       - test-kube-lint-happy
       - assert-kube-lint-clean
