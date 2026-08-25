@@ -1,2 +1,13 @@
 image:
   tag: v0.0.0
+# Ein Eintrag je Image-Basename aus dem Manifest — das ist das Layout, das
+# Renovates helm-values-Manager NICHT erkennt und weswegen chart_pins existiert.
+images:
+  tools:
+    tag: v0.0.0
+  tools-debug:
+    tag: v0.0.0
+  api:
+    tag: v0.0.0
+  worker:
+    tag: v0.0.0

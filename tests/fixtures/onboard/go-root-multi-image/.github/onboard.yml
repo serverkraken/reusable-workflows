@@ -5,6 +5,12 @@ components:
     dockerfiles:
       - path: images/tools/Dockerfile
         image: acme/multi/tools
+      # Zweites Image derselben Komponente: erst ab zwei greift die
+      # $imgSuffix-Herleitung, und release.yml.tmpl leitet sie an ZWEI Stellen
+      # her (Job-Definition und die needs-Liste von chart-image-pins). Weichen
+      # sie voneinander ab, zeigt needs auf einen Job, den es nicht gibt.
+      - path: images/tools/Dockerfile.debug
+        image: acme/multi/tools-debug
   - path: images/api
     image: acme/multi/api
   - path: images/worker
@@ -28,6 +34,14 @@ workflows:
 release:
   dispatch_trigger: true
   badges: true
+  # Deckt den chart-image-pins-Zweig ab. Ohne ihn wurde er von KEINER Fixture
+  # gerendert: der Job baut seine `needs:`-Liste aus einer zweiten
+  # $imgSuffix-Herleitung (Audit J-0c), und weicht die von der ersten ab, zeigt
+  # `needs:` auf einen Job, den es nicht gibt. Actionlint faengt das - aber nur,
+  # wenn der Zweig ueberhaupt gerendert wird.
+  chart_pins:
+    values: charts/demo/values.yaml
+    key: images.{name}.tag
 gitops:
   - repo: acme/gitops-prod
     scope: [kubernetes/apps/multi/**]

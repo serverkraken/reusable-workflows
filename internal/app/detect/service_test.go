@@ -530,11 +530,22 @@ func TestManifestDrivesComponents(t *testing.T) {
 		t.Fatalf("paths=%v want %v", got, want)
 	}
 	root := p.Components[0]
-	if root.PrimaryLanguage != "go" || len(root.Dockerfiles) != 1 {
+	// Zwei Dockerfiles an EINER Komponente — das ist die Konstellation, in der
+	// die Templates ein $imgSuffix an den Job-Namen haengen. Vorher hatte die
+	// Fixture nur eines, und der zweite Herleitungsort dieses Suffix in
+	// release.yml.tmpl wurde von keinem Test je gerendert (Audit J-0c).
+	if root.PrimaryLanguage != "go" || len(root.Dockerfiles) != 2 {
 		t.Fatalf("root=%+v", root)
 	}
 	if d := root.Dockerfiles[0]; d.Path != "images/tools/Dockerfile" || d.ImageName != "acme/multi/tools" || d.ImageNameSource != "manifest" || d.Context != "" || !d.ReleaseEligible {
 		t.Fatalf("tools=%+v", d)
+	}
+	// `Dockerfile.debug` ist per Vorgabe NICHT release-faehig (nur `Dockerfile`
+	// und `Containerfile` sind es); die Fixture hebt das mit der Annotation
+	// `# onboard:release=true` auf. Ohne dieses Flag faellt das Image aus der
+	// Release-Menge und das Suffix entstuende gar nicht.
+	if d := root.Dockerfiles[1]; d.Path != "images/tools/Dockerfile.debug" || d.ImageName != "acme/multi/tools-debug" || d.ImageNameSource != "manifest" || !d.ReleaseEligible {
+		t.Fatalf("tools-debug=%+v", d)
 	}
 	if root.ReleaseSignals.ChartYAML != nil {
 		t.Fatalf("chart owned by charts/demo must not be a root signal: %+v", root.ReleaseSignals)
