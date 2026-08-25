@@ -20,6 +20,9 @@ coverage.out
 # Local Go binaries
 bin/
 
+# Release-Assets aus scripts/build-sk-workflows-assets.sh
+dist/
+
 # OS
 .DS_Store
 .coverage
