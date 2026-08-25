@@ -85,6 +85,60 @@ IS_GITOPS=$(jq -r 'if (.gitops // null) != null then "true" else "false" end' "$
 SKELETONS="$CATALOG/docs/adopter-templates/skeletons"
 CONFIGS="$CATALOG/docs/adopter-templates/configs"
 
+# Stellt sicher, dass $1 tatsaechlich UNTERHALB von $TARGET landet, nachdem
+# alle Symlinks aufgeloest sind (Audit H-3).
+#
+# Nachgestellt: ein Adopter-Repo, in dem `.github` ein Symlink nach aussen ist.
+# Beide Engines schrieben daraufhin den Lock und alle vier Workflow-Dateien
+# ausserhalb des Checkouts - mit rc=0. Auf einem self-hosted Runner ist das ein
+# Schreibvorgang an einen beliebigen Ort, den der Job erreichen kann; der Lock
+# landet dort ebenfalls, und der anschliessende Commit im Adopter-Repo findet
+# nichts.
+#
+# Aufgeloest wird das ELTERNVERZEICHNIS, nicht der Dateipfad: die Datei
+# existiert beim ersten Rendern noch nicht. Eine bereits vorhandene Zieldatei
+# wird zusaetzlich abgewiesen, wenn sie ein Symlink ist - sonst schriebe
+# gomplate durch sie hindurch.
+#
+# Der Go-Renderer prueft dasselbe (internal/app/render/service.go,
+# ensureInsideTarget); die beiden Engines duerfen sich hier nicht unterscheiden.
+# Das Zielverzeichnis selbst anlegen, BEVOR es aufgeloest wird: drift rendert
+# in ein frisches Temp-Verzeichnis, das an dieser Stelle noch nicht existiert.
+# Frueher legte erst `mkdir -p "$TARGET/.github/workflows"` es an - und genau
+# das laeuft jetzt nach der Pruefung.
+mkdir -p "$TARGET"
+TARGET_REAL=$(cd "$TARGET" && pwd -P)
+
+ensure_inside_target() {
+  local dst="$1" dir probe real
+  dir=$(dirname "$dst")
+  # Den tiefsten BEREITS EXISTIERENDEN Vorfahren aufloesen. Der Zielpfad muss
+  # geprueft werden, BEVOR `mkdir -p` laeuft: ein `mkdir -p` durch einen
+  # Symlink hindurch legt das Verzeichnis bereits draussen an, auch wenn danach
+  # keine Datei mehr geschrieben wird. Genau das hat der erste Anlauf dieses
+  # Fixes uebersehen - der Test hat es gefangen.
+  probe="$dir"
+  while [[ ! -d "$probe" && "$probe" != "/" && "$probe" != "." ]]; do
+    probe=$(dirname "$probe")
+  done
+  if ! real=$(cd "$probe" 2>/dev/null && pwd -P); then
+    echo "::error::output directory not resolvable: $dir" >&2
+    exit 1
+  fi
+  case "$real/" in
+    "$TARGET_REAL"/*) ;;
+    *)
+      echo "::error::refusing to write outside the target: $dst resolves under $real, which is not inside $TARGET_REAL" >&2
+      exit 1
+      ;;
+  esac
+  if [[ -L "$dst" ]]; then
+    echo "::error::refusing to write through the symlink $dst" >&2
+    exit 1
+  fi
+}
+
+ensure_inside_target "$TARGET/.github/workflows/probe"
 mkdir -p "$TARGET/.github/workflows"
 
 # Build a single gomplate context: {pin, profile}. This lets templates access
@@ -144,6 +198,7 @@ render() {
     echo "::error::template missing: $src" >&2
     exit 1
   fi
+  ensure_inside_target "$dst"
   gomplate -c ".=$CTX" -f "$src" -o "$dst"
   normalize_trailing_newline "$dst"
 }
@@ -237,6 +292,9 @@ done
 
 # Lock file — sha256 every rendered path, write schema 1.
 LOCK="$TARGET/.github/onboard.lock.json"
+# Der Lock geht nicht durch render(), braucht die Pruefung aber genauso: er ist
+# die Datei, an der drift-check spaeter alles misst.
+ensure_inside_target "$LOCK"
 if [[ "$IS_GITOPS" == "true" ]]; then
   RENDERED=(
     ".github/workflows/ci.yml"
