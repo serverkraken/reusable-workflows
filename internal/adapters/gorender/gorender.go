@@ -1,8 +1,9 @@
 // Package gorender exposes the in-process render service behind the
 // ports.TemplateRenderer interface.
 //
-// Why this exists: drift used to render through catalogscripts.Adapter, which
-// shells out to scripts/onboard-render.sh. That Bash engine emits SIX files;
+// Why this exists: drift used to render by shelling out to
+// scripts/onboard-render.sh (through an adapter since removed).
+// That Bash engine emits SIX files;
 // the Go renderer emits SEVEN — it also writes `.github/workflows/e2e.yml`.
 // Combined with staleFiles skipping any lock entry the renderer did not
 // produce, E2E drift was structurally invisible: the comparison never looked
