@@ -152,9 +152,12 @@ jobs:
           FLAVOR: ${{ inputs.flavor }}
         run: |
           set -euo pipefail
-          flavor_arg=""; [[ -n "$FLAVOR" ]] && flavor_arg="--flavor=$FLAVOR"
-          # shellcheck disable=SC2086
-          flutter build apk "--${BUILD_MODE}" $flavor_arg
+          # Array, not a bare string: unquoted `$flavor_arg` word-splits, so
+          # `flavor: 'prod --target=lib/stub.dart'` became TWO arguments and
+          # silently redirected the build to another entry point. An array
+          # keeps it one argument and still expands to nothing when empty.
+          flavor_arg=(); [[ -n "$FLAVOR" ]] && flavor_arg=(--flavor="$FLAVOR")
+          flutter build apk "--${BUILD_MODE}" "${flavor_arg[@]}"
 
       - name: Summary
         if: always()

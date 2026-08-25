@@ -246,9 +246,13 @@ jobs:
         run: |
           set -euo pipefail
           DD=$(cat "$RUNNER_TEMP/dart-define-flags" || true)
-          flavor_arg=""; [[ -n "$FLAVOR" ]] && flavor_arg="--flavor=$FLAVOR"
+          # Array, not a bare string: unquoted `$flavor_arg` word-splits, so
+          # `flavor: 'prod --target=lib/stub.dart'` became TWO arguments and
+          # silently redirected the build to another entry point. An array
+          # keeps it one argument and still expands to nothing when empty.
+          flavor_arg=(); [[ -n "$FLAVOR" ]] && flavor_arg=(--flavor="$FLAVOR")
           # shellcheck disable=SC2086
-          flutter build apk --release --build-number="$GITHUB_RUN_NUMBER" $flavor_arg $DD
+          flutter build apk --release --build-number="$GITHUB_RUN_NUMBER" "${flavor_arg[@]}" $DD
 
       - name: Build AAB
         if: ${{ inputs.build_aab }}
@@ -262,9 +266,13 @@ jobs:
         run: |
           set -euo pipefail
           DD=$(cat "$RUNNER_TEMP/dart-define-flags" || true)
-          flavor_arg=""; [[ -n "$FLAVOR" ]] && flavor_arg="--flavor=$FLAVOR"
+          # Array, not a bare string: unquoted `$flavor_arg` word-splits, so
+          # `flavor: 'prod --target=lib/stub.dart'` became TWO arguments and
+          # silently redirected the build to another entry point. An array
+          # keeps it one argument and still expands to nothing when empty.
+          flavor_arg=(); [[ -n "$FLAVOR" ]] && flavor_arg=(--flavor="$FLAVOR")
           # shellcheck disable=SC2086
-          flutter build appbundle --release --build-number="$GITHUB_RUN_NUMBER" $flavor_arg $DD
+          flutter build appbundle --release --build-number="$GITHUB_RUN_NUMBER" "${flavor_arg[@]}" $DD
 
       - name: Rename + collect artefacts
         id: artefacts
