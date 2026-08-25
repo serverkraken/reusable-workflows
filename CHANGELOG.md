@@ -1,5 +1,25 @@
 # Changelog
 
+## [4.18.6](https://github.com/serverkraken/reusable-workflows/compare/v4.18.5...v4.18.6) (2026-08-25)
+
+
+### Bug Fixes
+
+* **catalog-version:** Ein Prerelease-Tag wurde zum Floating-Major der Adopter ([#296](https://github.com/serverkraken/reusable-workflows/issues/296)) ([b238f95](https://github.com/serverkraken/reusable-workflows/commit/b238f95c706c8e91d64f9360e9088485820c2885))
+* **cleanup-images:** Ein abgelaufener Token sah aus wie ein leeres Registry ([#291](https://github.com/serverkraken/reusable-workflows/issues/291)) ([ae3672e](https://github.com/serverkraken/reusable-workflows/commit/ae3672e3a260041ce9583fbb3530177ae29b582a))
+* **detect:** Ein unlesbares Verzeichnis liess eine ganze Komponente verschwinden ([#300](https://github.com/serverkraken/reusable-workflows/issues/300)) ([89ef7c6](https://github.com/serverkraken/reusable-workflows/commit/89ef7c6a799879498922b59ccfa1b8f9626a9b95))
+* **detect:** Flutter-Erkennung war zwischen Bash und Go uneinig - beide lagen falsch ([#289](https://github.com/serverkraken/reusable-workflows/issues/289)) ([9c05bc5](https://github.com/serverkraken/reusable-workflows/commit/9c05bc5b1fc504c9b46d49eb9e2e9de281fd5fb7))
+* **detect:** Vier API-Fehler sahen aus wie Antworten — in beiden Engines ([#297](https://github.com/serverkraken/reusable-workflows/issues/297)) ([3ab3a95](https://github.com/serverkraken/reusable-workflows/commit/3ab3a95303ba81f7beec68a36f89940079b5bd11))
+* **flutter-version:** Die SemVer-Pruefung war nur am Anfang verankert ([#299](https://github.com/serverkraken/reusable-workflows/issues/299)) ([448838b](https://github.com/serverkraken/reusable-workflows/commit/448838b47d64794630207169ed6fc243c5ac5573))
+* **release-assets:** Ein fremdes Archiv wurde mit gueltiger Pruefsumme veroeffentlicht ([#295](https://github.com/serverkraken/reusable-workflows/issues/295)) ([a999949](https://github.com/serverkraken/reusable-workflows/commit/a9999494bd55cabf4f62219b0171a583df25ed7f))
+* **render,kube-lint:** Ein leerer Workflow und ein abgestürzter Linter galten als Erfolg ([#298](https://github.com/serverkraken/reusable-workflows/issues/298)) ([4e3c7fb](https://github.com/serverkraken/reusable-workflows/commit/4e3c7fbe1d3de273c2019f45d8afc449b70c68fd))
+* **version-badges:** Zwei Wege, die README eines Adopters zu loeschen - beide gruen ([#294](https://github.com/serverkraken/reusable-workflows/issues/294)) ([b56bad4](https://github.com/serverkraken/reusable-workflows/commit/b56bad4e096dd43f9fffe90d3415b4883e7a0492))
+
+
+### Documentation
+
+* **contracts:** Warum docker-build als einziges Atom drei runs_on-Inputs hat ([#293](https://github.com/serverkraken/reusable-workflows/issues/293)) ([eecc1cd](https://github.com/serverkraken/reusable-workflows/commit/eecc1cd066633f9d408259e97e979acb01c47404))
+
 ## [4.18.5](https://github.com/serverkraken/reusable-workflows/compare/v4.18.4...v4.18.5) (2026-08-25)
 
 
