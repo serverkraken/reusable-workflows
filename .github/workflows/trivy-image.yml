@@ -224,7 +224,13 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: trivy-image-sarif-${{ steps.slug.outputs.slug }}
-          path: trivy-sarif
+          # The per-platform files keep the detail; the merged pair is what
+          # code-scanning and the summary actually consume, and what the
+          # integration assertion inspects.
+          path: |
+            trivy-sarif
+            trivy-image.sarif
+            trivy-image.json
           if-no-files-found: error
           retention-days: 7
 
