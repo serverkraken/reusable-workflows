@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.17.1](https://github.com/serverkraken/reusable-workflows/compare/v4.17.0...v4.17.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **drift:** Render-Vergleich lief für Manifest-Repos nie ([#244](https://github.com/serverkraken/reusable-workflows/issues/244)) ([77a7a47](https://github.com/serverkraken/reusable-workflows/commit/77a7a479ea24d100605e7ac13af58b464f6f9a15))
+* **trivy:** Multi-Plattform-Scan lieferte SARIF, Report und Zählung falsch ([#247](https://github.com/serverkraken/reusable-workflows/issues/247)) ([bfb7d7a](https://github.com/serverkraken/reusable-workflows/commit/bfb7d7ac1cf3f6bcb3ce8fe5ff2c93de2cf1ad89))
+
 ## [4.17.0](https://github.com/serverkraken/reusable-workflows/compare/v4.16.1...v4.17.0) (2026-08-25)
 
 
