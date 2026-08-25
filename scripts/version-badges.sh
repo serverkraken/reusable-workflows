@@ -48,6 +48,36 @@ if [[ "$(grep -cF "$START" "$README")" -ne 1 || "$(grep -cF "$END" "$README")" -
   exit 1
 fi
 
+# Counting is not enough (audit I-8). The rewrite below is an awk pass that
+# starts skipping at the START marker and stops at the END marker, and BOTH
+# rules require the marker to begin in column 1 (`index($0, m) == 1`). Two
+# arrangements pass the count check and still destroy the file:
+#
+#   END before START      everything after START is skipped to EOF
+#   END indented          same — the stop rule never fires
+#
+# Both were reproduced against a README with content after the block: exit 0,
+# badges written, and the text below the marker gone. In an adopter repo that
+# is their README, and the run is green.
+#
+# Validated with awk rather than grep so the check matches the rewrite rule
+# character for character; a stricter test (`grep -x`) would reject a marker
+# with trailing content on the same line, which the rewrite handles fine.
+read -r start_ln end_ln <<<"$(awk -v s="$START" -v e="$END" '
+  index($0, s) == 1 && !sl { sl = NR }
+  index($0, e) == 1 && !el { el = NR }
+  END { print sl + 0, el + 0 }
+' "$README")"
+
+if [[ "$start_ln" == "0" || "$end_ln" == "0" ]]; then
+  echo "::error::$README: the version-badges markers must each start at the beginning of a line (indented markers are silently skipped by the rewrite and would truncate the file)" >&2
+  exit 1
+fi
+if (( end_ln < start_ln )); then
+  echo "::error::$README: '$END' is on line $end_ln, before '$START' on line $start_ln; in that order the rewrite would delete everything after the start marker" >&2
+  exit 1
+fi
+
 # ---- palette (variant D: ink label, per-kind value colour, kraken glyph) ----
 LABEL_BG="#0E1A26"
 GLYPH_FG="#E4ECF2"
@@ -117,6 +147,30 @@ if [[ -n "$CONFIG" ]]; then
   helm_count=$(jq -r '[.packages // {} | to_entries[] | select(.value["release-type"] == "helm")] | length' "$CONFIG")
 fi
 
+# Das Manifest wird in eine Datei gelesen, BEVOR die Schleife laeuft — nicht
+# als `done < <(jq ...)` (Audit I-7). Der Exit-Status einer Prozesssubstitution
+# ist fuer `set -e` unsichtbar: bei kaputtem Manifest schrieb jq nichts, die
+# Schleife lief null Mal, und der README-Block wurde mit einer LEEREN Tabelle
+# ueberschrieben — `badges=0`, `changed=true`, exit 0. Nachgestellt mit einem
+# abgeschnittenen `{".": "1.2.3"` und einer README, deren Tabelle danach weg war.
+entries_file=$(mktemp)
+trap 'rm -f "$entries_file"' EXIT
+if ! jq -r 'to_entries[] | "\(.key)\t\(.value)"' "$MANIFEST" > "$entries_file"; then
+  echo "::error::$MANIFEST could not be read; refusing to rewrite $README from an empty component list" >&2
+  exit 1
+fi
+
+# Null Eintraege bei GUELTIGEM Manifest ist kein Fehler, aber auch kein Grund,
+# eine bestehende Tabelle durch eine leere zu ersetzen. Die README bleibt, wie
+# sie ist.
+if [[ ! -s "$entries_file" ]]; then
+  echo "::warning::$MANIFEST lists no packages; leaving $README untouched" >&2
+  echo "badges=0"
+  echo "changed=false"
+  printf 'files=\n'
+  exit 0
+fi
+
 labels=() versions=() kinds=() tags=() files=()
 while IFS=$'\t' read -r path version; do
   rtype="" pkgname="" incl=""
@@ -141,7 +195,7 @@ while IFS=$'\t' read -r path version; do
   fi
   labels+=("$label"); versions+=("$version"); kinds+=("$kind"); tags+=("$tag")
   files+=("$(sanitize "$label").svg")
-done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' "$MANIFEST")
+done < "$entries_file"
 
 # ---- snapshot before, render, snapshot after ---------------------------------
 snapshot() {
