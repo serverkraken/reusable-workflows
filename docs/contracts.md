@@ -304,6 +304,8 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input  | `working_directory`             | string | no       | `'.'`                       | Component sub-path. |
 | input  | `python_version`                | string | no       | `''`                        | Python version. Empty → read from `<working_directory>/pyproject.toml`. |
 | input  | `coverage_threshold`            | number | no       | `80`                        | Minimum line coverage percentage (integer 0-100). |
+| input  | `coverage_source`               | string | no       | `''`                        | What coverage measures (`--cov=<value>`). Leave empty when the project configures it itself via `[tool.coverage.run] source` or pytest `addopts`; with neither, the run fails loudly instead of reporting a gate it never ran. |
+| output | `coverage_pct`                  | string | —        | —                           | Measured line coverage, or `N/A` when no report was produced. |
 | secret | `release_please_app_client_id`  | —      | **yes**  | —                           | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret | `release_please_app_private_key`| —      | **yes**  | —                           | App private key for the catalog-checkout token (since v2.0.0) |
 
@@ -330,6 +332,7 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input   | `paths_ignore`    | string  | no       | `''`                         | Newline-separated paths to skip |
 | input   | `files_ignore`    | string  | no       | `''`                         | Newline-separated files to skip |
 | input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks) |
+| input   | `report_slug`     | string  | no       | `''`                         | Suffix making the SARIF category and artifact name unique; set it when calling this atom more than once per workflow |
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `ignore_unfixed`  | boolean | no       | `true`                       | Pass `--ignore-unfixed` to Trivy |
 | input   | `fail_on_findings`| boolean | no       | `true`                       | Exit non-zero when findings exist |

@@ -29,6 +29,24 @@ on:
         required: false
         type: number
         default: 80
+      coverage_source:
+        description: >-
+          What coverage measures, passed as `--cov=<value>` (a package name or
+          a path). Leave empty when the project already configures it via
+          `[tool.coverage.run] source` or pytest `addopts`; this workflow adds
+          no `--cov` of its own then, so that config stays in charge. With
+          neither, nothing is measured and the run fails loudly rather than
+          reporting a gate it never ran.
+        required: false
+        type: string
+        default: ''
+    outputs:
+      coverage_pct:
+        description: >-
+          Measured line coverage as reported by pytest-cov, or `N/A` when the
+          run produced no report. Exposed so a caller can assert the gate
+          actually ran, rather than only that the job failed.
+        value: ${{ jobs.test.outputs.coverage_pct }}
     secrets:
       release_please_app_client_id:
         required: true
@@ -48,6 +66,8 @@ jobs:
   test:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 30
+    outputs:
+      coverage_pct: ${{ steps.pytest.outputs.coverage_pct }}
     steps:
       - name: Checkout adopter repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -91,10 +111,30 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         env:
           THRESHOLD: ${{ inputs.coverage_threshold }}
+          COVERAGE_SOURCE: ${{ inputs.coverage_source }}
         run: |
           set -o pipefail
+          # NEVER a bare `--cov`. pytest-cov normalises `--cov --cov=lib` down
+          # to plain whole-run coverage, which measures only files that were
+          # actually imported — for a trivial test that is the test file
+          # itself, reporting 100%. Measured on one project: with the adopter's
+          # own `addopts = "--cov=lib"` the gate correctly reported 0% and
+          # failed; adding this workflow's bare `--cov` made the same project
+          # report 100% and pass. The catalog was destroying a working gate.
+          cov_args=()
+          [ -n "${COVERAGE_SOURCE:-}" ] && cov_args=(--cov="$COVERAGE_SOURCE")
           rc=0
-          ${{ steps.setup.outputs.run_prefix }} pytest --ignore=.catalog --cov --cov-report=term --cov-fail-under="$THRESHOLD" | tee pytest.out || rc=$?
+          ${{ steps.setup.outputs.run_prefix }} pytest --ignore=.catalog "${cov_args[@]}" --cov-report=term --cov-fail-under="$THRESHOLD" | tee pytest.out || rc=$?
+          # With no source at all — neither from coverage_source nor from the
+          # project's own config — pytest-cov never activates, no report is
+          # produced and --cov-fail-under silently passes. A gate that measures
+          # nothing is worse than no gate, so say so instead of going green.
+          if ! grep -qE '^TOTAL' pytest.out; then
+            echo "::error::coverage produced no report, so the ${THRESHOLD}% gate never ran." \
+                 "Configure the measured source in the project ([tool.coverage.run] source," \
+                 "or pytest addopts --cov=<pkg>), or pass coverage_source to this workflow."
+            exit 1
+          fi
           pct=$(awk '/^TOTAL/ {gsub("%","",$NF); print $NF}' pytest.out)
           echo "coverage_pct=${pct:-N/A}" >> "$GITHUB_OUTPUT"
           echo "threshold=${THRESHOLD}" >> "$GITHUB_OUTPUT"
