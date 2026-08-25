@@ -137,6 +137,12 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 			components[i].Version = v
 		}
 	}
+	// Sobald die Komponenten stehen und bevor irgendetwas daraus gerendert
+	// wird: zwei Dockerfiles duerfen nicht denselben Image-Namen tragen.
+	if err := checkImageNameCollisions(components); err != nil {
+		return Result{}, err
+	}
+
 	var declared []string
 	// Workflows the adopter maintains itself are not legacy: the scan would
 	// otherwise propose deleting them, and its signatures produce false
@@ -907,6 +913,51 @@ func readReleaseOverride(file string) *bool {
 		case "# onboard:release=false":
 			v := false
 			return &v
+		}
+	}
+	return nil
+}
+
+// checkImageNameCollisions weist ein Profil ab, in dem zwei Dockerfiles
+// denselben Image-Namen bekommen (Audit H-4).
+//
+// Der abgeleitete Name nimmt nur das LETZTE Pfadsegment: `apps/api` und
+// `services/api` ergeben beide `$REPO-api`. Nachgestellt in beiden Engines.
+// Beide Komponenten wuerden dann in dasselbe GHCR-Image pushen; derselbe
+// Versionstag zeigt danach auf den Build, der zufaellig zuletzt lief, und
+// cleanup-images sieht ein Paket statt zweier.
+//
+// Abgewiesen statt automatisch entschaerft — dieselbe Entscheidung wie bei den
+// kollidierenden Job-IDs (J-0b): ein angehaengter Hash muesste fuer alle
+// bestehenden Adopter stabil bleiben und waere fuer den Menschen, der die
+// Registry liest, nicht mehr zuzuordnen.
+//
+// Der Ausweg ist Umbenennen, NICHT ein `image:` im Manifest. Der Validator dort
+// weist dieselbe Konstellation bereits mit einer eigenen Regel ab
+// ("package name %q already used by"), weil das letzte Pfadsegment zugleich der
+// release-please-Paketname ist. Eine erste Fassung dieser Meldung riet zu
+// `image:` und haette Adopter auf einen Weg geschickt, der gar nicht existiert;
+// ein Test hat das gefangen.
+//
+// Fuer Manifest-Repos greift also die Manifest-Regel, fuer auto-erkannte diese
+// hier — zusammen decken sie beide Wege ab.
+func checkImageNameCollisions(components []domain.Component) error {
+	type origin struct{ component, dockerfile string }
+	seen := map[string]origin{}
+	for _, c := range components {
+		for _, d := range c.Dockerfiles {
+			if d.ImageName == "" {
+				continue
+			}
+			cur := origin{c.Path, d.Path}
+			if prev, dup := seen[d.ImageName]; dup {
+				return fmt.Errorf(
+					"duplicate image name %q: %s/%s and %s/%s both map to it — "+
+						"rename one of the directories; the last path segment becomes both "+
+						"the image name and the release-please package name, and must be unique",
+					d.ImageName, prev.component, prev.dockerfile, cur.component, cur.dockerfile)
+			}
+			seen[d.ImageName] = cur
 		}
 	}
 	return nil

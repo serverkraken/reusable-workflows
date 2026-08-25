@@ -1128,3 +1128,48 @@ GHEOF
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | jq -r '.current_version')" = "0.0.0" ]
 }
+
+# === Kollidierende Image-Namen (Audit H-4) ===
+#
+# Der abgeleitete Name nimmt nur das LETZTE Pfadsegment: `apps/api` und
+# `services/api` ergeben beide `$REPO-api`. Beide Komponenten wuerden in
+# dasselbe GHCR-Image pushen; derselbe Versionstag zeigt danach auf den Build,
+# der zufaellig zuletzt lief, und cleanup-images sieht ein Paket statt zweier.
+#
+# Der Go-Detektor prueft dasselbe (checkImageNameCollisions) und meldet
+# denselben Wortlaut — die Engines duerfen sich hier nicht unterscheiden.
+
+_two_components() {
+  local repo="$1" a="$2" b="$3"
+  for c in "$a" "$b"; do
+    mkdir -p "$repo/$c"
+    printf 'module x\ngo 1.22\n' > "$repo/$c/go.mod"
+    printf 'FROM scratch\n' > "$repo/$c/Dockerfile"
+  done
+}
+
+@test "kollidierende Image-Namen werden abgewiesen" {
+  local repo="$BATS_TEST_TMPDIR/kollision"
+  _two_components "$repo" "apps/api" "services/api"
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'duplicate image name'* ]]
+  # Beide Pfade muessen im Text stehen, sonst ist nicht zu sehen, welche zwei
+  # sich in die Quere kommen.
+  [[ "$output" == *"apps/api/Dockerfile"* ]]
+  [[ "$output" == *"services/api/Dockerfile"* ]]
+  # Der genannte Ausweg muss der sein, der auch funktioniert: das Manifest
+  # verbietet kollidierende Basisnamen mit einer eigenen Regel, ein `image:`
+  # hilft dort also nicht.
+  [[ "$output" == *"rename"* ]]
+}
+
+@test "verschiedene Image-Namen gehen weiterhin durch" {
+  # Gegenprobe: ein gewoehnliches Monorepo darf die Pruefung nicht treffen.
+  local repo="$BATS_TEST_TMPDIR/ok"
+  _two_components "$repo" "services/api" "services/worker"
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[].dockerfiles[].image_name] | length == 2'
+  echo "$output" | jq -e '[.components[].dockerfiles[].image_name] | unique | length == 2'
+}
