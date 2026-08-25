@@ -485,7 +485,12 @@ jobs:
           fi
 
           git commit -m "chore: onboard serverkraken/reusable-workflows@${PIN}"
-          git push -f origin "$ADD_BRANCH"
+          # Kein blankes `push -f`: das warf einen Fixup, den ein Reviewer auf
+          # den Bot-Branch gepusht hat, beim naechsten Lauf stillschweigend weg.
+          # Das Skript bricht ab, wenn der Branch fremde Commits traegt, und
+          # pusht sonst mit Lease.
+          "$GITHUB_WORKSPACE/.catalog/scripts/push-bot-branch.sh" \
+            "$ADD_BRANCH" "origin/$DEFAULT_BRANCH" 'serverkraken-release-bot[bot]'
 
           # Build profile-driven markdown blocks for the PR body so the reviewer
           # can sanity-check what detection saw before merging.
@@ -664,7 +669,12 @@ jobs:
           git checkout -B "$CLEANUP_BRANCH" "origin/$DEFAULT_BRANCH"
           git rm "${matched[@]}"
           git commit -m "chore: remove legacy workflows superseded by reusable-workflows@${PIN}"
-          git push -f origin "$CLEANUP_BRANCH"
+          # Kein blankes `push -f`: das warf einen Fixup, den ein Reviewer auf
+          # den Bot-Branch gepusht hat, beim naechsten Lauf stillschweigend weg.
+          # Das Skript bricht ab, wenn der Branch fremde Commits traegt, und
+          # pusht sonst mit Lease.
+          "$GITHUB_WORKSPACE/.catalog/scripts/push-bot-branch.sh" \
+            "$CLEANUP_BRANCH" "origin/$DEFAULT_BRANCH" 'serverkraken-release-bot[bot]'
 
           # Build a markdown bullet list of removed files for the PR body.
           removed_list=""
