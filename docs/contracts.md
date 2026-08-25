@@ -504,6 +504,12 @@ undocumented callable surface is exactly what the contract gate exists to
 catch. Its inputs are **not** semver-protected — they may change without a
 major bump.
 
+**Cross-repo `workflow_call` is refused.** The `guard-caller` job fails the run
+unless `github.repository` is `serverkraken/reusable-workflows`. The workflow
+mints repo-admin tokens for whatever `target_repos` names and pushes to the
+catalog's own `main`, so accepting a call from elsewhere would hand both to the
+caller. A fork driving its own org has to change that constant.
+
 ### `onboard.yml`
 
 | Kind   | Name | Type | Required | Default | Description |
