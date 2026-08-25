@@ -71,6 +71,24 @@ not an error, and a red weekly cron there would train people to ignore it.
 
 ### `docker-build.yml`
 
+**Deliberate exception to the `runs_on` rule.** Every other atom takes a single
+`runs_on`; this one takes three. The multi-arch build distributes across
+*native* runners rather than emulating under QEMU, so the amd64 job, the arm64
+job and the metadata/merge jobs run on genuinely different pools — one input
+cannot express that, and collapsing them would either force emulation or pin
+all three to the same pool. `docker-build-multi.yml` adds a fourth,
+`runs_on_parse`, for the same reason.
+
+The cost is that a consumer without a matching self-hosted pool overrides three
+inputs instead of one:
+
+```yaml
+with:
+  runs_on_amd64: '["ubuntu-latest"]'
+  runs_on_arm64: '["ubuntu-24.04-arm"]'
+  runs_on_merge: '["ubuntu-latest"]'
+```
+
 | Kind    | Name            | Type    | Required | Default                                        | Description |
 |---------|-----------------|---------|----------|------------------------------------------------|-------------|
 | input   | `tag`           | string  | no       | `''`                                           | Image tag; empty → auto-compute when `prerelease=true` |
