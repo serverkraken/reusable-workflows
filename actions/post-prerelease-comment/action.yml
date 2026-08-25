@@ -44,10 +44,13 @@ runs:
         TRIVY_STATUS: ${{ inputs.trivy_status }}
         COMMIT_SHA: ${{ inputs.commit_sha }}
       run: |
+        set -euo pipefail
         if [[ -n "$COMMIT_SHA" ]]; then
           SHORT_SHA="${COMMIT_SHA:0:7}"
         else
-          SHORT_SHA=$(echo "$IMAGE_REF" | rev | cut -d- -f1 | rev | cut -c1-7)
+          # printf, not echo: a value with a leading -n/-e would be eaten as a
+          # flag. Same reason as actions/compute-prerelease-tag/sanitize.sh.
+          SHORT_SHA=$(printf '%s' "$IMAGE_REF" | rev | cut -d- -f1 | rev | cut -c1-7)
         fi
         BODY=$(cat <<EOF
         <!-- prerelease-image-comment -->
@@ -63,10 +66,22 @@ runs:
         if [[ -n "$TRIVY_STATUS" ]]; then
           BODY="$BODY · trivy: $TRIVY_STATUS"
         fi
+        # Random delimiter per invocation. With a fixed one, a body containing
+        # a line that is exactly the delimiter closes the block early and every
+        # following line becomes a NEW step output — and both halves of this
+        # body are caller-controlled (image_ref, trivy_status). That is output
+        # injection, not a formatting nuisance.
+        DELIM="body_$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+        if printf '%s' "$BODY" | grep -qxF "$DELIM"; then
+          # Astronomically unlikely, but a silent truncation here would be
+          # invisible. Refuse rather than emit a malformed output block.
+          echo "::error::generated delimiter collides with the comment body" >&2
+          exit 1
+        fi
         {
-          echo 'body<<DELIM'
-          echo "$BODY"
-          echo 'DELIM'
+          echo "body<<$DELIM"
+          printf '%s\n' "$BODY"
+          echo "$DELIM"
         } >> "$GITHUB_OUTPUT"
 
     - name: Create or update comment
