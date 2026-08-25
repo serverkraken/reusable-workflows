@@ -188,6 +188,20 @@ jobs:
       fail-fast: false
       matrix:
         target: ${{ fromJSON(needs.parse-inputs.outputs.matrix) }}
+    # Serialise per TARGET, not per caller ref. The workflow-level group keys
+    # on github.ref, which only stops a second run from the same ref — two
+    # runs against the same adopter from different refs (a manual dispatch and
+    # the weekly sweep's workflow_call, say) fell into different groups and
+    # raced: both force-push the same bot branch, and the loser's PR then
+    # describes a tree that no longer exists. The matrix context is not
+    # available at workflow level, so the guard has to live here.
+    #
+    # cancel-in-progress stays false: a half-finished onboard has already
+    # force-pushed a branch and possibly opened a PR, and killing it mid-way
+    # leaves that behind. Waiting is the cheaper failure mode.
+    concurrency:
+      group: onboard-target-${{ matrix.target.target }}
+      cancel-in-progress: false
     steps:
       - name: Begin summary
         if: always()
@@ -218,34 +232,6 @@ jobs:
           owner: ${{ matrix.target.owner }}
           repositories: ${{ matrix.target.name }}
 
-      # Code scanning needs `code_security` enabled on private repos before
-      # SARIF upload works. Public repos get code-scanning for free and don't
-      # have this knob, so we GET visibility first and skip non-private.
-      # `continue-on-error` so a 403 (App permissions not granted/propagated)
-      # doesn't sink the onboard run — adopters with `code_security` already
-      # enabled or a different policy can still onboard, they just won't get
-      # SARIF reports until that's resolved manually.
-      - name: Enable code_security on private targets
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ steps.target-token.outputs.token }}
-          TARGET: ${{ matrix.target.target }}
-        run: |
-          set -euo pipefail
-          visibility=$(gh api "/repos/$TARGET" --jq '.visibility')
-          if [[ "$visibility" != "private" ]]; then
-            echo "Skipping code_security enable for $TARGET (visibility=$visibility)"
-            exit 0
-          fi
-          current=$(gh api "/repos/$TARGET" --jq '.security_and_analysis.code_security.status // "absent"')
-          if [[ "$current" == "enabled" ]]; then
-            echo "code_security already enabled on $TARGET — no-op"
-            exit 0
-          fi
-          echo "Enabling code_security on $TARGET (was $current)"
-          echo '{"security_and_analysis":{"code_security":{"status":"enabled"}}}' \
-            | gh api --method PATCH "/repos/$TARGET" --input - > /dev/null
-
       - name: Checkout target repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -260,6 +246,41 @@ jobs:
           repository: serverkraken/reusable-workflows
           ref: ${{ github.workflow_sha }}
           path: .catalog
+
+      # Code scanning needs `code_security` enabled on private repos before
+      # SARIF upload works. Public repos get code-scanning for free and don't
+      # have this knob, so the script reads visibility first and skips
+      # non-private targets.
+      #
+      # Runs AFTER the catalog checkout because the logic now lives in a
+      # script — as inline workflow bash it was untestable, and the one code
+      # path that mattered (the PATCH) never ran in CI: the integration
+      # dry-run targets this repo, which is public.
+      #
+      # `continue-on-error` so a 403 (App permissions not granted/propagated)
+      # doesn't sink the onboard run — adopters with `code_security` already
+      # enabled or a different policy can still onboard, they just won't get
+      # SARIF reports until that's resolved manually. The outcome is written
+      # to the step summary either way, so a swallowed failure stays visible.
+      - name: Enable code_security on private targets
+        id: code-security
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.target-token.outputs.token }}
+          TARGET: ${{ matrix.target.target }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: .catalog/scripts/enable-code-security.sh "$TARGET"
+
+      - name: Report code_security outcome
+        if: always()
+        env:
+          RESULT: ${{ steps.code-security.outcome }}
+        run: |
+          case "$RESULT" in
+            success) note="handled (see job log for the exact outcome)" ;;
+            *)       note="**failed** — SARIF upload will not work until this is resolved manually" ;;
+          esac
+          echo "**Code scanning:** ${note}" >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Setup Go for sk-workflows
         if: ${{ inputs.use_go_cli }}
