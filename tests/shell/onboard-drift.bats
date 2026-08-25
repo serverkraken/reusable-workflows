@@ -252,3 +252,55 @@ YAML
   [[ "$output" == *"status=error"* ]]
   echo "$output" | grep -E '^render_error=.*use_go_cli' >/dev/null
 }
+
+# === Drift ohne GitHub-Token (Audit H-5/H-10, Nachtrag) ===
+#
+# Seit H-5/H-10 ist ein fehlgeschlagener Metadaten-Aufruf beim ONBOARDING
+# fatal - dort wuerde sonst geraten und `.release-please-manifest.json` mit
+# 0.0.0 geseedet, obwohl das Repo laengst auf 1.10.0 steht.
+#
+# Drift ist der andere Fall: es vergleicht ein bereits onboardetes Repo mit dem,
+# was dort eingecheckt ist, und laeuft in Jobs, die gar kein Token minten. Beim
+# ersten Anlauf habe ich diese Unterscheidung uebersehen und den harten Abbruch
+# auch fuer Drift eingebaut - self-ci meldete prompt
+# `expected status=clean, got status=error` im Job onboard-drift-happy.
+#
+# Der Go-Pfad trennt an derselben Stelle: die Toleranz sitzt in
+# godetect.tolerantMetadata, das nur `drift` umschliesst.
+
+@test "drift: ohne gueltigen GitHub-Token wird nicht status=error" {
+  # `gh` ist im PATH, antwortet aber auf alles mit einem Fehler - genau die
+  # Lage eines Jobs, der kein Token mintet.
+  local bin="$BATS_TEST_TMPDIR/bin"
+  mkdir -p "$bin"
+  cat > "$bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+echo "gh: no authentication token" >&2
+exit 1
+GHEOF
+  chmod +x "$bin/gh"
+
+  run env PATH="$bin:$PATH" TARGET_REPO=owner/repo \
+    bash "$DRIFT" "$FIX/drift-clean" "$REPO_ROOT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"status=error"* ]]
+}
+
+@test "onboard-detect bricht ohne Token weiterhin ab, wenn NICHT drift fragt" {
+  # Gegenprobe: die Toleranz darf nicht auf den Onboarding-Pfad durchschlagen.
+  # Ohne ONBOARD_METADATA_OPTIONAL bleibt der Abbruch.
+  local bin="$BATS_TEST_TMPDIR/bin2"
+  mkdir -p "$bin"
+  cat > "$bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+echo "gh: no authentication token" >&2
+exit 1
+GHEOF
+  chmod +x "$bin/gh"
+
+  run env PATH="$bin:$PATH" TARGET_REPO=owner/repo \
+    bash "$DETECT" --profile-json "$FIX/go-repo"
+
+  [ "$status" -ne 0 ]
+}
