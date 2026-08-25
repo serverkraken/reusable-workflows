@@ -937,3 +937,56 @@ render_target_for_profile() {
   [ "$status" -eq 0 ]
   [ ! -f "$TARGET/.github/workflows/ci-android.yml" ]
 }
+
+# --- Job-ID-Sicherheit (J-0a) und Kollisionen (J-0b) ------------------------
+
+@test "ein Punkt im Komponentenpfad ergibt eine gueltige Job-ID" {
+  # `services/v2.api` ergab die Job-ID `lint-go-services-v2.api`; actionlint:
+  # "invalid job ID". GitHub verwirft dann die GANZE Datei, nicht nur den Job.
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": true,
+    "components": [{"path": "services/v2.api", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  local wf="$tgt/.github/workflows/ci.yml"
+  grep -qE '^  lint-go-services-v2-api:$' "$wf"
+  refute_grep -qE '^  [A-Za-z0-9_-]*\.[A-Za-z0-9_-]*:$' "$wf"
+}
+
+@test "die Wurzelkomponente behaelt ihre unsuffixierten Job-Namen" {
+  # Der Sanitizer wuerde "." zu "-" machen; die Wurzelerkennung muss davor
+  # laufen. Beim ersten Anlauf tat sie das nicht und sechs Goldens brachen.
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  refute_grep -qE '^  [a-z-]+--' "$tgt/.github/workflows/release.yml"
+}
+
+@test "kollidierende Job-IDs werden abgewiesen, statt doppelte Keys zu rendern" {
+  # `svc/x.y` und `svc/x-y` ergeben beide `svc-x-y`. Gerendert waere das
+  # zweimal derselbe Job-Key — actionlint: "key ... is duplicated in jobs
+  # section", und GitHub verwirft die Datei.
+  local work; work="$(mktemp -d)"
+  mkdir -p "$work/t"
+  cat > "$work/p.json" <<'EOF2'
+{"schema_version":1,"target_repo":"acme/svc","default_branch":"main","current_version":"0.1.0","monorepo":true,
+ "components":[
+  {"path":"svc/x.y","languages":["go"],"primary_language":"go","release_please_type":"go","role":"service","dockerfiles":[],
+   "release_signals":{"goreleaser_config":null,"chart_yaml":null,"flutter_android":false}},
+  {"path":"svc/x-y","languages":["go"],"primary_language":"go","release_please_type":"go","role":"service","dockerfiles":[],
+   "release_signals":{"goreleaser_config":null,"chart_yaml":null,"flutter_android":false}}],
+ "legacy_ci":[],"topics":[],"warnings":[]}
+EOF2
+  run "$RENDER" "$REPO_ROOT" "$work/t" "$work/p.json" "v4"
+  rm -rf "$work"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"dieselbe Job-ID"* ]]
+}

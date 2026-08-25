@@ -39,8 +39,15 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@{{ $pin }}
     secrets: inherit
 {{ range $i, $c := .profile.components }}
-{{- $slug := strings.ReplaceAll "/" "-" $c.path -}}
-{{- if eq $slug "." }}{{ $slug = "" }}{{ end -}}
+{{- /* Job-ID-sicher: GitHub erlaubt nur [A-Za-z0-9_-]. Ein Pfad wie
+     `services/v2.api` ergab ohne diese Bereinigung die Job-ID
+     `lint-go-services-v2.api`, und actionlint weist sie zurueck:
+     "invalid job ID". GitHub verwirft dann die GANZE Datei, nicht nur
+     den Job. Gleiche Bereinigung wie beim $imgSuffix weiter unten. */ -}}
+{{- /* Wurzel zuerst pruefen: der Sanitizer wuerde "." zu "-" machen und die
+     Wurzelerkennung damit aushebeln. */ -}}
+{{- $slug := "" -}}
+{{- if ne $c.path "." }}{{ $slug = regexp.Replace "[^A-Za-z0-9_-]" "-" (strings.ReplaceAll "/" "-" $c.path) }}{{ end -}}
 {{- $suffix := "" -}}
 {{- if $slug }}{{ $suffix = printf "-%s" $slug }}{{ end -}}
 {{- $ctxPath := $c.path -}}
@@ -234,8 +241,9 @@ jobs:
 {{- $buildJobs := coll.Slice "release-please" -}}
 {{- $imageMap := coll.Dict -}}
 {{- range $c := .profile.components -}}
-  {{- $slug := strings.ReplaceAll "/" "-" $c.path -}}
-  {{- if eq $slug "." }}{{ $slug = "" }}{{ end -}}
+  {{- /* Wurzel zuerst, siehe oben. */ -}}
+  {{- $slug := "" -}}
+  {{- if ne $c.path "." }}{{ $slug = regexp.Replace "[^A-Za-z0-9_-]" "-" (strings.ReplaceAll "/" "-" $c.path) }}{{ end -}}
   {{- $sfx := "" -}}
   {{- if $slug }}{{ $sfx = printf "-%s" $slug }}{{ end -}}
   {{- $dfs := coll.Slice -}}

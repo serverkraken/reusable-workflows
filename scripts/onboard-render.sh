@@ -64,6 +64,26 @@ mkdir -p "$TARGET/.github/workflows"
 # suffix is load-bearing — gomplate uses it to decide the parser, and
 # extensionless files default to plain text (yielding "can't evaluate field
 # X in type string" errors at template execution).
+# Kollidierende Job-IDs abweisen, bevor gerendert wird.
+#
+# Die Templates bilden einen Komponentenpfad auf ein Job-ID-Suffix ab: Slashes
+# und alles, was GitHub in einer Job-ID nicht erlaubt, werden zu Bindestrichen.
+# Das ist nicht injektiv — `svc/x.y` und `svc/x-y` ergeben beide `svc-x-y`.
+# Gerendert wird daraus zweimal derselbe Job-Key; actionlint meldet
+# "key ... is duplicated in jobs section", und GitHub verwirft die Datei.
+# Nachgestellt mit genau diesen beiden Pfaden. Der Go-Renderer prueft dasselbe
+# (internal/app/render/service.go, checkSlugCollisions).
+COLLISION=$(jq -r '
+  [ .components[] | select(.path != ".") | .path ]
+  | map({path: ., slug: (gsub("/"; "-") | gsub("[^A-Za-z0-9_-]"; "-"))})
+  | group_by(.slug) | map(select(length > 1)) | .[0] // empty
+  | "\(.[0].path) und \(.[1].path) -> \(.[0].slug)"
+' "$PROFILE")
+if [[ -n "$COLLISION" ]]; then
+  echo "::error::Komponenten ${COLLISION} ergeben dieselbe Job-ID — GitHub wuerde den Workflow wegen doppelter Job-Keys verwerfen; eine der beiden umbenennen" >&2
+  exit 1
+fi
+
 CTX_DIR=$(mktemp -d)
 CTX="$CTX_DIR/ctx.json"
 trap 'rm -rf "$CTX_DIR"' EXIT
