@@ -67,6 +67,29 @@ def merge(documents: list[dict]) -> dict:
             if rule_id not in rule_index:
                 rule_index[rule_id] = len(merged_rules)
                 merged_rules.append(rule)
+            elif merged_rules[rule_index[rule_id]] != rule:
+                # Dieselbe Regel-ID mit anderem Inhalt: die erste gewinnt, und
+                # das kann den Bericht verfaelschen — in `rule` stecken unter
+                # anderem `defaultConfiguration.level` und die Severity-Tags,
+                # die code-scanning anzeigt (Audit I-2).
+                #
+                # Gemessen tritt das im tatsaechlichen Anwendungsfall nicht auf:
+                # trivy 0.74.0 gegen node:10-alpine, linux/amd64 und
+                # linux/arm64, ergab 63 Regeln je Plattform und bei gleicher ID
+                # byte-gleichen Inhalt — null Abweichungen. Das ist ein Bild von
+                # einem Image, kein Beweis. Deshalb gemeldet statt abgebrochen:
+                # ein Abbruch wuerde Scans an einem Ereignis brechen, das noch
+                # nie beobachtet wurde, und Stillschweigen macht aus einem
+                # Fehlbericht einen unsichtbaren Fehlbericht.
+                first = merged_rules[rule_index[rule_id]]
+                fields = sorted(
+                    k for k in set(first) | set(rule) if first.get(k) != rule.get(k)
+                )
+                print(
+                    f"::warning::SARIF rule {rule_id} differs between runs in "
+                    f"{', '.join(fields)}; keeping the first definition",
+                    file=sys.stderr,
+                )
 
         for result in run.get("results") or []:
             rule_id = result.get("ruleId")

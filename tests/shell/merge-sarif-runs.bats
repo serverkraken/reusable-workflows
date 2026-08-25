@@ -128,3 +128,56 @@ d = json.load(open('out.sarif'))
 print(f\"{len(d['runs'])},{len(d['runs'][0]['results'])}\")"
   [ "$output" = "1,0" ]
 }
+
+# === Regel-Konflikte (Audit I-2) ===
+#
+# Bei gleicher Regel-ID gewinnt die erste Definition, und die zweite wird
+# verworfen. In `rule` stecken unter anderem `defaultConfiguration.level` und
+# die Severity-Tags, die code-scanning anzeigt — ein Konflikt kann den Bericht
+# also verfaelschen.
+#
+# Gemessen tritt das im tatsaechlichen Anwendungsfall NICHT auf: trivy 0.74.0
+# gegen node:10-alpine, linux/amd64 und linux/arm64, ergab 63 Regeln je
+# Plattform und bei gleicher ID byte-gleichen Inhalt — null Abweichungen.
+# Deshalb wird gemeldet statt abgebrochen: ein Abbruch wuerde Scans an einem
+# Ereignis brechen, das noch nie beobachtet wurde.
+
+@test "eine Regel mit gleicher ID und anderem Inhalt wird gemeldet" {
+  python3 - a.sarif <<'PY'
+import json, sys
+doc = {"version": "2.1.0", "runs": [{
+    "tool": {"driver": {"name": "Trivy", "rules": [
+        {"id": "CVE-1", "defaultConfiguration": {"level": "warning"}}]}},
+    "results": [{"ruleId": "CVE-1", "ruleIndex": 0, "level": "warning",
+                 "message": {"text": "x"}, "locations": []}]}]}
+json.dump(doc, open(sys.argv[1], "w"))
+PY
+  python3 - b.sarif <<'PY'
+import json, sys
+doc = {"version": "2.1.0", "runs": [{
+    "tool": {"driver": {"name": "Trivy", "rules": [
+        {"id": "CVE-1", "defaultConfiguration": {"level": "error"}}]}},
+    "results": [{"ruleId": "CVE-1", "ruleIndex": 0, "level": "error",
+                 "message": {"text": "x"}, "locations": []}]}]}
+json.dump(doc, open(sys.argv[1], "w"))
+PY
+
+  run python3 "$SCRIPT" merged.sarif a.sarif b.sarif
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SARIF rule CVE-1 differs between runs"* ]]
+  # Das abweichende Feld muss benannt sein, sonst ist die Warnung nicht
+  # nachvollziehbar.
+  [[ "$output" == *"defaultConfiguration"* ]]
+  # Der Merge laeuft trotzdem durch und behaelt beide Befunde: sie
+  # unterscheiden sich im `level` und sind damit zwei Ergebnisse.
+  [ "$(jq '.runs[0].results | length' merged.sarif)" -eq 2 ]
+}
+
+@test "identische Regeln erzeugen keine Warnung" {
+  # Gegenprobe: eine Warnung, die bei jedem Merge erscheint, liest niemand.
+  write_sarif a.sarif '["CVE-1"]' '[["CVE-1", 0, "pkg/a"]]'
+  write_sarif b.sarif '["CVE-1"]' '[["CVE-1", 0, "pkg/b"]]'
+  run python3 "$SCRIPT" merged.sarif a.sarif b.sarif
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"differs between runs"* ]]
+}
