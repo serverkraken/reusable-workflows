@@ -178,17 +178,29 @@ jobs:
               scan_one "$p" "$(echo "$p" | tr '/' '-')"
             done
           fi
-          # The single-platform case keeps its historical file name so nothing
-          # downstream has to care which branch ran.
-          for f in trivy-sarif/*.sarif; do cp "$f" trivy-image.sarif; break; done
+          # One SARIF per platform cannot go to code-scanning as-is: the CodeQL
+          # action refuses several runs under one category, and a category per
+          # platform would split one image's alert list in two. Merge them into
+          # a single run instead — the platforms describe the same image.
+          # Re-indexing `ruleIndex` is the load-bearing part; the script does it.
+          python3 .catalog/scripts/merge-sarif-runs.py \
+            trivy-image.sarif trivy-sarif/*.sarif
+          # Same story for the JSON report the summary, the findings table and
+          # the annotations read: they expect ONE file at the historical name.
+          # Merging also stops a CVE present on both architectures from being
+          # counted twice (verified on a real image: naive summing reported 4
+          # findings where there were 2).
+          python3 .catalog/scripts/merge-trivy-json.py \
+            trivy-image.json trivy-image-*.json
 
       - name: Count findings
         id: count
         run: |
           set -euo pipefail
-          # Sum across platforms: a finding present only on arm64 must still
-          # fail the gate.
-          COUNT=$(jq -s '[.[].Results[]? | (.Vulnerabilities // []) + (.Secrets // []) + (.Misconfigurations // []) | length] | add // 0' trivy-image-*.json)
+          # Count the MERGED report, not the per-platform files. It still covers
+          # every architecture — a finding present only on arm64 fails the gate —
+          # but a finding present on both is one finding, not two.
+          COUNT=$(jq '[.Results[]? | (.Vulnerabilities // []) + (.Secrets // []) + (.Misconfigurations // []) | length] | add // 0' trivy-image.json)
           echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
 
       - name: Upload SARIF to code-scanning
@@ -198,10 +210,12 @@ jobs:
         if: inputs.upload_sarif && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
-          # A directory uploads every platform's SARIF under one category —
-          # they describe the same image, so merging them is what a reader
-          # wants; splitting by platform would only fragment the alert list.
-          sarif_file: trivy-sarif
+          # A single merged run. Uploading the directory instead made the
+          # CodeQL action reject the whole scan once a caller passed two
+          # platforms ("does not support uploading multiple SARIF runs with
+          # the same category"). The per-platform files still ship as the
+          # artifact below.
+          sarif_file: trivy-image.sarif
           # Per image, so parallel scans in one run do not overwrite each
           # other's code-scanning results.
           category: trivy-image:${{ steps.slug.outputs.slug }}
@@ -210,7 +224,13 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: trivy-image-sarif-${{ steps.slug.outputs.slug }}
-          path: trivy-sarif
+          # The per-platform files keep the detail; the merged pair is what
+          # code-scanning and the summary actually consume, and what the
+          # integration assertion inspects.
+          path: |
+            trivy-sarif
+            trivy-image.sarif
+            trivy-image.json
           if-no-files-found: error
           retention-days: 7
 
@@ -222,6 +242,7 @@ jobs:
           FAIL_ON_FINDINGS: ${{ inputs.fail_on_findings }}
           COUNT: ${{ steps.count.outputs.findings_count }}
           REPORT: trivy-image.json
+          SLUG: ${{ steps.slug.outputs.slug }}
           SARIF_UPLOADED: ${{ steps.sarif.outcome == 'success' }}
           ALERTS_BASE: ${{ github.server_url }}/${{ github.repository }}/security/code-scanning
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -269,7 +290,9 @@ jobs:
               if [[ "$SARIF_UPLOADED" == "true" ]]; then
                 echo "**Code scanning:** [open Trivy alerts](${ALERTS_URL})"
               fi
-              echo "**Full report:** SARIF artifact \`trivy-image-sarif\` on the [run page](${RUN_URL})"
+              # Name the artifact that actually exists: it carries the image
+              # slug so parallel scans in one run stay apart.
+              echo "**Full report:** SARIF artifact \`trivy-image-sarif-${SLUG}\` on the [run page](${RUN_URL})"
             fi
           } >> "$GITHUB_STEP_SUMMARY" || true
 

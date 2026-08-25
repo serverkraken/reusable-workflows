@@ -171,6 +171,13 @@ jobs:
       ignore_unfixed: false   # alpine:3.15 HIGH/CRITICAL CVEs all have upstream fixes; without this the test detects 0
       fail_on_findings: false   # don't fail the job; we assert on findings_count below
       upload_sarif: false
+      # Two platforms on purpose. Every caller here used to scan a single one,
+      # so the multi-platform wiring had no coverage at all and three bugs in it
+      # reached an adopter's release instead: the SARIF upload rejected for
+      # carrying several runs under one category, trivy-image.json no longer
+      # written (summary silently showed 0/0/0/0), and one CVE on both arches
+      # counted twice. assert-trivy-image-cve-merges-platforms guards the shape.
+      platforms: linux/amd64,linux/arm64
 
   assert-trivy-image-cve-finds-vulns:
     needs: test-trivy-image-cve
@@ -187,6 +194,50 @@ jobs:
           fi
           echo "trivy-image correctly detected $COUNT vulns"
 
+  # ----- multi-platform merge: the shape code-scanning and the summary need.
+  #       A directory of per-platform SARIFs is rejected by the CodeQL action
+  #       ("multiple SARIF runs with the same category"), and the summary reads
+  #       trivy-image.json by that exact name. Both are asserted here because
+  #       upload_sarif is off in CI, so the upload itself cannot be exercised.
+  assert-trivy-image-cve-merges-platforms:
+    needs: test-trivy-image-cve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          # Matched by pattern rather than the exact slug: the scan derives the
+          # artifact name from image_ref, so spelling it out here would break
+          # on a repo rename.
+          pattern: trivy-image-sarif-*test-fixture-cve
+          merge-multiple: true
+          path: report
+      - name: Assert one SARIF run and a merged JSON report
+        run: |
+          set -euo pipefail
+          runs=$(jq '.runs | length' report/trivy-image.sarif)
+          if [[ "$runs" != "1" ]]; then
+            echo "::error::merged SARIF carries $runs runs; code-scanning rejects more than one per category"
+            exit 1
+          fi
+          # Every result must point at its own rule: ruleIndex is a position in
+          # tool.driver.rules, so a copied index mislabels the alert.
+          bad=$(jq -r '.runs[0] as $r | [$r.results[]? | select($r.tool.driver.rules[.ruleIndex].id != .ruleId) | .ruleId] | length' report/trivy-image.sarif)
+          if [[ "$bad" != "0" ]]; then
+            echo "::error::$bad SARIF result(s) point at the wrong rule after merging"
+            exit 1
+          fi
+          # The name the summary and the annotations read.
+          jq -e '.Results' report/trivy-image.json > /dev/null
+          # Both platforms were scanned and kept as detail.
+          shopt -s nullglob
+          per_platform=(report/trivy-sarif/*.sarif)
+          if [[ "${#per_platform[@]}" != "2" ]]; then
+            echo "::error::expected 2 per-platform SARIFs, found ${#per_platform[@]}"
+            exit 1
+          fi
+          echo "merged SARIF: 1 run, rule indices consistent, JSON report present, 2 platforms scanned"
+
   # ----- cleanup-images smoke: verify the workflow accepts inputs -----
   # Runs after all image scans complete so prerelease tags aren't deleted
   # before scanning finishes.
@@ -194,6 +245,7 @@ jobs:
     needs:
       - test-trivy-image-happy
       - assert-trivy-image-cve-finds-vulns
+      - assert-trivy-image-cve-merges-platforms
     uses: ./.github/workflows/cleanup-images.yml
     with:
       package_name: ${{ github.event.repository.name }}/test-fixture
