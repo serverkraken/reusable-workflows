@@ -545,6 +545,10 @@ jobs:
       dart_define_secret_names: "GREETING"
       artefact_name_prefix: catalog-test-flutter-app
 
+  # summary-exempt: Aufraeumjob, kein Test. Er loescht das Fixture-Release
+  # und schluckt den Fehler per '|| true', kann also gar nicht rot werden;
+  # ihn in needs: zu haengen wuerde dem Required Check eine Zusicherung
+  # andichten, die er nicht gibt.
   cleanup-flutter-release:
     needs: [test-release-flutter-android]
     if: always()
@@ -586,6 +590,7 @@ jobs:
       - test-trivy-image-cve
       - assert-trivy-image-cve-finds-vulns
       - test-cleanup-images
+      - test-cleanup-images-missing-package
       - test-semantic-release-dry-run
       - assert-semantic-release-outputs
       - test-onboard-dry-run
