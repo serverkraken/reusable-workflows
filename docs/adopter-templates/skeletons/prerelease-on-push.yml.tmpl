@@ -23,9 +23,23 @@ jobs:
       create_release: true
       prerelease: true
       dart_define_secret_names: {{`${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}`}}
-{{- else if eq (len $c.dockerfiles) 1 }}
-{{- $df := index $c.dockerfiles 0 }}
-  build:
+{{- else if gt (len $c.dockerfiles) 0 }}
+{{- /* One build+scan pair per Dockerfile, mirroring release.yml.tmpl. The
+     multi-image path here used to be a single docker-build-multi call; that
+     atom exposes no per-image outputs, so nothing could be scanned and every
+     image this workflow pushed on a `develop` push shipped unscanned. This is
+     the branch adopters push to most often. */ -}}
+{{- range $idx, $df := $c.dockerfiles }}
+{{- $imgSuffix := "" }}
+{{- if gt (len $c.dockerfiles) 1 }}
+  {{- $base := path.Base $df.image_name -}}
+  {{- $base = regexp.Replace "[$]" "" $base -}}
+  {{- $base = regexp.Replace "[^A-Za-z0-9_-]" "-" $base -}}
+  {{- $imgSuffix = printf "-%s" (strings.ToLower $base) -}}
+{{- end }}
+{{- if gt $idx 0 }}
+{{ end }}
+  build{{ $imgSuffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}
     permissions:
       contents: read
@@ -39,11 +53,14 @@ jobs:
       prerelease: true
       dockerfile: {{ $df.path }}
       image_name: {{ $df.image_name }}
+    {{- if (index $df "platforms") }}
+      platforms: {{ index $df "platforms" }}
+    {{- end }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
-  scan:
-    needs: build
+  scan{{ $imgSuffix }}:
+    needs: build{{ $imgSuffix }}
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
     permissions:
       contents: read
@@ -52,31 +69,32 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: {{`${{ needs.build.outputs.image_ref }}`}}
+      image_ref: {{ printf "${{ needs.build%s.outputs.image_ref }}" $imgSuffix }}
+    {{- if (index $df "scanners") }}
+      scanners: {{ index $df "scanners" }}
+    {{- end }}
+    {{- /* Ohne dies scannt Trivy bei einem Multi-Arch-Tag nur eine Plattform
+         (Vorgabe linux/amd64) — die andere gepushte Architektur bliebe
+         ungescannt. Fehlte hier bis zum L-1-Fix, auch im Single-Image-Fall. */}}
+    {{- if (index $df "platforms") }}
+      platforms: {{ index $df "platforms" }}
+    {{- else }}
+      platforms: linux/amd64,linux/arm64
+    {{- end }}
+    {{- if (index $df "severity") }}
+      severity: {{ index $df "severity" }}
+    {{- else }}
       severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
+    {{- end }}
       trivy_version: {{`${{ vars.SK_TRIVY_VERSION || '' }}`}}
-{{- else if gt (len $c.dockerfiles) 1 -}}
-{{- $images := coll.Slice -}}
-{{- range $c.dockerfiles -}}
-  {{- $images = coll.Append (coll.Dict "dockerfile" .path "image_name" .image_name) $images -}}
+    {{- if has $df "upload_sarif" }}
+      upload_sarif: {{ index $df "upload_sarif" }}
+    {{- end }}
+    {{- if has $df "fail_on_findings" }}
+      fail_on_findings: {{ index $df "fail_on_findings" }}
+    {{- end }}
 {{- end }}
-  build:
-    uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@{{ $pin }}
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-      artifact-metadata: write
-      pull-requests: write
-    secrets: inherit
-    with:
-      prerelease: true
-      images: |
-        {{ $images | toJSON }}
-      sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
-      attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
-      sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
+
 {{- else }}
   # No prerelease-able artifact for this component.
   noop:
