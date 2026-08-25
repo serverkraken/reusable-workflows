@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.18.5](https://github.com/serverkraken/reusable-workflows/compare/v4.18.4...v4.18.5) (2026-08-25)
+
+
+### Bug Fixes
+
+* **defaults:** Eine leere Konfigurationsdatei haette den Branch-Schutz abgeraeumt ([#286](https://github.com/serverkraken/reusable-workflows/issues/286)) ([d2350d4](https://github.com/serverkraken/reusable-workflows/commit/d2350d44542bccd701a126fe7f55c9eea7146a88))
+* **docs:** Default-Spalte driftete von der Quelle weg - und kein Gate sah hin ([#288](https://github.com/serverkraken/reusable-workflows/issues/288)) ([38ed9b1](https://github.com/serverkraken/reusable-workflows/commit/38ed9b1a90fc28fd11c53beb9bda2476e05fc3b7))
+* **kube-validate:** Ein Gate, das nichts geprueft hat, meldete Erfolg ([#285](https://github.com/serverkraken/reusable-workflows/issues/285)) ([b18d014](https://github.com/serverkraken/reusable-workflows/commit/b18d01476bf654d45393e833ceb2e7981dc1393c))
+* **render:** Ein Golden schrieb eine Registry fest, die es nicht gibt ([#282](https://github.com/serverkraken/reusable-workflows/issues/282)) ([adf05ac](https://github.com/serverkraken/reusable-workflows/commit/adf05ac3ecafba65ab4c90ffb5a2e5f15c26eb0a))
+* **templates:** Ein Punkt im Komponentenpfad machte die ganze Workflow-Datei ungueltig ([#287](https://github.com/serverkraken/reusable-workflows/issues/287)) ([0e02aa4](https://github.com/serverkraken/reusable-workflows/commit/0e02aa4d5f0ed7962a97991a7dc02c5cb535da9b))
+
 ## [4.18.4](https://github.com/serverkraken/reusable-workflows/compare/v4.18.3...v4.18.4) (2026-08-25)
 
 
