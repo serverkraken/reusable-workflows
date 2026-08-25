@@ -135,3 +135,67 @@ r = json.load(open('out.json'))['Results'][0]
 print(f\"{len(r['Secrets'])},{len(r['Misconfigurations'])}\")"
   [ "$output" = "1,1" ]
 }
+
+# Found by the 2026-08-25 audit: keying a misconfiguration on the rule alone
+# collapsed two violations of the same rule at different places in one file
+# into one, under-counting the gate and losing an annotation.
+@test "two violations of one rule at different lines stay two findings" {
+  python3 - <<'PY'
+import json
+json.dump({"SchemaVersion": 2, "Results": [{
+    "Target": "Dockerfile", "Class": "config", "Type": "dockerfile",
+    "Misconfigurations": [
+        {"ID": "DS002", "AVDID": "AVD-DS-0002", "Namespace": "ns", "Query": "q",
+         "CauseMetadata": {"StartLine": 3, "EndLine": 3}},
+        {"ID": "DS002", "AVDID": "AVD-DS-0002", "Namespace": "ns", "Query": "q",
+         "CauseMetadata": {"StartLine": 42, "EndLine": 42}},
+    ]}]}, open("a.json", "w"))
+PY
+  run python3 "$SCRIPT" out.json a.json
+  [ "$status" -eq 0 ]
+  run python3 -c "
+import json
+print(len(json.load(open('out.json'))['Results'][0]['Misconfigurations']))"
+  [ "$output" = "2" ]
+}
+
+# The same violation seen on both architectures is still ONE finding — that is
+# what the merge exists for.
+@test "the same violation on two platforms collapses to one" {
+  python3 - <<'PY'
+import json
+doc = {"SchemaVersion": 2, "Results": [{
+    "Target": "Dockerfile", "Class": "config", "Type": "dockerfile",
+    "Misconfigurations": [
+        {"ID": "DS002", "AVDID": "AVD-DS-0002", "Namespace": "ns", "Query": "q",
+         "CauseMetadata": {"StartLine": 3, "EndLine": 3}}]}]}
+json.dump(doc, open("a.json", "w"))
+json.dump(doc, open("b.json", "w"))
+PY
+  run python3 "$SCRIPT" out.json a.json b.json
+  [ "$status" -eq 0 ]
+  run python3 -c "
+import json
+print(len(json.load(open('out.json'))['Results'][0]['Misconfigurations']))"
+  [ "$output" = "1" ]
+}
+
+# Without CauseMetadata there is no location to key on; the rule identity must
+# still dedupe rather than fall back to keeping everything.
+@test "a misconfiguration without CauseMetadata still dedupes" {
+  python3 - <<'PY'
+import json
+json.dump({"SchemaVersion": 2, "Results": [{
+    "Target": "t", "Class": "config", "Type": "dockerfile",
+    "Misconfigurations": [
+        {"ID": "X", "AVDID": "A", "Namespace": "n", "Query": "q"},
+        {"ID": "X", "AVDID": "A", "Namespace": "n", "Query": "q"},
+    ]}]}, open("a.json", "w"))
+PY
+  run python3 "$SCRIPT" out.json a.json
+  [ "$status" -eq 0 ]
+  run python3 -c "
+import json
+print(len(json.load(open('out.json'))['Results'][0]['Misconfigurations']))"
+  [ "$output" = "1" ]
+}

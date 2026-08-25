@@ -256,9 +256,17 @@ jobs:
 {{- end }}
   chart-image-pins:
     needs: [{{ join $buildJobs ", " }}]
-    {{- /* One expression, not a mix: text outside ${{ }} makes the whole
+    {{- /* `!failure()` is the load-bearing half, `!cancelled()` the permissive
+         one. Builds of components that did NOT release are skipped, so a bare
+         success() gate would never let this job run — but `!cancelled()` alone
+         also passes when a build FAILED, and the job would then pin the chart
+         to a tag that was never pushed. That is the exact ImagePullBackOff the
+         `needs:` above exists to prevent (mailstack, v1.6.2). `!failure()` is
+         false as soon as any needed job failed, while skipped ones still pass.
+
+         One expression, not a mix: text outside ${{ }} makes the whole
          condition constant-true, which actionlint rejects. */}}
-    if: {{`${{ !cancelled() && needs.release-please.outputs.paths_released != '[]' }}`}}
+    if: {{`${{ !failure() && !cancelled() && needs.release-please.outputs.paths_released != '[]' }}`}}
     uses: serverkraken/reusable-workflows/.github/workflows/chart-image-bump.yml@{{ $pin }}
     permissions:
       contents: write
