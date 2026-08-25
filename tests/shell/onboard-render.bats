@@ -819,7 +819,14 @@ render_target_for_profile() {
   grep -qF "docker-build.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
 }
 
-@test "prerelease-on-push.yml multi-docker variant renders docker-build-multi reference" {
+@test "prerelease-on-push.yml multi-docker variant scans every image it pushes" {
+  # Hiess bis zum L-1-Fix "renders docker-build-multi reference" und pruefte
+  # genau das Gegenteil: `grep -qF docker-build-multi` plus ein
+  # `refute_grep docker-build.yml` — der Test VERBOT also den Fan-out, der
+  # ueberhaupt erst einen Scan ermoeglicht. docker-build-multi gibt keine
+  # Outputs je Image heraus; an einen solchen Aufruf laesst sich kein
+  # trivy-image haengen, und jedes gepushte Image ging ungescannt raus.
+  # Dieselbe Zusicherung wie oben fuer release.yml.
   tgt=$(render_target_for_profile '{
     "schema_version": 1, "target_repo": "serverkraken/svc",
     "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
@@ -832,10 +839,18 @@ render_target_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}],
     "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
   }')
-  [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
-  grep -qF "docker-build-multi.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
-  refute_grep -qE "docker-build\.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
-  grep -qF "prerelease: true" "$tgt/.github/workflows/prerelease-on-push.yml"
+  local wf="$tgt/.github/workflows/prerelease-on-push.yml"
+  [ -f "$wf" ]
+  refute_grep -q "docker-build-multi" "$wf"
+  # Zwei Images -> zwei Builds, zwei Scans, unter gueltigen Job-IDs.
+  [ "$(grep -cE '^  build-[A-Za-z0-9_-]+:$' "$wf")" -eq 2 ]
+  [ "$(grep -cE '^  scan-[A-Za-z0-9_-]+:$' "$wf")" -eq 2 ]
+  [ "$(grep -c "trivy-image.yml@v4" "$wf")" -eq 2 ]
+  [ "$(grep -c "docker-build.yml@v4" "$wf")" -eq 2 ]
+  grep -qF "prerelease: true" "$wf"
+  # Beide Architekturen scannen: Trivy nimmt sonst nur linux/amd64.
+  [ "$(grep -c "platforms: linux/amd64,linux/arm64" "$wf")" -eq 2 ]
+  refute_grep -qE '^  (build|scan)[^:]*\$' "$wf"
 }
 
 @test "integration: rendered prerelease + prerelease-on-push pass actionlint and yamllint" {

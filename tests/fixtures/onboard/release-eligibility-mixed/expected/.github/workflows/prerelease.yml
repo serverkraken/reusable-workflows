@@ -3,8 +3,8 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  build:
-    uses: serverkraken/reusable-workflows/.github/workflows/docker-build-multi.yml@v2
+  build-repo:
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
     permissions:
       contents: read
       packages: write
@@ -15,8 +15,86 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      images: |
-        [{"dockerfile":"Dockerfile","image_name":"repo"},{"dockerfile":"Dockerfile.dev","image_name":"repo-dev"},{"dockerfile":"Dockerfile.worker","image_name":"repo-worker"}]
+      dockerfile: Dockerfile
+      image_name: repo
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+  scan-repo:
+    needs: build-repo
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    secrets: inherit
+    with:
+      image_ref: ${{ needs.build-repo.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+
+  build-repo-dev:
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+      pull-requests: write
+    secrets: inherit
+    with:
+      prerelease: true
+      dockerfile: Dockerfile.dev
+      image_name: repo-dev
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+  scan-repo-dev:
+    needs: build-repo-dev
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    secrets: inherit
+    with:
+      image_ref: ${{ needs.build-repo-dev.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+
+  build-repo-worker:
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+      pull-requests: write
+    secrets: inherit
+    with:
+      prerelease: true
+      dockerfile: Dockerfile.worker
+      image_name: repo-worker
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+  scan-repo-worker:
+    needs: build-repo-worker
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    secrets: inherit
+    with:
+      image_ref: ${{ needs.build-repo-worker.outputs.image_ref }}
+      platforms: linux/amd64,linux/arm64
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
