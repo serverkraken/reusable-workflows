@@ -800,6 +800,58 @@ GHEOF
   echo "$output" | jq -e '.components[0].release_signals.flutter_android == true'
 }
 
+# === Flutter: Abstand hinter `sdk:` (Audit M-1) ===
+#
+# Jede eingecheckte Fixture schreibt genau ein Leerzeichen. Deshalb ist nie
+# aufgefallen, dass Bash und Go sich hier uneinig waren: Bash nahm
+# `sdk:[[:space:]]*flutter` (Stern), Go verglich woertlich mit "sdk: flutter".
+# Zwei Leerzeichen und ein Tab sind gueltiges YAML mit derselben Bedeutung —
+# der Go-Pfad, und der ist der Standard, hat solche Repos als `simple`
+# gerendert, also ohne einen einzigen Flutter-Job. Umgekehrt las Bash
+# `sdk:flutter` als Flutter, obwohl YAML das gar nicht als Mapping liest.
+#
+# Die Fixtures entstehen hier statt unter tests/fixtures/, weil sie nur den
+# Abstand variieren; drei fast gleiche Fixture-Baeume waeren mehr Rauschen als
+# Nutzen.
+
+_pubspec_fixture() { # $1 = Zielverzeichnis, $2 = die sdk-Zeile
+  mkdir -p "$1/lib"
+  printf 'name: demo\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\ndependencies:\n  flutter:\n    %s\n' "$2" > "$1/pubspec.yaml"
+  echo "void main() {}" > "$1/lib/main.dart"
+}
+
+@test "flutter: zwei Leerzeichen hinter sdk: werden erkannt" {
+  _pubspec_fixture "$BATS_TEST_TMPDIR/two" "sdk:  flutter"
+  run "$DETECT" "$BATS_TEST_TMPDIR/two"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=flutter"* ]]
+}
+
+@test "flutter: Tab hinter sdk: wird erkannt" {
+  _pubspec_fixture "$BATS_TEST_TMPDIR/tab" "$(printf 'sdk:\tflutter')"
+  run "$DETECT" "$BATS_TEST_TMPDIR/tab"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=flutter"* ]]
+}
+
+@test "flutter: sdk:flutter ohne Leerzeichen ist KEIN Flutter-Repo" {
+  # YAML verlangt hinter dem Doppelpunkt Whitespace; ohne ihn ist die Zeile ein
+  # Skalar und erklaert keine Abhaengigkeit. Die alte Bash-Regel (Stern) hat sie
+  # trotzdem als Flutter gezaehlt.
+  _pubspec_fixture "$BATS_TEST_TMPDIR/none" "sdk:flutter"
+  run "$DETECT" "$BATS_TEST_TMPDIR/none"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=simple"* ]]
+  [[ "$output" != *"language=flutter"* ]]
+}
+
+@test "flutter: kanonische Schreibweise bleibt unveraendert erkannt" {
+  _pubspec_fixture "$BATS_TEST_TMPDIR/one" "sdk: flutter"
+  run "$DETECT" "$BATS_TEST_TMPDIR/one"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"language=flutter"* ]]
+}
+
 # === topics ===
 
 @test "profile-json: topics defaults to [] when TARGET_REPO unset" {

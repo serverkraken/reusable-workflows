@@ -1,3 +1,13 @@
+# Fixture: so sieht CI in einem Adopter-Repo aus, BEVOR der Katalog es
+# uebernimmt. Der Legacy-Scan erkennt daran `docker/build-push-action` und
+# schlaegt docker-build.yml als Ersatz vor.
+#
+# Die Action ist hier mit Absicht NICHT auf eine SHA gepinnt (Audit M-6,
+# geprueft und verworfen): die Datei wird nie ausgefuehrt, und sie soll
+# aussehen wie das, was Adopter tatsaechlich mitbringen. Ein gepinntes
+# Beispiel waere ein schlechteres Beispiel. Die Erkennung haengt ohnehin nur
+# am Action-NAMEN, nicht an der Version — siehe
+# scripts/lib/onboard-detect-lib.sh und internal/app/detect/service.go.
 name: build
 on: [push]
 jobs:

@@ -731,8 +731,31 @@ func languagesAt(dir string) []string {
 	return langs
 }
 
+// FlutterSDKDepPattern ist woertlich dasselbe Muster, das
+// `_component_is_flutter` in scripts/lib/onboard-detect-lib.sh an `grep -E`
+// uebergibt. Dass es sich um dieselbe Zeichenkette handelt, ist keine
+// Bequemlichkeit, sondern der Kern des Fixes: die beiden Detektoren sind
+// auseinandergelaufen (Audit M-1), und ein Test vergleicht diese Konstante
+// jetzt mit der Bash-Quelle, damit sie nicht erneut auseinanderlaufen koennen.
+//
+// Die fruehere Go-Fassung verglich woertlich mit "sdk: flutter" und uebersah
+// dadurch `sdk:  flutter` und `sdk:\tflutter` — beides gueltiges YAML mit
+// genau derselben Bedeutung. Weil `use_go_cli` standardmaessig an ist, wurde
+// ein solches Flutter-Repo als `simple` gerendert, also ganz ohne Flutter-Job.
+//
+// `[[:blank:]]` und nicht `\s`: `\s` schliesst den Zeilenumbruch ein, das
+// zeilenweise arbeitende `grep` kann ihn nie treffen. `[[:blank:]]` ist auf
+// beiden Seiten exakt Space und Tab.
+//
+// Ein Plus, kein Stern: `sdk:flutter` ohne Leerzeichen ist in YAML gar kein
+// Mapping, sondern ein Skalar — die Datei erklaert damit keine Abhaengigkeit.
+// Die alte Bash-Fassung (`*`) hat sie faelschlich als Flutter gelesen.
+const FlutterSDKDepPattern = `sdk:[[:blank:]]+flutter`
+
+var flutterSDKDep = regexp.MustCompile(FlutterSDKDepPattern)
+
 func isFlutter(dir string) bool {
-	return has(dir, "pubspec.yaml") && strings.Contains(mustRead(filepath.Join(dir, "pubspec.yaml")), "sdk: flutter")
+	return has(dir, "pubspec.yaml") && flutterSDKDep.MatchString(mustRead(filepath.Join(dir, "pubspec.yaml")))
 }
 
 func inventoryDockerfiles(repo, componentPath, imageOverride string) []domain.Dockerfile {

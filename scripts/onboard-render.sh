@@ -45,6 +45,35 @@ if [[ ! -f "$PROFILE" ]]; then
   exit 1
 fi
 
+# Welche Dateien gerendert werden, entscheidet dieses Skript — nicht die
+# Templates. Was diese Entscheidung beeinflusst und hier unbekannt ist, faellt
+# deshalb still unter den Tisch, statt aufzufallen.
+#
+# `.workflows.e2e` (Audit M-5): der Go-Renderer rendert daraus zusaetzlich
+# `.github/workflows/e2e.yml` und nimmt sie in den Lock auf. Diese Engine kennt
+# das Feld nicht. Dasselbe Profil durch beide Engines, vor dieser Aenderung
+# gemessen:
+#
+#   bash: rc=0, 4 Workflows   go: rc=0, 5 Workflows (… + e2e.yml)
+#
+# Der Lock wies anschliessend vier Dateien als den vollstaendigen Stand aus,
+# und die Drift-Pruefung haette dem nie widersprochen.
+#
+# Abgewiesen statt nachgebaut: die Dateiauswahl in zwei Sprachen synchron zu
+# halten ist genau das, woran M-5 entstanden ist. Wer e2e braucht, nimmt die
+# Engine, die es kann.
+#
+# Geprueft wird `.workflows.e2e`, nicht `.workflows` — dieselbe Bedingung, die
+# der Go-Renderer verwendet (`profile.Workflows != nil && .E2E != nil`).
+# Manifest-Profile rendern regelmaessig durch diese Engine und tragen dabei ein
+# leeres `"workflows": {}`; das ist keine Deklaration. Ein Guard auf blosse
+# Anwesenheit hat prompt fuenf bestehende Tests abgewiesen, die voellig zu Recht
+# hier rendern.
+if jq -e '(.workflows.e2e // null) != null' "$PROFILE" >/dev/null 2>&1; then
+  echo "::error::profile declares .workflows.e2e; the shell renderer cannot render e2e.yml. Re-run with use_go_cli: true." >&2
+  exit 1
+fi
+
 MONOREPO=$(jq -r '.monorepo' "$PROFILE")
 
 # GitOps profiles render ci.yml ONLY — never release-please / prerelease /

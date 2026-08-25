@@ -38,9 +38,20 @@ WARNING_EXEMPT_LANGUAGES="${SUPPORTED_LINT_TEST_LANGUAGES}|gitops"
 # True when pubspec.yaml exists AND declares the Flutter SDK dependency
 # (`sdk: flutter`) — every Flutter app/package has it; a pure-Dart package
 # does not.
+#
+# `[[:blank:]]+` — one or more spaces/tabs, deliberately not `*` and not
+# `[[:space:]]`:
+#   * zero would match `sdk:flutter`, which YAML does not read as a mapping at
+#     all (a colon needs trailing whitespace), so such a file declares no
+#     Flutter dependency. The old `*` claimed it did.
+#   * `[[:space:]]` would drift from the Go side, which matches within a line;
+#     `[[:blank:]]` is exactly space+tab, so both sides agree by construction.
+# Two spaces or a tab ARE valid YAML and do mean Flutter — the Go detector used
+# to miss those and rendered such repos as `simple`, i.e. without any Flutter
+# lint/test/build job at all.
 _component_is_flutter() {
   local dir="$1"
-  [[ -f "$dir/pubspec.yaml" ]] && grep -qE 'sdk:[[:space:]]*flutter' "$dir/pubspec.yaml"
+  [[ -f "$dir/pubspec.yaml" ]] && grep -qE 'sdk:[[:blank:]]+flutter' "$dir/pubspec.yaml"
 }
 
 # GitOps cluster-template detection. Arg: repo root.
