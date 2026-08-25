@@ -54,9 +54,14 @@ jobs:
       context: tests/fixtures/minimal-go
       dockerfile: tests/fixtures/minimal-go/Dockerfile
       image_name: ${{ github.repository }}/test-fixture
-      # Exercises the optional ref input end-to-end (same SHA the default
-      # checkout would resolve, so the build itself stays unchanged).
-      ref: ${{ github.sha }}
+      # Exercises the optional ref input end-to-end. Deliberately the PR HEAD
+      # and not github.sha: on a pull_request those differ (github.sha is the
+      # merge commit), and that difference is the whole point — it is what
+      # lets assert-attestation-verifies prove the attestation names the
+      # commit that was BUILT rather than the one that triggered the run.
+      # Until 2026-08-25 this passed github.sha, so the assertion could not
+      # have distinguished the two and the defect went unseen.
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
       sign: true
       attest: true
       sbom: true
@@ -98,6 +103,38 @@ jobs:
           # cosign's exit code is the actual verification signal.
           jq empty /tmp/att.json
           echo "Cosign SLSA attestation verifies for $IMG_REF"
+
+      - name: Assert the attestation names the commit that was built
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          attested=$(head -n1 /tmp/att.json | jq -r '.payload' | base64 -d \
+            | jq -r '.predicate.invocation.configSource.digest.sha1')
+          echo "attested=$attested  built=$EXPECTED_SHA"
+          if [[ "$attested" != "$EXPECTED_SHA" ]]; then
+            echo "::error::attestation names $attested, but the image was built from $EXPECTED_SHA"
+            exit 1
+          fi
+
+      - name: Assert the moving tag resolves to the signed digest
+        # Phase 2 of the two-phase publish. The moving tag is pushed only
+        # after cosign has signed the digest, so verifying it by name must
+        # succeed — if it were pushed before signing, or pointed at a
+        # different manifest, this fails.
+        env:
+          MOVING_REF: ${{ needs.test-docker-build.outputs.moving_ref }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$MOVING_REF" ]]; then
+            echo "::error::no moving_ref published — this fixture builds a prerelease and must have one"
+            exit 1
+          fi
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp '^https://github\.com/serverkraken/reusable-workflows/\.github/workflows/docker-build\.yml@' \
+            "$MOVING_REF" > /dev/null
+          echo "Moving tag $MOVING_REF carries the signature from the version tag"
 
   # ----- trivy-image happy path (no findings against clean fixture) -----
   test-trivy-image-happy:
