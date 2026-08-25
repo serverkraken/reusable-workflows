@@ -10,12 +10,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/serverkraken/reusable-workflows/internal/adapters/catalogscripts"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/defaultsfs"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/gitcli"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/githubcli"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/godetect"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/gomplate"
+	"github.com/serverkraken/reusable-workflows/internal/adapters/gorender"
 	defaultsapp "github.com/serverkraken/reusable-workflows/internal/app/defaults"
 	"github.com/serverkraken/reusable-workflows/internal/app/detect"
 	"github.com/serverkraken/reusable-workflows/internal/app/drift"
@@ -179,7 +179,9 @@ func runDrift(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		// left render-and-compare permanently broken for manifest repos while
 		// status still read "clean". See internal/adapters/godetect.
 		Detector: godetect.Adapter{GitHub: githubcli.Client{}},
-		Renderer: catalogscripts.Adapter{},
+		// In-process renderer, not the Bash script: that one emits six files
+		// where the Go path emits seven, so e2e.yml was never compared.
+		Renderer: gorender.Adapter{Templates: gomplate.Adapter{}},
 		Git:      gitcli.Client{},
 	}).Drift(ctx, drift.Request{
 		TargetPath:     *targetPath,
