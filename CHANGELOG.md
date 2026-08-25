@@ -14,6 +14,7 @@
 * **cleanup:** Retention zaehlt Releases statt Versionsobjekte ([#255](https://github.com/serverkraken/reusable-workflows/issues/255)) ([31bfe31](https://github.com/serverkraken/reusable-workflows/commit/31bfe31a41574311c208e7bbb330de0cc3380a7e))
 * **onboard:** extra-files-Pfad ist paketrelativ, nicht repo-relativ ([#248](https://github.com/serverkraken/reusable-workflows/issues/248)) ([8cd6b21](https://github.com/serverkraken/reusable-workflows/commit/8cd6b21577af040d60de1f2a936334f66b62bf7d))
 * **release:** vier Audit-Funde, die ohne Angreifer wirken ([#251](https://github.com/serverkraken/reusable-workflows/issues/251)) ([4145062](https://github.com/serverkraken/reusable-workflows/commit/4145062b26f395da983cc4bbbadcc214cf01f41b))
+* SARIF-Slugs und Python-Coverage nachziehen ([#253](https://github.com/serverkraken/reusable-workflows/issues/253)/[#254](https://github.com/serverkraken/reusable-workflows/issues/254) verlorengegangen) ([#257](https://github.com/serverkraken/reusable-workflows/issues/257)) ([2e9c881](https://github.com/serverkraken/reusable-workflows/commit/2e9c88161c543d337a5d9261ab49b2e0b2f7ae85))
 
 ## [4.17.1](https://github.com/serverkraken/reusable-workflows/compare/v4.17.0...v4.17.1) (2026-08-25)
 
