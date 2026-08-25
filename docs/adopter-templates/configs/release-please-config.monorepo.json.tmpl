@@ -43,9 +43,21 @@
      only `version:`, so a chart's appVersion otherwise freezes at whatever it
      held when the chart became its own package — and that stale value is what
      app.kubernetes.io/version and the install notes show. The generic updater
-     picks up the x-release-please-version marker on the appVersion line. */}}
+     picks up the x-release-please-version marker on the appVersion line.
+
+     The path is relative to the PACKAGE, not to the repo root. Spelling it
+     from the root made release-please look for
+     charts/mailstack/charts/mailstack/Chart.yaml, log "did not exist" and
+     move on — the release still went out, with appVersion untouched.
+
+     Same two cases release.yml.tmpl distinguishes for helm-publish: a
+     manifest-declared chart component carries no release_signals.chart_yaml
+     and holds its Chart.yaml at its own root, while a detected chart names
+     the file explicitly and may keep it in a sub-directory. */}}
 {{- if (index . "app_version") }}
-      "extra-files": [{ "type": "generic", "path": "{{ .path }}/Chart.yaml" }],
+{{- $chartRel := "Chart.yaml" }}
+{{- if .release_signals.chart_yaml }}{{ $chartRel = strings.TrimPrefix (printf "%s/" .path) .release_signals.chart_yaml }}{{ end }}
+      "extra-files": [{ "type": "generic", "path": "{{ $chartRel }}" }],
 {{- end }}
       "include-component-in-tag": true
     }
