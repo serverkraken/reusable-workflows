@@ -50,6 +50,8 @@ jobs:
         run: bash tests/conventions/check-run-interpolation.sh
       - name: Check every job is inside a required check
         run: bash tests/conventions/check-summary-coverage.sh
+      - name: Check goldens do not freeze invalid rendered values
+        run: bash tests/conventions/check-rendered-goldens.sh
 
   renovate-config-check:
     runs-on: ubuntu-latest
