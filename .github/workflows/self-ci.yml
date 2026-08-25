@@ -389,10 +389,20 @@ jobs:
           set -euo pipefail
           profile="$(mktemp)"
           ./scripts/onboard-detect.sh --profile-json tests/fixtures/onboard/go-repo > "$profile"
+          # Hier ist der Inhalt einfachzeiliges Fixture-JSON, eine Kollision
+          # also praktisch ausgeschlossen. Trotzdem derselbe Umgang wie an den
+          # beiden echten Fundstellen: die Idiome sollen sich nicht
+          # unterscheiden, sonst wird beim naechsten Kopieren die falsche
+          # Vorlage erwischt.
+          DELIM="profile_$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          if grep -qxF "$DELIM" "$profile"; then
+            echo "::error::generated delimiter collides with the profile" >&2
+            exit 1
+          fi
           {
-            echo 'profile_json<<EOF'
+            echo "profile_json<<$DELIM"
             cat "$profile"
-            echo EOF
+            echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
       - name: Render fixture
         uses: ./actions/onboard-render
