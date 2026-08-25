@@ -29,6 +29,17 @@ on:
         required: false
         type: boolean
         default: true
+      report_slug:
+        description: >-
+          Suffix that makes this call's SARIF category and artifact name
+          unique. Required when a repo calls this atom more than once in the
+          same workflow: GitHub keeps one analysis per category, so a shared
+          category makes the second upload REPLACE the first, and the shared
+          artifact name fails the run outright. Empty (the default) keeps the
+          historical names, so single-call adopters are unaffected.
+        required: false
+        type: string
+        default: ''
       trivy_version:
         description: 'Override Trivy version (defaults to install-trivy default).'
         required: false
@@ -192,6 +203,24 @@ jobs:
           echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "Found $COUNT severity-matching findings"
 
+      - name: Derive report slug
+        id: slug
+        env:
+          RAW: ${{ inputs.report_slug }}
+        run: |
+          set -euo pipefail
+          # Empty stays empty: that renders the historical category/artifact
+          # names, so nothing drifts for adopters calling this atom once.
+          slug="$(printf '%s' "${RAW:-}" | tr '/' '-' | tr -cd 'A-Za-z0-9._-')"
+          if [ -n "$slug" ]; then
+            echo "category=:$slug" >> "$GITHUB_OUTPUT"
+            echo "artifact=-$slug" >> "$GITHUB_OUTPUT"
+          else
+            echo "category=" >> "$GITHUB_OUTPUT"
+            echo "artifact=" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Report slug: ${slug:-<none>}"
+
       - name: Upload SARIF to code-scanning
         id: sarif
         # Fork-PR guard only: on push/schedule/dispatch there is no
@@ -200,12 +229,12 @@ jobs:
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
           sarif_file: trivy-fs.sarif
-          category: trivy-fs
+          category: trivy-fs${{ steps.slug.outputs.category }}
 
       - name: Upload SARIF as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: trivy-fs-sarif
+          name: trivy-fs-sarif${{ steps.slug.outputs.artifact }}
           path: trivy-fs.sarif
           if-no-files-found: error
           retention-days: 7

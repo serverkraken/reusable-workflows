@@ -115,6 +115,10 @@ jobs:
     uses: ./.github/workflows/trivy-fs.yml
     secrets: inherit
     with:
+      # Two trivy-fs calls in one workflow: without report_slug both upload an
+      # artifact called `trivy-fs-sarif` and nobody can tell which scan produced
+      # which (verified on run 32843843244 — two same-named artifacts, green run).
+      report_slug: happy
       paths_ignore: |
         tests/fixtures/with-secret
         tests/fixtures/lint-test/helm-lint-fail
@@ -127,6 +131,7 @@ jobs:
     uses: ./.github/workflows/trivy-fs.yml
     secrets: inherit
     with:
+      report_slug: findings
       paths_ignore: |
         tests/fixtures/lint-test/helm-lint-fail
         tests/fixtures/gitops-planted-secret

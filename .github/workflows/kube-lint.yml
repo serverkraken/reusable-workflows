@@ -35,6 +35,17 @@ on:
         required: false
         type: boolean
         default: true
+      report_slug:
+        description: >-
+          Suffix that makes this call's SARIF category and artifact name
+          unique. Required when a repo calls this atom more than once in the
+          same workflow: GitHub keeps one analysis per category, so a shared
+          category makes the second upload REPLACE the first, and the shared
+          artifact name fails the run outright. Empty (the default) keeps the
+          historical names, so single-call adopters are unaffected.
+        required: false
+        type: string
+        default: ''
       runs_on:
         description: 'JSON-encoded array of runner labels.'
         required: false
@@ -132,12 +143,30 @@ jobs:
           COUNT=${COUNT:-0}
           echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "kube-linter findings: $COUNT"
+      - name: Derive report slug
+        id: slug
+        env:
+          RAW: ${{ inputs.report_slug }}
+        run: |
+          set -euo pipefail
+          # Empty stays empty: that renders the historical category/artifact
+          # names, so nothing drifts for adopters calling this atom once.
+          slug="$(printf '%s' "${RAW:-}" | tr '/' '-' | tr -cd 'A-Za-z0-9._-')"
+          if [ -n "$slug" ]; then
+            echo "category=:$slug" >> "$GITHUB_OUTPUT"
+            echo "artifact=-$slug" >> "$GITHUB_OUTPUT"
+          else
+            echo "category=" >> "$GITHUB_OUTPUT"
+            echo "artifact=" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Report slug: ${slug:-<none>}"
+
       - name: Upload SARIF to code-scanning
         if: inputs.upload_sarif && github.event.pull_request.head.repo.full_name == github.repository
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
           sarif_file: kube-linter.sarif
-          category: kube-lint
+          category: kube-lint${{ steps.slug.outputs.category }}
       - name: Summary
         if: always()
         env:
