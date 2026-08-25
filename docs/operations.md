@@ -204,7 +204,7 @@ All results land in a single rolling Issue in this repo titled exactly `Onboardi
 | `behind+modified` | Both | Re-dispatch `onboard.yml`; the bot PR will reset hand-edits and bump the pin in one shot |
 | `no-lock` | `.github/onboard.lock.json` is missing — adopter was onboarded before Phase 3 added the lock file | Re-dispatch `onboard.yml` once to write the lock |
 | `stale-lock` | Hashes match, but a re-render at current catalog HEAD would produce different files — also when `.github/onboard.yml` changed since the last render | Re-dispatch `onboard.yml` to pick up the template (or manifest) change |
-| `error` | Drift action failed (target inaccessible, malformed lock, …) | Click through to the matrix job for the failing target |
+| `error` | Drift could not be evaluated: the drift action failed (target inaccessible, malformed lock), or the re-render itself broke (detect or render exited non-zero — `render_error` names the phase). Not a clean bill of health, and never reported as `clean` | Read `render_error` in the report row; click through to the matrix job for the failing target |
 
 ### 7.3 Manual dispatch
 
@@ -278,7 +278,7 @@ The `behind+modified` status remains skipped: those repos have local modificatio
 
 ### gomplate is installed in enumerate
 
-The `enumerate` job installs gomplate before the bucketing loop. Gomplate is required by the `stale-lock` render-and-compare detection path inside `scripts/onboard-drift.sh`. Without gomplate, that path is conservative-on-failure and silently returns `clean`, causing stale-lock adopters to be falsely classified and skipped. Installation is idempotent and shared by all per-repo drift-status calls in the same enumerate step.
+The `enumerate` job installs gomplate before the bucketing loop. Gomplate is required by the `stale-lock` render-and-compare detection path inside `scripts/onboard-drift.sh`. Without it, the re-render fails and the target reports `error` with the phase in `render_error`; the sweep buckets it as skipped, visibly and with the reason attached. That used to be a silent `clean`, which classified stale-lock adopters as healthy and dropped them from the report entirely — the installation is what keeps the check meaningful rather than what keeps it quiet. Installation is idempotent and shared by all per-repo drift-status calls in the same enumerate step.
 
 ---
 
@@ -957,7 +957,9 @@ when reading a drift report:
   directory, `EPERM`, an I/O error): there is nothing to hash, so drift
   cannot be evaluated at all — `sk-workflows drift` fails and the target is
   bucketed as **`error`**, never silently as `clean`. The same bucket
-  covers the Bash engine meeting a manifest it cannot parse (§ 11.4).
+  covers the Bash engine meeting a manifest it cannot parse (§ 11.4), and
+  any re-render that breaks in either engine — a missing gomplate, an
+  unreadable scratch dir, a detector that exits non-zero.
 
 ### 11.6 GitOps consumers
 

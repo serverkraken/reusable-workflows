@@ -158,7 +158,7 @@ teardown() {
   echo "$output" | grep -E "^render_error=$" >/dev/null
 }
 
-@test "drift: render failure keeps status=clean and sets render_error" {
+@test "drift: render failure reports status=error, not clean" {
   # Force render-failure by stripping gomplate (and other render-time tools)
   # from PATH. The script still needs core tools (bash, jq, mktemp, etc.) for
   # the lock-comparison phase, so we build a minimal PATH that has those but
@@ -171,10 +171,37 @@ teardown() {
   CATALOG_CURRENT_VERSION=v4 PATH="$fake_path" run "$DRIFT" "$TARGET" "$REPO_ROOT"
   rm -rf "$fake_path"
   [ "$status" -eq 0 ]
-  # Status stays clean (no false-positive stale-lock when render fails).
-  [[ "$output" == *"status=clean"* ]]
-  # render_error captures the failure phase.
+  # Frueher meldete dieser Pfad status=clean und legte den Grund in
+  # render_error ab. Der woechentliche Sweep greppt nur auf ^status=, verwarf
+  # den Grund also — betroffene Repos blieben unbegrenzt gruen und ungeprueft.
+  # Ein Render-Fehler ist kein sauberer Befund.
+  [[ "$output" == *"status=error"* ]]
+  [[ "$output" != *"status=clean"* ]]
+  # Kein falsch-positives stale-lock: der Vergleich hat gar nicht stattgefunden.
+  [[ "$output" != *"status=stale-lock"* ]]
+  # render_error nennt weiterhin die Phase.
   [[ "$output" =~ render_error=(detect|render)-failed: ]]
+}
+
+@test "drift: lock-tracked file the renderer no longer emits reports stale-lock" {
+  # Ein Adopter, der einen Workflow traegt, den der Katalog fallengelassen hat.
+  # Der Lock-Vergleich sieht nichts (Datei da, Hash stimmt), und der Render-
+  # Vergleich uebersprang den Pfad frueher mangels Gegenstueck — die Datei
+  # feuerte im Adopter weiter, und Drift meldete clean.
+  echo "# a workflow the catalog dropped" > "$TARGET/.github/workflows/legacy.yml"
+  legacy_hash="sha256:$(sha256_of "$TARGET/.github/workflows/legacy.yml")"
+  lock="$TARGET/.github/onboard.lock.json"
+  jq --arg h "$legacy_hash" \
+     '.files[".github/workflows/legacy.yml"] = $h' "$lock" > "$lock.new"
+  mv "$lock.new" "$lock"
+
+  CATALOG_CURRENT_VERSION=v4 run "$DRIFT" "$TARGET" "$REPO_ROOT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"status=stale-lock"* ]]
+  [[ "$output" == *"legacy.yml"* ]]
+  # Der Render lief durch — der Befund kommt aus dem Vergleich, nicht aus einem
+  # Fehler.
+  echo "$output" | grep -E "^render_error=$" >/dev/null
 }
 
 @test "drift: mutated .release-please-manifest.json does NOT count as modified" {
