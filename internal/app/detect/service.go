@@ -581,7 +581,7 @@ func explicitMonorepoPaths(repo string) []string {
 		return parseGoWork(mustRead(filepath.Join(repo, "go.work")))
 	}
 	if has(repo, "Cargo.toml") && strings.Contains(mustRead(filepath.Join(repo, "Cargo.toml")), "[workspace]") {
-		return parseCargoWorkspace(mustRead(filepath.Join(repo, "Cargo.toml")))
+		return expandWorkspacePatterns(repo, parseCargoWorkspace(mustRead(filepath.Join(repo, "Cargo.toml"))))
 	}
 	if has(repo, "pnpm-workspace.yaml") {
 		return expandPNPM(repo, mustRead(filepath.Join(repo, "pnpm-workspace.yaml")))
@@ -633,6 +633,46 @@ func parseCargoWorkspace(content string) []string {
 	return out
 }
 
+// expandWorkspacePatterns loest Workspace-Muster gegen das Repo auf und laesst
+// nur Verzeichnisse INNERHALB des Repos durch.
+//
+// Zwei Funde in einer Funktion:
+//
+//	B-8/H-8: Cargo-Member wurden woertlich uebernommen. `members = ["crates/*"]`
+//	ergab eine Komponente mit dem Pfad `crates/*` — ein Verzeichnis, das es
+//	nicht gibt. Die echten Crates bekamen dadurch KEINE Jobs: kein Lint, kein
+//	Test, kein Scan. `crates/*` ist das uebliche Cargo-Layout. In beiden
+//	Engines nachgestellt; der pnpm-Zweig direkt daneben expandierte laengst.
+//
+//	B-11/H-7: ein Member-Pfad kann aus dem Checkout herausfuehren
+//	(`../nachbar`). Was danach als Komponente gilt, wuerde ausserhalb des
+//	ausgecheckten Repos gesucht — und die gerenderten Workflows trugen einen
+//	`working_directory`, der beim Adopter woanders hinzeigt.
+func expandWorkspacePatterns(repo string, patterns []string) []string {
+	var out []string
+	for _, pat := range patterns {
+		matches, err := filepath.Glob(filepath.Join(repo, pat))
+		if err != nil {
+			// Ein ungueltiges Muster ist kein Treffer, aber auch kein Grund,
+			// die Erkennung abzubrechen.
+			continue
+		}
+		sort.Strings(matches)
+		for _, m := range matches {
+			st, err := os.Stat(m)
+			if err != nil || !st.IsDir() {
+				continue
+			}
+			rel, err := filepath.Rel(repo, m)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				continue
+			}
+			out = append(out, filepath.ToSlash(rel))
+		}
+	}
+	return out
+}
+
 func expandPNPM(repo, content string) []string {
 	var patterns []string
 	inPackages := false
@@ -652,19 +692,7 @@ func expandPNPM(repo, content string) []string {
 			inPackages = false
 		}
 	}
-	var out []string
-	for _, pat := range patterns {
-		matches, _ := filepath.Glob(filepath.Join(repo, pat))
-		sort.Strings(matches)
-		for _, m := range matches {
-			if st, err := os.Stat(m); err == nil && st.IsDir() {
-				if rel, err := filepath.Rel(repo, m); err == nil {
-					out = append(out, filepath.ToSlash(rel))
-				}
-			}
-		}
-	}
-	return out
+	return expandWorkspacePatterns(repo, patterns)
 }
 
 // fsErrors sammelt Dateisystemfehler, die waehrend der Erkennung auftreten.
