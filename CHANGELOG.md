@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.18.2](https://github.com/serverkraken/reusable-workflows/compare/v4.18.1...v4.18.2) (2026-08-25)
+
+
+### Bug Fixes
+
+* **semantic-release:** Der Float-Tag landete auf dem ausgecheckten HEAD, nicht auf dem Release ([#276](https://github.com/serverkraken/reusable-workflows/issues/276)) ([6bef9b5](https://github.com/serverkraken/reusable-workflows/commit/6bef9b57b506b876cf2a68199f9cc8eb99d7dd39))
+
 ## [4.18.1](https://github.com/serverkraken/reusable-workflows/compare/v4.18.0...v4.18.1) (2026-08-25)
 
 
