@@ -116,3 +116,74 @@ teardown() {
   [ "$status" -eq 0 ]
   echo "$output" | grep -Eq "^bare=[0-9]+\.[0-9]+\.[0-9]+-rc\.42$"
 }
+
+# --- Verankerung der SemVer-Pruefung (Audit I-17, I-12) ---------------------
+#
+# `SEMVER_CORE` war nur am ANFANG verankert. Alles, was mit X.Y.Z beginnt,
+# bestand damit. Gegen den Stand davor gemessen:
+#
+#   1.2.3.4                  -> tag=v1.2.3.4
+#   1.2.3abc                 -> tag=v1.2.3abc
+#   "1.2.3 && echo PWNED"    -> tag=v1.2.3 && echo PWNED
+#   "1.2.3\nEXTRA=injected"  -> ZWEI Zeilen in GITHUB_OUTPUT
+#
+# Der letzte Fall ist der schwerwiegende: der Aufrufer schreibt die Ausgabe mit
+# `echo "$OUT" >> "$GITHUB_OUTPUT"` weiter (release-flutter-android.yml:190).
+# Ein Zeilenumbruch im `version`-Input schiebt damit beliebige Step-Outputs
+# unter, und die werden weiter unten als `${{ steps.ver.outputs.tag }}` gelesen.
+
+@test "eine vierstellige Version wird abgewiesen" {
+  run bash "$SCRIPT" "1.2.3.4" "false" "7"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"does not look like semver"* ]]
+}
+
+@test "Ziffern mit angehaengtem Text werden abgewiesen" {
+  run bash "$SCRIPT" "1.2.3abc" "false" "7"
+  [ "$status" -eq 1 ]
+}
+
+@test "Shell-Metazeichen hinter der Version werden abgewiesen" {
+  run bash "$SCRIPT" "1.2.3 && echo PWNED" "false" "7"
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"PWNED"* ]] || [[ "$output" == *"does not look like semver"* ]]
+}
+
+@test "ein Zeilenumbruch kann keine zusaetzlichen Outputs unterschieben" {
+  run bash "$SCRIPT" "$(printf '1.2.3\nEXTRA=injected')" "false" "7"
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"EXTRA=injected"$'\n'* ]]
+  # Entscheidend: keine Zeile der Ausgabe darf ein fremdes key=value sein.
+  ! echo "$output" | grep -qE '^EXTRA='
+}
+
+@test "gueltige SemVer-Formen bleiben erlaubt" {
+  # Gegenprobe: die Verankerung darf Prerelease und Build-Metadaten nicht
+  # mitverbieten — der Auto-Pfad erzeugt selbst X.Y.Z-rc.<n>.
+  for v in "1.2.3" "1.2.3-rc.1" "1.2.3+build.5" "1.2.3-rc.1+build.5"; do
+    run bash "$SCRIPT" "$v" "false" "7"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"bare=$v"* ]]
+  done
+}
+
+@test "auto-derive verwirft einen vierstelligen Tag statt ihn zu uebernehmen" {
+  # Die "belt-and-braces"-Pruefung im Auto-Pfad nutzte dasselbe unverankerte
+  # Muster und liess `1.2.3.4-rc.42` durch.
+  git tag "1.2.3.4"
+  run bash "$SCRIPT" "" "true" "42"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"bare=0.0.0-rc.42"* ]]
+}
+
+@test "auto-derive meldet einen kaputten Checkout, faellt aber nicht hart aus" {
+  # I-12: der Fallback bleibt — ein manueller Build soll an der Tag-Landschaft
+  # des Adopters nicht sterben. Aber "kein Repository" wird benannt, sonst
+  # sieht ein kaputter Checkout aus wie ein Repo vor seinem ersten Tag.
+  local outside="$BATS_TEST_TMPDIR/kein-repo"
+  mkdir -p "$outside"
+  run bash -c "cd '$outside' && bash '$SCRIPT' '' true 42"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"not a git repository"* ]]
+  [[ "$output" == *"bare=0.0.0-rc.42"* ]]
+}
