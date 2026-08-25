@@ -1,8 +1,8 @@
 // Package godetect exposes the in-process detect service behind the
 // ports.ProfileDetector interface.
 //
-// Why this exists: the drift service used to detect through
-// catalogscripts.Adapter, which shells out to scripts/onboard-detect.sh. That
+// Why this exists: the drift service used to detect by shelling out to
+// scripts/onboard-detect.sh (through an adapter since removed). That
 // Bash engine refuses any repo carrying an adopter manifest — deliberately, it
 // has no parser for one and mis-detecting the layout the manifest exists to
 // correct would be worse than failing. The refusal surfaced as
