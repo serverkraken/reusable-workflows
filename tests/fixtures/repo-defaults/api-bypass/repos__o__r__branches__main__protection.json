@@ -1,0 +1,40 @@
+{
+  "enforce_admins": {
+    "enabled": false
+  },
+  "required_linear_history": {
+    "enabled": true
+  },
+  "allow_force_pushes": {
+    "enabled": false
+  },
+  "allow_deletions": {
+    "enabled": false
+  },
+  "required_conversation_resolution": {
+    "enabled": false
+  },
+  "lock_branch": {
+    "enabled": false
+  },
+  "block_creations": {
+    "enabled": false
+  },
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 0,
+    "dismiss_stale_reviews": false,
+    "require_code_owner_reviews": false,
+    "require_last_push_approval": false,
+    "bypass_pull_request_allowances": {
+      "users": [
+        {
+          "login": "someone"
+        }
+      ],
+      "teams": [],
+      "apps": []
+    }
+  },
+  "required_status_checks": null,
+  "restrictions": null
+}
