@@ -125,7 +125,19 @@ if [[ "$status" == "clean" ]]; then
   # diverge from the adopter's real lock-tracked output — surfacing every
   # Docker-atom adopter as false-positive stale-lock. drift-check.yml and
   # onboard-sweep-drift-status.sh both hit this path; deriving here fixes
-  # both callers and keeps fixture-based callers (no origin) untouched.
+  # both callers.
+  #
+  # Korrektur zu einer frueheren Fassung dieses Kommentars: Fixture-Aufrufer
+  # haben NICHT zwangslaeufig "kein origin". Eine Fixture, die INNERHALB des
+  # Katalog-Checkouts liegt, erbt dessen origin, und die Ableitung ergibt dann
+  # `serverkraken/reusable-workflows`. Nachgemessen an
+  # tests/fixtures/onboard/drift-clean.
+  #
+  # Wirkung hat das hier nicht: der Wert fliesst nur in die $REPO-Ersetzung,
+  # und die betroffenen Fixtures tragen keine $REPO-Image-Namen. Gemessen
+  # liefern abgeleiteter und explizit gesetzter Wert denselben Drift-Status.
+  # Der Kommentar soll aber nicht behaupten, was nicht stimmt - wer sich auf
+  # "Fixtures haben kein origin" verlaesst, baut auf Sand.
   if [[ -z "${TARGET_REPO:-}" ]]; then
     origin=$(git -C "$TARGET" config --get remote.origin.url 2>/dev/null || true)
     if [[ -n "$origin" ]]; then
