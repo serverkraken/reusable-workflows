@@ -3,9 +3,48 @@ package godetect
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 )
+
+// unreachableGitHub stands in for `gh` without credentials: every call fails.
+type unreachableGitHub struct{}
+
+func (unreachableGitHub) DefaultBranch(context.Context, string) (string, error) {
+	return "", errors.New("gh: no authentication token")
+}
+func (unreachableGitHub) LatestStableRelease(context.Context, string) (string, error) {
+	return "", errors.New("gh: no authentication token")
+}
+func (unreachableGitHub) ReleaseTags(context.Context, string) ([]string, error) {
+	return nil, errors.New("gh: no authentication token")
+}
+func (unreachableGitHub) Topics(context.Context, string) ([]string, error) {
+	return nil, errors.New("gh: no authentication token")
+}
+
+// Drift runs in jobs that mint no GitHub token, and the Bash engine this
+// adapter replaces degrades rather than failing there. Detect on its own treats
+// an unreachable repo as fatal, so without the tolerant wrapper every tokenless
+// drift run would report a render error instead of comparing anything.
+func TestProfileJSONDegradesWhenRepoUnreachable(t *testing.T) {
+	repo := filepath.Join("..", "..", "..", "tests", "fixtures", "onboard", "go-root-multi-image")
+
+	got, err := Adapter{GitHub: unreachableGitHub{}}.ProfileJSON(context.Background(), "", repo, "serverkraken/fixture")
+	if err != nil {
+		t.Fatalf("ProfileJSON should degrade, not fail: %v", err)
+	}
+	var profile struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := json.Unmarshal(got, &profile); err != nil {
+		t.Fatalf("unmarshal profile: %v\n%s", err, got)
+	}
+	if profile.DefaultBranch != "main" {
+		t.Errorf("default_branch = %q, want the \"main\" fallback", profile.DefaultBranch)
+	}
+}
 
 // The whole point of this adapter: the Bash detector rejects a repo carrying an
 // adopter manifest, which used to leave drift's render-and-compare permanently
