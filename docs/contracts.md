@@ -88,6 +88,7 @@ not an error, and a red weekly cron there would train people to ignore it.
 | input   | `runs_on_merge` | string  | no       | `'["self-hosted","Linux","low-performance"]'`  | Runner for version + merge jobs |
 | input   | `ref`           | string  | no       | `''`                                           | Git ref (tag/branch/SHA) to check out before building. Release callers whose run creates the bump commit and tag (release-please) should pass the released tag; empty keeps the default event-SHA checkout. |
 | output  | `image_ref`     | string  | —        | —                                              | `ghcr.io/<image_name>:<tag>` |
+| output  | `moving_ref`    | string  | —        | —                                              | `ghcr.io/<image_name>:<moving_tag>`, or empty when the run published no moving tag. Pushed only after signing, so it always resolves to the same digest as `image_ref` |
 | output  | `digest`        | string  | —        | —                                              | Manifest-list digest `sha256:…` |
 | output  | `tag`           | string  | —        | —                                              | Final tag (auto-computed if input was empty) |
 | secret  | `release_please_app_client_id`  | — | **yes** | — | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |

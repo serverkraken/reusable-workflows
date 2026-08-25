@@ -87,6 +87,13 @@ on:
       digest:
         description: 'Manifest list digest (sha256:...).'
         value: ${{ jobs.merge.outputs.digest }}
+      moving_ref:
+        description: >-
+          Fully qualified reference of the moving tag this run published
+          (e.g. ghcr.io/owner/app:my-branch), or empty when the run published
+          no moving tag. It is pushed only after signing, so it always
+          resolves to the same digest as image_ref.
+        value: ${{ jobs.merge.outputs.moving_ref }}
       tag:
         description: 'Final tag (auto-computed if input was empty).'
         value: ${{ jobs.version.outputs.tag }}
@@ -331,6 +338,7 @@ jobs:
     timeout-minutes: 60
     outputs:
       image_ref: ${{ steps.compose.outputs.image_ref }}
+      moving_ref: ${{ steps.compose.outputs.moving_ref }}
       digest: ${{ steps.merge_step.outputs.digest }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -396,47 +404,74 @@ jobs:
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
-      - name: Compose tag list
+      # Die beweglichen Tags werden hier NICHT mitgepusht. Sie kommen erst,
+      # nachdem Signatur und Attestation stehen — siehe den Zwei-Phasen-Block
+      # weiter unten.
+      - name: Compose deferred tag list
         id: tags
         env:
           IMG: ghcr.io/${{ needs.version.outputs.image_name }}
-          TAG: ${{ needs.version.outputs.tag }}
           MOVING: ${{ needs.version.outputs.moving_tag }}
           IS_PRE: ${{ inputs.prerelease }}
         run: |
-          ARGS="-t $IMG:$TAG"
+          ARGS=""
           if [[ "$IS_PRE" != "true" ]]; then
             ARGS="$ARGS -t $IMG:latest"
           fi
           if [[ -n "$MOVING" ]]; then
             ARGS="$ARGS -t $IMG:$MOVING"
           fi
-          echo "tag_args=$ARGS" >> "$GITHUB_OUTPUT"
+          echo "deferred_tag_args=${ARGS# }" >> "$GITHUB_OUTPUT"
 
-      - name: Create manifest list and capture digest
+      # ----- Zwei-Phasen-Veroeffentlichung (Phase 1 von 2) ------------------
+      # Nur der unveraenderliche Versions-Tag entsteht hier. `latest` und der
+      # bewegliche Major-Tag folgen erst nach cosign — sie sind das, was
+      # automatische Puller dauernd abholen, und die duerfen nie fuer ein paar
+      # Sekunden auf ein unsigniertes Image zeigen.
+      #
+      # Warum kein wegwerfbarer Staging-Tag: GHCR kennt kein Loeschen eines
+      # einzelnen Tags — nur der Version als Ganzes, und die traegt danach die
+      # echten Tags. Ein Staging-Tag bliebe also fuer immer an jedem Release
+      # kleben. Der Rest-Spalt ist damit der Versions-Tag waehrend der
+      # Signaturphase; wer verifiziert, bekommt dort ein sauberes Nein, und
+      # schlaegt cosign fehl, ist der Job rot.
+      - name: Create manifest list under the version tag and capture digest
         id: merge_step
         working-directory: /tmp/digests
         env:
           IMG: ghcr.io/${{ needs.version.outputs.image_name }}
-          TAG_ARGS: ${{ steps.tags.outputs.tag_args }}
-          # TAG via env: too — it derives from the caller's `tag` input, and a
-          # value like `v1$(command)` interpolated into the run body would be
+          # TAG via env: it derives from the caller's `tag` input, and a value
+          # like `v1$(command)` interpolated into the run body would be
           # substituted before bash parses the line, executing on the runner.
           TAG: ${{ needs.version.outputs.tag }}
         run: |
-          # shellcheck disable=SC2046,SC2086
-          docker buildx imagetools create $TAG_ARGS \
+          # shellcheck disable=SC2046
+          docker buildx imagetools create -t "$IMG:$TAG" \
             $(printf "$IMG@sha256:%s " *)
           DIGEST=$(docker buildx imagetools inspect "$IMG:$TAG" --format '{{.Manifest.Digest}}')
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the commit that was actually built
+        id: source
+        # github.sha is the commit that TRIGGERED the run. The build checked out
+        # inputs.ref, which is a different commit whenever a release job builds
+        # a freshly tagged tree. Attesting the trigger commit sends any
+        # source-to-image policy looking at code that was never built.
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Compose image_ref output
         id: compose
         env:
           IMG: ghcr.io/${{ needs.version.outputs.image_name }}
           TAG: ${{ needs.version.outputs.tag }}
+          MOVING: ${{ needs.version.outputs.moving_tag }}
         run: |
           echo "image_ref=$IMG:$TAG" >> "$GITHUB_OUTPUT"
+          if [[ -n "$MOVING" ]]; then
+            echo "moving_ref=$IMG:$MOVING" >> "$GITHUB_OUTPUT"
+          else
+            echo "moving_ref=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Cosign
         if: inputs.sign || inputs.attest
@@ -455,8 +490,10 @@ jobs:
           IMG: ghcr.io/${{ needs.version.outputs.image_name }}
           DIGEST: ${{ steps.merge_step.outputs.digest }}
           REPO: ${{ github.repository }}
-          REF: ${{ github.ref }}
-          SHA: ${{ github.sha }}
+          # Der gebaute Ref/Commit, nicht der ausloesende — siehe den Schritt
+          # "Resolve the commit that was actually built".
+          REF: ${{ inputs.ref || github.ref }}
+          SHA: ${{ steps.source.outputs.sha }}
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -494,6 +531,20 @@ jobs:
           jq empty predicate.json
           cosign attest --yes --type slsaprovenance \
             --predicate predicate.json "${IMG}@${DIGEST}"
+
+      # ----- Zwei-Phasen-Veroeffentlichung (Phase 2 von 2) ------------------
+      # Erst jetzt bekommen `latest` und der bewegliche Major-Tag ihren Zeiger.
+      # Der Digest ist derselbe wie in Phase 1 — ein Tag ist nur ein Verweis,
+      # also gilt die eben erzeugte Signatur unveraendert weiter.
+      - name: Publish moving tags onto the signed digest
+        if: steps.tags.outputs.deferred_tag_args != ''
+        env:
+          IMG: ghcr.io/${{ needs.version.outputs.image_name }}
+          TAG_ARGS: ${{ steps.tags.outputs.deferred_tag_args }}
+          DIGEST: ${{ steps.merge_step.outputs.digest }}
+        run: |
+          # shellcheck disable=SC2086
+          docker buildx imagetools create $TAG_ARGS "$IMG@$DIGEST"
 
       - name: Generate SBOM
         if: inputs.sbom
