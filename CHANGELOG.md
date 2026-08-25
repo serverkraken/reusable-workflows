@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.18.3](https://github.com/serverkraken/reusable-workflows/compare/v4.18.2...v4.18.3) (2026-08-25)
+
+
+### Bug Fixes
+
+* **onboard:** Ein verschlucktes PR-Close meldete "kein PR offen" ([#278](https://github.com/serverkraken/reusable-workflows/issues/278)) ([6bfec21](https://github.com/serverkraken/reusable-workflows/commit/6bfec21f1e9ddb10916044ab7a5a8761ff89e8da))
+
 ## [4.18.2](https://github.com/serverkraken/reusable-workflows/compare/v4.18.1...v4.18.2) (2026-08-25)
 
 
