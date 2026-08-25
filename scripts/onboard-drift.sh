@@ -110,9 +110,9 @@ fi
 # Render-and-compare check — only when lock-comparison says "clean".
 # Catches within-major template evolution: the lock's stored hashes match the
 # working tree, but the catalog renderer has since evolved and would now
-# produce different output. Conservative on failure: if the re-render itself
-# breaks (detect or render exits non-zero), status stays "clean" and we record
-# the reason in render_error so it surfaces in the drift-check Issue.
+# produce different output. If the re-render itself breaks (detect or render
+# exits non-zero), the reason lands in render_error and the status becomes
+# "error" — see the guard right after this block for why "clean" was wrong.
 render_error=""
 if [[ "$status" == "clean" ]]; then
   scratch=$(mktemp -d)
@@ -159,9 +159,15 @@ if [[ "$status" == "clean" ]]; then
       # Skip here too so the render-compare doesn't surface stale-lock for the
       # same reason.
       [[ "$f" == ".release-please-manifest.json" ]] && continue
-      # If the rendered tree doesn't contain this path (profile-conditional
-      # template), skip — we can't compare what doesn't exist on both sides.
-      [[ -f "$scratch/rendered/$f" ]] || continue
+      # Ein lock-getrackter Pfad, den der Renderer nicht mehr ausgibt, IST
+      # Drift: der Adopter traegt weiterhin einen Workflow, den der Katalog
+      # fallengelassen hat, und der feuert dort auch weiter. Dieses Ueber-
+      # springen (frueher: `|| continue`) hat genau das verdeckt. Parallel zu
+      # staleFiles() im Go-Pfad, damit beide Engines dasselbe melden.
+      if [[ ! -f "$scratch/rendered/$f" ]]; then
+        stale_files+=("$f")
+        continue
+      fi
       if ! cmp -s "$TARGET/$f" "$scratch/rendered/$f"; then
         stale_files+=("$f")
       fi
@@ -190,6 +196,16 @@ if [[ "$status" == "clean" ]]; then
       is_mod=1
     fi
   fi
+fi
+
+# Ein Render-Fehler ist kein sauberer Befund. Bis hierher ueberlebte schlicht
+# der Status "clean", waehrend der Grund in render_error steckte — und der
+# woechentliche Sweep greppt nur auf ^status=, verwarf den Grund also komplett.
+# Betroffene Repos blieben unbegrenzt gruen und ungeprueft. Die Manifest-
+# Abkuerzung ganz oben hat sich dem schon verweigert und status=error gemeldet;
+# der allgemeine Fall zieht jetzt nach. Parallel zum Go-Pfad (service.go).
+if [[ -n "$render_error" && "$status" == "clean" ]]; then
+  status="error"
 fi
 
 echo "status=$status"
