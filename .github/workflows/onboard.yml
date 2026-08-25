@@ -104,14 +104,50 @@ jobs:
       - id: parse
         env:
           REPOS: ${{ inputs.target_repos }}
+          ADD_BRANCH: ${{ inputs.add_branch_name }}
+          CLEANUP_BRANCH: ${{ inputs.cleanup_branch_name }}
         run: |
           set -euo pipefail
+
+          # Branch names reach `git checkout -B` and `git push -f` on a FOREIGN
+          # repository. Unvalidated, `add_branch_name: main` commits the
+          # rendered files straight onto that repo's default branch and
+          # force-pushes them. Validate here, before any repo is touched.
+          for pair in "add_branch_name:$ADD_BRANCH" "cleanup_branch_name:$CLEANUP_BRANCH"; do
+            key="${pair%%:*}"; val="${pair#*:}"
+            if [[ -z "$val" ]]; then
+              echo "::error::$key must not be empty"; exit 1
+            fi
+            if [[ ! "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+              echo "::error::$key '$val' is not a plain branch name (allowed: A-Z a-z 0-9 . _ / -, not starting with a separator)"
+              exit 1
+            fi
+            # A protected-looking name is refused outright. The per-target check
+            # further down also compares against that repo's ACTUAL default
+            # branch, which may be neither of these.
+            case "$val" in
+              main|master|develop|trunk|HEAD)
+                echo "::error::$key must not be '$val' — this branch is force-pushed, which would overwrite it"
+                exit 1
+                ;;
+            esac
+          done
+          if [[ "$ADD_BRANCH" == "$CLEANUP_BRANCH" ]]; then
+            echo "::error::add_branch_name and cleanup_branch_name are both '$ADD_BRANCH'; PR B would force-replace PR A's branch and rewrite its title"
+            exit 1
+          fi
+
           IFS=',' read -ra raw <<< "$REPOS"
           declare -A seen=()
           out='['
           first=1
           for entry in "${raw[@]}"; do
-            entry="${entry//[[:space:]]/}"
+            # Trim only the OUTSIDE. Deleting every space turned an invalid
+            # 'serverkraken/pay ments' into the valid, existing
+            # 'serverkraken/payments' — and the run then minted a token for
+            # that repo and mutated it.
+            entry="${entry#"${entry%%[![:space:]]*}"}"
+            entry="${entry%"${entry##*[![:space:]]}"}"
             [[ -z "$entry" ]] && continue
             if [[ ! "$entry" =~ ^serverkraken/[A-Za-z0-9._-]+$ ]]; then
               echo "::error::invalid target_repos entry: '$entry' (must match ^serverkraken/[A-Za-z0-9._-]+\$)"
@@ -342,6 +378,14 @@ jobs:
             [[ -f "$f" ]] || { echo "::error::expected rendered file missing: $f"; exit 1; }
           done
 
+          # The static check in `parse` refuses main/master/develop/trunk, but
+          # this repo's default branch may be none of those. Compare against
+          # the ACTUAL one before force-pushing over it.
+          if [[ "$ADD_BRANCH" == "$DEFAULT_BRANCH" ]]; then
+            echo "::error::add_branch_name is '$ADD_BRANCH', which is ${TARGET_REPO}'s default branch — refusing to force-push over it"
+            exit 1
+          fi
+
           # Create / reset the bot branch from default HEAD; rendered files are working-tree
           # mods so they survive `checkout -B`.
           git fetch origin "$DEFAULT_BRANCH"
@@ -516,6 +560,10 @@ jobs:
             exit 0
           fi
 
+          if [[ "$CLEANUP_BRANCH" == "$DEFAULT_BRANCH" ]]; then
+            echo "::error::cleanup_branch_name is '$CLEANUP_BRANCH', which is ${TARGET_REPO}'s default branch — refusing to force-push the legacy deletions over it"
+            exit 1
+          fi
           git checkout -B "$CLEANUP_BRANCH" "origin/$DEFAULT_BRANCH"
           git rm "${matched[@]}"
           git commit -m "chore: remove legacy workflows superseded by reusable-workflows@${PIN}"
