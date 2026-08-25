@@ -102,6 +102,7 @@ UI: **Actions → onboard → Run workflow**.
 | `pin_version` | What `@version` the rendered templates pin to. Default `v4` on `next`. |
 | `use_go_cli` | Default `true`. Uses `sk-workflows` for detection, rendering, and repo defaults. Set `false` only as Bash rollback during a suspected Go regression. |
 | `add_branch_name` / `cleanup_branch_name` | Escape hatches. Default branch names are bot-owned and force-pushed each run. |
+| `rendered_against` | Full catalog tag recorded in the lock (e.g. `v4.18.4`). Empty → falls back to `pin_version`. The weekly sweep compares this field against `git describe --tags --abbrev=0` to spot stale bot PRs. |
 
 ### 5.3 What it produces
 
@@ -820,11 +821,21 @@ package-name prefix:
 **What the `helm` release strategy touches.** On each release of the chart
 package, release-please rewrites `version:` in `Chart.yaml` through the YAML
 document API — comments and formatting survive — and **never touches
-`appVersion`**. That is correct for the decoupled model this catalog uses:
-`appVersion` carries no meaning, because image tags live in `values.yaml`
-and are bumped by Renovate, not by the chart's own release. The chart's
-current `version` is seeded into `.release-please-manifest.json` at
-onboarding, so the first release continues from where the chart already is.
+`appVersion`**. The chart version itself is carried forward correctly: the
+current value is seeded into `.release-please-manifest.json` at onboarding, so
+the first release continues from where the chart already is.
+
+**`appVersion` stays behind, and that is not a neutral state.** The value ends
+up in every resource's `app.kubernetes.io/version` label and in the install
+notes; a stale `appVersion` claims a version that runs nowhere (mailstack's
+chart reached 1.10.0 while its `appVersion` still read `v1.6.5`). Opt out of
+that with `app_version: true` in the manifest — see above; the chart then needs
+the `x-release-please-version` marker on the `appVersion` line.
+
+The second half of the earlier rationale — that image tags are bumped by
+Renovate — only holds for charts with a **single** image. Renovate's
+`helm-values` manager recognises exactly one `image:` key, which is precisely
+why `chart_pins` exists: it sets the tags from the release itself.
 
 Adopters migrating from a **root package with `Chart.yaml` in
 `extra-files`** — which only rewrote the `appVersion` marker line — should

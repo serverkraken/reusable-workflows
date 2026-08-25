@@ -58,7 +58,7 @@ collide on the same key and the workflow fails rather than guessing.
 
 | Kind    | Name                   | Type   | Required | Default                     | Description |
 |---------|------------------------|--------|----------|-----------------------------|-------------|
-| input   | `package_name`         | string | no       | `${{ github.event.repository.name }}` | GHCR package name |
+| input   | `package_name`         | string | no       | `''`                                  | GHCR package name. Empty → the workflow falls back to `${{ github.event.repository.name }}`. |
 | input   | `keep_stable_versions` | number | no       | `10`                        | Min count of semver (`v*.*.*`) versions to keep |
 | input   | `prerelease_age_days`  | number | no       | `14`                        | Delete non-semver tags older than N days |
 | input   | `runs_on`              | string | no       | `'["self-hosted","Linux"]'` | JSON-encoded runner labels |
@@ -75,7 +75,7 @@ not an error, and a red weekly cron there would train people to ignore it.
 |---------|-----------------|---------|----------|------------------------------------------------|-------------|
 | input   | `tag`           | string  | no       | `''`                                           | Image tag; empty → auto-compute when `prerelease=true` |
 | input   | `prerelease`    | boolean | no       | `false`                                        | Skip `:latest`, auto-compute tag if `tag` is empty |
-| input   | `image_name`    | string  | no       | `${{ github.repository }}`                     | Image name (owner/repo) |
+| input   | `image_name`    | string  | no       | `''`                                           | Image name (owner/repo). Empty → the workflow falls back to `${{ github.repository }}`. |
 | input   | `dockerfile`    | string  | no       | `'./Dockerfile'`                               | Path to Dockerfile |
 | input   | `context`       | string  | no       | `'.'`                                          | Docker build context |
 | input   | `platforms`     | string  | no       | `'linux/amd64,linux/arm64'`                    | Comma-separated platform list; only listed platforms are built |
@@ -163,7 +163,7 @@ runner pods.
 |---------|----------------|---------|----------|-----------------------------|-------------|
 | input   | `chart_path`   | string  | **yes**  | —                           | Directory containing `Chart.yaml`. |
 | input   | `oci_registry` | string  | **yes**  | —                           | OCI registry path (host + namespace) to push to, without the chart name. Example: `ghcr.io/serverkraken/charts`. |
-| input   | `helm_version` | string  | no       | `'v3.15.0'`                 | Helm CLI version to install (e.g. `v3.15.0`, `latest`). |
+| input   | `helm_version` | string  | no       | `'v3.16.3'`                 | Helm CLI version to install (e.g. `v3.16.3`, `latest`). |
 | input   | `dry_run`      | boolean | no       | `false`                     | Lint and package only; skip registry login + push. |
 | input   | `runs_on`      | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
 | input   | `ref`          | string  | no       | `''`                        | Git ref (tag/branch/SHA) to check out before packaging. Callers whose release job creates the version-bump commit and tag in the same run (release-please) must pass the released tag here; empty keeps the default event-SHA checkout. |
