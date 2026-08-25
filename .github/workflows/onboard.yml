@@ -515,8 +515,19 @@ jobs:
 
           if git diff --cached --quiet; then
             echo "No diff for add branch."
-            if [[ -n "$existing_pr_num" ]]; then
-              gh pr close "$existing_pr_num" --repo "$TARGET_REPO" --comment "No changes needed; closing." || true
+            # `|| true` hier hiess: schlaegt das Schliessen fehl, meldet der
+            # Lauf trotzdem "no-changes" und pr_a_url leer — der PR steht dann
+            # offen, und die Statuszeile behauptet, es gebe keinen. Der
+            # Fehlschlag wird jetzt benannt, und der Status sagt die Wahrheit:
+            # es IST ein PR offen.
+            if [[ -n "$existing_pr_num" ]] \
+               && ! gh pr close "$existing_pr_num" --repo "$TARGET_REPO" \
+                      --comment "No changes needed; closing."; then
+              echo "::warning::could not close stale PR #${existing_pr_num} on ${TARGET_REPO} — it stays open"
+              url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url || echo "")
+              echo "pr_a_url=$url" >> "$GITHUB_OUTPUT"
+              echo "pr_a_status=add-open" >> "$GITHUB_OUTPUT"
+              exit 0
             fi
             echo "pr_a_url=" >> "$GITHUB_OUTPUT"
             echo "pr_a_status=no-changes" >> "$GITHUB_OUTPUT"
@@ -697,8 +708,16 @@ jobs:
 
           if (( ${#matched[@]} == 0 )); then
             echo "No legacy files in target."
-            if [[ -n "$existing_pr_num" ]]; then
-              gh pr close "$existing_pr_num" --repo "$TARGET_REPO" --comment "No legacy files to remove; closing." || true
+            # Siehe PR A: ein verschlucktes Schliessen liess die Statuszeile
+            # "no-legacy" melden, waehrend der Cleanup-PR offen stehenblieb.
+            if [[ -n "$existing_pr_num" ]] \
+               && ! gh pr close "$existing_pr_num" --repo "$TARGET_REPO" \
+                      --comment "No legacy files to remove; closing."; then
+              echo "::warning::could not close stale PR #${existing_pr_num} on ${TARGET_REPO} — it stays open"
+              url=$(gh pr view "$existing_pr_num" --repo "$TARGET_REPO" --json url -q .url || echo "")
+              echo "pr_b_url=$url" >> "$GITHUB_OUTPUT"
+              echo "pr_b_status=cleanup-open" >> "$GITHUB_OUTPUT"
+              exit 0
             fi
             echo "pr_b_url=" >> "$GITHUB_OUTPUT"
             echo "pr_b_status=no-legacy" >> "$GITHUB_OUTPUT"
