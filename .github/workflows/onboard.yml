@@ -862,52 +862,18 @@ jobs:
               echo "::warning::skipping malformed or empty result file: $f"
               continue
             fi
-            pa=$(jq -r '.pr_a_url' "$f")
-            pas=$(jq -r '.pr_a_status' "$f")
-            pb=$(jq -r '.pr_b_url' "$f")
-            pbs=$(jq -r '.pr_b_status' "$f")
-            js=$(jq -r '.job_status' "$f")
-
-            if [[ "$pas" == "no-changes" && "$pbs" == "no-legacy" ]]; then
-              status="complete"
-            elif [[ "$pas" == "no-changes" && "$pbs" == "cleanup-open" ]]; then
-              status="cleanup-open"
-            elif [[ "$pas" == "add-open" && "$pbs" == "no-legacy" ]]; then
-              status="add-open, no-legacy"
-            elif [[ "$pas" == "add-open" && "$pbs" == "cleanup-open" ]]; then
-              status="add-open, cleanup-open"
-            else
-              status="$pas / $pbs"
+            # Row construction lives in a script so its two rules can be
+            # tested: a failed run must not restamp the "Onboarded" date, and
+            # a result without a target must not become a blank row. As inline
+            # bash here, neither had ever been exercised.
+            # Kein .catalog-Praefix: dieser Job checkt den Katalog in den
+            # Workspace-Root aus (ref: main), weil er in den Katalog selbst
+            # zurueckschreibt.
+            if ! scripts/onboarding-status-row.sh \
+                   "$DOC" "$f" "${PIN_VERSION:-v4}"; then
+              echo "::warning::could not build a status row from $f"
+              continue
             fi
-            if [[ "$js" != "success" ]]; then
-              status="error ($status)"
-            fi
-
-            pa_md="—"
-            pb_md="—"
-            [[ -n "$pa" ]] && pa_md="[PR]($pa)"
-            [[ -n "$pb" ]] && pb_md="[PR]($pb)"
-
-            # gitops_consumers was carried into the result JSON by the "Emit
-            # per-target result artifact" step; default to em dash when the
-            # target has no known consumers (or the manifest predates Task 7).
-            consumers_cell=$(jq -r '(.gitops_consumers // []) | map(.repo) | join(", ")' "$f")
-            [[ -z "$consumers_cell" ]] && consumers_cell="—"
-
-            today=$(date -u +%Y-%m-%d)
-            new_row="| $target | $today | ${PIN_VERSION:-v4} | $pa_md | $pb_md | $status | $consumers_cell |"
-
-            # Replace existing row (matched by exact "| <target> |" at line start) or append.
-            awk -v tgt="$target" -v row="$new_row" '
-              BEGIN { replaced=0 }
-              {
-                if (index($0, "| " tgt " |") == 1) { print row; replaced=1 }
-                else { print $0 }
-              }
-              END {
-                if (!replaced) { print row }
-              }
-            ' "$DOC" > "$DOC.new" && mv "$DOC.new" "$DOC"
           done
 
           if git diff --quiet -- "$DOC"; then
