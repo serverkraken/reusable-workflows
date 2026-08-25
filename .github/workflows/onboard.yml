@@ -54,21 +54,26 @@ on:
   workflow_call:
     inputs:
       target_repos:
+        description: 'Comma-separated owner/repo list (e.g. serverkraken/blupod-ui,serverkraken/flow)'
         required: true
         type: string
       language:
+        description: 'auto = detect, otherwise force release-type (go, python, rust, helm, node, flutter, gitops, simple)'
         required: false
         type: string
         default: auto
       dry_run:
+        description: 'Render + log diff; do NOT push or open PRs. Defaults to true here (unlike the dispatch form) so a programmatic caller has to opt IN to mutating adopter repos.'
         required: false
         type: boolean
         default: true
       use_go_cli:
+        description: 'Use sk-workflows for detect, render, and repo-default application. Set false to use the Bash fallback.'
         required: false
         type: boolean
         default: true
       pin_version:
+        description: 'Catalog @version that rendered templates pin to'
         required: false
         type: string
         default: v4
@@ -78,10 +83,12 @@ on:
         type: string
         default: ''
       add_branch_name:
+        description: 'Branch for PR A (add new workflows)'
         required: false
         type: string
         default: chore/onboard-reusable-workflows
       cleanup_branch_name:
+        description: 'Branch for PR B (remove legacy workflows)'
         required: false
         type: string
         default: chore/remove-legacy-workflows

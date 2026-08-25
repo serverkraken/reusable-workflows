@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # CI gate for docs/contracts.md.
 #
-# For every documented workflow/action section, compare the documented
-# input/output/secret names with the names exposed by the source YAML.
+# Two directions, both required:
+#
+#   1. Every workflow_call workflow and every composite action MUST have a
+#      section in the doc. The source list is built from the FILESYSTEM, not
+#      from the doc's own headings — deriving it from the headings made the
+#      gate blind in exactly the case that matters: an API nobody documented
+#      was also never inspected. It demonstrated this on itself, passing while
+#      ten APIs had no section at all.
+#   2. For every such section, the documented input/output/secret names must
+#      match the names the source YAML actually exposes.
 
 set -euo pipefail
 
@@ -48,6 +56,14 @@ contract_source_for_heading() {
     *)
       return 1
       ;;
+  esac
+}
+
+basename_for_heading() {
+  local source="$1"
+  case "$source" in
+    actions/*/action.yml) printf 'actions/%s' "$(basename "$(dirname "$source")")" ;;
+    *)                    printf '%s' "$(basename "$source")" ;;
   esac
 }
 
@@ -174,6 +190,39 @@ done < "$DOC_FILE"
 
 sort -u "$source_rows" -o "$source_rows"
 
+# --- Richtung 1: jede Quelle im Repo braucht eine Sektion -------------------
+expected_sources="$tmpdir/expected.tsv"
+documented_sources="$tmpdir/documented.tsv"
+: > "$expected_sources"
+
+for source in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [[ -f "$source" ]] || continue
+  # Nur workflow_call-Atome tragen einen Vertrag. Die Self-CI-Workflows dieses
+  # Repos (validate, release, nightly, ...) laufen auf push/schedule und haben
+  # keine Adopter-Schnittstelle, die dokumentiert werden koennte.
+  awk '
+    /^on:[[:space:]]*$/ { in_on = 1; next }
+    /^[^[:space:]#]/    { in_on = 0 }
+    in_on && /^[[:space:]]+workflow_call:[[:space:]]*$/ { found = 1 }
+    END { exit(found ? 0 : 1) }
+  ' "$source" || continue
+  printf '%s\n' "$source" >> "$expected_sources"
+done
+
+for source in actions/*/action.yml; do
+  [[ -f "$source" ]] || continue
+  printf '%s\n' "$source" >> "$expected_sources"
+done
+
+sort -u "$expected_sources" -o "$expected_sources"
+cut -f1 "$source_rows" | sort -u > "$documented_sources"
+
+while IFS= read -r source; do
+  [[ -n "$source" ]] || continue
+  echo "FAIL: $source exposes a contract, but $DOC_FILE has no section for it (expected a heading '### \`$(basename_for_heading "$source")\`')."
+  FAILED=1
+done < <(comm -23 "$expected_sources" "$documented_sources")
+
 while IFS=$'\t' read -r source heading line_ref; do
   [[ -n "$source" ]] || continue
   CHECKED=$((CHECKED + 1))
@@ -223,4 +272,4 @@ if [[ $FAILED -ne 0 ]]; then
   exit 1
 fi
 
-echo "OK: $CHECKED contract sections checked, all documented names match source YAML."
+echo "OK: $CHECKED contract sections checked ($(wc -l < "$expected_sources" | tr -d ' ') sources in repo), all documented names match source YAML."
