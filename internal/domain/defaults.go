@@ -6,6 +6,22 @@ import (
 	"strings"
 )
 
+// SupportedDefaultsSchema ist die einzige Fassung von
+// catalog/onboard-defaults.json, die dieser Code lesen darf.
+//
+// Warum das eine eigene Pruefung braucht: `json.Unmarshal` einer leeren oder
+// abgeschnittenen Datei ist erfolgreich und liefert den Nullwert. Fuer
+// RepoDefaults heisst das: jedes bool false, required_pull_request_reviews nil.
+// Gemessen gegen ein geschuetztes Repo ergibt das den PUT
+//
+//	{"required_pull_request_reviews":null,"enforce_admins":false,
+//	 "required_linear_history":false,"required_conversation_resolution":false,...}
+//
+// — der Branch-Schutz waere abgeraeumt, und der Lauf meldete
+// defaults_applied=true. Eine Konfiguration, die niemand geschrieben hat, darf
+// nicht wie eine gelten, die jemand geschrieben hat.
+const SupportedDefaultsSchema = 1
+
 type RepoDefaults struct {
 	SchemaVersion    int                      `json:"_schema_version"`
 	BranchProtection BranchProtectionDefaults `json:"branch_protection"`

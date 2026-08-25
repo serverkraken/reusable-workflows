@@ -79,6 +79,17 @@ if ! jq -e . "$CONFIG" > /dev/null 2>&1; then
   echo "::error::invalid JSON in $CONFIG" >&2
   exit 1
 fi
+# Gueltiges JSON ist nicht genug. `{}` parst fehlerfrei, und jeder Lesevorgang
+# darauf liefert dann `null` — was die spaeteren jq-Ausdruecke als "Schalter
+# aus" weiterreichen. Die Go-Seite hat dieselbe Luecke (C-1) und dieselbe
+# Pruefung; siehe domain.SupportedDefaultsSchema fuer die Messung, was ein
+# leeres File am Branch-Schutz anrichtet.
+SUPPORTED_DEFAULTS_SCHEMA=1
+CONFIG_SCHEMA=$(jq -r '._schema_version // "fehlt"' "$CONFIG")
+if [[ "$CONFIG_SCHEMA" != "$SUPPORTED_DEFAULTS_SCHEMA" ]]; then
+  echo "::error::$CONFIG: _schema_version ist ${CONFIG_SCHEMA}, unterstuetzt wird ${SUPPORTED_DEFAULTS_SCHEMA} — die Datei ist leer, abgeschnitten oder aus einer anderen Fassung" >&2
+  exit 1
+fi
 
 # Tier 2 decision: apply only when no marker is preserved from the snapshot.
 APPLY_TIER_2=0

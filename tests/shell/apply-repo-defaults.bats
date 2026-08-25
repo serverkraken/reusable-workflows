@@ -318,3 +318,42 @@ run_with_stub() {
   [ "$rc" -eq 1 ]
   [[ "$output" == *invalid* || "$output" == *JSON* ]]
 }
+
+# --- _schema_version-Pruefung (C-1) ----------------------------------------
+# Gueltiges JSON ist nicht genug: `{}` parst fehlerfrei, und jeder Lesevorgang
+# darauf liefert `null` — die spaeteren jq-Ausdruecke reichen das als "Schalter
+# aus" weiter. Die Go-Seite hatte dieselbe Luecke; dort ist gemessen, dass der
+# resultierende PUT den Branch-Schutz abraeumt.
+#
+# CATALOG_ROOT leitet sich aus dem SKRIPTORT ab, nicht aus der Umgebung. Ein
+# Env-Override greift also nicht — der Test legt eine ganze Katalogwurzel an.
+_catalog_with_config() {
+  local body="$1" root
+  root="$WORK/cat"
+  mkdir -p "$root/scripts/lib" "$root/catalog" "$root/tgt"
+  cp "$REPO_ROOT/scripts/apply-repo-defaults.sh" "$root/scripts/"
+  cp "$REPO_ROOT/scripts/lib/apply-defaults-lib.sh" "$root/scripts/lib/"
+  printf '%s' "$body" > "$root/catalog/onboard-defaults.json"
+  printf '%s' "$root"
+}
+
+@test "eine leere Defaults-Datei wird abgelehnt" {
+  root="$(_catalog_with_config '{}')"
+  run bash "$root/scripts/apply-repo-defaults.sh" --repo acme/x --target-path "$root/tgt"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"_schema_version ist fehlt"* ]]
+}
+
+@test "eine fremde Schemafassung wird abgelehnt" {
+  root="$(_catalog_with_config '{"_schema_version": 99}')"
+  run bash "$root/scripts/apply-repo-defaults.sh" --repo acme/x --target-path "$root/tgt"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"_schema_version ist 99"* ]]
+}
+
+@test "die ausgelieferte Konfiguration besteht die Pruefung" {
+  # Sonst haette der Fix den Produktivpfad gebrochen.
+  root="$(_catalog_with_config "$(cat "$REPO_ROOT/catalog/onboard-defaults.json")")"
+  run bash "$root/scripts/apply-repo-defaults.sh" --repo acme/x --target-path "$root/tgt"
+  [[ "$output" != *"_schema_version ist"* ]]
+}

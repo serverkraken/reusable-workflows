@@ -25,6 +25,14 @@ func (Store) ReadDefaults(catalogPath string) (domain.RepoDefaults, error) {
 	if err := json.Unmarshal(content, &cfg); err != nil {
 		return domain.RepoDefaults{}, fmt.Errorf("invalid JSON in %s: %w", path, err)
 	}
+	// Gueltiges JSON ist nicht genug: `{}` parst fehlerfrei zum Nullwert, und
+	// der bedeutet hier "alle Schutzschalter aus". Siehe die Herleitung an
+	// domain.SupportedDefaultsSchema.
+	if cfg.SchemaVersion != domain.SupportedDefaultsSchema {
+		return domain.RepoDefaults{}, fmt.Errorf(
+			"%s: _schema_version ist %d, unterstuetzt wird %d — die Datei ist leer, abgeschnitten oder aus einer anderen Fassung",
+			path, cfg.SchemaVersion, domain.SupportedDefaultsSchema)
+	}
 	return cfg, nil
 }
 
