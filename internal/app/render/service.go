@@ -73,6 +73,20 @@ func (s Service) Render(ctx context.Context, req Request) error {
 	}
 
 	files := plannedFiles(profile)
+	// Das Zielverzeichnis selbst anlegen, BEVOR es aufgeloest wird: drift
+	// rendert in ein frisches Temp-Verzeichnis, das hier noch nicht existiert.
+	// Ohne diese Zeile scheitert die Aufloesung, und der go-cli-Drift-Pfad
+	// meldet `render-failed` - genau so gemessen, nachdem der Riegel unten
+	// zuerst ohne sie eingebaut war.
+	if err := os.MkdirAll(req.TargetPath, 0o755); err != nil {
+		return err
+	}
+	// Derselbe Riegel wie in renderOne, nur frueher: dieses MkdirAll laeuft vor
+	// jedem Rendern und wuerde durch einen `.github`-Symlink hindurch bereits
+	// ein Verzeichnis ausserhalb des Ziels anlegen (Audit H-3).
+	if err := ensureInsideTarget(req.TargetPath, filepath.Join(req.TargetPath, ".github", "workflows", "probe")); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Join(req.TargetPath, ".github", "workflows"), 0o755); err != nil {
 		return err
 	}
@@ -189,6 +203,56 @@ func lockPaths(profile domain.Profile) []string {
 	return files
 }
 
+// ensureInsideTarget stellt sicher, dass outputPath tatsaechlich UNTERHALB von
+// targetPath landet, nachdem alle Symlinks aufgeloest sind (Audit H-3).
+//
+// Nachgestellt: ein Adopter-Repo, in dem `.github` ein Symlink nach aussen ist.
+// Beide Engines schrieben daraufhin `onboard.lock.json` und alle vier
+// Workflow-Dateien ausserhalb des Checkouts - mit rc=0. Auf einem self-hosted
+// Runner ist das ein Schreibvorgang an einen beliebigen Ort, den der Job
+// erreichen kann; der Lock landet dort ebenfalls, und der anschliessende
+// Commit im Adopter-Repo findet nichts.
+//
+// Geprueft wird das ELTERNVERZEICHNIS aufgeloest, nicht der Dateipfad selbst:
+// die Datei existiert beim ersten Rendern noch nicht. Zusaetzlich wird eine
+// bereits vorhandene Zieldatei abgewiesen, wenn sie ein Symlink ist - sonst
+// schriebe gomplate durch sie hindurch.
+func ensureInsideTarget(targetPath, outputPath string) error {
+	root, err := filepath.EvalSymlinks(targetPath)
+	if err != nil {
+		return fmt.Errorf("target path not resolvable: %w", err)
+	}
+	// Den tiefsten BEREITS EXISTIERENDEN Vorfahren aufloesen. Geprueft werden
+	// muss VOR dem MkdirAll: ein MkdirAll durch einen Symlink hindurch legt das
+	// Verzeichnis bereits draussen an, auch wenn danach keine Datei mehr
+	// geschrieben wird. Der erste Anlauf dieses Fixes prueft zu spaet und hat
+	// `aussen/workflows/` hinterlassen.
+	probe := filepath.Dir(outputPath)
+	for {
+		if _, err := os.Lstat(probe); err == nil {
+			break
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			break
+		}
+		probe = parent
+	}
+	dir, err := filepath.EvalSymlinks(probe)
+	if err != nil {
+		return fmt.Errorf("output directory not resolvable: %w", err)
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to write outside the target: %s resolves under %s, which is not inside %s",
+			outputPath, dir, root)
+	}
+	if info, err := os.Lstat(outputPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to write through the symlink %s", outputPath)
+	}
+	return nil
+}
+
 func (s Service) renderOne(ctx context.Context, req Request, file renderFile, contextPath string) error {
 	templatePath := filepath.Join(req.CatalogPath, filepath.FromSlash(templateRoot), filepath.FromSlash(file.Template))
 	if _, err := os.Stat(templatePath); errors.Is(err, os.ErrNotExist) {
@@ -197,6 +261,10 @@ func (s Service) renderOne(ctx context.Context, req Request, file renderFile, co
 		return err
 	}
 	outputPath := filepath.Join(req.TargetPath, filepath.FromSlash(file.Output))
+	// Vor MkdirAll: siehe ensureInsideTarget.
+	if err := ensureInsideTarget(req.TargetPath, outputPath); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		return err
 	}
