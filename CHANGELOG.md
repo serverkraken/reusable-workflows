@@ -1,5 +1,24 @@
 # Changelog
 
+## [4.18.1](https://github.com/serverkraken/reusable-workflows/compare/v4.18.0...v4.18.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **ci:** Zwei Jobs liefen ausserhalb des Required Checks ([#263](https://github.com/serverkraken/reusable-workflows/issues/263)) ([7e5533e](https://github.com/serverkraken/reusable-workflows/commit/7e5533e8c97cff77a2f4b51765547d43264b650b))
+* **ci:** Zwei weitere feste Output-Delimiter ([#275](https://github.com/serverkraken/reusable-workflows/issues/275)) ([24b57da](https://github.com/serverkraken/reusable-workflows/commit/24b57dae610d1e41900517d27f9eabc14b875adc))
+* **contracts:** Das Contract-Gate war fuer undokumentierte APIs blind ([#262](https://github.com/serverkraken/reusable-workflows/issues/262)) ([19b1e69](https://github.com/serverkraken/reusable-workflows/commit/19b1e694bf28b5b4f95904f8965ff03d62d9ffda))
+* **docker-build:** Bewegliche Tags erst nach der Signatur, und attestiert wird der gebaute Commit ([#265](https://github.com/serverkraken/reusable-workflows/issues/265)) ([6c54d85](https://github.com/serverkraken/reusable-workflows/commit/6c54d856ccd1d915adc7f1aa8251c5b78cc42edd))
+* **drift:** Der Bash-Pfad meldete "clean", wo der Go-Pfad laengst "error" sagt ([#264](https://github.com/serverkraken/reusable-workflows/issues/264)) ([e22884d](https://github.com/serverkraken/reusable-workflows/commit/e22884d660426d848b412b6415f7d9169436df69))
+* **drift:** gescheiterter Vergleich meldet error statt clean, und e2e.yml wird endlich geprueft ([#259](https://github.com/serverkraken/reusable-workflows/issues/259)) ([535ecbe](https://github.com/serverkraken/reusable-workflows/commit/535ecbe4a1c777c6721809130fe29ce0b62905d8))
+* **onboard:** Branch-Namen validieren, Whitespace nicht wegloeschen ([#261](https://github.com/serverkraken/reusable-workflows/issues/261)) ([5f9e4cf](https://github.com/serverkraken/reusable-workflows/commit/5f9e4cf7efba71c7b51fe1fd74aed4ebeb200d09))
+* **onboard:** Dry-Run mutierte Zieleinstellungen, und Laeufe gegen dasselbe Ziel liefen parallel ([#266](https://github.com/serverkraken/reusable-workflows/issues/266)) ([434fc3f](https://github.com/serverkraken/reusable-workflows/commit/434fc3f6a03d5cbf99731024b674d8cde6745ee7))
+* **onboard:** Ein blankes push -f warf Reviewer-Arbeit weg ([#271](https://github.com/serverkraken/reusable-workflows/issues/271)) ([2477c1c](https://github.com/serverkraken/reusable-workflows/commit/2477c1cfa141f458a7b80841a4ccc4b95a94fdc6))
+* **onboard:** Keine Sicherheitsgrenze, nur ein gluecklicher Zufall ([#270](https://github.com/serverkraken/reusable-workflows/issues/270)) ([e55e1f0](https://github.com/serverkraken/reusable-workflows/commit/e55e1f0a057b3a2a3b66d813ae3370c273c0c80b))
+* **onboard:** Output-Injection im PR-Kommentar, und Fehlerzeilen mit heutigem Datum ([#269](https://github.com/serverkraken/reusable-workflows/issues/269)) ([032889c](https://github.com/serverkraken/reusable-workflows/commit/032889c201a2bde1e08b1b3bd3c3220840021fe1))
+* **onboard:** PR B loeschte nach Dateinamen, nicht nach Inhalt ([#267](https://github.com/serverkraken/reusable-workflows/issues/267)) ([1a947ed](https://github.com/serverkraken/reusable-workflows/commit/1a947ed9d46ad826e7423a8e4d342e92a52596b2))
+* **prerelease-tag:** Ein Sanitizer, der still danebenliegt, ist schlimmer als keiner ([#268](https://github.com/serverkraken/reusable-workflows/issues/268)) ([c623a10](https://github.com/serverkraken/reusable-workflows/commit/c623a10f68639dcbba505fc1e3a0323182b02778))
+
 ## [4.18.0](https://github.com/serverkraken/reusable-workflows/compare/v4.17.1...v4.18.0) (2026-08-25)
 
 
