@@ -1,5 +1,20 @@
 # Changelog
 
+## [4.18.0](https://github.com/serverkraken/reusable-workflows/compare/v4.17.1...v4.18.0) (2026-08-25)
+
+
+### Features
+
+* **onboard:** severity und fail_on_findings je Image im Manifest ([#249](https://github.com/serverkraken/reusable-workflows/issues/249)) ([489d1fb](https://github.com/serverkraken/reusable-workflows/commit/489d1fbc72d0626a93dc6cd2b60e407961a688ea))
+
+
+### Bug Fixes
+
+* **atoms:** Injection-Pfade ueber env statt Interpolation, plus Gate dagegen ([#252](https://github.com/serverkraken/reusable-workflows/issues/252)) ([05502cf](https://github.com/serverkraken/reusable-workflows/commit/05502cffc2a02adaf56181195ffe740c9d3c491a))
+* **cleanup:** Retention zaehlt Releases statt Versionsobjekte ([#255](https://github.com/serverkraken/reusable-workflows/issues/255)) ([31bfe31](https://github.com/serverkraken/reusable-workflows/commit/31bfe31a41574311c208e7bbb330de0cc3380a7e))
+* **onboard:** extra-files-Pfad ist paketrelativ, nicht repo-relativ ([#248](https://github.com/serverkraken/reusable-workflows/issues/248)) ([8cd6b21](https://github.com/serverkraken/reusable-workflows/commit/8cd6b21577af040d60de1f2a936334f66b62bf7d))
+* **release:** vier Audit-Funde, die ohne Angreifer wirken ([#251](https://github.com/serverkraken/reusable-workflows/issues/251)) ([4145062](https://github.com/serverkraken/reusable-workflows/commit/4145062b26f395da983cc4bbbadcc214cf01f41b))
+
 ## [4.17.1](https://github.com/serverkraken/reusable-workflows/compare/v4.17.0...v4.17.1) (2026-08-25)
 
 
