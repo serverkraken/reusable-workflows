@@ -306,6 +306,24 @@ jobs:
           github_token: ${{ steps.target-token.outputs.token }}
           use_go_cli: ${{ inputs.use_go_cli }}
 
+      # Fingerprint the legacy CI files BEFORE anything touches the tree. PR B
+      # hard-resets to a freshly fetched default branch before deleting, so
+      # the tree it deletes from is not the tree that was classified. Comparing
+      # these two fingerprints is what keeps PR B from removing a file a human
+      # replaced in between (E-3), and from trusting a bare existence check
+      # (E-9).
+      - name: Fingerprint legacy CI at detection time
+        working-directory: target
+        env:
+          PROFILE: ${{ steps.detect.outputs.profile_json }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PROFILE" \
+            | "$GITHUB_WORKSPACE/.catalog/scripts/legacy-ci-fingerprint.sh" . \
+            > "$RUNNER_TEMP/legacy-before.tsv"
+          echo "Legacy CI candidates at detection time:"
+          cut -f2 "$RUNNER_TEMP/legacy-before.tsv" | sed 's/^/  /'
+
       - name: Install gomplate (needed by onboard-render)
         run: sudo ${{ github.workspace }}/.catalog/scripts/install-gomplate.sh
 
@@ -568,13 +586,31 @@ jobs:
               .[].path
             '
           )
-          # Defensive: jq returns paths verbatim from detection; verify each
-          # exists on the default branch before staging the deletion.
-          present=()
-          for f in "${matched[@]}"; do
-            [[ -n "$f" && -f "$f" ]] && present+=("$f")
-          done
-          matched=("${present[@]+"${present[@]}"}")
+          # The tree was just reset to a freshly fetched default branch, so it
+          # is NOT the tree the profile above was computed from. Re-fingerprint
+          # and delete only what is byte-identical to what was classified.
+          # Asking merely whether the path still exists confirmed the name and
+          # never the thing: a workflow someone rewrote in between kept its
+          # filename and got deleted anyway.
+          printf '%s' "$PROFILE" \
+            | "$GITHUB_WORKSPACE/.catalog/scripts/legacy-ci-fingerprint.sh" . \
+            > "$RUNNER_TEMP/legacy-now.tsv"
+          mapfile -t matched < <(
+            comm -12 "$RUNNER_TEMP/legacy-before.tsv" "$RUNNER_TEMP/legacy-now.tsv" | cut -f2
+          )
+          mapfile -t drifted < <(
+            comm -23 "$RUNNER_TEMP/legacy-before.tsv" "$RUNNER_TEMP/legacy-now.tsv" | cut -f2
+          )
+          if (( ${#drifted[@]} > 0 )); then
+            printf '::warning::changed since detection, left in place: %s\n' "${drifted[*]}"
+            {
+              echo ""
+              echo "**Legacy CI left in place** — changed on \`${DEFAULT_BRANCH}\` since this run detected it:"
+              for f in "${drifted[@]}"; do echo "- \`${f}\`"; done
+              echo ""
+              echo "Re-run \`onboard.yml\` to re-classify these against their current contents."
+            } >> "$GITHUB_STEP_SUMMARY" || true
+          fi
 
           existing_pr_num=$(gh pr list --repo "$TARGET_REPO" --head "$CLEANUP_BRANCH" --state open --json number -q '.[0].number' || echo "")
 
