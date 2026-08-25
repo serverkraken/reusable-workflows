@@ -1041,3 +1041,51 @@ EOF2
   [ -f "$TARGET/.github/workflows/ci.yml" ]
   [ ! -f "$TARGET/.github/workflows/e2e.yml" ]
 }
+
+# === Schreibvorgänge ausserhalb des Ziels (Audit H-3) ===
+#
+# Ein Adopter-Repo, in dem `.github` ein Symlink nach aussen ist, liess beide
+# Engines den Lock und alle vier Workflow-Dateien AUSSERHALB des Checkouts
+# schreiben - mit rc=0. Auf einem self-hosted Runner ist das ein Schreibvorgang
+# an einen beliebigen Ort, den der Job erreichen kann; der anschliessende
+# Commit im Adopter-Repo findet dann nichts.
+#
+# Der Go-Renderer prueft dasselbe (ensureInsideTarget); ein eigener Go-Test
+# haelt das fest, damit die Engines sich hier nicht unterscheiden.
+
+@test "render: ein .github-Symlink nach aussen wird abgewiesen" {
+  local outside="$BATS_TEST_TMPDIR/aussen"
+  mkdir -p "$outside"
+  seed_profile "go-repo"
+  ln -s "$outside" "$TARGET/.github"
+
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"refusing to write outside the target"* ]]
+
+  # Nichts darf draussen gelandet sein - auch nicht die erste Datei.
+  run bash -c "ls -A '$outside'"
+  [ -z "$output" ]
+}
+
+@test "render: eine als Symlink vorliegende Zieldatei wird abgewiesen" {
+  local outside="$BATS_TEST_TMPDIR/fremd.yml"
+  echo "gehoert mir nicht" > "$outside"
+  seed_profile "go-repo"
+  mkdir -p "$TARGET/.github/workflows"
+  ln -s "$outside" "$TARGET/.github/workflows/ci.yml"
+
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"refusing to write through the symlink"* ]]
+  [ "$(cat "$outside")" = "gehoert mir nicht" ]
+}
+
+@test "render: ein Ziel ohne Symlinks rendert unveraendert" {
+  # Gegenprobe: die Pruefung darf den Normalfall nicht treffen.
+  seed_profile "go-repo"
+  run "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v4"
+  [ "$status" -eq 0 ]
+  [ -f "$TARGET/.github/workflows/ci.yml" ]
+  [ -f "$TARGET/.github/onboard.lock.json" ]
+}
