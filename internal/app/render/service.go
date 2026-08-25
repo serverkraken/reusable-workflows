@@ -387,8 +387,8 @@ func checkSlugCollisions(profile domain.Profile) error {
 		slug := jobIDSlug(c.Path)
 		if other, dup := seen[slug]; dup {
 			return fmt.Errorf(
-				"Komponenten %q und %q ergeben beide die Job-ID %q — GitHub wuerde den Workflow wegen doppelter Job-Keys verwerfen; eine der beiden umbenennen",
-				other, c.Path, slug)
+				"doppelte Job-ID %q: die Komponenten %q und %q werden beide darauf abgebildet — GitHub wuerde den Workflow wegen doppelter Job-Keys verwerfen; eine der beiden umbenennen",
+				slug, other, c.Path)
 		}
 		seen[slug] = c.Path
 	}
