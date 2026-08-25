@@ -48,7 +48,7 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@v2
     with:
       chart_path: charts/svc
-      oci_registry: ghcr.io//charts
+      oci_registry: ghcr.io/repo/charts
       # Checkout the released tag, not the triggering event's SHA: with
       # back-to-back merges the event SHA predates release-please's bump
       # commit and the job silently republishes the PREVIOUS chart version.

@@ -67,8 +67,27 @@ mkdir -p "$TARGET/.github/workflows"
 CTX_DIR=$(mktemp -d)
 CTX="$CTX_DIR/ctx.json"
 trap 'rm -rf "$CTX_DIR"' EXIT
-jq -n --slurpfile p "$PROFILE" --arg pin "$PIN" \
-  '{pin: $pin, profile: $p[0]}' > "$CTX"
+
+# target_repo-Fallback VOR dem Templating. Templates interpolieren den Wert
+# direkt in `oci_registry: ghcr.io/{{ .profile.target_repo }}/charts`; ist er
+# leer, entsteht `ghcr.io//charts` — ein syntaktisch einwandfreies YAML mit
+# einer Registry, die es nicht gibt. Genau das lag als Golden im Repo
+# (service-with-helm), und actionlint kann es nicht sehen, weil es ein
+# gueltiger String ist.
+#
+# Der Go-Pfad macht das laengst so (`preview` ohne -target-repo faellt auf den
+# Fixture-Basename zurueck, siehe self-ci.yml) — deshalb rendert dieselbe Sorte
+# Fixture dort gueltig und hier nicht. Dieselbe Herleitung wie beim
+# $REPO-Ersatz weiter unten, nur eben frueh genug.
+CTX_REPO=$(jq -r '.target_repo // ""' "$PROFILE")
+if [[ -z "$CTX_REPO" || "$CTX_REPO" == "null" ]]; then
+  CTX_REPO="${TARGET##*/}"
+  if [[ "$CTX_REPO" == "." || -z "$CTX_REPO" ]]; then
+    CTX_REPO="$(basename "$(pwd)")"
+  fi
+fi
+jq -n --slurpfile p "$PROFILE" --arg pin "$PIN" --arg repo "$CTX_REPO" \
+  '{pin: $pin, profile: ($p[0] | .target_repo = $repo)}' > "$CTX"
 
 render() {
   local src="$1" dst="$2"
