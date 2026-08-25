@@ -48,6 +48,8 @@ jobs:
         run: bash tests/conventions/check-contracts.sh
       - name: Check for caller-controlled expressions in run bodies
         run: bash tests/conventions/check-run-interpolation.sh
+      - name: Check every job is inside a required check
+        run: bash tests/conventions/check-summary-coverage.sh
 
   renovate-config-check:
     runs-on: ubuntu-latest
