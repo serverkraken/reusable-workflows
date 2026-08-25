@@ -376,6 +376,52 @@ jobs:
           fi
           echo "kube-validate-fail: correctly observed failure"
 
+  # ----- chart-image-bump: fail-path. Das Atom hatte bis zum K-2-Fix ueberhaupt
+  #       keinen Self-CI-Aufrufer; die Repo-Konvention verlangt zu jedem Atom
+  #       einen Happy- UND einen Fehlerpfad. Fehlt der erwartete Schluessel in
+  #       der values.yaml, muss der Lauf rot werden — ein Chart, das still auf
+  #       einem alten Tag stehenbliebe, ist das schlechtere Ergebnis. -----
+  test-chart-image-bump-fail:
+    uses: ./.github/workflows/chart-image-bump.yml
+    secrets: inherit
+    with:
+      values_file: tests/fixtures/chart-image-bump/values-missing-key.yaml
+      key_template: 'images.{name}.tag'
+      releases: '{"images/api": {"version": "9.9.9"}}'
+      images: '{"images/api": ["serverkraken/reusable-workflows/api"]}'
+      commit: false
+      runs_on: '["ubuntu-latest"]'
+
+  assert-chart-image-bump-fail:
+    needs: test-chart-image-bump-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert the bump failed instead of silently doing nothing
+        env:
+          RESULT: ${{ needs.test-chart-image-bump-fail.result }}
+          CHANGED: ${{ needs.test-chart-image-bump-fail.outputs.changed }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::erwartet 'failure' bei fehlendem Schluessel, bekommen: $RESULT"
+            fail=1
+          fi
+          # `result == failure` allein waere zu schwach — das ist K-4. Der Lauf
+          # koennte auch am Token oder am Checkout gescheitert sein. `changed`
+          # muss leer bleiben: haette das Atom etwas gebumpt und WAERE trotzdem
+          # rot, waere die Ursache eine andere.
+          if [[ -n "$CHANGED" && "$CHANGED" != "false" ]]; then
+            echo "::error::changed='$CHANGED' — es wurde etwas gebumpt, der Fehlschlag hat also eine andere Ursache"
+            fail=1
+          fi
+          # Der Grund selbst (die 'not found in'-Meldung) steht nur im Log des
+          # anderen Jobs und ist von hier aus nicht lesbar. Anders als bei
+          # test-python, wo das Atom `coverage_pct` herausgibt, existiert hier
+          # kein Output, an dem sich der Grund festmachen liesse.
+          exit "$fail"
+
   # ----- kube-lint: fail-path -----
   # Violation fixture (nginx:latest, no resource limits, no securityContext)
   # trips the baseline kube-linter default checks → findings_count > 0 →
@@ -523,6 +569,7 @@ jobs:
       - assert-helm-publish-fail
       - assert-kube-validate-fail
       - assert-kube-lint-fail
+      - assert-chart-image-bump-fail
       - assert-secret-scan-fail
       - assert-build-flutter-android-fail
       - assert-e2e-kind-fail

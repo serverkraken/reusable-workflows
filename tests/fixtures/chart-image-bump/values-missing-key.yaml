@@ -1,0 +1,7 @@
+# Fixture fuer den Fehlerpfad: der vom Aufrufer erwartete Schluessel
+# `images.api.tag` fehlt hier. chart-image-bump.py meldet das laut
+# ("not found in ...") und beendet mit 1 — ein Chart, das still auf einem
+# alten Tag stehenbliebe, waere das schlechtere Ergebnis.
+images:
+  worker:
+    tag: v0.0.1

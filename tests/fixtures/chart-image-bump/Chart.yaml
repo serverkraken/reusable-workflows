@@ -1,0 +1,6 @@
+apiVersion: v2
+name: chart-image-bump-fixture
+description: Fixture chart for the chart-image-bump atom's self-CI caller.
+type: application
+version: 0.0.1
+appVersion: "0.0.1"
