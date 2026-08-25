@@ -76,3 +76,80 @@ printf '%s\n' "$*" > "$out"
 	}
 	return path
 }
+
+// Audit C-6: gomplate schreibt die Zieldatei selbst und beendet mit 0, auch
+// wenn das Template nichts ergeben hat — etwa weil jeder Zweig darin falsch
+// war. Der Renderer nahm das an, der Lock hashte die leere Datei, und der Lauf
+// blieb gruen. Im Adopter-Repo landete damit ein leerer Workflow, den GitHub
+// kommentarlos ignoriert: kein Lint, kein Test, kein Scan, und nichts sagt es.
+//
+// Keine gerenderte Datei darf leer sein; die kleinste eingecheckte
+// Golden-Ausgabe hat 19 Byte.
+
+// emptyOutputGomplate legt die Zieldatei an und schreibt content hinein.
+//
+// Der Inhalt geht ueber eine Datei, nicht ueber ein Literal im Skript: eine
+// erste Fassung nutzte `printf '%s' "\n"`, und bash schreibt dabei die zwei
+// ZEICHEN Backslash und n statt eines Zeilenumbruchs. Der Test war damit gruen
+// aus dem falschen Grund — er pruefte nie den Whitespace-Fall.
+func emptyOutputGomplate(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	payload := filepath.Join(dir, "payload")
+	if err := os.WriteFile(payload, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "gomplate")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+out=""
+for ((i=1; i<=$#; i++)); do
+  if [[ "${!i}" == "-o" ]]; then
+    j=$((i+1))
+    out="${!j}"
+  fi
+done
+mkdir -p "$(dirname "$out")"
+cat ` + fmt.Sprintf("%q", payload) + ` > "$out"
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestExecuteRejectsEmptyRender(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		content string
+	}{
+		{"komplett leer", ""},
+		{"nur ein Zeilenumbruch", "\n"},
+		// Der Bash-Renderer normalisiert leeren Inhalt zu genau einem \n —
+		// derselbe Fehler in anderer Verkleidung.
+		{"nur Whitespace", "  \n\t\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "ci.yml")
+			err := (Adapter{Binary: emptyOutputGomplate(t, c.content)}).
+				Execute(context.Background(), "/ci.yml.tmpl", out, "/ctx.json")
+			if err == nil {
+				t.Fatal("erwartet: Abbruch, bekommen: Erfolg — ein leerer Workflow darf nicht in den Lock")
+			}
+			if !strings.Contains(err.Error(), "rendered nothing") {
+				t.Fatalf("Grund fehlt im Fehler: %v", err)
+			}
+		})
+	}
+}
+
+func TestExecuteAcceptsMinimalRender(t *testing.T) {
+	// Gegenprobe: die Pruefung darf nicht mehr abweisen als leere Ausgaben.
+	// 19 Byte ist die kleinste echte Golden-Datei.
+	out := filepath.Join(t.TempDir(), "manifest.json")
+	err := (Adapter{Binary: emptyOutputGomplate(t, "{\n  \".\": \"0.0.0\"\n}\n")}).
+		Execute(context.Background(), "/manifest.tmpl", out, "/ctx.json")
+	if err != nil {
+		t.Fatalf("eine kleine, aber gueltige Ausgabe muss durchgehen: %v", err)
+	}
+}
