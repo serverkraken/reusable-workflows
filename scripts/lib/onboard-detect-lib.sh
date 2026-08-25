@@ -61,6 +61,43 @@ _metadata_failed() {
   return 1
 }
 
+# Loest Workspace-Muster gegen das Repo auf und gibt nur Verzeichnisse
+# INNERHALB des Repos zurueck, jeweils repo-relativ, eines pro Zeile.
+# Signature: _expand_workspace_patterns <repo> <pattern>...
+#
+# Zwei Funde in einer Funktion:
+#
+#   H-8/B-8: Cargo-Member wurden woertlich uebernommen. `members = ["crates/*"]`
+#   ergab eine Komponente mit dem Pfad `crates/*` - ein Verzeichnis, das es
+#   nicht gibt. Die echten Crates bekamen dadurch KEINE Jobs: kein Lint, kein
+#   Test, kein Scan. `crates/*` ist das uebliche Cargo-Layout. Der pnpm-Zweig
+#   direkt daneben expandierte laengst.
+#
+#   H-7/B-11: ein Member-Pfad kann aus dem Checkout herausfuehren
+#   (`../nachbar`). Die gerenderten Workflows trugen dann ein
+#   `working_directory`, das beim Adopter woanders hinzeigt.
+#
+# Der Go-Detektor macht dasselbe (expandWorkspacePatterns).
+_expand_workspace_patterns() {
+  local repo="$1"; shift
+  local repo_real
+  repo_real=$(cd "$repo" 2>/dev/null && pwd -P) || return 0
+  local pat d real rel
+  for pat in "$@"; do
+    [[ -z "$pat" ]] && continue
+    while IFS= read -r d; do
+      [[ -d "$d" ]] || continue
+      real=$(cd "$d" 2>/dev/null && pwd -P) || continue
+      case "$real/" in
+        "$repo_real"/*) ;;
+        *) continue ;;                 # zeigt aus dem Checkout heraus
+      esac
+      rel="${real#"$repo_real"/}"
+      [[ -n "$rel" && "$rel" != "$real" ]] && printf '%s\n' "$rel"
+    done < <(compgen -G "$repo/$pat" 2>/dev/null || true)
+  done
+}
+
 # Flutter detection helper. Arg: absolute component directory.
 # True when pubspec.yaml exists AND declares the Flutter SDK dependency
 # (`sdk: flutter`) — every Flutter app/package has it; a pure-Dart package
@@ -350,9 +387,12 @@ detect_components() {
       }
     ' "$repo/go.work" | sed 's|^\./||')
   elif [[ -f "$repo/Cargo.toml" ]] && grep -q '^\[workspace\]' "$repo/Cargo.toml" 2>/dev/null; then
-    # Cargo workspace: members = [ "crates/a", "crates/b" ]  (single-line or multi-line)
+    # Cargo workspace: members = [ "crates/a", "crates/*" ]  (single-line or multi-line)
+    # Muster werden expandiert und auf das Repo eingegrenzt, siehe
+    # _expand_workspace_patterns.
+    local _cargo_members=()
     while IFS= read -r p; do
-      [[ -n "$p" ]] && paths+=("$p")
+      [[ -n "$p" ]] && _cargo_members+=("$p")
     done < <(awk '
       /^\[workspace\]/{flag=1; next}
       /^\[/ && !/^\[workspace\]/{flag=0}
@@ -372,15 +412,16 @@ detect_components() {
         }
       }
     ' "$repo/Cargo.toml")
+    if (( ${#_cargo_members[@]} > 0 )); then
+      while IFS= read -r p; do
+        [[ -n "$p" ]] && paths+=("$p")
+      done < <(_expand_workspace_patterns "$repo" "${_cargo_members[@]}")
+    fi
   elif [[ -f "$repo/pnpm-workspace.yaml" ]]; then
     # packages: ["apps/*", "packages/foo"]  — expand globs against the repo
+    local _pnpm_patterns=()
     while IFS= read -r pat; do
-      [[ -z "$pat" ]] && continue
-      while IFS= read -r d; do
-        [[ -d "$d" ]] || continue
-        local rel="${d#"$repo"/}"
-        paths+=("$rel")
-      done < <(compgen -G "$repo/$pat" 2>/dev/null || true)
+      [[ -n "$pat" ]] && _pnpm_patterns+=("$pat")
     done < <(awk '
       /^packages:/{flag=1; next}
       flag && /^[[:space:]]*-/{
@@ -392,6 +433,11 @@ detect_components() {
       }
       flag && /^[^[:space:]-]/{flag=0}
     ' "$repo/pnpm-workspace.yaml")
+    if (( ${#_pnpm_patterns[@]} > 0 )); then
+      while IFS= read -r p; do
+        [[ -n "$p" ]] && paths+=("$p")
+      done < <(_expand_workspace_patterns "$repo" "${_pnpm_patterns[@]}")
+    fi
   fi
 
   # 2) Fallback monorepo via multiple sub-markers — only when the root has no primary

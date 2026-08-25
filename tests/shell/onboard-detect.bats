@@ -1173,3 +1173,47 @@ _two_components() {
   echo "$output" | jq -e '[.components[].dockerfiles[].image_name] | length == 2'
   echo "$output" | jq -e '[.components[].dockerfiles[].image_name] | unique | length == 2'
 }
+
+# === Workspace-Muster (Audit H-8/B-8, H-7/B-11) ===
+#
+# Cargo-Member wurden woertlich uebernommen: `members = ["crates/*"]` ergab eine
+# Komponente mit dem Pfad `crates/*` — ein Verzeichnis, das es nicht gibt. Die
+# echten Crates bekamen dadurch KEINE Jobs. `crates/*` ist das uebliche
+# Cargo-Layout, und der pnpm-Zweig direkt daneben expandierte laengst.
+#
+# Der Go-Detektor verhaelt sich identisch (expandWorkspacePatterns).
+
+_crate() {
+  mkdir -p "$1/src"
+  printf '[package]\nname = "%s"\nversion = "0.1.0"\n' "$(basename "$1")" > "$1/Cargo.toml"
+  echo 'fn main(){}' > "$1/src/main.rs"
+}
+
+@test "Cargo-Workspace: ein Glob wird expandiert" {
+  local repo="$BATS_TEST_TMPDIR/cargo-glob"
+  _crate "$repo/crates/alpha"; _crate "$repo/crates/beta"
+  printf '[workspace]\nmembers = ["crates/*"]\n' > "$repo/Cargo.toml"
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[].path] == ["crates/alpha","crates/beta"]'
+}
+
+@test "Cargo-Workspace: ein Member ausserhalb des Checkouts faellt weg" {
+  local base="$BATS_TEST_TMPDIR/cargo-esc"
+  mkdir -p "$base/repo"
+  _crate "$base/nachbar"
+  printf '[workspace]\nmembers = ["../nachbar"]\n' > "$base/repo/Cargo.toml"
+  run "$DETECT" --profile-json "$base/repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[].path] | all(. == ".")'
+}
+
+@test "Cargo-Workspace: ausgeschriebene Member bleiben erhalten" {
+  # Gegenprobe: die Expansion darf gewoehnliche Member nicht verlieren.
+  local repo="$BATS_TEST_TMPDIR/cargo-literal"
+  _crate "$repo/pkg-a"; _crate "$repo/pkg-b"
+  printf '[workspace]\nmembers = ["pkg-a", "pkg-b"]\n' > "$repo/Cargo.toml"
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[].path] == ["pkg-a","pkg-b"]'
+}
