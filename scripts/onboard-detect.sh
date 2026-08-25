@@ -94,7 +94,15 @@ if [[ "${1:-}" == "--emit-both" ]]; then
       echo "::error::repo not accessible: $TARGET_REPO" >&2
       exit 1
     fi
-    raw_tag=$(gh release list --repo "$TARGET_REPO" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+    # `|| echo ""` verschluckte jeden API-Fehler und liess current_version auf
+    # 0.0.0 stehen (Audit H-5). Daraus wird .release-please-manifest.json
+    # geseedet - ein Repo auf 1.10.0 haette dort 0.0.0 bekommen und beim
+    # naechsten Release rueckwaerts versioniert. rc trennt die Faelle sauber:
+    # ein Repo OHNE Releases antwortet mit rc=0 und leerer Ausgabe.
+    if ! raw_tag=$(gh release list --repo "$TARGET_REPO" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null); then
+      echo "::error::could not list releases for $TARGET_REPO; refusing to seed the version from a failed API call" >&2
+      exit 1
+    fi
     if [[ -n "$raw_tag" && "$raw_tag" != "null" ]]; then
       current_version="${raw_tag#v}"
     fi
@@ -189,7 +197,11 @@ if [[ -n "${TARGET_REPO:-}" ]]; then
   # --exclude-pre-releases: seed release-please-manifest.json with the latest STABLE
   # version, not a prerelease tag like 0.14.2-pre.<sha>. Prereleases as the manifest
   # baseline confuse release-please's version-bump math on the next release.
-  raw_tag=$(gh release list --repo "$TARGET_REPO" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+  # Fehler nicht verschlucken, siehe oben (Audit H-5).
+  if ! raw_tag=$(gh release list --repo "$TARGET_REPO" --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null); then
+    echo "::error::could not list releases for $TARGET_REPO; refusing to seed the version from a failed API call" >&2
+    exit 1
+  fi
   # jq -q '.[0].tagName' returns the literal string "null" (exit 0) when the
   # release list is empty. Treat "null" as no-release-found and keep current_version=0.0.0.
   if [[ -n "$raw_tag" && "$raw_tag" != "null" ]]; then

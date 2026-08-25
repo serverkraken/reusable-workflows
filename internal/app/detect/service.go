@@ -67,21 +67,46 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		} else if b != "" {
 			branch = b
 		}
-		if t, err := gh.ReleaseTags(ctx, req.TargetRepo); err == nil && len(t) > 0 {
-			releaseTags = t
+		// `err == nil &&` liess einen API-Fehler wie "das Repo hat keine
+		// Releases" aussehen (Audit C-4, C-5). Aus `version` wird
+		// `.release-please-manifest.json` geseedet: ein Repo auf 1.10.0, dessen
+		// Abfrage an einem Rate-Limit scheitert, haette dort 0.0.0 bekommen und
+		// beim naechsten Release rueckwaerts versioniert.
+		//
+		// Ein Repo OHNE Releases ist etwas anderes und bleibt gueltig: die API
+		// antwortet dann erfolgreich mit einer leeren Liste. Der Bash-Pfad
+		// unterscheidet inzwischen genauso (H-5) - beide Engines muessen bei
+		// derselben Frage dieselbe Antwort geben.
+		t, err := gh.ReleaseTags(ctx, req.TargetRepo)
+		if err != nil {
+			return Result{}, fmt.Errorf("could not list releases for %s: %w", req.TargetRepo, err)
 		}
+		releaseTags = t
+
 		// The root version must come from a ROOT tag. `gh release list` is
 		// ordered by date, so in a monorepo its newest entry is whatever
 		// component released last (`ansible-v2.6.0`) — seeding from that wrote
 		// a tag name where a version belongs, for every package at once.
 		if v := latestRootVersion(releaseTags); v != "" {
 			version = v
-		} else if v, err := gh.LatestStableRelease(ctx, req.TargetRepo); err == nil && v != "" && rootTagRe.MatchString("v"+strings.TrimPrefix(v, "v")) {
-			version = strings.TrimPrefix(v, "v")
+		} else {
+			v, err := gh.LatestStableRelease(ctx, req.TargetRepo)
+			if err != nil {
+				return Result{}, fmt.Errorf("could not read the latest release of %s: %w", req.TargetRepo, err)
+			}
+			if v != "" && rootTagRe.MatchString("v"+strings.TrimPrefix(v, "v")) {
+				version = strings.TrimPrefix(v, "v")
+			}
 		}
-		if t, err := gh.Topics(ctx, req.TargetRepo); err == nil {
-			topics = t
+
+		// Topics steuern Opt-ins, allen voran `sk-prerelease-on-push`. Ein
+		// verschluckter Fehler hiess "keine Topics" und damit "das Opt-in gilt
+		// nicht" — der Adopter haette prerelease-on-push.yml still verloren.
+		tp, err := gh.Topics(ctx, req.TargetRepo)
+		if err != nil {
+			return Result{}, fmt.Errorf("could not read topics for %s: %w", req.TargetRepo, err)
 		}
+		topics = tp
 	}
 
 	man, manifestSHA, hasManifest, err := manifest.Load(req.RepoPath)

@@ -136,6 +136,12 @@ if [[ "$status" == "clean" ]]; then
   fi
 
   # Step 1: re-detect the adopter's profile from its source files.
+  # Drift vergleicht ein bereits onboardetes Repo mit dem, was dort eingecheckt
+  # ist, und laeuft in Jobs ohne GitHub-Token. Ein fehlgeschlagener
+  # Metadaten-Aufruf darf hier degradieren statt abzubrechen - beim ONBOARDING
+  # nicht, dort wuerde geraten (Audit H-5, H-10). Derselbe Schnitt wie im
+  # Go-Pfad, wo godetect.tolerantMetadata nur `drift` umschliesst.
+  export ONBOARD_METADATA_OPTIONAL=1
   if ! "$CATALOG/scripts/onboard-detect.sh" --profile-json "$TARGET" \
        > "$scratch/profile.json" 2>"$scratch/detect.err"; then
     render_error="detect-failed:$(tr '\n' ' ' < "$scratch/detect.err" | cut -c1-80)"
