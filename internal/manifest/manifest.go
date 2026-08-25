@@ -25,9 +25,16 @@ type Manifest struct {
 
 type Component struct {
 	Path, Language, Type, Image, Context, Platforms, Scanners string
-	UploadSARIF *bool
-	Release  *bool
-	Unittest bool
+	UploadSARIF                                               *bool
+	// Severity and FailOnFindings are the scan GATE, as opposed to Scanners
+	// which decides what is looked for. Split out because an image can be
+	// worth scanning while its findings must not block a release — mailstack's
+	// crowdsec-sync ships upstream CrowdSec binaries whose Go-stdlib CVEs it
+	// cannot fix from its own Dockerfile.
+	Severity       string
+	FailOnFindings *bool
+	Release        *bool
+	Unittest       bool
 	// AppVersion keeps a chart's appVersion in step with its own chart
 	// version. release-please's helm strategy only rewrites `version:` —
 	// mailstack's chart reached 1.10.0 while appVersion sat at v1.6.5, and
@@ -42,7 +49,9 @@ type Component struct {
 
 type DockerfileSpec struct {
 	Path, Image, Context, Platforms, Scanners string
+	Severity                                  string
 	UploadSARIF                               *bool
+	FailOnFindings                            *bool
 	Release                                   *bool
 	Line                                      int
 }
@@ -95,6 +104,10 @@ var (
 	// scanners mirrors trivy's own `--scanners` vocabulary (trivy-image passes
 	// the value through unchanged).
 	scanners = []string{"vuln", "secret", "misconfig", "license"}
+	// severities mirrors trivy's own `--severity` vocabulary. Uppercase only:
+	// trivy accepts nothing else, and silently scanning at a different
+	// threshold than the manifest reads is worse than a render-time error.
+	severities = []string{"UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
 )
 
 func Load(repoPath string) (*Manifest, string, bool, error) {
@@ -295,7 +308,7 @@ func decode(root *Node) (*Manifest, error) {
 }
 
 func decodeComponent(n *Node) (Component, error) {
-	if err := allowKeys(n, "path", "language", "type", "image", "context", "platforms", "scanners", "upload_sarif", "release", "unittest", "app_version", "dockerfiles"); err != nil {
+	if err := allowKeys(n, "path", "language", "type", "image", "context", "platforms", "scanners", "severity", "upload_sarif", "fail_on_findings", "release", "unittest", "app_version", "dockerfiles"); err != nil {
 		return Component{}, err
 	}
 	c := Component{Line: n.Line}
@@ -330,7 +343,13 @@ func decodeComponent(n *Node) (Component, error) {
 	if c.Scanners, err = optionalScanners(n, "scanners"); err != nil {
 		return c, err
 	}
+	if c.Severity, err = optionalSeverity(n, "severity"); err != nil {
+		return c, err
+	}
 	if c.UploadSARIF, err = optionalBoolPtr(n, "upload_sarif"); err != nil {
+		return c, err
+	}
+	if c.FailOnFindings, err = optionalBoolPtr(n, "fail_on_findings"); err != nil {
 		return c, err
 	}
 	if c.Release, err = optionalBoolPtr(n, "release"); err != nil {
@@ -348,7 +367,7 @@ func decodeComponent(n *Node) (Component, error) {
 			return c, err
 		}
 		for _, item := range seq {
-			if err := allowKeys(item, "path", "image", "context", "platforms", "scanners", "upload_sarif", "release"); err != nil {
+			if err := allowKeys(item, "path", "image", "context", "platforms", "scanners", "severity", "upload_sarif", "fail_on_findings", "release"); err != nil {
 				return c, err
 			}
 			spec := DockerfileSpec{Line: item.Line}
@@ -370,7 +389,13 @@ func decodeComponent(n *Node) (Component, error) {
 			if spec.Scanners, err = optionalScanners(item, "scanners"); err != nil {
 				return c, err
 			}
+			if spec.Severity, err = optionalSeverity(item, "severity"); err != nil {
+				return c, err
+			}
 			if spec.UploadSARIF, err = optionalBoolPtr(item, "upload_sarif"); err != nil {
+				return c, err
+			}
+			if spec.FailOnFindings, err = optionalBoolPtr(item, "fail_on_findings"); err != nil {
 				return c, err
 			}
 			if spec.Release, err = optionalBoolPtr(item, "release"); err != nil {
@@ -487,6 +512,28 @@ func optionalPlatforms(n *Node, key string) (string, error) {
 	}
 	if !platformsRe.MatchString(v) {
 		return "", fmt.Errorf("line %d: platforms must be a comma-separated list of os/arch[/variant], got %q", n.Map[key].Line, v)
+	}
+	return v, nil
+}
+
+// optionalSeverity validates the trivy `--severity` list the trivy-image atom
+// forwards verbatim. Rejecting a typo here matters more than for most keys: an
+// unrecognised threshold would not fail the scan, it would quietly gate on
+// something other than what the manifest says.
+func optionalSeverity(n *Node, key string) (string, error) {
+	v, err := optionalString(n, key)
+	if err != nil || v == "" {
+		return v, err
+	}
+	seen := map[string]bool{}
+	for _, s := range strings.Split(v, ",") {
+		if !contains(severities, s) {
+			return "", fmt.Errorf("line %d: severity must be a comma-separated subset of %v, got %q", n.Map[key].Line, severities, v)
+		}
+		if seen[s] {
+			return "", fmt.Errorf("line %d: severity lists %q twice", n.Map[key].Line, s)
+		}
+		seen[s] = true
 	}
 	return v, nil
 }
