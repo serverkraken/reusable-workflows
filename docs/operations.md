@@ -102,6 +102,7 @@ UI: **Actions → onboard → Run workflow**.
 | `pin_version` | What `@version` the rendered templates pin to. Default `v4` on `next`. |
 | `use_go_cli` | Default `true`. Uses `sk-workflows` for detection, rendering, and repo defaults. Set `false` only as Bash rollback during a suspected Go regression. |
 | `add_branch_name` / `cleanup_branch_name` | Escape hatches. Default branch names are bot-owned and force-pushed each run. |
+| `target_repo` | The repo to onboard. **The same expression feeds both `actions/checkout` and `TARGET_REPO`** (`onboard.yml:271` and `:445`), so the identity the scripts render *for* is always the checkout they render *from* — they cannot diverge through this workflow. Invoking `scripts/onboard-*.sh` by hand with mismatched values is outside that contract (audit H-1). |
 | `rendered_against` | Full catalog tag recorded in the lock (e.g. `v4.18.4`). Empty → falls back to `pin_version`. The weekly sweep compares this field against `git describe --tags --abbrev=0` to spot stale bot PRs. |
 
 ### 5.3 What it produces
@@ -144,6 +145,28 @@ Adopters pinning `@v2` (or `pin_version: v2` at onboard time) must pass `secrets
 ### 6.1 Why this exists
 
 GitHub's "Allow other repos to call this workflow" setting governs `uses:` resolution but **not** `actions/checkout` of a private third repo. Before v2.0.0, atoms used the caller's `GITHUB_TOKEN` for the catalog-checkout step, which works only when caller and catalog are the same repo (self-CI) or both are public. Private-to-private adoption required minting a token with read access to the catalog.
+
+### 6.2 What the App private key reaches, and why
+
+`secrets: inherit` hands the **App private key** — not just a minted token — to
+every atom that declares those secrets, and each mints its own scoped token.
+The minted tokens are correctly scoped; the key is not. Anyone who can move the
+`v4` tag can therefore exfiltrate the key and mint tokens for every repo the
+App is installed on.
+
+This is the generic shape of any *App + `secrets: inherit`* architecture, and
+it presupposes that the catalog itself is compromised. Two things already
+narrow it:
+
+- `v4` moves only through `semantic-release.yml`, which tags the released
+  commit (verified read-back since v4.18.2, not the checked-out HEAD).
+- Adding a new consumer of the key is a deliberate decision. `cleanup-images.yml`
+  was left **without** a catalog checkout for exactly this reason — the fix for
+  its probe (audit D-12) stayed inline rather than gaining an App-token mint.
+
+Closing it properly means minting once centrally and passing the *token*
+downward, which changes the calling contract of every atom. It is tracked as
+audit **D-1** and deliberately not fixed alongside smaller items.
 
 ### 6.2 App permissions
 
