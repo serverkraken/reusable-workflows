@@ -102,7 +102,40 @@ permissions:
   contents: read
 
 jobs:
+  # onboard.yml exposes workflow_call, mints an App token for ARBITRARY
+  # target_repos from that call's inputs, and its finalize job pushes to this
+  # catalog's main. Nothing checked WHO was calling.
+  #
+  # Today the cross-repo call happens to fail: the catalog checkout uses
+  # github.workflow_sha, which in a called workflow is the CALLER's workflow
+  # SHA and does not exist here. That is an accident of implementation, not a
+  # boundary — code_security is already mutated by then, finalize runs under
+  # always(), and a future fix to that checkout would silently open the door.
+  #
+  # Every in-repo caller (onboard-sweep.yml, integration.yml) passes this. A
+  # fork that wants to drive its own org has to change the constant, which is
+  # the honest place for that decision.
+  guard-caller:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse callers outside this catalog
+        env:
+          # In a reusable workflow this is the CALLER's repository.
+          CALLER: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$CALLER" != "serverkraken/reusable-workflows" ]]; then
+            echo "::error::onboard.yml is an internal operational workflow of" \
+                 "serverkraken/reusable-workflows. It mints repo-admin tokens for" \
+                 "arbitrary targets and writes to the catalog's main branch, so it" \
+                 "does not accept cross-repo workflow_call. Caller was: $CALLER"
+            exit 1
+          fi
+          echo "Caller $CALLER accepted."
+
   parse-inputs:
+    needs: guard-caller
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -746,8 +779,10 @@ jobs:
           retention-days: 7
 
   finalize:
-    needs: onboard
-    if: always()
+    needs: [guard-caller, onboard]
+    # always() alone would let finalize run even when the caller guard
+    # rejected the run — and finalize is the job that writes to the catalog.
+    if: always() && needs.guard-caller.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
