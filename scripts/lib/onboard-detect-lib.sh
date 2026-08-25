@@ -178,6 +178,34 @@ emit_profile_json() {
 
   local components
   components=$(detect_components "$repo")
+
+  # Zwei Dockerfiles duerfen nicht denselben Image-Namen tragen (Audit H-4).
+  #
+  # Der abgeleitete Name nimmt nur das LETZTE Pfadsegment: `apps/api` und
+  # `services/api` ergeben beide `$REPO-api`. Beide Komponenten wuerden dann in
+  # dasselbe GHCR-Image pushen; derselbe Versionstag zeigt danach auf den Build,
+  # der zufaellig zuletzt lief, und cleanup-images sieht ein Paket statt zweier.
+  #
+  # Abgewiesen statt automatisch entschaerft - dieselbe Entscheidung wie bei den
+  # kollidierenden Job-IDs (J-0b): ein angehaengter Hash muesste fuer alle
+  # bestehenden Adopter stabil bleiben und waere in der Registry nicht mehr
+  # zuzuordnen.
+  #
+  # Der Go-Detektor prueft dasselbe (checkImageNameCollisions); die Engines
+  # duerfen sich hier nicht unterscheiden.
+  local image_collision
+  image_collision=$(echo "$components" | jq -r '
+    [ .[] as $c | $c.dockerfiles[]? | select(.image_name != "" and .image_name != null)
+      | {name: .image_name, where: ($c.path + "/" + .path)} ]
+    | group_by(.name) | map(select(length > 1)) | .[0] // empty
+    | "\(.[0].name)|\(.[0].where)|\(.[1].where)"
+  ')
+  if [[ -n "$image_collision" ]]; then
+    IFS='|' read -r _ic_name _ic_a _ic_b <<< "$image_collision"
+    echo "::error::duplicate image name \"${_ic_name}\": ${_ic_a} and ${_ic_b} both map to it — rename one of the directories; the last path segment becomes both the image name and the release-please package name, and must be unique" >&2
+    return 1
+  fi
+
   local legacy_ci
   legacy_ci=$(detect_legacy_ci "$repo")
 
