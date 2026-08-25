@@ -46,6 +46,8 @@ jobs:
         run: bash tests/conventions/check-step-summary.sh
       - name: Check contract documentation
         run: bash tests/conventions/check-contracts.sh
+      - name: Check for caller-controlled expressions in run bodies
+        run: bash tests/conventions/check-run-interpolation.sh
 
   renovate-config-check:
     runs-on: ubuntu-latest

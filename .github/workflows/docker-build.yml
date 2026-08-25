@@ -209,12 +209,20 @@ jobs:
     steps:
       - name: Check platform selected
         id: check
+        # Via env:, never `${{ }}` in the run body. Interpolated directly, a
+        # caller-supplied `platforms` is pasted into the shell SOURCE before
+        # bash parses it, so a crafted value can close the `[[ ]]` and append
+        # its own commands — executed on a long-lived self-hosted runner, in a
+        # job holding `packages: write` and `id-token: write`.
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          if [[ "${{ inputs.platforms }}" == *"${{ matrix.platform }}"* ]]; then
+          if [[ "$PLATFORMS" == *"$PLATFORM"* ]]; then
             echo "selected=true" >> "$GITHUB_OUTPUT"
           else
             echo "selected=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping ${{ matrix.platform }} — not in inputs.platforms"
+            echo "::notice::Skipping $PLATFORM — not in inputs.platforms"
           fi
 
       - if: steps.check.outputs.selected == 'true'
@@ -411,17 +419,24 @@ jobs:
         env:
           IMG: ghcr.io/${{ needs.version.outputs.image_name }}
           TAG_ARGS: ${{ steps.tags.outputs.tag_args }}
+          # TAG via env: too — it derives from the caller's `tag` input, and a
+          # value like `v1$(command)` interpolated into the run body would be
+          # substituted before bash parses the line, executing on the runner.
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           # shellcheck disable=SC2046,SC2086
           docker buildx imagetools create $TAG_ARGS \
             $(printf "$IMG@sha256:%s " *)
-          DIGEST=$(docker buildx imagetools inspect "$IMG:${{ needs.version.outputs.tag }}" --format '{{.Manifest.Digest}}')
+          DIGEST=$(docker buildx imagetools inspect "$IMG:$TAG" --format '{{.Manifest.Digest}}')
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Compose image_ref output
         id: compose
+        env:
+          IMG: ghcr.io/${{ needs.version.outputs.image_name }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
-          echo "image_ref=ghcr.io/${{ needs.version.outputs.image_name }}:${{ needs.version.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=$IMG:$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Install Cosign
         if: inputs.sign || inputs.attest

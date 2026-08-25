@@ -65,7 +65,18 @@ jobs:
       - name: cargo clippy
         id: clippy
         working-directory: ${{ inputs.working_directory }}
-        run: cargo clippy --no-deps -- ${{ inputs.clippy_args }}
+        # Via env:, never `${{ }}` in the run body. Interpolated directly, the
+        # value is pasted into the shell SOURCE before bash parses it, so
+        # `clippy_args: '-D warnings || true #'` turned a real clippy failure
+        # into a green lint job — a caller could silently disable this gate.
+        # `$CLIPPY_ARGS` expands after parsing: it still word-splits into a
+        # flag list (that is the point), but `||`, `#` and friends arrive at
+        # clippy as literal arguments and are rejected loudly.
+        env:
+          CLIPPY_ARGS: ${{ inputs.clippy_args }}
+        run: |
+          # shellcheck disable=SC2086
+          cargo clippy --no-deps -- $CLIPPY_ARGS
 
       - name: Summary
         if: always()
