@@ -312,10 +312,21 @@ jobs:
 
             echo "_Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_"
           } > digest.md
+          # Zufaelliger Delimiter je Lauf. digest.md ist mehrzeiliges Markdown
+          # aus Repo-Namen, Drift-Status und PR-Titeln — also aus Daten, die
+          # nicht aus diesem Workflow stammen. Enthaelt eine Zeile exakt den
+          # Delimiter, schliesst der Block zu frueh und jede weitere Zeile wird
+          # zu einem NEUEN Step-Output. Gleiche Klasse wie in
+          # actions/post-prerelease-comment (Audit E-11).
+          DELIM="digest_$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          if grep -qxF "$DELIM" digest.md; then
+            echo "::error::generated delimiter collides with the digest body" >&2
+            exit 1
+          fi
           {
-            echo 'body<<EOF_DIGEST'
+            echo "body<<$DELIM"
             cat digest.md
-            echo 'EOF_DIGEST'
+            echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
       - name: Post digest as comment on rolling Onboarding Drift Report Issue
