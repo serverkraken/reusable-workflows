@@ -372,6 +372,22 @@ jobs:
           fi
           echo "prev=$prev" >> "$GITHUB_OUTPUT"
 
+      # Der Render ueberschreibt den Lock. Was er vorher auflistete, ist die
+      # einzige Auskunft darueber, welche Dateien der Katalog bei diesem
+      # Adopter frueher einmal erzeugt hat — und damit die einzige Grundlage,
+      # um eine inzwischen fallengelassene Vorlage wieder zu entfernen.
+      - name: Snapshot the previous lock
+        working-directory: target
+        run: |
+          set -euo pipefail
+          if [[ -f .github/onboard.lock.json ]]; then
+            cp .github/onboard.lock.json "$RUNNER_TEMP/lock-before.json"
+            echo "Previously rendered: $(jq -r '.files | length' "$RUNNER_TEMP/lock-before.json") file(s)"
+          else
+            rm -f "$RUNNER_TEMP/lock-before.json"
+            echo "No previous lock — first onboard."
+          fi
+
       - name: Render templates into target
         uses: ./.catalog/actions/onboard-render
         with:
@@ -472,6 +488,29 @@ jobs:
 
           git add "${RENDERED[@]}"
 
+          # Dateien, die der Katalog frueher gerendert hat und heute nicht mehr.
+          # Ohne diesen Schritt fuegt PR A die Nachfolgerin hinzu und laesst die
+          # Vorgaengerin liegen — der Adopter fuehrt danach beide aus. PR B
+          # loescht nur erkanntes Legacy-CI, und das hier ist keines.
+          orphan_report=""
+          while IFS=$'\t' read -r verdict path; do
+            [[ -n "$path" ]] || continue
+            case "$verdict" in
+              SAFE)
+                git rm -q -- "$path"
+                orphan_report+="- \`${path}\` (entfernt)"$'\n'
+                ;;
+              MODIFIED)
+                # Der Adopter hat sie angefasst; sie gehoert jetzt ihm.
+                echo "::warning::${path} was rendered by an older catalog but has been edited — leaving it in place"
+                orphan_report+="- \`${path}\` (vom Adopter geaendert, **belassen**)"$'\n'
+                ;;
+            esac
+          done < <(
+            "$GITHUB_WORKSPACE/.catalog/scripts/lock-orphans.sh" \
+              "$RUNNER_TEMP/lock-before.json" ".github/onboard.lock.json" .
+          )
+
           existing_pr_num=$(gh pr list --repo "$TARGET_REPO" --head "$ADD_BRANCH" --state open --json number -q '.[0].number' || echo "")
 
           if git diff --cached --quiet; then
@@ -567,6 +606,10 @@ jobs:
           ${manual_review_md:+#### Legacy CI needing manual review
           These workflows were detected but have no catalog replacement yet; PR B leaves them in place.
           ${manual_review_md}
+          }
+          ${orphan_report:+#### Superseded catalog files
+          These were rendered by an older catalog version and are no longer part of it.
+          ${orphan_report}
           }
           ${next_steps_md}
 
