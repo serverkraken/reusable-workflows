@@ -88,3 +88,15 @@ jobs:
             echo "| digest | \`${DIGEST:-<none>}\` |"
           } >> "$GITHUB_STEP_SUMMARY" || true
           exit "$fail"
+
+  # Moved off the PR path with the same reasoning as the docker-build above:
+  # kind runs inside the runner pod's dind sidecar, so this proves the ARC
+  # topology specifically — and nothing else can prove it. Config is
+  # unchanged from what integration.yml used, including the atom's own
+  # self-hosted default.
+  selfhosted-e2e-kind:
+    uses: ./.github/workflows/e2e-kind.yml
+    secrets: inherit
+    with:
+      script: tests/fixtures/kind-smoke/e2e.sh
+      timeout_minutes: 15
