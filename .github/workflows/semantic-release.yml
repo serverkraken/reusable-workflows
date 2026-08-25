@@ -143,9 +143,41 @@ jobs:
           IFS='.' read -r MAJOR MINOR _PATCH <<< "$VERSION"
           MAJOR_TAG="v$MAJOR"
           MINOR_TAG="v$MAJOR.$MINOR"
-          git tag -f "$MAJOR_TAG"
-          git tag -f "$MINOR_TAG"
-          git push origin "$MAJOR_TAG" "$MINOR_TAG" --force
+
+          # Das Ziel kommt aus dem Release-Tag, NICHT aus dem ausgecheckten
+          # HEAD. `git tag -f "v$MAJOR"` ohne Ziel tagt, was der Job zufaellig
+          # ausgecheckt hat — und das ist nur dann der Release-Commit, wenn
+          # zwischen Laufbeginn und release-please nichts auf dem
+          # Default-Branch gelandet ist. Am 2026-08-25 mergten im Katalog drei
+          # PRs binnen 27 Sekunden; der Lauf, der v4.18.1 schnitt, stand drei
+          # Commits davor, und v4/v4.18 kamen drei Commits zu frueh zu liegen.
+          # Gruener Lauf, falscher Tag — und Adopter pinnen genau darauf.
+          git fetch --no-tags --force origin \
+            "refs/tags/${NEW_TAG}:refs/tags/${NEW_TAG}" 2>/dev/null || true
+          if ! target=$(git rev-list -n1 "$NEW_TAG" 2>/dev/null) || [[ -z "$target" ]]; then
+            echo "::error::release tag $NEW_TAG not found — refusing to guess a target" >&2
+            exit 1
+          fi
+          echo "Floating $MAJOR_TAG and $MINOR_TAG onto $NEW_TAG ($target)"
+
+          git tag -f "$MAJOR_TAG" "$target"
+          git tag -f "$MINOR_TAG" "$target"
+          git push origin "refs/tags/${MAJOR_TAG}" "refs/tags/${MINOR_TAG}" --force
+
+          # Rueckprobe statt Vertrauen: ein Float-Tag auf dem falschen Commit
+          # ist genau der Fehler, der zuvor in einem gruenen Lauf unsichtbar
+          # blieb.
+          git fetch --no-tags --force origin \
+            "refs/tags/${MAJOR_TAG}:refs/tags/${MAJOR_TAG}" \
+            "refs/tags/${MINOR_TAG}:refs/tags/${MINOR_TAG}" 2>/dev/null || true
+          for t in "$MAJOR_TAG" "$MINOR_TAG"; do
+            got=$(git rev-list -n1 "$t")
+            if [[ "$got" != "$target" ]]; then
+              echo "::error::$t points at $got, expected $target" >&2
+              exit 1
+            fi
+          done
+
           {
             echo "major_tag=$MAJOR_TAG"
             echo "minor_tag=$MINOR_TAG"
