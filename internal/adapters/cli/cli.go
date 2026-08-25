@@ -14,6 +14,7 @@ import (
 	"github.com/serverkraken/reusable-workflows/internal/adapters/defaultsfs"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/gitcli"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/githubcli"
+	"github.com/serverkraken/reusable-workflows/internal/adapters/godetect"
 	"github.com/serverkraken/reusable-workflows/internal/adapters/gomplate"
 	defaultsapp "github.com/serverkraken/reusable-workflows/internal/app/defaults"
 	"github.com/serverkraken/reusable-workflows/internal/app/detect"
@@ -174,7 +175,10 @@ func runDrift(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return 2
 	}
 	res, err := (drift.Service{
-		Detector: catalogscripts.Adapter{},
+		// Detect in-process: the Bash detector refuses adopter manifests, which
+		// left render-and-compare permanently broken for manifest repos while
+		// status still read "clean". See internal/adapters/godetect.
+		Detector: godetect.Adapter{GitHub: githubcli.Client{}},
 		Renderer: catalogscripts.Adapter{},
 		Git:      gitcli.Client{},
 	}).Drift(ctx, drift.Request{
