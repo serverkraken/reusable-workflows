@@ -215,29 +215,45 @@ func TestRenderCompareStaleLockAndErrors(t *testing.T) {
 		wantError   string
 	}{
 		{
+			// One tracked file differs, the rest render identically.
 			name:       "stale lock",
-			rendered:   map[string]string{".github/workflows/ci.yml": "changed\n"},
+			rendered:   withRenderedFile(".github/workflows/ci.yml", "changed\n"),
 			wantStatus: domain.DriftStaleLock,
 			wantMod:    []string{".github/workflows/ci.yml"},
 		},
 		{
-			name:        "detect failure stays clean",
+			// A comparison that could not run must not read as one that
+			// passed. These three cases asserted `clean` until 2026-08-25 —
+			// they codified the very defect the external audit found (B-1),
+			// which is why the weekly sweep marked broken repos green.
+			name:        "detect failure reports error, not clean",
 			detectorErr: errors.New("detect failed with verbose stderr that should be truncated after enough characters are present in the message"),
 			rendered:    renderedFixtureFiles(),
-			wantStatus:  domain.DriftClean,
+			wantStatus:  domain.DriftError,
 			wantError:   "detect-failed:",
 		},
 		{
-			name:       "render failure stays clean",
+			name:       "render failure reports error, not clean",
 			renderErr:  errors.New("render failed"),
 			rendered:   renderedFixtureFiles(),
-			wantStatus: domain.DriftClean,
+			wantStatus: domain.DriftError,
 			wantError:  "render-failed:",
 		},
 		{
-			name:       "missing rendered tracked file is skipped",
+			// A file the lock tracks but the catalog no longer emits is drift:
+			// it keeps firing in the adopter while nothing manages it any more.
+			// Skipping it also hid every e2e.yml back when drift rendered
+			// through the Bash engine, which never wrote one (B-2, C-3).
+			name:       "tracked file the renderer no longer emits is drift",
 			rendered:   map[string]string{},
-			wantStatus: domain.DriftClean,
+			wantStatus: domain.DriftStaleLock,
+			wantMod: []string{
+				".github/workflows/ci.yml",
+				".github/workflows/cleanup.yml",
+				".github/workflows/prerelease.yml",
+				".github/workflows/release.yml",
+				"release-please-config.json",
+			},
 		},
 	}
 
@@ -497,7 +513,11 @@ func TestLockAndFileHelperErrors(t *testing.T) {
 	}
 }
 
-func TestStaleFilesSkipsLockManifestAndMissingRendered(t *testing.T) {
+// The lock and the manifest are excluded on purpose — they are inputs to the
+// render, not outputs of it. A tracked file the renderer no longer emits is a
+// different matter: it keeps firing in the adopter with nothing managing it,
+// so it belongs in the report (was skipped until 2026-08-25, audit B-2).
+func TestStaleFilesExcludesLockAndManifestButReportsMissingRendered(t *testing.T) {
 	repo := fixtureRepo(t, "v4")
 	rendered := t.TempDir()
 	writeFile(t, filepath.Join(rendered, ".github/onboard.lock.json"), "different")
@@ -513,8 +533,9 @@ func TestStaleFilesSkipsLockManifestAndMissingRendered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got, []string{".github/workflows/release.yml"}) {
-		t.Fatalf("stale=%v", got)
+	want := []string{".github/workflows/missing.yml", ".github/workflows/release.yml"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stale=%v want %v", got, want)
 	}
 
 	missingTarget := t.TempDir()
@@ -560,6 +581,15 @@ func fixtureRepo(t *testing.T, lockVersion string) string {
 	}
 	writeFile(t, filepath.Join(repo, lockPath), string(content))
 	return repo
+}
+
+// withRenderedFile returns the full rendered set with one file replaced, so a
+// test can isolate a single differing file without the others counting as
+// "no longer emitted".
+func withRenderedFile(path, content string) map[string]string {
+	files := renderedFixtureFiles()
+	files[path] = content
+	return files
 }
 
 func renderedFixtureFiles() map[string]string {

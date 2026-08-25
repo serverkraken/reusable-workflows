@@ -84,6 +84,15 @@ func (s Service) Drift(ctx context.Context, req Request) (domain.DriftResult, er
 			res.Modified = []string{manifest.FileName}
 		} else {
 			s.renderCompare(ctx, req, lock, &res)
+			// A failed comparison is not a passed one. Until 2026-08-25 the
+			// status set above simply survived, so a broken detector, a
+			// missing template or an unreadable scratch dir all reported
+			// `clean` with the reason tucked away in render_error — and the
+			// weekly sweep, which greps only `^status=`, dropped that reason
+			// entirely. Repos stayed green and unexamined indefinitely.
+			if res.RenderError != "" && res.Status == domain.DriftClean {
+				res.Status = domain.DriftError
+			}
 		}
 	}
 	return res, nil
@@ -213,6 +222,12 @@ func staleFiles(targetPath, renderedPath string, lock domain.OnboardLock) ([]str
 		}
 		rendered := filepath.Join(renderedPath, filepath.FromSlash(p))
 		if _, err := os.Stat(rendered); errors.Is(err, os.ErrNotExist) {
+			// The lock tracks a file the current catalog no longer emits.
+			// Skipping it used to hide two things at once: a workflow the
+			// catalog dropped but that keeps firing in the adopter, and — while
+			// drift still rendered through the Bash engine — every single
+			// e2e.yml, because that engine never wrote one. Report it.
+			out = append(out, p)
 			continue
 		} else if err != nil {
 			return nil, err

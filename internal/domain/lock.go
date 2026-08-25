@@ -22,6 +22,11 @@ const (
 	DriftBehindModified DriftStatus = "behind+modified"
 	DriftNoLock         DriftStatus = "no-lock"
 	DriftStaleLock      DriftStatus = "stale-lock"
+	// DriftError: the comparison could not be carried out. Distinct from
+	// "clean" on purpose — a check that did not run must never look like a
+	// check that passed. scripts/onboard-drift.sh already emits this value
+	// for the case it refuses, and onboard-sweep buckets it as skipped.
+	DriftError DriftStatus = "error"
 )
 
 type DriftResult struct {
