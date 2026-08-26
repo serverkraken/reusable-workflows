@@ -99,3 +99,57 @@ func TestCargoWorkspaceLiteralMembersStillWork(t *testing.T) {
 		t.Fatalf("paths=%v", got)
 	}
 }
+
+func TestGoWorkUseOutsideRepoIsDropped(t *testing.T) {
+	// B-11. Beim Cargo-Fix (#308) hatte ich das im PR-Text als miterledigt
+	// bezeichnet — es war es nicht: `parseGoWork` blieb unangetastet, und beide
+	// Engines lieferten weiterhin `["../nachbar"]`. Nachgemessen, dann behoben.
+	base := t.TempDir()
+	repo := filepath.Join(base, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	nachbar := filepath.Join(base, "nachbar")
+	if err := os.MkdirAll(nachbar, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nachbar, "go.mod"), []byte("module nachbar\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "go.work"), []byte("go 1.22\n\nuse ../nachbar\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range res.Profile.Components {
+		if c.Path != "." {
+			t.Fatalf("ein use-Pfad ausserhalb des Checkouts wurde uebernommen: %q", c.Path)
+		}
+	}
+}
+
+func TestGoWorkOrdinaryUseStillWorks(t *testing.T) {
+	// Gegenprobe: die Eingrenzung darf ein gewoehnliches `use ./svc` nicht
+	// verlieren — der fuehrende `./` muss weiterhin aufgeloest werden.
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "svc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "svc", "go.mod"), []byte("module svc\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "go.work"), []byte("go 1.22\n\nuse ./svc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := componentPaths(res.Profile.Components); !reflect.DeepEqual(got, []string{"svc"}) {
+		t.Fatalf("paths=%v want [svc]", got)
+	}
+}
