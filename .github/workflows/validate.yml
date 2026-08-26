@@ -64,6 +64,8 @@ jobs:
         run: bash tests/conventions/check-rendered-goldens.sh
       - name: Check the README fact badges match go.mod and LICENSE
         run: bash tests/conventions/check-repo-badges.sh
+      - name: Check profile data is quoted in string-typed template inputs
+        run: python3 tests/conventions/check-template-scalar-quoting.py
 
   renovate-config-check:
     runs-on: ubuntu-latest

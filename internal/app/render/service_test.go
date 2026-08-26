@@ -568,3 +568,59 @@ func sha256String(content string) string {
 func fixedNow() time.Time {
 	return time.Date(2026, 6, 2, 10, 11, 12, 0, time.UTC)
 }
+
+// Audit J-19: zwei Images EINER Komponente, deren Namen verschieden sind, deren
+// abgeleitete Job-ID-Endungen aber zusammenfallen.
+//
+// Das ist nicht H-4 (dort kollidieren die Image-NAMEN zweier Komponenten).
+// `acme/my.image` und `acme/my-image` sind beide gueltig nach ImagePattern und
+// ergeben beide das Suffix `my-image`. Vor dem Fix lief das Rendern fehlerfrei
+// durch und erzeugte zweimal `docker-build-my-image`; actionlint meldete danach
+// "key ... is duplicated in jobs section" — aber erst beim Adopter.
+func TestImageSuffixCollisionIsRejected(t *testing.T) {
+	profile := domain.Profile{Components: []domain.Component{{
+		Path: ".",
+		Dockerfiles: []domain.Dockerfile{
+			{Path: "Dockerfile", ImageName: "acme/my.image", ReleaseEligible: true},
+			{Path: "Dockerfile.two", ImageName: "acme/my-image", ReleaseEligible: true},
+		},
+	}}}
+	err := checkSlugCollisions(profile)
+	if err == nil {
+		t.Fatal("kollidierende Job-ID-Endungen muessen abgewiesen werden")
+	}
+	for _, want := range []string{"my-image", "acme/my.image", "acme/my-image"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Meldung nennt %q nicht: %v", want, err)
+		}
+	}
+}
+
+// Nicht release-faehige Varianten (Dockerfile.dev, .debug) haengen im Template
+// gar kein $imgSuffix an — ein Profil deswegen abzuweisen waere ein Fehlalarm.
+func TestImageSuffixCollisionIgnoresNonReleaseVariants(t *testing.T) {
+	profile := domain.Profile{Components: []domain.Component{{
+		Path: ".",
+		Dockerfiles: []domain.Dockerfile{
+			{Path: "Dockerfile", ImageName: "acme/my.image", ReleaseEligible: true},
+			{Path: "Dockerfile.dev", ImageName: "acme/my-image", ReleaseEligible: false},
+		},
+	}}}
+	if err := checkSlugCollisions(profile); err != nil {
+		t.Fatalf("nur EIN release-faehiges Image, es gibt gar kein Suffix: %v", err)
+	}
+}
+
+// Und der Regelfall darf nicht plötzlich scheitern.
+func TestDistinctImageSuffixesPass(t *testing.T) {
+	profile := domain.Profile{Components: []domain.Component{{
+		Path: ".",
+		Dockerfiles: []domain.Dockerfile{
+			{Path: "Dockerfile", ImageName: "acme/tools", ReleaseEligible: true},
+			{Path: "Dockerfile.debug", ImageName: "acme/tools-debug", ReleaseEligible: true},
+		},
+	}}}
+	if err := checkSlugCollisions(profile); err != nil {
+		t.Fatalf("unterschiedliche Endungen muessen durchgehen: %v", err)
+	}
+}

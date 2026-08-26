@@ -11,5 +11,5 @@ jobs:
   build-flutter-root:
     uses: serverkraken/reusable-workflows/.github/workflows/build-flutter-android.yml@v2
     with:
-      working_directory: .
+      working_directory: "."
     secrets: inherit

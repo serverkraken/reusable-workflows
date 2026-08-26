@@ -24,6 +24,6 @@ jobs:
     if: needs.release-please.outputs.release_created == 'true'
     uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@v2
     with:
-      version: ${{ needs.release-please.outputs.tag_name }}
+      version: "${{ needs.release-please.outputs.tag_name }}"
       dart_define_secret_names: ${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}
     secrets: inherit

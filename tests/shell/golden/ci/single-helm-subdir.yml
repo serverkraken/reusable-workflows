@@ -17,5 +17,5 @@ jobs:
   lint-helm-calert:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@v4
     with:
-      working_directory: calert
+      working_directory: "calert"
     secrets: inherit

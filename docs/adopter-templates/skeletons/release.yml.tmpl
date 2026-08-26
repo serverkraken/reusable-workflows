@@ -112,19 +112,19 @@ jobs:
     with:
     {{- $ctx := $ctxPath }}{{ if (index $df "context") }}{{ $ctx = index $df "context" }}{{ end }}
     {{- if ne $ctx "." }}
-      context: {{ $ctx }}
+      context: "{{ $ctx }}"
     {{- end }}
     {{- if not $isRoot }}
-      dockerfile: {{ $ctxPath }}/{{ $df.path }}
+      dockerfile: "{{ $ctxPath }}/{{ $df.path }}"
     {{- else }}
-      dockerfile: {{ $df.path }}
+      dockerfile: "{{ $df.path }}"
     {{- end }}
-      image_name: {{ $df.image_name }}
+      image_name: "{{ $df.image_name }}"
     {{- if (index $df "platforms") }}
-      platforms: {{ index $df "platforms" }}
+      platforms: "{{ index $df "platforms" }}"
     {{- end }}
-      tag: {{ $tag }}
-      ref: {{ $ref }}
+      tag: "{{ $tag }}"
+      ref: "{{ $ref }}"
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
@@ -134,17 +134,17 @@ jobs:
     needs: [docker-build{{ $suffix }}{{ $imgSuffix }}]
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
     with:
-      image_ref: {{ printf "${{ needs.docker-build%s%s.outputs.image_ref }}" $suffix $imgSuffix }}
+      image_ref: "{{ printf "${{ needs.docker-build%s%s.outputs.image_ref }}" $suffix $imgSuffix }}"
     {{- /* Emitted only when the manifest sets them, so adopters that take the
          atom's defaults keep rendering byte-identically. */}}
     {{- if (index $df "scanners") }}
-      scanners: {{ index $df "scanners" }}
+      scanners: "{{ index $df "scanners" }}"
     {{- end }}
     {{- /* Scan the architectures that were actually built. Trivy picks a
          single platform for a multi-arch tag (default linux/amd64), so
          without this the other published arch ships unscanned. */}}
     {{- if (index $df "platforms") }}
-      platforms: {{ index $df "platforms" }}
+      platforms: "{{ index $df "platforms" }}"
     {{- else }}
       platforms: linux/amd64,linux/arm64
     {{- end }}
@@ -152,7 +152,7 @@ jobs:
          THIS image, and a repo-wide setting overriding it would defeat the
          reason it exists — one image whose threshold has to differ. */}}
     {{- if (index $df "severity") }}
-      severity: {{ index $df "severity" }}
+      severity: "{{ index $df "severity" }}"
     {{- else }}
       severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
     {{- end }}
@@ -175,7 +175,7 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/goreleaser.yml@{{ $pin }}
 {{- if not $isRoot }}
     with:
-      working_directory: {{ $ctxPath }}
+      working_directory: "{{ $ctxPath }}"
 {{- end }}
     secrets: inherit
 {{- end }}
@@ -186,12 +186,12 @@ jobs:
     if: {{ $gate }}
     uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@{{ $pin }}
     with:
-      chart_path: {{ path.Dir $c.release_signals.chart_yaml }}
+      chart_path: "{{ path.Dir $c.release_signals.chart_yaml }}"
       oci_registry: ghcr.io/{{ $.profile.target_repo }}/charts
       # Checkout the released tag, not the triggering event's SHA: with
       # back-to-back merges the event SHA predates release-please's bump
       # commit and the job silently republishes the PREVIOUS chart version.
-      ref: {{ $ref }}
+      ref: "{{ $ref }}"
     secrets: inherit
 {{- end }}
 
@@ -210,9 +210,9 @@ jobs:
       contents: read
       packages: write
     with:
-      chart_path: {{ $c.path }}
+      chart_path: "{{ $c.path }}"
       oci_registry: ghcr.io/{{ index (strings.Split "/" $.profile.target_repo) 0 }}/charts
-      ref: {{ $ref }}
+      ref: "{{ $ref }}"
     secrets: inherit
 {{- end }}
 
@@ -223,9 +223,9 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@{{ $pin }}
     with:
     {{- if not $isRoot }}
-      working_directory: {{ $ctxPath }}
+      working_directory: "{{ $ctxPath }}"
     {{- end }}
-      version: {{ $tag }}
+      version: "{{ $tag }}"
       dart_define_secret_names: {{`${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}`}}
     secrets: inherit
 {{- end }}
@@ -279,8 +279,8 @@ jobs:
     permissions:
       contents: write
     with:
-      values_file: {{ .profile.release.chart_pins.values }}
-      key_template: {{ .profile.release.chart_pins.key }}
+      values_file: "{{ .profile.release.chart_pins.values }}"
+      key_template: "{{ .profile.release.chart_pins.key }}"
       images: |
         {{ $imageMap | toJSON }}
       releases: {{`${{ needs.release-please.outputs.releases }}`}}

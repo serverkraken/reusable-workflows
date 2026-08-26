@@ -102,16 +102,16 @@ jobs:
     with:
       prerelease: true
     {{- if ne $ctx "." }}
-      context: {{ $ctx }}
+      context: "{{ $ctx }}"
     {{- end }}
     {{- if not $isRoot }}
-      dockerfile: {{ $c.path }}/{{ $df.path }}
+      dockerfile: "{{ $c.path }}/{{ $df.path }}"
     {{- else }}
-      dockerfile: {{ $df.path }}
+      dockerfile: "{{ $df.path }}"
     {{- end }}
-      image_name: {{ $df.image_name }}
+      image_name: "{{ $df.image_name }}"
     {{- if (index $df "platforms") }}
-      platforms: {{ index $df "platforms" }}
+      platforms: "{{ index $df "platforms" }}"
     {{- end }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
@@ -126,16 +126,16 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: {{ printf "${{ needs.build%s%s.outputs.image_ref }}" $suffix $imgSuffix }}
+      image_ref: "{{ printf "${{ needs.build%s%s.outputs.image_ref }}" $suffix $imgSuffix }}"
     {{- /* Emitted only when the manifest sets them — see release.yml.tmpl. */}}
     {{- if (index $df "scanners") }}
-      scanners: {{ index $df "scanners" }}
+      scanners: "{{ index $df "scanners" }}"
     {{- end }}
     {{- /* Scan the architectures that were actually built. Trivy picks a
          single platform for a multi-arch tag (default linux/amd64), so
          without this the other published arch ships unscanned. */}}
     {{- if (index $df "platforms") }}
-      platforms: {{ index $df "platforms" }}
+      platforms: "{{ index $df "platforms" }}"
     {{- else }}
       platforms: linux/amd64,linux/arm64
     {{- end }}
@@ -143,7 +143,7 @@ jobs:
          THIS image, and a repo-wide setting overriding it would defeat the
          reason it exists — one image whose threshold has to differ. */}}
     {{- if (index $df "severity") }}
-      severity: {{ index $df "severity" }}
+      severity: "{{ index $df "severity" }}"
     {{- else }}
       severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
     {{- end }}
