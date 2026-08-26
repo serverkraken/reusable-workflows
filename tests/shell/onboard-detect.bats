@@ -1597,3 +1597,23 @@ _nested_repo() {  # <tiefe: 3|4>
   #    unsichtbar".
   jq -e '[.components[].path] | index("services/api") != null' <<<"$out" >/dev/null
 }
+
+# Der erste Anlauf zu I-14 war lokal gruen und fiel in der self-CI um: GNU find
+# (Linux) zitiert den Pfad in seiner Fehlerzeile, BSD find (macOS) nicht. Die
+# Anfuehrungszeichen wanderten in den Pfad, und aus `services/geheim` wurde
+# `'/…/services/geheim'`.
+#
+# Deshalb hier beide Formen gegen die ausgelagerte Funktion — ohne dass die
+# Plattform des Testlaufs mitentscheidet, welcher Fall geprueft wird.
+@test "find error paths are unquoted the same way on GNU and BSD" {
+  source "$REPO_ROOT/scripts/lib/onboard-detect-lib.sh"
+
+  # BSD find: unzitiert
+  [ "$(_find_err_unquote "/repo/services/geheim")" = "/repo/services/geheim" ]
+  # GNU find unter LC_ALL=C: ASCII-Apostrophe
+  [ "$(_find_err_unquote "'/repo/services/geheim'")" = "/repo/services/geheim" ]
+  # GNU find ohne LC_ALL=C: typografische Anfuehrungszeichen
+  [ "$(_find_err_unquote "$(printf '‘/repo/services/geheim’')")" = "/repo/services/geheim" ]
+  # Ein Pfad, der selbst ein Apostroph enthaelt, darf nicht verstuemmelt werden.
+  [ "$(_find_err_unquote "/repo/it's/da")" = "/repo/it's/da" ]
+}

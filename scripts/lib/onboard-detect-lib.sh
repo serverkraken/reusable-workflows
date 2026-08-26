@@ -168,6 +168,27 @@ _component_is_flutter() {
 # exportiert, damit ihn auch Subshells sehen, die ueber `$( )` entstehen.
 _PATH_UNREADABLE_FILE="${_PATH_UNREADABLE_FILE:-}"
 
+# _find_err_unquote — den Pfad aus einer find-Fehlerzeile auspacken.
+#
+# GNU find zitiert ihn, BSD find nicht:
+#
+#   GNU (Linux):   find: '/repo/services/geheim': Permission denied
+#   BSD (macOS):   find: /repo/services/geheim: Permission denied
+#
+# Genau daran ist der erste Anlauf in der self-CI gescheitert, waehrend er
+# lokal gruen war: die Anfuehrungszeichen wanderten in den Pfad, und aus
+# `services/geheim` wurde `'/…/services/geheim'`. Eigene Funktion, damit ein
+# Test beide Formen pruefen kann, ohne dass die Plattform mitentscheidet.
+#
+# Unter LC_ALL=C nutzt GNU find ASCII-Apostrophe; die typografischen werden
+# trotzdem abgeraeumt, falls jemand die Locale-Zeile entfernt.
+_find_err_unquote() {
+  local v="$1"
+  v="${v#\'}"; v="${v%\'}"
+  v="${v#$'\u2018'}"; v="${v%$'\u2019'}"
+  printf '%s' "$v"
+}
+
 _find_sorted() {
   local root="$1"; shift
   # Nicht vorhanden = leeres Ergebnis, kein Fehler.
@@ -199,7 +220,7 @@ _find_sorted() {
     while IFS= read -r line; do
       [[ -n "$line" ]] || continue
       if [[ "$line" =~ ^find:\ (.+):\ ([^:]+)$ ]]; then
-        rel="$(_repo_rel "$base" "${BASH_REMATCH[1]}")"
+        rel="$(_repo_rel "$base" "$(_find_err_unquote "${BASH_REMATCH[1]}")")"
         reason="${BASH_REMATCH[2]}"
       else
         rel="$root"
