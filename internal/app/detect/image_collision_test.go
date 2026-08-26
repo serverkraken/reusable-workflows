@@ -504,3 +504,85 @@ func TestLanguageOverrideWithoutRootComponentWarns(t *testing.T) {
 		}
 	}
 }
+
+// Audit A-3 und A-4: `workflows.keep` und `workflows.e2e.script` wurden nur
+// LEXIKALISCH geprueft — Zeichensatz und Form, nicht Existenz. Beide Werte
+// gingen kommentarlos durch, mit `warnings: []`.
+//
+// Was daran haengt, ist nicht dasselbe:
+//
+//   - `keep` nennt Workflows, die die Legacy-Erkennung AUSNEHMEN soll. Bei
+//     einem Tippfehler wird die gemeinte Datei nicht ausgenommen, und PR B
+//     schlaegt ihre Loeschung vor: der Adopter deklariert Schutz und bekommt
+//     das Gegenteil.
+//   - `e2e.script` landet im gerenderten e2e.yml; fehlt die Datei, scheitert
+//     der Job planmaessig zur Laufzeit.
+//
+// Warnung statt Fehler: die Loeschung geschieht in einem PR, den der Adopter
+// sieht, und die Warnung steht in dessen Text. Ein harter Fehler wuerde ein
+// veraltetes `keep` zum Totalblocker fuer jedes kuenftige Onboarding machen.
+
+// Der Helfer writeManifestRepo aus service_test.go legt Repo, Manifest und
+// go.mod an; hier kommen nur die deklarierten Dateien dazu.
+func writeFiles(t *testing.T, repo string, files map[string]string) {
+	t.Helper()
+	for rel, body := range files {
+		full := filepath.Join(repo, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+const keepAndE2EManifest = `schema: 1
+components:
+  - path: .
+workflows:
+  keep:
+    - eigenes.yml
+  e2e:
+    script: tests/e2e/run.sh
+`
+
+func TestDeclaredButMissingFilesAreReported(t *testing.T) {
+	repo := writeManifestRepo(t, keepAndE2EManifest)
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, w := range res.Profile.Warnings {
+		if w.Code == "declared_file_missing" {
+			paths = append(paths, w.Path)
+		}
+	}
+	want := []string{".github/workflows/eigenes.yml", "tests/e2e/run.sh"}
+	if len(paths) != len(want) {
+		t.Fatalf("erwartet %v, bekommen %v (alle: %+v)", want, paths, res.Profile.Warnings)
+	}
+	for i := range want {
+		if paths[i] != want[i] {
+			t.Fatalf("Warnung %d nennt %q, erwartet %q", i, paths[i], want[i])
+		}
+	}
+}
+
+func TestDeclaredFilesThatExistAreSilent(t *testing.T) {
+	repo := writeManifestRepo(t, keepAndE2EManifest)
+	writeFiles(t, repo, map[string]string{
+		".github/workflows/eigenes.yml": "name: eigenes\n",
+		"tests/e2e/run.sh":              "#!/bin/sh\n",
+	})
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range res.Profile.Warnings {
+		if w.Code == "declared_file_missing" {
+			t.Fatalf("vorhandene Datei darf nicht gemeldet werden: %+v", w)
+		}
+	}
+}
