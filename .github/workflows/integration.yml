@@ -675,15 +675,29 @@ jobs:
                 exit 1
               fi
               ;;
-            false)
+            false|"")
               # Kein Release: dann darf auch nichts darin stehen.
+              #
+              # LEER ist hier gueltig und nicht etwa ein Ausfall: dieser Test
+              # ruft mit `dry_run: true` auf, und dann bekommt release-please
+              # `skip-github-release`/`skip-github-pull-request` gesetzt, tut
+              # nichts und emittiert folglich gar keine Ausgabe.
+              #
+              # Die erste Fassung dieser Pruefung hat genau deshalb hier
+              # abgebrochen ("die Ausgabe kommt nicht durch") — sie war zu
+              # streng, weil sie den Trockenlauf nicht kannte. Der Fehlschlag
+              # war aber lehrreich: `release_created` ist mal 'true', mal
+              # 'false', mal leer. Ein Aufrufer, der auf == 'false' prueft,
+              # liegt im Trockenlauf falsch. Der Vertrag waere staerker, wenn
+              # das Atom in diesem Fall ausdruecklich 'false' emittierte —
+              # notiert als eigener Punkt, nicht hier nebenbei geaendert.
               if [[ "$n_paths" -ne 0 || "$n_rel" -ne 0 ]]; then
-                echo "::error::release_created=false, aber paths_released=$n_paths und releases=$n_rel — die Ausgaben widersprechen sich" >&2
+                echo "::error::release_created='${CREATED:-<leer>}' meldet kein Release, aber paths_released=$n_paths und releases=$n_rel — die Ausgaben widersprechen sich" >&2
                 exit 1
               fi
               ;;
             *)
-              echo "::error::release_created ist weder 'true' noch 'false', sondern '${CREATED:-<leer>}' — die Ausgabe kommt nicht durch" >&2
+              echo "::error::release_created ist weder 'true' noch 'false' noch leer, sondern '$CREATED' — die Ausgabe ist unbrauchbar" >&2
               exit 1
               ;;
           esac
