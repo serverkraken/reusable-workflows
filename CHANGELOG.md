@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.21.0](https://github.com/serverkraken/reusable-workflows/compare/v4.20.2...v4.21.0) (2026-08-26)
+
+
+### Features
+
+* **release:** der öffentliche Orchestrator war nie aufgerufen worden ([#365](https://github.com/serverkraken/reusable-workflows/issues/365)) ([9683dd3](https://github.com/serverkraken/reusable-workflows/commit/9683dd3e0cd7dea633ff6ff83531ea671dd9ad81))
+
+
+### Bug Fixes
+
+* **nightly:** eine behobene Regression blieb für immer offen ([#364](https://github.com/serverkraken/reusable-workflows/issues/364)) ([6008dd0](https://github.com/serverkraken/reusable-workflows/commit/6008dd0270ff8a2fecdd836d1abac73e924dfbab))
+
 ## [4.20.2](https://github.com/serverkraken/reusable-workflows/compare/v4.20.1...v4.20.2) (2026-08-26)
 
 
