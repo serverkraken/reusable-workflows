@@ -137,6 +137,7 @@ with:
 | input   | `caller_id`       | string  | no       | `''`                                            | Optional caller identifier appended to the concurrency group for parallel callers. |
 | secret  | `release_please_app_client_id`  | — | **yes** | — | GitHub App Client ID with `contents:read` on the catalog repo. Forwarded to docker-build.yml. |
 | secret  | `release_please_app_private_key`| — | **yes** | — | PEM private key for the GitHub App. Forwarded to docker-build.yml. |
+| output  | `matrix`          | string  | —        | —                                               | JSON matrix built from `images`: `{"include": [{dockerfile, image_name}, ...]}`. Reflects the dispatch decision, not the build results — per-image digests are deliberately not surfaced (call `docker-build.yml` directly for those). |
 
 ---
 
