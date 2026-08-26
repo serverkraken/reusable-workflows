@@ -103,6 +103,22 @@ on:
         required: false
         type: string
         default: ''
+    outputs:
+      # Audit K-7: der Self-CI-Aufruf pruefte bisher NICHTS ausser "der
+      # Workflow ist nicht gescheitert" — es gab schlicht keine Ausgabe, auf
+      # die er haette schauen koennen.
+      #
+      # Die Per-Image-Digests bleiben bewusst draussen (siehe Kommentar am
+      # summary-Job): wer die braucht, ruft docker-build.yml direkt auf. Die
+      # geparste Matrix dagegen ist genau die Dispatch-Entscheidung dieses
+      # Workflows — was er aus `images` gemacht hat und wie viele Builds daraus
+      # wurden. Genau das laesst sich pruefen, und genau das war unsichtbar.
+      matrix:
+        description: >-
+          JSON-Matrix, die aus `images` erzeugt wurde: {"include": [{dockerfile,
+          image_name}, ...]}. Spiegelt die Dispatch-Entscheidung, nicht die
+          Build-Ergebnisse.
+        value: ${{ jobs.parse.outputs.matrix }}
     secrets:
       release_please_app_client_id:
         required: true
