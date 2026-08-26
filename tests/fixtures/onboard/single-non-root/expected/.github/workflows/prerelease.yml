@@ -1,0 +1,37 @@
+name: prerelease
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-svc:
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+      pull-requests: write
+    secrets: inherit
+    with:
+      prerelease: true
+      context: "svc"
+      dockerfile: "svc/Dockerfile"
+      image_name: "single-non-root-svc"
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+  scan-svc:
+    needs: build-svc
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    secrets: inherit
+    with:
+      image_ref: "${{ needs.build-svc.outputs.image_ref }}"
+      platforms: linux/amd64,linux/arm64
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}

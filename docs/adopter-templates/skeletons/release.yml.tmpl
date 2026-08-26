@@ -82,7 +82,30 @@ jobs:
      so the image-style "v<version>" string is NOT a checkoutable ref there —
      releases['<path>'].tag_name carries the real tag. */ -}}
 {{- $ref := "${{ needs.release-please.outputs.tag_name }}" -}}
-{{- if $mono -}}
+{{- /* Der Diskriminator ist NICHT "Monorepo?", sondern "Wurzelpaket?" (Audit
+     J-6).
+
+     release-please setzt die unpraefixierten Outputs (release_created,
+     tag_name) nur fuer das Wurzelpaket "."; jedes andere Paket bekommt
+     `<pfad>--release_created`. Das steht im semantic-release-Atom nicht nur
+     als Kommentar, sondern im jq: `pick` faellt ausschliesslich bei
+     `$p == "."` auf die nackten Namen zurueck.
+
+     Hier stand `$mono`. Eine EINZELNE Komponente, die nicht an der Wurzel
+     liegt (monorepo=false, path=svc), bekam damit das flache Gate — und das
+     feuert nie. Gemessen: release-please-config.json traegt korrekt den
+     Package-Key "svc" (aus dem A-2/J-2-Fix), release.yml gatete auf
+     `release_created`. Tag und GitHub-Release entstehen, gebaut und gepusht
+     wird nichts. Gruen und still.
+
+     Der A-2/J-2-Fix hat diesen Fall also erst freigelegt: solange der
+     Package-Key faelschlich "." war, passte das flache Gate dazu.
+
+     Bewusst `or $mono (not $isRoot)` statt nur `not $isRoot`: ein
+     Monorepo-Adopter mit Wurzelkomponente behaelt damit exakt das bisherige
+     Rendering und bleibt drift-clean. Geaendert wird nur der Fall, der
+     nachweislich kaputt war. */ -}}
+{{- if or $mono (not $isRoot) -}}
   {{- $gate = printf "contains(fromJSON(needs.release-please.outputs.paths_released), '%s')" $c.path -}}
   {{- $tag = printf "v${{ fromJSON(needs.release-please.outputs.releases)['%s'].version }}" $c.path -}}
   {{- $ref = printf "${{ fromJSON(needs.release-please.outputs.releases)['%s'].tag_name }}" $c.path -}}

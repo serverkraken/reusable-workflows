@@ -246,6 +246,16 @@ golden_check_preview() {
   golden_check_preview "go-root-multi-image"
 }
 
+# EINE Komponente, die NICHT an der Wurzel liegt (monorepo=false, path=svc).
+# Bis Audit J-6 bildete KEINE Fixture diesen Fall ab — deshalb blieb er
+# unbemerkt, obwohl er das Release-Gating still ausser Kraft setzte: der
+# Package-Key ist korrekt `svc`, das Gate stand aber auf dem flachen
+# `release_created`, den release-please nur fuer das Wurzelpaket setzt.
+# Das Golden haelt fest, dass hier der PFAD-Vertrag gerendert wird.
+@test "golden: single-non-root (Audit J-6)" {
+  golden_check_preview "single-non-root"
+}
+
 @test "golden: gitops-bootstrap-only"  { golden_check "gitops-bootstrap-only"; }
 @test "golden: go-repo"                { golden_check "go-repo"; }
 @test "golden: go-cgo"                 { golden_check "go-cgo"; }
@@ -1388,4 +1398,49 @@ _render_bad_profile() {  # <profil-inhalt>
     "legacy_ci": [], "topics": [], "warnings": []
   }')
   refute_grep -qF "package_name" "$rendered"
+}
+
+# ---- Release-Gating bei einer einzelnen Nicht-Wurzel-Komponente (Audit J-6) ----
+#
+# release-please setzt die unpraefixierten Outputs (release_created, tag_name)
+# NUR fuer das Wurzelpaket "."; jedes andere Paket bekommt
+# `<pfad>--release_created`. Das steht im semantic-release-Atom nicht nur als
+# Kommentar, sondern im jq: `pick` faellt ausschliesslich bei `$p == "."` auf
+# die nackten Namen zurueck.
+#
+# Das Template gatete auf `$mono`. Eine einzelne Komponente bei `svc`
+# (monorepo=false) bekam damit das flache Gate — und das feuert nie: Tag und
+# GitHub-Release entstehen, gebaut und gepusht wird nichts. Gruen und still.
+@test "release.yml gatet eine einzelne Nicht-Wurzel-Komponente ueber den Pfad-Vertrag" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "1.0.0", "monorepo": false,
+    "components": [{"path": "svc", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path": "svc/Dockerfile", "context": "svc",
+        "image_name": "$REPO", "release_eligible": true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  grep -qF "contains(fromJSON(needs.release-please.outputs.paths_released), 'svc')" "$rendered"
+  refute_grep -qF "needs.release-please.outputs.release_created == 'true'" "$rendered"
+  grep -qF "fromJSON(needs.release-please.outputs.releases)['svc'].tag_name" "$rendered"
+}
+
+# Gegenprobe: die WURZEL-Komponente eines Nicht-Monorepos behaelt den flachen
+# Vertrag. Dort setzt release-please die unpraefixierten Outputs tatsaechlich,
+# und jeder bestehende Ein-Komponenten-Adopter bleibt damit drift-clean.
+@test "release.yml behaelt den flachen Vertrag fuer die Wurzelkomponente" {
+  rendered=$(render_release_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "1.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path": "Dockerfile", "context": ".",
+        "image_name": "$REPO", "release_eligible": true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  grep -qF "needs.release-please.outputs.release_created == 'true'" "$rendered"
+  refute_grep -qF "paths_released" "$rendered"
 }
