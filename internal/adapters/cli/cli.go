@@ -90,20 +90,27 @@ func runDetect(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	out := &contractWriter{w: stdout}
 	if *emitBoth {
-		writeLegacy(stdout, res.Legacy)
+		writeLegacy(out, res.Legacy)
 		delim := delimiter(profile)
-		fmt.Fprintf(stdout, "profile_json<<%s\n%s\n%s\n", delim, profile, delim)
+		out.printf("profile_json<<%s\n%s\n%s\n", delim, profile, delim)
+		if out.err != nil {
+			return out.fail(stderr, "detect outputs")
+		}
 		return 0
 	}
 	switch *format {
 	case "profile-json":
-		fmt.Fprintln(stdout, string(profile))
+		out.println(string(profile))
 	case "legacy":
-		writeLegacy(stdout, res.Legacy)
+		writeLegacy(out, res.Legacy)
 	default:
 		fmt.Fprintf(stderr, "unsupported format: %s\n", *format)
 		return 2
+	}
+	if out.err != nil {
+		return out.fail(stderr, "detect outputs")
 	}
 	return 0
 }
@@ -192,7 +199,11 @@ func runDrift(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	writeDrift(stdout, res)
+	out := &contractWriter{w: stdout}
+	writeDrift(out, res)
+	if out.err != nil {
+		return out.fail(stderr, "drift outputs")
+	}
 	return 0
 }
 
@@ -230,17 +241,25 @@ func runApplyDefaults(ctx context.Context, args []string, stdout, stderr io.Writ
 		fmt.Fprintln(stderr, notice)
 	}
 	if *dryRun {
-		fmt.Fprintln(stdout, "defaults_applied=false")
-		fmt.Fprintln(stdout, "tier_2_applied=false")
-		fmt.Fprintf(stdout, "would_change=%s\n", defaultsapp.CategoriesCSV(res.WouldChange))
+		out := &contractWriter{w: stdout}
+		out.println("defaults_applied=false")
+		out.println("tier_2_applied=false")
+		out.printf("would_change=%s\n", defaultsapp.CategoriesCSV(res.WouldChange))
+		if out.err != nil {
+			return out.fail(stderr, "apply-defaults outputs")
+		}
 		if err := writeDefaultsSummary(os.Getenv("GITHUB_STEP_SUMMARY"), *repo, res.WouldChange); err != nil {
 			fmt.Fprintf(stderr, "::warning::failed to write step summary: %v\n", err)
 		}
 		return 0
 	}
-	fmt.Fprintln(stdout, "defaults_applied=true")
-	fmt.Fprintf(stdout, "tier_2_applied=%t\n", res.Tier2Applied)
-	fmt.Fprintf(stdout, "modified=%s\n", defaultsapp.CategoriesCSV(res.Modified))
+	out := &contractWriter{w: stdout}
+	out.println("defaults_applied=true")
+	out.printf("tier_2_applied=%t\n", res.Tier2Applied)
+	out.printf("modified=%s\n", defaultsapp.CategoriesCSV(res.Modified))
+	if out.err != nil {
+		return out.fail(stderr, "apply-defaults outputs")
+	}
 	return 0
 }
 
@@ -286,38 +305,82 @@ func runPreview(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	writePreview(stdout, res)
+	out := &contractWriter{w: stdout}
+	writePreview(out, res)
+	if out.err != nil {
+		return out.fail(stderr, "preview outputs")
+	}
 	return 0
 }
 
-func writeLegacy(stdout io.Writer, legacy domain.LegacyOutputs) {
-	fmt.Fprintf(stdout, "language=%s\n", legacy.Language)
-	fmt.Fprintf(stdout, "release_type=%s\n", legacy.ReleaseType)
-	fmt.Fprintf(stdout, "current_version=%s\n", legacy.CurrentVersion)
-	fmt.Fprintf(stdout, "default_branch=%s\n", legacy.DefaultBranch)
+// contractWriter haelt den ERSTEN Schreibfehler fest, statt ihn zu verwerfen.
+//
+// Audit C-8. Die .golangci.yml nimmt fmt.Fprint* bewusst von errcheck aus, mit
+// der Begruendung: Diagnoseausgaben sind best-effort, "contract-relevant writes
+// (step summary, lockfile) check errors explicitly in code". Fuer die
+// $GITHUB_OUTPUT-Zeilen war diese Zusage nicht eingeloest — und die SIND der
+// Vertrag: `language=`, `status=`, `profile_json<<DELIM`, `tier_2_applied=`.
+//
+// Was daran haengt: bricht der Schreibvorgang ab (volle Platte auf dem Runner,
+// geschlossene Pipe), lieferte die CLI trotzdem Rueckgabewert 0. Der Aufrufer
+// las dann ein abgeschnittenes Profil — oder, schlimmer, einen
+// `profile_json<<DELIM`-Block OHNE schliessenden Delimiter, was die
+// Heredoc-Auswertung von $GITHUB_OUTPUT und damit auch die Ausgaben der
+// folgenden Schritte zerlegt. Ein Fehlschlag, der sich als Erfolg ausgibt.
+//
+// Diagnoseausgaben auf stderr laufen bewusst NICHT hierueber: ein
+// fehlgeschlagener Hinweis darf einen korrekten Rueckgabewert nicht kippen.
+// Genau diese Trennung meint der Kommentar in .golangci.yml.
+type contractWriter struct {
+	w   io.Writer
+	err error
 }
 
-func writeDrift(stdout io.Writer, res domain.DriftResult) {
+func (c *contractWriter) printf(format string, a ...any) {
+	if c.err != nil {
+		return
+	}
+	_, c.err = fmt.Fprintf(c.w, format, a...)
+}
+
+func (c *contractWriter) println(s string) {
+	c.printf("%s\n", s)
+}
+
+// fail meldet den Fehler auf stderr und liefert den Rueckgabewert fuer die CLI.
+func (c *contractWriter) fail(stderr io.Writer, what string) int {
+	fmt.Fprintf(stderr, "failed to write %s to stdout: %v\n", what, c.err)
+	return 1
+}
+
+func writeLegacy(c *contractWriter, legacy domain.LegacyOutputs) {
+	c.printf("language=%s\n", legacy.Language)
+	c.printf("release_type=%s\n", legacy.ReleaseType)
+	c.printf("current_version=%s\n", legacy.CurrentVersion)
+	c.printf("default_branch=%s\n", legacy.DefaultBranch)
+}
+
+func writeDrift(c *contractWriter, res domain.DriftResult) {
 	if res.LockVersion != "" {
-		fmt.Fprintf(stdout, "lock_version=%s\n", res.LockVersion)
+		c.printf("lock_version=%s\n", res.LockVersion)
 	}
 	if res.CurrentVersion != "" {
-		fmt.Fprintf(stdout, "current_version=%s\n", res.CurrentVersion)
+		c.printf("current_version=%s\n", res.CurrentVersion)
 	}
-	fmt.Fprintf(stdout, "status=%s\n", res.Status)
+	c.printf("status=%s\n", res.Status)
 	if res.Status == domain.DriftNoLock {
 		return
 	}
-	fmt.Fprintf(stdout, "modified=%s\n", strings.Join(res.Modified, ","))
-	fmt.Fprintf(stdout, "render_error=%s\n", res.RenderError)
+	c.printf("modified=%s\n", strings.Join(res.Modified, ","))
+	c.printf("render_error=%s\n", res.RenderError)
 }
 
-func writePreview(stdout io.Writer, res previewapp.Result) {
-	fmt.Fprintf(stdout, "preview_out=%s\n", res.OutPath)
-	fmt.Fprintf(stdout, "profile_json=%s\n", res.ProfileJSONPath)
-	writeLegacy(stdout, res.Legacy)
-	fmt.Fprintf(stdout, "target_repo=%s\n", res.Profile.TargetRepo)
-	fmt.Fprintf(stdout, "rendered_files=%s\n", strings.Join(res.RenderedFiles, ","))
+func writePreview(c *contractWriter, res previewapp.Result) {
+	c.printf("preview_out=%s\n", res.OutPath)
+	c.printf("profile_json=%s\n", res.ProfileJSONPath)
+	writeLegacy(c, res.Legacy)
+	c.printf("target_repo=%s\n", res.Profile.TargetRepo)
+	c.printf("rendered_files=%s\n", strings.Join(res.RenderedFiles, ","))
 }
 
 func delimiter(payload []byte) string {

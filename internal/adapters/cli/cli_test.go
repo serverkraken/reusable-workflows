@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -597,5 +598,88 @@ func assertRenderLock(t *testing.T, target, renderedAgainst string) {
 	}
 	if lock.Files[".github/workflows/ci.yml"] == "" || lock.Files["release-please-config.json"] == "" {
 		t.Fatalf("files=%v", lock.Files)
+	}
+}
+
+// Audit C-8. Die $GITHUB_OUTPUT-Zeilen SIND der Vertrag der CLI —
+// `language=`, `status=`, `profile_json<<DELIM`, `tier_2_applied=`. Sie wurden
+// ungeprueft geschrieben, und die CLI lieferte Rueckgabewert 0, auch wenn der
+// Schreibvorgang scheiterte.
+//
+// Was daran haengt: bricht er ab (volle Platte auf dem Runner, geschlossene
+// Pipe), las der Aufrufer ein abgeschnittenes Profil — oder, schlimmer, einen
+// `profile_json<<DELIM`-Block OHNE schliessenden Delimiter. Das zerlegt die
+// Heredoc-Auswertung von $GITHUB_OUTPUT und damit auch die Ausgaben der
+// FOLGENDEN Schritte. Ein Fehlschlag, der sich als Erfolg ausgibt.
+//
+// .golangci.yml nimmt fmt.Fprint* bewusst von errcheck aus und begruendet das
+// damit, dass "contract-relevant writes ... check errors explicitly in code" —
+// fuer diese Stellen war die Zusage nicht eingeloest.
+
+// failingWriter scheitert ab dem n-ten Schreibvorgang. n=0 heisst: sofort.
+type failingWriter struct {
+	okWrites int
+	seen     int
+}
+
+func (f *failingWriter) Write(p []byte) (int, error) {
+	f.seen++
+	if f.seen > f.okWrites {
+		return 0, errors.New("no space left on device")
+	}
+	return len(p), nil
+}
+
+func TestContractWritesFailLoudly(t *testing.T) {
+	repo := repoFixture(t, "go-repo")
+	for _, c := range []struct {
+		name string
+		args []string
+	}{
+		{"detect legacy", []string{"detect", "--repo-path", repo}},
+		{"detect profile-json", []string{"detect", "--repo-path", repo, "--format", "profile-json"}},
+		{"detect emit-both", []string{"detect", "--emit-both", repo}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var errb bytes.Buffer
+			// Sofort scheitern: der erste Vertragswert kommt nicht durch.
+			code := Run(context.Background(), c.args, &failingWriter{}, &errb)
+			if code == 0 {
+				t.Fatal("ein gescheiterter Vertrags-Schreibvorgang muss den Rueckgabewert kippen")
+			}
+			if !strings.Contains(errb.String(), "failed to write") {
+				t.Fatalf("Fehler wird nicht benannt: %q", errb.String())
+			}
+		})
+	}
+}
+
+func TestContractWritesFailOnATruncatedProfileBlock(t *testing.T) {
+	// Der gefaehrlichste Fall: die ersten Zeilen gehen durch, der
+	// profile_json-Block bricht mittendrin ab. Ohne Pruefung sah das nach
+	// Erfolg aus, und der Aufrufer bekam einen Heredoc ohne schliessenden
+	// Delimiter.
+	var errb bytes.Buffer
+	code := Run(context.Background(),
+		[]string{"detect", "--emit-both", repoFixture(t, "go-repo")},
+		&failingWriter{okWrites: 4}, &errb) // die vier legacy-Zeilen gehen durch
+	if code == 0 {
+		t.Fatal("abgebrochener profile_json-Block muss den Rueckgabewert kippen")
+	}
+	if !strings.Contains(errb.String(), "detect outputs") {
+		t.Fatalf("Fehler nennt die Stelle nicht: %q", errb.String())
+	}
+}
+
+func TestDiagnosticsOnStderrDoNotAffectExitCode(t *testing.T) {
+	// Die Gegenseite der Entscheidung: ein fehlgeschlagener HINWEIS darf einen
+	// korrekten Rueckgabewert nicht kippen. Genau diese Trennung meint der
+	// Kommentar in .golangci.yml.
+	var out bytes.Buffer
+	code := Run(context.Background(),
+		[]string{"detect", "--repo-path", repoFixture(t, "go-repo")},
+		&out, &failingWriter{})
+	if code != 0 {
+		t.Fatalf("stderr-Fehlschlag darf den Rueckgabewert nicht aendern, code=%d", code)
 	}
 }
