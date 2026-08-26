@@ -92,6 +92,24 @@ teardown() { rm -rf "$TESTDIR"; }
   grep -q -- "-schema-location https://example.test" "$ARGLOG"
 }
 
+# Audit L-12: KUSTOMIZE_ARGS war dokumentiert (Kopf des Skripts), wurde geparst
+# und an `kustomize build` weitergereicht — aber kein Test setzte es je. Die
+# Schwester-Zusicherung fuer die kubeconform-Argumente gibt es seit langem
+# (SKIP_KINDS/SCHEMA_LOCATIONS, oben); fuer kustomize fehlte sie. Eine
+# Regression im Durchreichen waere unbemerkt geblieben.
+@test "KUSTOMIZE_ARGS flow into kustomize build argv" {
+  mkdir -p "$TREE/kargs"
+  printf 'resources: []\n' > "$TREE/kargs/kustomization.yaml"
+
+  KUSTOMIZE_ARGS="--load-restrictor LoadRestrictionsNone" \
+    MANIFESTS_PATHS="$TREE/kargs" run bash "$SCRIPT"
+
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  # Beide Woerter muessen als getrennte Argumente ankommen, nicht als eines.
+  grep -q -- "kustomize build .* --load-restrictor LoadRestrictionsNone" "$ARGLOG" \
+    || { echo "arglog: $(cat "$ARGLOG")"; false; }
+}
+
 @test "missing root faellt durch, statt Erfolg zu melden" {
   # Hiess bis zum F-4/I-13-Fix "missing root warns and does not fail" und
   # schrieb damit fest, dass ein Tippfehler in manifests_paths ein gruenes
