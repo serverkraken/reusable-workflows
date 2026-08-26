@@ -177,6 +177,69 @@ jobs:
           path: result/
           retention-days: 30
 
+  # Audit K-20: `publish` laeuft nur, wenn `enumerate` ERFOLGREICH war.
+  # Scheitert das Aufzaehlen der Adopter, wird der ganze Meldeweg
+  # uebersprungen — und der Meldeweg IST bei einem geplanten Lauf, den niemand
+  # beobachtet, das fortlaufende Issue. Ein leeres Issue ist von "nichts zu
+  # melden" nicht zu unterscheiden.
+  #
+  # Dieser Job schliesst genau diese Luecke und laesst `publish` unberuehrt:
+  # er greift nur, wenn enumerate NICHT erfolgreich war, und schreibt in
+  # dasselbe Issue, dass der Lauf gar nicht erst begonnen hat.
+  # summary-exempt: Dieser Job existiert genau fuer den Fall, dass der
+  # Sammler `publish` NICHT laeuft — ihn an dessen needs zu haengen waere ein
+  # Widerspruch in sich. Er meldet, dass gar nichts gemessen wurde.
+  report-enumerate-failure:
+    needs: enumerate
+    if: always() && needs.enumerate.result != 'success' && needs.enumerate.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Mint App token for catalog repo
+        id: cat-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: serverkraken
+          repositories: reusable-workflows
+
+      - name: Report that the run never started
+        env:
+          GH_TOKEN: ${{ steps.cat-token.outputs.token }}
+          RESULT: ${{ needs.enumerate.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body=$(mktemp)
+          {
+            echo "# Onboarding Drift Report — $(date -u +%Y-%m-%d)"
+            echo
+            echo "**Dieser Lauf hat gar nicht erst begonnen.**"
+            echo
+            echo "Der \`enumerate\`-Job endete mit \`$RESULT\`, also wurde kein"
+            echo "einziges Adopter-Repo geprueft. Die Zahlen unten stehen NICHT fuer"
+            echo "\"kein Drift\" — sie stehen fuer \"nicht gemessen\"."
+            echo
+            echo "- Lauf: $RUN_URL"
+            echo
+            echo "Der naechste planmaessige Lauf ueberschreibt diesen Text wieder,"
+            echo "sobald das Aufzaehlen durchlaeuft."
+          } > "$body"
+          cat "$body" >> "$GITHUB_STEP_SUMMARY"
+
+          existing=$(gh issue list \
+            --repo serverkraken/reusable-workflows \
+            --state open --limit 100 --json number,title \
+            -q '.[] | select(.title == "Onboarding Drift Report") | .number' \
+            | head -1)
+          if [[ -n "$existing" ]]; then
+            gh issue edit "$existing" --repo serverkraken/reusable-workflows --body-file "$body"
+          else
+            gh issue create --repo serverkraken/reusable-workflows \
+              --title "Onboarding Drift Report" --body-file "$body"
+          fi
+
   publish:
     needs: [enumerate, check]
     if: always() && needs.enumerate.result == 'success'
