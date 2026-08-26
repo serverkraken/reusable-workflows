@@ -1427,3 +1427,46 @@ _repo_with_dockerfile() {  # <dateiname> <kopfzeile-roh>
   run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$FIX/multi-dockerfile/' | jq -c '[.warnings[].code]'"
   [ "$output" = '[]' ]
 }
+
+# --- language_override muss das Profil erreichen ----------------------------
+#
+# Der Eingang ist beschrieben als "auto = detect, otherwise force release-type".
+# Er setzte aber nur die Legacy-Zeilen; das Profil, aus dem gerendert wird,
+# blieb unberuehrt (Audit H-6, Bash-Zwilling zu B-4). Gemessen an einem go-Repo
+# mit Override `python` trug release-please-config.json weiter
+# `"release-type": "go"` — fuer alles, was der Adopter hinterher sieht, war der
+# Schalter ein stiller Leerlauf.
+
+_profile_of() {  # <repo> <override>
+  bash "$REPO_ROOT/scripts/onboard-detect.sh" --emit-both "$1" "$2" \
+    | sed -n '/^profile_json<</,$p' | sed '1d;$d'
+}
+
+@test "erzwungener Release-Typ landet im Profil" {
+  run bash -c "$(declare -f _profile_of); REPO_ROOT='$REPO_ROOT'; _profile_of '$FIX/go-repo' python | jq -r '.components[0].release_please_type'"
+  [ "$output" = "python" ]
+}
+
+@test "erzwungener Typ laesst primary_language in Ruhe" {
+  # Wuerde der Schalter auch die Sprachwahl erzwingen, rendere ein erzwungenes
+  # `python` auf einem reinen Go-Repo Python-Jobs gegen ein Repo ohne
+  # pyproject.toml.
+  run bash -c "$(declare -f _profile_of); REPO_ROOT='$REPO_ROOT'; _profile_of '$FIX/go-repo' python | jq -r '.components[0].primary_language'"
+  [ "$output" = "go" ]
+}
+
+@test "auto laesst den erkannten Typ unveraendert" {
+  run bash -c "$(declare -f _profile_of); REPO_ROOT='$REPO_ROOT'; _profile_of '$FIX/go-repo' auto | jq -r '.components[0].release_please_type'"
+  [ "$output" = "go" ]
+}
+
+@test "flutter wird auf dart abgebildet, wie im Legacy-Pfad" {
+  run bash -c "$(declare -f _profile_of); REPO_ROOT='$REPO_ROOT'; _profile_of '$FIX/go-repo' flutter | jq -r '.components[0].release_please_type'"
+  [ "$output" = "dart" ]
+}
+
+@test "ohne Wurzelkomponente warnt der Schalter, statt stumm zu bleiben" {
+  run bash -c "$(declare -f _profile_of); REPO_ROOT='$REPO_ROOT'; _profile_of '$FIX/monorepo-go' python | jq -c '{w:[.warnings[].code],t:[.components[].release_please_type]}'"
+  [[ "$output" == *"language_override_not_applied"* ]]
+  [[ "$output" != *'"python"'* ]]
+}

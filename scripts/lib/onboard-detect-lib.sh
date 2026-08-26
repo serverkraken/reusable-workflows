@@ -363,6 +363,7 @@ emit_profile_json() {
 
   profile=$(emit_unsupported_language_warnings "$profile")
   profile=$(emit_unassigned_subdir_dockerfile_warnings "$profile" "$repo")
+  profile=$(apply_release_type_override "$profile" "${ONBOARD_RELEASE_TYPE_OVERRIDE:-}")
   emit_no_release_eligible_warnings "$profile"
 }
 
@@ -467,6 +468,37 @@ emit_unassigned_subdir_dockerfile_warnings() {
       path: $path,
       message: ($n + " Dockerfile(s) in sub-directories are not attached to any component and will not be built: " + $list + ". Declare them in .github/onboard.yml (components[].dockerfiles or their own component).")
     }]'
+}
+
+# apply_release_type_override — traegt einen erzwungenen Release-Typ in die
+# WURZELKOMPONENTE des Profils ein.
+#
+# `--language-override` setzte bisher nur die Legacy-Zeilen; das Profil, aus dem
+# gerendert wird, blieb unberuehrt (Audit H-6, Bash-Zwilling zu B-4). Gemessen
+# an einem go-Repo mit Override `python`: release-please-config.json trug weiter
+# `"release-type": "go"`.
+#
+# Nur der Release-Typ, nicht primary_language: der Eingang verspricht "force
+# release-type". Wuerde er auch die Sprachwahl erzwingen, rendere ein
+# erzwungenes `python` auf einem reinen Go-Repo Python-Jobs gegen ein Repo ohne
+# pyproject.toml. Nur die Wurzel, weil ein repo-weiter Einzelwert sinnvoll nur
+# sie meinen kann - trifft er keine, sagt eine Warnung das, statt stumm
+# wirkungslos zu bleiben.
+#
+# Signature: apply_release_type_override <profile-json> <release-type>
+apply_release_type_override() {
+  local profile_json="$1" rt="$2"
+  [[ -z "$rt" ]] && { echo "$profile_json"; return 0; }
+  echo "$profile_json" | jq --arg rt "$rt" '
+    if any(.components[]; .path == ".") then
+      .components |= map(if .path == "." then .release_please_type = $rt else . end)
+    else
+      .warnings += [{
+        code: "language_override_not_applied",
+        path: ".",
+        message: ("language override release type \"" + $rt + "\" was not applied: this repo has no root component, and a repo-wide release type cannot be assigned to sub-components; declare release types per component in .github/onboard.yml instead")
+      }]
+    end'
 }
 
 # detect_components — enumerate monorepo components or fall back to single-component.

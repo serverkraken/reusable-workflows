@@ -59,19 +59,15 @@ if [[ "${1:-}" == "--emit-both" ]]; then
   fi
   refuse_manifest "$REPO_PATH"
 
-  # Language detection — mirrors the legacy fallthrough below. We could share
-  # this code via a helper, but the duplication is small and the existing
-  # legacy path is intentionally self-contained for back-compat.
+  # Language detection. Die Signalliste stand hier als DRITTE woertliche Kopie
+  # ("die Duplikation ist klein" sagte der Kommentar) - #319 hat den
+  # Legacy-Block und die JSON-Pruefung auf root_language_signals zusammengefuehrt
+  # und diese hier uebersehen. Genau die Sorte Zwilling, an der
+  # `# onboard:image=` und `# onboard:release=` auseinandergelaufen sind.
   if [[ "$LANG_OVERRIDE" != "auto" ]]; then
     language="$LANG_OVERRIDE"
   else
-    matches=()
-    [[ -f "$REPO_PATH/go.mod" ]]         && matches+=(go)
-    [[ -f "$REPO_PATH/pyproject.toml" ]] && matches+=(python)
-    [[ -f "$REPO_PATH/Cargo.toml" ]]     && matches+=(rust)
-    [[ -f "$REPO_PATH/Chart.yaml" ]]     && matches+=(helm)
-    _component_is_flutter "$REPO_PATH"   && matches+=(flutter)
-    [[ -f "$REPO_PATH/package.json" ]]   && matches+=(node)
+    mapfile -t matches < <(root_language_signals "$REPO_PATH")
     if (( ${#matches[@]} == 0 )); then
       if detect_gitops_kubernetes "$REPO_PATH"; then language=gitops; else language=simple; fi
     elif (( ${#matches[@]} == 1 )); then
@@ -119,7 +115,14 @@ if [[ "${1:-}" == "--emit-both" ]]; then
   # instead of doing its own gh-api roundtrip.
   delim="EOF_$(head -c 16 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 16)"
   printf 'profile_json<<%s\n' "$delim"
+  # Der erzwungene Release-Typ muss ins Profil, nicht nur in die Legacy-Zeilen
+  # (Audit H-6). Nur bei echtem Override: bei `auto` stimmt der Wert je
+  # Komponente ohnehin, und ihn repo-weit zu ueberschreiben wuerde im Monorepo
+  # richtige Werte zerstoeren.
+  rt_override=""
+  [[ "$LANG_OVERRIDE" != "auto" ]] && rt_override="$release_type"
   OVERRIDE_DEFAULT_BRANCH="$default_branch" OVERRIDE_CURRENT_VERSION="$current_version" \
+  ONBOARD_RELEASE_TYPE_OVERRIDE="$rt_override" \
     emit_profile_json "$REPO_PATH"
   printf '%s\n' "$delim"
   exit 0

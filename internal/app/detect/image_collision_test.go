@@ -428,3 +428,79 @@ func TestAmbiguityWithoutDeclarationStillRefuses(t *testing.T) {
 		t.Fatal("erwartet: Absage bei mehrdeutigen Signalen ohne Deklaration")
 	}
 }
+
+// `--language-override` erreichte das Profil nicht (Audit B-4).
+//
+// Der Eingang ist beschrieben als "auto = detect, otherwise force
+// release-type". Gemessen an einem go-Repo mit Override `python`:
+//
+//	Legacy   language=python  release_type=python
+//	Profil   release_please_type=go
+//
+// Gerendert wird aus dem PROFIL - release-please-config.json trug weiter
+// `"release-type": "go"`. Fuer alles, was der Adopter hinterher sieht, war der
+// Schalter ein stiller Leerlauf.
+
+func TestLanguageOverrideReachesTheProfile(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ override, wantType, wantPrimary string }{
+		{"", "go", "go"},
+		{"auto", "go", "go"},
+		{"python", "python", "go"}, // primary_language bleibt, was erkannt wurde
+		{"flutter", "dart", "go"},  // dieselbe Abbildung wie im Legacy-Pfad
+	} {
+		t.Run("override="+c.override, func(t *testing.T) {
+			res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo, LanguageOverride: c.override})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := res.Profile.Components[0]
+			if got.ReleasePleaseType != c.wantType {
+				t.Fatalf("release_please_type=%q, erwartet %q", got.ReleasePleaseType, c.wantType)
+			}
+			// Bewusst NICHT ueberschrieben: wuerde der Schalter auch die
+			// Sprachwahl erzwingen, rendere ein erzwungenes `python` auf einem
+			// reinen Go-Repo Python-Jobs gegen ein Repo ohne pyproject.toml.
+			if got.PrimaryLanguage != c.wantPrimary {
+				t.Fatalf("primary_language=%q, erwartet %q", got.PrimaryLanguage, c.wantPrimary)
+			}
+		})
+	}
+}
+
+func TestLanguageOverrideWithoutRootComponentWarns(t *testing.T) {
+	// Im Monorepo trifft ein repo-weiter Wert keine Wurzelkomponente. Statt
+	// stumm wirkungslos zu bleiben - also genau der Fehler, den B-4 beschreibt -
+	// sagt eine Warnung, dass der Schalter nicht gegriffen hat.
+	repo := t.TempDir()
+	for _, sub := range []string{"services/api", "services/worker"} {
+		dir := filepath.Join(repo, sub)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo, LanguageOverride: "python"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, w := range res.Profile.Warnings {
+		if w.Code == "language_override_not_applied" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Warnung language_override_not_applied fehlt: %+v", res.Profile.Warnings)
+	}
+	for _, c := range res.Profile.Components {
+		if c.ReleasePleaseType != "go" {
+			t.Fatalf("%s: release_please_type=%q — Unterkomponenten duerfen nicht ueberschrieben werden", c.Path, c.ReleasePleaseType)
+		}
+	}
+}
