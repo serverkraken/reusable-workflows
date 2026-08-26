@@ -1,7 +1,21 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "packages": {
-    ".": {
+    {{- /* Der Schluessel ist der PFAD der Komponente, nicht fest ".".
+
+         release-please ordnet Konfiguration und Manifest ueber denselben
+         Schluessel zu. Bei einer einzelnen Komponente ausserhalb des
+         Wurzelverzeichnisses (Manifest: `components: [{path: services/api}]`)
+         stand hier "." und im Manifest "services/api" — also zwei Dateien, die
+         einander nicht kennen. Die Ausgangsversion der Komponente war damit
+         verloren: das konfigurierte Paket "." hat keinen Manifest-Eintrag und
+         faengt bei 0.0.0 an, der Eintrag fuer services/api gehoert zu keinem
+         konfigurierten Paket (Audit A-2).
+
+         Fuer den Regelfall (eine Komponente im Wurzelverzeichnis) ist .path
+         gleich "." — die Ausgabe bleibt dort unveraendert. Die
+         Monorepo-Variante schluesselt laengst nach .path. */}}
+    "{{ (index .profile.components 0).path }}": {
       "release-type": "{{ (index .profile.components 0).release_please_type }}",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
