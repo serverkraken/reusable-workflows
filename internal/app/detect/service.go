@@ -214,7 +214,28 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(req.RepoPath, profile.Components, fe)...)
 	}
 
-	legacyLanguage, err := legacyLanguage(req.RepoPath, req.LanguageOverride)
+	// Das Manifest schlaegt die Wurzelsignale. Ohne diesen Vorrang war die
+	// Mehrdeutigkeits-Absage fuer den Adopter UNENTRINNBAR, gemessen:
+	//
+	//	go.mod + pyproject.toml im Wurzelverzeichnis,
+	//	.github/onboard.yml mit `components: [{path: ., language: python}]`
+	//	-> "ambiguous language signals: go python; rerun with explicit
+	//	    language input"
+	//
+	// Der Adopter hat genau das getan, wozu die Meldung raet - im dokumentierten
+	// Feld `components[].language` - und wurde trotzdem abgewiesen. legacyLanguage
+	// leitet aus den Wurzelsignalen ab und sah das Manifest nie.
+	//
+	// Dazu kommt: an dieser Stelle ist das PROFIL laengst fertig gebaut. Der
+	// Abbruch warf es weg wegen eines Feldes, das nur die Legacy-Ausgabe
+	// (`language=`/`release_type=`) braucht und das der Profilpfad nicht nutzt.
+	lang := req.LanguageOverride
+	if lang == "" || lang == "auto" {
+		if declared := manifestRootLanguage(man, manifestComponents); declared != "" {
+			lang = declared
+		}
+	}
+	legacyLanguage, err := legacyLanguage(req.RepoPath, lang)
 	if err != nil {
 		return Result{}, err
 	}
@@ -227,6 +248,24 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		},
 		Profile: profile,
 	}, nil
+}
+
+// manifestRootLanguage liefert die im Manifest fuer die Wurzelkomponente
+// deklarierte Sprache, sonst "".
+//
+// Nur die Wurzel: `language=`/`release_type=` sind Repo-weite Legacy-Felder mit
+// genau einem Wert. Die Sprache einer Unterkomponente dafuer zu nehmen waere
+// geraten - und Raten ist genau das, was hier abgestellt wird.
+func manifestRootLanguage(man *manifest.Manifest, manifestComponents bool) string {
+	if !manifestComponents || man == nil {
+		return ""
+	}
+	for _, c := range man.Components {
+		if c.Path == "." && c.Language != "" {
+			return c.Language
+		}
+	}
+	return ""
 }
 
 func legacyLanguage(repo, override string) (string, error) {

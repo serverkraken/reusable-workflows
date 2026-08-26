@@ -372,3 +372,59 @@ func TestImageAnnotationSurvivesCRLF(t *testing.T) {
 		t.Fatalf("image_name=%q, erwartet %q", got, "acme/svc")
 	}
 }
+
+// Die Mehrdeutigkeits-Absage war fuer den Adopter unentrinnbar.
+//
+// `Detect` baut das Profil vollstaendig und leitet erst danach das Legacy-Feld
+// `language=` aus den WURZELSIGNALEN ab. Ein Manifest, das die Sprache
+// ausdruecklich deklariert, sah diese Ableitung nie:
+//
+//	go.mod + pyproject.toml, dazu .github/onboard.yml mit
+//	components: [{path: ., language: python}]
+//	-> "ambiguous language signals: go python; rerun with explicit language input"
+//
+// Der Adopter hatte genau das getan, wozu die Meldung raet — im dokumentierten
+// Feld — und wurde trotzdem abgewiesen, samt fertig gebautem Profil.
+
+func writeAmbiguousRepo(t *testing.T, manifestBody string) string {
+	t.Helper()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "pyproject.toml"), []byte("[project]\nname=\"x\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if manifestBody != "" {
+		if err := os.MkdirAll(filepath.Join(repo, ".github"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, ".github", "onboard.yml"), []byte(manifestBody), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return repo
+}
+
+func TestManifestLanguageResolvesAmbiguity(t *testing.T) {
+	repo := writeAmbiguousRepo(t, "schema: 1\ncomponents:\n  - path: .\n    language: python\n")
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatalf("Manifest deklariert die Sprache, trotzdem abgewiesen: %v", err)
+	}
+	if res.Legacy.Language != "python" {
+		t.Fatalf("language=%q, erwartet %q", res.Legacy.Language, "python")
+	}
+	if res.Legacy.ReleaseType != "python" {
+		t.Fatalf("release_type=%q, erwartet %q", res.Legacy.ReleaseType, "python")
+	}
+}
+
+func TestAmbiguityWithoutDeclarationStillRefuses(t *testing.T) {
+	// Keine Lockerung: ohne Deklaration bleibt die Absage. Sie ist jetzt bloss
+	// aufloesbar statt endgueltig.
+	repo := writeAmbiguousRepo(t, "")
+	if _, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo}); err == nil {
+		t.Fatal("erwartet: Absage bei mehrdeutigen Signalen ohne Deklaration")
+	}
+}
