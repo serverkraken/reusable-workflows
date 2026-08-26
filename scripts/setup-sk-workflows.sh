@@ -127,7 +127,51 @@ if [[ "$actual" != "$expected" ]]; then
   exit 1
 fi
 
-tar -xzf "$tmp/$asset" -C "$install_dir"
+# In ein FRISCHES Verzeichnis entpacken, nicht direkt nach $install_dir
+# (Audit H-18).
+#
+# $install_dir liegt per Vorgabe unter ${RUNNER_TEMP:-/tmp}/sk-workflows/bin,
+# und /tmp bleibt auf selbst-gehosteten Runnern zwischen Jobs bestehen — das
+# weiss dieses Repo an anderer Stelle laengst ("Clean digest dir (self-hosted
+# runners persist /tmp between jobs)").
+#
+# `set -e` faengt ein abbrechendes tar. Es faengt NICHT ein Archiv, das sauber
+# entpackt und `sk-workflows` trotzdem nicht enthaelt — etwa nach einem Release
+# mit umbenanntem oder unvollstaendigem Asset. Nachgestellt:
+#
+#   tar rc=0, chmod rc=0, gemeldet wird version=<neu>,
+#   ausgefuehrt wird das ALTE Binary von der vorigen Installation.
+#
+# Die Pruefsumme schuetzt davor nicht: sie belegt, dass das Archiv dem
+# entspricht, was veroeffentlicht wurde — nicht, dass darin das Erwartete liegt.
+#
+# Besonders tueckisch ist die Asymmetrie: auf einem frischen Runner faellt es
+# sofort auf (kein Binary), auf einem persistenten laeuft still die alte
+# Version weiter.
+# Das Staging-Verzeichnis liegt bewusst INNERHALB von $install_dir und nicht
+# unter $tmp: nur so ist das abschliessende `mv` ein Rename im selben
+# Dateisystem und damit atomar. Ueber Dateisystemgrenzen waere es ein Kopieren,
+# und ein Abbruch mittendrin hinterliesse ein halbes, ausfuehrbares Binary -
+# also wieder ein falscher Erfolg, nur eine Ebene tiefer.
+extract="$install_dir/.sk-extract.$$"
+rm -rf "$extract"
+mkdir -p "$extract"
+trap 'rm -rf "$tmp" "$extract"' EXIT
+tar -xzf "$tmp/$asset" -C "$extract"
+
+staged="$extract/sk-workflows"
+if [[ ! -f "$staged" ]]; then
+  {
+    echo "::error::$asset extracted without a sk-workflows binary."
+    echo "The checksum matched, so the published asset itself is wrong —"
+    echo "re-releasing is the fix, not re-running. Contents were:"
+    tar -tzf "$tmp/$asset" 2>/dev/null | sed 's/^/  /' | head -20
+  } >&2
+  exit 1
+fi
+
 binary="$install_dir/sk-workflows"
-chmod +x "$binary"
+chmod +x "$staged"
+mv -f "$staged" "$binary"   # atomarer Rename, siehe oben
+rm -rf "$extract"
 emit_outputs "$binary" "$version" "release"
