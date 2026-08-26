@@ -104,6 +104,15 @@ on:
       release_please_app_private_key:
         required: true
         description: 'PEM private key for the GitHub App.'
+      dockerhub_username:
+        required: false
+        description: >-
+          Docker Hub username. Optional — empty skips the login, and base-image
+          pulls fall back to anonymous (rate-limited per egress IP).
+      dockerhub_token:
+        required: false
+        description: >-
+          Docker Hub PAT. Optional — see dockerhub_username.
 
 permissions:
   contents: read
@@ -319,6 +328,28 @@ jobs:
         if: steps.check.outputs.selected == 'true'
         uses: ./.catalog/actions/ghcr-login
 
+      # Basis-Images von Docker Hub werden sonst ANONYM gezogen, und das
+      # Kontingent zaehlt pro Egress-IP — die sich der ganze Cluster teilt.
+      # Am 2026-08-26 im mailstack-Release belegt:
+      #
+      #   429 Too Many Requests / 401 Unauthorized
+      #   HEAD https://registry-1.docker.io/v2/library/debian/manifests/trixie-...
+      #
+      # Die Folgekette ist teuer: der Build scheitert, damit werden merge, scan
+      # UND chart-image-pins uebersprungen — der git-Tag existiert dann, das
+      # Image dazu nie. Angemeldet zaehlt das Kontingent pro KONTO.
+      #
+      # `secrets:` bleibt undeklariert: `secrets: inherit` der Aufrufer reicht
+      # die Werte durch, ohne die Signatur des workflow_call zu aendern. Repos
+      # ohne die Secrets uebergeben leere Zeichenketten, und die Action
+      # ueberspringt den Login still.
+      - name: Log in to Docker Hub
+        if: steps.check.outputs.selected == 'true'
+        uses: ./.catalog/actions/dockerhub-login
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - if: steps.check.outputs.selected == 'true'
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
@@ -452,6 +483,17 @@ jobs:
           path: .catalog
       - name: Log in to GHCR
         uses: ./.catalog/actions/ghcr-login
+
+      # Auch hier, obwohl dieser Job nur `imagetools` gegen GHCR faehrt:
+      # `docker/setup-buildx-action` legt weiter unten einen Builder mit dem
+      # Standardtreiber `docker-container` an und zieht dafuer
+      # `moby/buildkit:buildx-stable-1` — von Docker Hub. Im Log eines echten
+      # Laufs nachgesehen, nicht angenommen.
+      - name: Log in to Docker Hub
+        uses: ./.catalog/actions/dockerhub-login
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Compute artifact suffix from image_name
         id: suffix
