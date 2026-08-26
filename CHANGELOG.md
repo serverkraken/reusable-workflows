@@ -1,5 +1,14 @@
 # Changelog
 
+## [4.18.12](https://github.com/serverkraken/reusable-workflows/compare/v4.18.11...v4.18.12) (2026-08-26)
+
+
+### Bug Fixes
+
+* **detect:** die Chart-Version kam aus einer Abhaengigkeit (B-9) ([#333](https://github.com/serverkraken/reusable-workflows/issues/333)) ([dfcc322](https://github.com/serverkraken/reusable-workflows/commit/dfcc3221c45efc489477e019d9c41a001d5c0db8))
+* **detect:** pnpm-Workspace in Flow-Schreibweise wurde nicht gelesen (H-9) ([#332](https://github.com/serverkraken/reusable-workflows/issues/332)) ([3d4ad7d](https://github.com/serverkraken/reusable-workflows/commit/3d4ad7dbd3e68cc8d3cf6ef9756b20fb87d79229))
+* **release:** gebaut wurden zwei Architekturen, gescannt eine (F-2) ([#330](https://github.com/serverkraken/reusable-workflows/issues/330)) ([c9a25db](https://github.com/serverkraken/reusable-workflows/commit/c9a25db2c306ae2decc85567079f6f6316665c47))
+
 ## [4.18.11](https://github.com/serverkraken/reusable-workflows/compare/v4.18.10...v4.18.11) (2026-08-26)
 
 
