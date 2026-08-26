@@ -83,6 +83,29 @@ echo "lock_version=$lock_version"
 behind=0
 [[ -n "$CURRENT" && "$lock_version" != "$CURRENT" ]] && behind=1
 
+# Der Lock wird EINMAL geprueft, bevor irgendein Eintrag benutzt wird.
+#
+# Gefunden ueber das Suchmuster "Pfad verlaesst den Checkout": die Schleife
+# unten haengt den Lock-Schluessel direkt an $TARGET. Ein Lock mit
+# `"../geheim/secret.txt"` liess drift die Datei AUSSERHALB des Repos lesen und
+# im Bericht nennen - der Drift-Bericht wird damit zu einem Existenz- und
+# Inhalts-Orakel gegen den Runner. Der Go-Pfad prueft dasselbe
+# (lockPathInsideTarget).
+#
+# Rein lexikalisch: die Dateien muessen nicht existieren, ein fehlender Eintrag
+# ist ein legitimes Ergebnis ("(missing)").
+while IFS= read -r f; do
+  [[ -z "$f" ]] && continue
+  case "$f" in
+    /*)
+      echo "::error::lock lists an absolute path \"$f\"; every entry must be relative to the repository" >&2
+      exit 1 ;;
+    ..|../*|*/../*|*/..)
+      echo "::error::lock lists \"$f\", which points outside the repository" >&2
+      exit 1 ;;
+  esac
+done < <(jq -r '.files | keys[]' "$LOCK")
+
 modified_files=()
 while IFS= read -r f; do
   # .release-please-manifest.json is by-design mutated by release-please-action
