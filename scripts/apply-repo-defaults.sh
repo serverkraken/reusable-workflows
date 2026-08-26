@@ -229,6 +229,27 @@ if [[ -f "$LOCK_PATH" ]]; then
        "$LOCK_PATH" > "$tmp"
     mv "$tmp" "$LOCK_PATH"
   fi
+elif (( APPLY_TIER_2 )) && ! (( DRY_RUN )); then
+  # Ohne Lock-Datei kann der Marker nicht festgehalten werden — und das war
+  # bisher lautlos (Audit H-15). Tier 2 ist zu diesem Zeitpunkt bereits auf
+  # GitHub angewandt; der Marker ist genau das, was ihn beim naechsten Lauf
+  # davon abhaelt, es erneut zu tun.
+  #
+  # Folge ohne Hinweis: jeder weitere Sweep wendet Tier 2 wieder an und
+  # ueberschreibt die bewussten Aenderungen des Eigentuemers an den
+  # Komfortfeldern (Merge-Strategie, has_wiki, has_issues, ...). Die Zusage
+  # "owner overrides to comfort fields are respected after the first onboard"
+  # waere gebrochen, ohne dass es jemand sieht.
+  #
+  # Nur bei tatsaechlich angewandtem Tier 2: wurde ein vorhandener Marker
+  # durchgereicht, gab es nichts anzuwenden und nichts zu verlieren.
+  # Der Go-Zwilling meldet dasselbe (defaults.mutateLock).
+  {
+    printf '::warning::no .github/onboard.lock.json in %s: tier-2 defaults were applied to %s but the ' "$TARGET_PATH" "$REPO"
+    printf 'defaults_applied_at marker could NOT be recorded. Every later run will '
+    printf 're-apply them and overwrite owner changes to the comfort fields. '
+    printf 'Render the onboarding files first, or re-run once the lock exists.\n'
+  } >&2
 fi
 
 # Outputs
