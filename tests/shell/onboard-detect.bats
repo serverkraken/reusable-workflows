@@ -1556,3 +1556,44 @@ _nested_repo() {  # <tiefe: 3|4>
   run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$d/' | jq -c '[.components[].path]|sort'"
   [ "$output" = '["services/team-a/api","services/team-b/worker"]' ]
 }
+
+# Audit I-14: `find … 2>/dev/null | sort` in einer Prozesssubstitution verschluckte
+# die Fehlermeldung UND den Exit-Status. `find` bricht bei einem unlesbaren
+# Verzeichnis nicht ab — es meldet non-zero und gibt trotzdem aus, was es fand.
+# Aus einem TEILergebnis wurde ein vollstaendiges: Komponenten fehlten im Profil,
+# ohne dass irgendwo etwas davon stand.
+#
+# Die Go-Engine macht es ueber fsErrors.note laengst richtig; das hier zieht nach.
+@test "unreadable directory becomes a path_unreadable warning, not silence" {
+  # root: das Verzeichnis waere lesbar und der Test wuerde nichts pruefen.
+  [ "$(id -u)" -ne 0 ] || skip "als root ist kein Verzeichnis unlesbar"
+
+  local repo="$BATS_TEST_TMPDIR/repo"
+  mkdir -p "$repo/services/api" "$repo/services/geheim"
+  printf 'module example.com/api\n' > "$repo/services/api/go.mod"
+  printf 'module example.com/worker\n' > "$repo/services/geheim/go.mod"
+  printf 'FROM scratch\n' > "$repo/services/api/Dockerfile"
+  chmod 000 "$repo/services/geheim"
+
+  run "$DETECT" --profile-json "$repo"
+  local rc="$status" out="$output"
+  chmod 755 "$repo/services/geheim"   # sonst scheitert das Aufraeumen
+  [ "$rc" -eq 0 ] || { echo "$out"; false; }
+
+  # 1. Die Warnung existiert und nennt den KONKRETEN Pfad — so wie Go
+  #    (fsErrors.note), nicht bloss die Suchwurzel.
+  local codes paths
+  codes="$(jq -r '[.warnings[].code] | join(",")' <<<"$out")"
+  [[ "$codes" == *"path_unreadable"* ]] || { echo "warnings: $out"; false; }
+  paths="$(jq -r '[.warnings[] | select(.code=="path_unreadable") | .path] | join(",")' <<<"$out")"
+  [ "$paths" = "services/geheim" ]
+
+  # 2. Kein absoluter Runner-Pfad in der Meldung: sie landet im Profil und
+  #    damit im Onboarding-PR-Text.
+  jq -e '[.warnings[] | select(.message | test("^/|/Users/|/home/|/tmp/"))] | length == 0' <<<"$out" >/dev/null
+
+  # 3. Das Teilergebnis bleibt erhalten — die lesbare Komponente ist da.
+  #    Der Fund ist nicht "find schlaegt fehl", sondern "der Fehlschlag war
+  #    unsichtbar".
+  jq -e '[.components[].path] | index("services/api") != null' <<<"$out" >/dev/null
+}
