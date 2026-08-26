@@ -935,6 +935,27 @@ with a badge line plus a Component | Version | Tag table, then commits with
 the job fails loudly instead of touching a README without them. No external
 services are involved, so the badges render in private repos.
 
+**The catalog uses this on itself.** `catalog-release.yml` calls
+`./.github/workflows/version-badges.yml` — the same file adopters get — so the
+workflow runs on every catalog release instead of only in the one adopter repo
+that had opted in. Before that, the catalog shipped the mechanism without using
+it, and its own README pulled `shields.io` images.
+
+Alongside it, `scripts/repo-badges.sh` renders the badges that are **facts
+rather than versions**: the `go` directive from `go.mod` and the licence from
+`LICENSE`, in the same palette and with the same kraken glyph (both scripts
+share `scripts/lib/badge-svg.sh`). These are generated files, so
+`tests/conventions/check-repo-badges.sh` re-renders and diffs them — a `go`
+bump that leaves the badge behind fails the gate rather than shipping a badge
+that claims the wrong version. The gate deliberately skips the per-package
+version badges: those follow the release-please manifest, whose bump arrives in
+the release PR, and gating on them would block every release.
+
+**Workflow-status badges stay with GitHub** (`…/actions/workflows/x.yml/badge.svg`).
+Those are live state, not facts. Rebuilt as static SVGs they would keep showing
+green after a red build — a badge that can lie is worse than one in a foreign
+design.
+
 `release.dispatch_trigger: true` adds `workflow_dispatch: {}` to the
 rendered `release.yml` so a monorepo release can be re-run by hand.
 
