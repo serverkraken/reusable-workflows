@@ -52,6 +52,8 @@ jobs:
         run: python3 tests/conventions/check-repo-defaults-doc.py
       - name: Check every built architecture is scanned
         run: python3 tests/conventions/check-scan-covers-build.py
+      - name: Check the README says what a pin actually freezes
+        run: python3 tests/conventions/check-pin-scope-doc.py
       - name: Check for caller-controlled expressions in run bodies
         run: bash tests/conventions/check-run-interpolation.sh
       - name: Check every job is inside a required check
