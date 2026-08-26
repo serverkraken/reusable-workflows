@@ -142,6 +142,9 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	if err := checkImageNameCollisions(components); err != nil {
 		return Result{}, err
 	}
+	if err := checkPackageNameCollisions(components); err != nil {
+		return Result{}, err
+	}
 
 	var declared []string
 	// Workflows the adopter maintains itself are not legacy: the scan would
@@ -968,6 +971,48 @@ func readReleaseOverride(file string) *bool {
 			v := false
 			return &v
 		}
+	}
+	return nil
+}
+
+// checkPackageNameCollisions weist ein Profil ab, in dem zwei Komponenten
+// denselben release-please-Paketnamen bekommen.
+//
+// Gefunden ueber das Suchmuster "nicht-injektive Abbildung", nicht ueber die
+// Fundliste. checkImageNameCollisions (Audit H-4) fing den Fall nur, wenn
+// beide Komponenten ein Dockerfile tragen - ueber den daraus abgeleiteten
+// Image-Namen. Ohne Dockerfiles gab es nichts zu vergleichen, und die
+// gerenderte release-please-config.json sah so aus:
+//
+//	apps/api      -> package-name: api
+//	services/api  -> package-name: api
+//
+// release-please erzeugt daraus fuer beide Tags `api-vX.Y.Z`. Zwei Komponenten
+// teilen sich damit eine Versionsreihe: ein Release der einen verschiebt die
+// Tag-Folge der anderen, und `latestComponentVersion` liest beim naechsten
+// Onboarding die fremde Version.
+//
+// Das Manifest verbietet dieselbe Konstellation laengst (manifest.go, "package
+// name %q already used by"). Fuer auto-erkannte Repos fehlte die Regel - wieder
+// das Muster "Faehigkeit da, aber nicht ueberall angewandt".
+//
+// Die Wurzelkomponente ist ausgenommen, genau wie im Manifest: sie traegt
+// keinen Paketnamen aus dem Pfad.
+func checkPackageNameCollisions(components []domain.Component) error {
+	seen := map[string]string{}
+	for _, c := range components {
+		if c.Path == "." {
+			continue
+		}
+		base := filepath.Base(c.Path)
+		if prev, dup := seen[base]; dup {
+			return fmt.Errorf(
+				"duplicate release-please package name %q: %s and %s both map to it — "+
+					"rename one of the directories; the last path segment becomes the "+
+					"package name and must be unique",
+				base, prev, c.Path)
+		}
+		seen[base] = c.Path
 	}
 	return nil
 }

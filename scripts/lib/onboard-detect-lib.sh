@@ -243,6 +243,29 @@ emit_profile_json() {
     return 1
   fi
 
+  # Zwei Komponenten duerfen nicht denselben release-please-Paketnamen
+  # bekommen. Gefunden ueber das Suchmuster "nicht-injektive Abbildung": die
+  # Image-Namen-Pruefung darueber fing den Fall nur, wenn beide Komponenten ein
+  # Dockerfile tragen. Ohne Dockerfiles gab es nichts zu vergleichen, und die
+  # gerenderte release-please-config.json gab beiden `package-name: api`.
+  # release-please erzeugt daraus fuer beide Tags `api-vX.Y.Z`.
+  #
+  # Das Manifest verbietet dasselbe laengst; fuer auto-erkannte Repos fehlte
+  # die Regel. Die Wurzelkomponente ist ausgenommen, genau wie dort.
+  #
+  # Der Go-Detektor prueft dasselbe (checkPackageNameCollisions).
+  local pkg_collision
+  pkg_collision=$(echo "$components" | jq -r '
+    [ .[] | select(.path != ".") | {name: (.path | split("/") | last), where: .path} ]
+    | group_by(.name) | map(select(length > 1)) | .[0] // empty
+    | "\(.[0].name)|\(.[0].where)|\(.[1].where)"
+  ')
+  if [[ -n "$pkg_collision" ]]; then
+    IFS='|' read -r _pc_name _pc_a _pc_b <<< "$pkg_collision"
+    echo "::error::duplicate release-please package name \"${_pc_name}\": ${_pc_a} and ${_pc_b} both map to it — rename one of the directories; the last path segment becomes the package name and must be unique" >&2
+    return 1
+  fi
+
   local legacy_ci
   legacy_ci=$(detect_legacy_ci "$repo")
 

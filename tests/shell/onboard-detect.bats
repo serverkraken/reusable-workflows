@@ -1240,3 +1240,29 @@ _crate() {
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '[.components[].path] == ["svc"]'
 }
+
+@test "gleicher Basename ohne Dockerfiles wird abgewiesen" {
+  # Suchmuster "nicht-injektive Abbildung": die Image-Namen-Pruefung fing das
+  # nur MIT Dockerfiles. Ohne sie gaben beide Komponenten `package-name: api`,
+  # und release-please erzeugte fuer beide Tags `api-vX.Y.Z`.
+  local repo="$BATS_TEST_TMPDIR/pkgcollision"
+  mkdir -p "$repo/apps/api" "$repo/services/api"
+  printf 'module x\ngo 1.22\n' > "$repo/apps/api/go.mod"
+  printf 'module x\ngo 1.22\n' > "$repo/services/api/go.mod"
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"duplicate release-please package name"* ]]
+  [[ "$output" == *"apps/api"* ]]
+  [[ "$output" == *"services/api"* ]]
+}
+
+@test "verschiedene Basenamen ohne Dockerfiles gehen durch" {
+  # Gegenprobe: ein gewoehnliches Monorepo darf die Pruefung nicht treffen.
+  local repo="$BATS_TEST_TMPDIR/pkgok"
+  mkdir -p "$repo/services/api" "$repo/services/worker"
+  printf 'module x\ngo 1.22\n' > "$repo/services/api/go.mod"
+  printf 'module x\ngo 1.22\n' > "$repo/services/worker/go.mod"
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[].path] == ["services/api","services/worker"]'
+}
