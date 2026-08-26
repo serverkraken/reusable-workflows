@@ -160,3 +160,75 @@ func TestRenderCreatesAMissingTarget(t *testing.T) {
 		t.Fatalf("ci.yml fehlt: %v", err)
 	}
 }
+
+func TestRenderRefusesToWriteTheLockThroughASymlink(t *testing.T) {
+	// Audit C-7. H-3 hat die gerenderten Dateien abgesichert und den LOCK
+	// uebersehen: die fruehe Pruefung in Render sondiert `.github/workflows/`,
+	// faengt also nur ein Symlink-`.github` — nicht die Lock-DATEI selbst.
+	//
+	// Gemessen mit echtem `.github/` und `onboard.lock.json` als Symlink nach
+	// draussen: die Go-Engine schrieb den Lock durch ihn hindurch und
+	// ueberschrieb die fremde Datei, mit rc=0 und ohne ein Wort. Die
+	// Bash-Engine wies denselben Fall laengst ab — eine Abweichung, die das
+	// Fixture-Paritaets-Gate nicht sehen kann, weil keine Fixture Symlinks
+	// traegt.
+	//
+	// Ueber Render und nicht ueber ensureInsideTarget direkt: die Luecke sass
+	// in der Verdrahtung, nicht in der Pruefung.
+	skipIfNoSymlinks(t)
+	catalog := renderCatalog(t, allTemplateFiles()...)
+	profileDir := t.TempDir()
+	profile := writeProfile(t, profileDir, `{
+	  "schema_version": 1,
+	  "target_repo": "serverkraken/example",
+	  "default_branch": "main",
+	  "current_version": "1.2.3",
+	  "monorepo": false,
+	  "topics": [],
+	  "components": [{
+	    "path": ".",
+	    "primary_language": "go",
+	    "release_please_type": "go",
+	    "dockerfiles": [],
+	    "release_signals": {}
+	  }]
+	}`)
+
+	base := t.TempDir()
+	target := filepath.Join(base, "adopter")
+	outside := filepath.Join(base, "aussen")
+	for _, d := range []string{filepath.Join(target, ".github"), outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loot := filepath.Join(outside, "beute.json")
+	const untouched = "unberuehrt"
+	if err := os.WriteFile(loot, []byte(untouched), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(loot, filepath.Join(target, ".github", "onboard.lock.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	err := (Service{Templates: &fakeTemplates{}, Now: fixedNow}).
+		Render(context.Background(), Request{
+			CatalogPath:     catalog,
+			TargetPath:      target,
+			ProfileJSONPath: profile,
+			PinVersion:      "v4",
+		})
+	if err == nil {
+		t.Fatal("erwartet: Render weist den Symlink ab")
+	}
+	if !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("Fehlermeldung nennt den Symlink nicht: %v", err)
+	}
+	got, readErr := os.ReadFile(loot)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != untouched {
+		t.Fatalf("die Datei ausserhalb wurde ueberschrieben: %q", got)
+	}
+}
