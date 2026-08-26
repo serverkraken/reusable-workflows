@@ -214,3 +214,84 @@ func withFakeGH(t *testing.T, script string) {
 	old := os.Getenv("PATH")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+old)
 }
+
+// Audit L-7: ReleaseTags hatte keinen einzigen direkten Adaptertest — weder für
+// den Aufruf noch für das Zerlegen der Antwort noch für den Fehlerfall.
+//
+// Der Fehlerfall war dabei der wichtigste: der Adapter gab `nil, nil` zurück,
+// womit der Fehlerzweig in detect.Service ("could not list releases for %s")
+// toter Code war. Ein Ausfall der Tag-Abfrage sah aus wie "dieses Repo hat
+// keine Tags", und das Onboarding säte die Version aus einer leeren Liste.
+func TestClientReleaseTagsRequestAndParsing(t *testing.T) {
+	argvFile := filepath.Join(t.TempDir(), "argv")
+	t.Setenv("FAKE_GH_ARGV", argvFile)
+	withFakeGH(t, `#!/usr/bin/env bash
+set -euo pipefail
+# Die Anfrage selbst festhalten, nicht nur die Antwort: --paginate fehlt sonst
+# unbemerkt, und ein Repo mit mehr als einer Tag-Seite verliert die Haelfte.
+echo "$*" > "$FAKE_GH_ARGV"
+printf 'v1.2.3\n\nnull\n  controller-v2.5.2  \n'
+`)
+	c := Client{}
+	tags, err := c.ReleaseTags(context.Background(), "o/r")
+	if err != nil {
+		t.Fatalf("unerwarteter Fehler: %v", err)
+	}
+	// Leerzeilen und "null" fallen raus, Rand-Leerzeichen werden getrimmt.
+	want := []string{"v1.2.3", "controller-v2.5.2"}
+	if !reflect.DeepEqual(tags, want) {
+		t.Fatalf("tags=%v, erwartet %v", tags, want)
+	}
+
+	argv, rerr := os.ReadFile(argvFile)
+	if rerr != nil {
+		t.Fatalf("argv nicht lesbar: %v", rerr)
+	}
+	got := strings.TrimSpace(string(argv))
+	// Tags, nicht Releases: release-please haengt an Tags, und eine Komponente
+	// darf mit einem blossen Tag ohne Release-Objekt geseedet sein.
+	for _, want := range []string{"api", "--paginate", "/repos/o/r/tags", "-q", ".[].name"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Aufruf %q enthaelt %q nicht", got, want)
+		}
+	}
+	if strings.Contains(got, "release list") {
+		t.Fatalf("es wurden Releases statt Tags abgefragt: %q", got)
+	}
+}
+
+func TestClientReleaseTagsPropagatesFailure(t *testing.T) {
+	withFakeGH(t, `#!/usr/bin/env bash
+echo "gh: Bad credentials (HTTP 401)" >&2
+exit 1
+`)
+	tags, err := Client{}.ReleaseTags(context.Background(), "o/r")
+	if err == nil {
+		t.Fatal("ein fehlgeschlagener Aufruf muss einen Fehler liefern, keine leere Liste")
+	}
+	if tags != nil {
+		t.Fatalf("bei einem Fehler duerfen keine Tags zurueckkommen, war: %v", tags)
+	}
+}
+
+// Gleiche Klasse wie I-11, hier auf der Go-Seite: "0.0.0" ist die richtige
+// Antwort auf "noch kein Release" — als Antwort auf "die Abfrage ist
+// fehlgeschlagen" saet das Onboarding damit eine Version, und ein Repo, das
+// laengst bei v2 steht, faengt wieder bei null an.
+func TestClientLatestStableReleaseDistinguishesEmptyFromFailure(t *testing.T) {
+	withFakeGH(t, `#!/usr/bin/env bash
+exit 1
+`)
+	if _, err := (Client{}).LatestStableRelease(context.Background(), "o/r"); err == nil {
+		t.Fatal("ein fehlgeschlagener Aufruf muss einen Fehler liefern, nicht 0.0.0")
+	}
+
+	// Die LEERE Antwort bleibt 0.0.0 — die ist echt und darf nicht scheitern.
+	withFakeGH(t, `#!/usr/bin/env bash
+echo ""
+`)
+	v, err := (Client{}).LatestStableRelease(context.Background(), "o/r")
+	if err != nil || v != "0.0.0" {
+		t.Fatalf("leere Antwort: v=%q err=%v, erwartet 0.0.0 ohne Fehler", v, err)
+	}
+}

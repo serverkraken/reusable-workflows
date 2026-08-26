@@ -342,6 +342,18 @@ jobs:
             "api /repos/serverkraken/example-repo -q .default_branch")
               echo "main"
               ;;
+            # Der Tag-Aufruf fehlte hier, und der Auffangzweig unten hat ihn
+            # mit Exit 99 quittiert — nur hat das niemand gesehen, weil der
+            # Adapter den Fehler verschluckte (Audit L-7). Seit er ihn
+            # durchreicht, muss der Stub ihn beantworten.
+            #
+            # Der Tag-Pfad ist seit #238 der primaere: die Root-Version kommt
+            # aus einem ROOT-Tag, nicht aus dem neuesten Release. Die
+            # `release list`-Antwort darunter bleibt der Rueckfall fuer den
+            # Fall, dass es kein Root-Tag gibt.
+            "api --paginate /repos/serverkraken/example-repo/tags -q .[].name")
+              echo "v9.8.7"
+              ;;
             "release list --repo serverkraken/example-repo --exclude-pre-releases --limit 1 --json tagName -q .[0].tagName")
               echo "v9.8.7"
               ;;

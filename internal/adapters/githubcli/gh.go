@@ -29,7 +29,16 @@ func (Client) DefaultBranch(ctx context.Context, repo string) (string, error) {
 func (Client) LatestStableRelease(ctx context.Context, repo string) (string, error) {
 	out, err := run(ctx, "gh", "release", "list", "--repo", repo, "--exclude-pre-releases", "--limit", "1", "--json", "tagName", "-q", ".[0].tagName")
 	if err != nil {
-		return "0.0.0", nil
+		// Ebenfalls durchreichen (Audit L-7, gleiche Klasse wie I-11).
+		//
+		// `0.0.0` ist die richtige Antwort auf "noch kein Release" — als
+		// Antwort auf "die Abfrage ist fehlgeschlagen" ist sie eine
+		// Verwechslung mit Folgen: das Onboarding saet damit eine Version, und
+		// ein Repo, das laengst bei v2 steht, faengt wieder bei null an.
+		// Genau dafuer wurde I-11 im Shell-Pfad behoben; hier stand es noch.
+		//
+		// Die leere Antwort unten bleibt `0.0.0` — die ist echt.
+		return "", err
 	}
 	tag := strings.TrimSpace(string(out))
 	tag = strings.TrimPrefix(tag, "v")
@@ -47,7 +56,19 @@ func (Client) LatestStableRelease(ctx context.Context, repo string) (string, err
 func (Client) ReleaseTags(ctx context.Context, repo string) ([]string, error) {
 	out, err := run(ctx, "gh", "api", "--paginate", "/repos/"+repo+"/tags", "-q", ".[].name")
 	if err != nil {
-		return nil, nil
+		// Durchreichen, nicht schlucken (Audit L-7).
+		//
+		// Vorher stand hier `return nil, nil`. Damit war der Fehlerzweig in
+		// detect.Service toter Code — er meldet "could not list releases for
+		// %s", konnte aber nie ausloesen. Ein Ausfall der Tag-Abfrage sah aus
+		// wie "dieses Repo hat keine Tags", und das Onboarding saete die
+		// Version aus einer leeren Liste.
+		//
+		// Das Degradieren gehoert nicht hierher: dafuer gibt es
+		// godetect.tolerantMetadata, das genau diese Methode fuer den
+		// Drift-Pfad abfaengt. Zweimal zu schlucken heisst, dass der strenge
+		// Pfad nie streng ist.
+		return nil, err
 	}
 	var tags []string
 	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
