@@ -24,11 +24,11 @@ jobs:
     if: contains(fromJSON(needs.release-please.outputs.paths_released), 'services/api')
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
     with:
-      context: services/api
-      dockerfile: services/api/Dockerfile
-      image_name: repo-api
-      tag: v${{ fromJSON(needs.release-please.outputs.releases)['services/api'].version }}
-      ref: ${{ fromJSON(needs.release-please.outputs.releases)['services/api'].tag_name }}
+      context: "services/api"
+      dockerfile: "services/api/Dockerfile"
+      image_name: "repo-api"
+      tag: "v${{ fromJSON(needs.release-please.outputs.releases)['services/api'].version }}"
+      ref: "${{ fromJSON(needs.release-please.outputs.releases)['services/api'].tag_name }}"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -38,7 +38,7 @@ jobs:
     needs: [docker-build-services-api]
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
     with:
-      image_ref: ${{ needs.docker-build-services-api.outputs.image_ref }}
+      image_ref: "${{ needs.docker-build-services-api.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
@@ -49,11 +49,11 @@ jobs:
     if: contains(fromJSON(needs.release-please.outputs.paths_released), 'services/worker')
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v2
     with:
-      context: services/worker
-      dockerfile: services/worker/Dockerfile
-      image_name: repo-worker
-      tag: v${{ fromJSON(needs.release-please.outputs.releases)['services/worker'].version }}
-      ref: ${{ fromJSON(needs.release-please.outputs.releases)['services/worker'].tag_name }}
+      context: "services/worker"
+      dockerfile: "services/worker/Dockerfile"
+      image_name: "repo-worker"
+      tag: "v${{ fromJSON(needs.release-please.outputs.releases)['services/worker'].version }}"
+      ref: "${{ fromJSON(needs.release-please.outputs.releases)['services/worker'].tag_name }}"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -63,7 +63,7 @@ jobs:
     needs: [docker-build-services-worker]
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v2
     with:
-      image_ref: ${{ needs.docker-build-services-worker.outputs.image_ref }}
+      image_ref: "${{ needs.docker-build-services-worker.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}

@@ -67,6 +67,6 @@ jobs:
   cleanup-{{ index $slugs $i }}:
     uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@{{ $pin }}
     with:
-      package_name: {{ $pkg }}
+      package_name: "{{ $pkg }}"
 {{- end }}
 {{- end }}

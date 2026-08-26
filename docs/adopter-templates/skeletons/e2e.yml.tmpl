@@ -37,6 +37,6 @@ jobs:
       contents: read
       packages: read
     with:
-      script: {{ $e2e.script }}
+      script: "{{ $e2e.script }}"
       helm_version: {{`${{ vars.SK_HELM_VERSION || 'v3.16.3' }}`}}
     secrets: inherit

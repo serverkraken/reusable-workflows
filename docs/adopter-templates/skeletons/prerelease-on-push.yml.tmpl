@@ -51,10 +51,10 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      dockerfile: {{ $df.path }}
-      image_name: {{ $df.image_name }}
+      dockerfile: "{{ $df.path }}"
+      image_name: "{{ $df.image_name }}"
     {{- if (index $df "platforms") }}
-      platforms: {{ index $df "platforms" }}
+      platforms: "{{ index $df "platforms" }}"
     {{- end }}
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
@@ -69,20 +69,20 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: {{ printf "${{ needs.build%s.outputs.image_ref }}" $imgSuffix }}
+      image_ref: "{{ printf "${{ needs.build%s.outputs.image_ref }}" $imgSuffix }}"
     {{- if (index $df "scanners") }}
-      scanners: {{ index $df "scanners" }}
+      scanners: "{{ index $df "scanners" }}"
     {{- end }}
     {{- /* Ohne dies scannt Trivy bei einem Multi-Arch-Tag nur eine Plattform
          (Vorgabe linux/amd64) — die andere gepushte Architektur bliebe
          ungescannt. Fehlte hier bis zum L-1-Fix, auch im Single-Image-Fall. */}}
     {{- if (index $df "platforms") }}
-      platforms: {{ index $df "platforms" }}
+      platforms: "{{ index $df "platforms" }}"
     {{- else }}
       platforms: linux/amd64,linux/arm64
     {{- end }}
     {{- if (index $df "severity") }}
-      severity: {{ index $df "severity" }}
+      severity: "{{ index $df "severity" }}"
     {{- else }}
       severity: {{`${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}`}}
     {{- end }}

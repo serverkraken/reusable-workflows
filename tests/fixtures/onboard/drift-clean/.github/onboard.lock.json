@@ -1,9 +1,10 @@
 {
   "schema_version": 1,
   "catalog_version": "v3",
-  "rendered_at": "2026-05-25T18:38:20Z",
+  "rendered_against": "v3",
+  "rendered_at": "2026-08-26T15:14:32Z",
   "files": {
-    ".github/workflows/ci.yml": "sha256:9d95a680878eba6e5f848182ef2559e15a55e8bdff1b2c0bf2c8964a0d125595",
+    ".github/workflows/ci.yml": "sha256:bc0ebe71874e052ca006f8a36f1fc63340f3be5b2f8aff0696573d1215f14f73",
     ".github/workflows/release.yml": "sha256:fb9cd222298d5b1192feb49a61f9032e987484f9bf2aefed81a61de57cf8d88f",
     ".github/workflows/prerelease.yml": "sha256:6168c2ca745ecf357a665273f0628a825cd336b2c7da54beaa22e7a767134e35",
     ".github/workflows/cleanup.yml": "sha256:1aabc7941f55fb7be5a08ce56f54d5d9910dc8bb44692c16bbf3cc6dd08ad4a9",

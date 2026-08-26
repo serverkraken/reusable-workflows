@@ -15,8 +15,8 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      dockerfile: Dockerfile
-      image_name: repo
+      dockerfile: "Dockerfile"
+      image_name: "repo"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -30,7 +30,7 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build-repo.outputs.image_ref }}
+      image_ref: "${{ needs.build-repo.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
@@ -47,8 +47,8 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      dockerfile: Dockerfile.dev
-      image_name: repo-dev
+      dockerfile: "Dockerfile.dev"
+      image_name: "repo-dev"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -62,7 +62,7 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build-repo-dev.outputs.image_ref }}
+      image_ref: "${{ needs.build-repo-dev.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
@@ -79,8 +79,8 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      dockerfile: Dockerfile.worker
-      image_name: repo-worker
+      dockerfile: "Dockerfile.worker"
+      image_name: "repo-worker"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -94,7 +94,7 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build-repo-worker.outputs.image_ref }}
+      image_ref: "${{ needs.build-repo-worker.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}

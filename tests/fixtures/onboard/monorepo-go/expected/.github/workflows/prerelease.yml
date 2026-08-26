@@ -15,9 +15,9 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      context: services/api
-      dockerfile: services/api/Dockerfile
-      image_name: repo-api
+      context: "services/api"
+      dockerfile: "services/api/Dockerfile"
+      image_name: "repo-api"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -31,7 +31,7 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build-services-api.outputs.image_ref }}
+      image_ref: "${{ needs.build-services-api.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
@@ -47,9 +47,9 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      context: services/worker
-      dockerfile: services/worker/Dockerfile
-      image_name: repo-worker
+      context: "services/worker"
+      dockerfile: "services/worker/Dockerfile"
+      image_name: "repo-worker"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -63,7 +63,7 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build-services-worker.outputs.image_ref }}
+      image_ref: "${{ needs.build-services-worker.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
