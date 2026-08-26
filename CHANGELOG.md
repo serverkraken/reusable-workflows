@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.18.13](https://github.com/serverkraken/reusable-workflows/compare/v4.18.12...v4.18.13) (2026-08-26)
+
+
+### Bug Fixes
+
+* **defaults:** fehlender Marker nach angewandtem Tier 2 war lautlos (H-15) ([#338](https://github.com/serverkraken/reusable-workflows/issues/338)) ([205e1fc](https://github.com/serverkraken/reusable-workflows/commit/205e1fcf917cd71fa1ad3feacf9e2316f9c012e9))
+* **detect:** Komponenten drei Ebenen tief fielen in der Bash-Engine raus (B-12) ([#336](https://github.com/serverkraken/reusable-workflows/issues/336)) ([0812ca7](https://github.com/serverkraken/reusable-workflows/commit/0812ca71d495bf8c8e0a10cfa047686f95972fa8))
+* **release:** ein gescheiterter Release-Lauf wurde nach dem Neustart still gruen (F-1) ([#334](https://github.com/serverkraken/reusable-workflows/issues/334)) ([14b451b](https://github.com/serverkraken/reusable-workflows/commit/14b451b1192407620e1afa42fe36f613f3b102d5))
+* **templates:** Konfiguration und Manifest schluesselten dasselbe Paket verschieden (A-2) ([#337](https://github.com/serverkraken/reusable-workflows/issues/337)) ([0009e14](https://github.com/serverkraken/reusable-workflows/commit/0009e14c6c77d395eb71860676981cc5a7bda54a))
+
 ## [4.18.12](https://github.com/serverkraken/reusable-workflows/compare/v4.18.11...v4.18.12) (2026-08-26)
 
 
