@@ -145,6 +145,12 @@ jobs:
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       image_ref: ${{ needs.test-docker-build.outputs.image_ref }}
+      # Scannen, was gebaut wurde: test-docker-build nimmt den Default von
+      # docker-build.yml (linux/amd64,linux/arm64) und scannte nur amd64.
+      # Die Multi-Plattform-Verdrahtung selbst hat in test-trivy-image-cve
+      # eigene Abdeckung; hier geht es um die Regel, nicht um den Mechanismus -
+      # check-scan-covers-build.py setzt sie einheitlich durch.
+      platforms: linux/amd64,linux/arm64
       fail_on_findings: false
       upload_sarif: false
 

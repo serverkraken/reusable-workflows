@@ -130,5 +130,16 @@ jobs:
     secrets: inherit
     with:
       image_ref: ${{ needs.docker-build.outputs.image_ref }}
+      # Dieselbe Liste scannen, die gebaut wurde (Audit F-2). Trivy waehlt fuer
+      # eine Multi-Arch-Referenz EINE Plattform, per Vorgabe linux/amd64 - ohne
+      # diese Zeile ging jede weitere veroeffentlichte Architektur ungeprueft
+      # raus. `platforms` steht hier auf linux/amd64,linux/arm64 als Default,
+      # der Regelfall ist also multi-arch.
+      #
+      # Das Atom kann das laengst und sagt es im Kommentar ("Callers that
+      # publish multi-arch pass the same list they built"); die drei
+      # Adopter-Templates reichen es auch weiter. Nur dieser Orchestrator, der
+      # als `release.yml` im Vertrag steht, tat es nicht.
+      platforms: ${{ inputs.platforms }}
       severity: ${{ inputs.trivy_severity }}
       fail_on_findings: ${{ inputs.trivy_fail_on_findings }}
