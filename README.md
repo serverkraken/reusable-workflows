@@ -7,9 +7,16 @@
 [![validate](https://github.com/serverkraken/reusable-workflows/actions/workflows/validate.yml/badge.svg)](https://github.com/serverkraken/reusable-workflows/actions/workflows/validate.yml)
 [![catalog-release](https://github.com/serverkraken/reusable-workflows/actions/workflows/catalog-release.yml/badge.svg)](https://github.com/serverkraken/reusable-workflows/actions/workflows/catalog-release.yml)
 [![failure-paths-nightly](https://github.com/serverkraken/reusable-workflows/actions/workflows/failure-paths-nightly.yml/badge.svg)](https://github.com/serverkraken/reusable-workflows/actions/workflows/failure-paths-nightly.yml)
-![Go](https://img.shields.io/github/go-mod/go-version/serverkraken/reusable-workflows)
-![Release](https://img.shields.io/github/v/release/serverkraken/reusable-workflows)
-![License](https://img.shields.io/github/license/serverkraken/reusable-workflows)
+![go](docs/badges/go.svg)
+![license](docs/badges/license.svg)
+
+<!-- version-badges:start -->
+![reusable-workflows: v4.19.0](docs/badges/reusable-workflows.svg)
+
+| Component | Version | Tag |
+|---|---|---|
+| reusable-workflows | 4.19.0 | [v4.19.0](https://github.com/serverkraken/reusable-workflows/releases/tag/v4.19.0) |
+<!-- version-badges:end -->
 
 Versionierter, getesteter Katalog wiederverwendbarer GitHub-Actions-Workflows für die `serverkraken`-Organisation. Statt CI-Workflows zwischen Repos zu kopieren, referenziert jedes Repo den Katalog mit einer einzigen `uses:`-Zeile — und bekommt Updates über semantische Versionen.
 

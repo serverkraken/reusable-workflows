@@ -187,6 +187,65 @@ golden_check() {
   diff -r "$FIX/$fixture/expected" "$target"
 }
 
+# Audit L-4: die Manifest-Fixture wird NICHT von `golden_check` geprueft — die
+# Bash-Engine verweigert Adopter-Manifeste ("does not support manifests"), und
+# das Paritaets-Gate traegt sie deshalb als begruendete Absage.
+#
+# Geprueft wird sie bisher ausschliesslich in `self-ci.yml` (Job
+# `onboard-preview-manifest-golden`). Das ist eine echte Zusicherung, aber sie
+# laeuft nur in der CI: lokal konnte niemand sehen, ob eine Template-Aenderung
+# diesen Baum bricht.
+#
+# Beim Bauen habe ich mir das selbst bewiesen: ich hielt `rendered_against:
+# v4.14.0` und `ghcr.io/go-root-multi-image/...` fuer Drift eines ungepflegten
+# Baums und rendere ihn "richtig" neu — beides sind in Wahrheit bewusste
+# Parameter des CI-Jobs (`-rendered-against v4.14.0`, Zielname = Fixture-
+# Basisname). Der Job fiel prompt durch. Deshalb spiegelt dieser Test den
+# CI-Aufruf exakt, statt einen zweiten, leicht abweichenden Renderpfad zu
+# erfinden.
+go_bin() {
+  local bin="${BATS_RUN_TMPDIR:-$TARGET}/sk-workflows-golden"
+  if [[ ! -x "$bin" ]]; then
+    (cd "$REPO_ROOT" && go build -o "$bin" ./cmd/sk-workflows) >&2 || return 1
+  fi
+  printf '%s' "$bin"
+}
+
+# Spiegelt self-ci.yml :: onboard-preview-manifest-golden — gleiche Flags,
+# gleiche Nachbearbeitung, gleicher Vergleich.
+golden_check_preview() {
+  local fixture="$1"
+  command -v go        >/dev/null 2>&1 || skip "go nicht installiert"
+  command -v gomplate  >/dev/null 2>&1 || skip "gomplate nicht installiert"
+  local bin; bin="$(go_bin)" || { echo "go build fehlgeschlagen"; return 1; }
+
+  local out="$TARGET/preview"
+  # Kein -target-repo: das riefe `gh` fuer Branch-/Release-Metadaten. Ohne das
+  # faellt target_repo auf den Fixture-Basisnamen zurueck und bleibt
+  # deterministisch — genau wie in der CI.
+  "$bin" preview -catalog-path "$REPO_ROOT" -repo-path "$FIX/$fixture" \
+    -pin-version v4 -rendered-against v4.14.0 -out "$out"
+  rm -f "$out/profile.json"
+
+  local lock="$out/.github/onboard.lock.json"
+  if [[ -f "$lock" ]]; then
+    jq 'del(.rendered_at)' "$lock" > "$lock.tmp" && mv "$lock.tmp" "$lock"
+  fi
+
+  if [[ "${UPDATE_GOLDEN:-0}" == "1" ]]; then
+    rm -rf "$FIX/$fixture/expected"
+    mkdir -p "$FIX/$fixture/expected"
+    cp -R "$out/." "$FIX/$fixture/expected/"
+    skip "UPDATE_GOLDEN — rewrote $fixture/expected"
+  fi
+
+  diff -r "$FIX/$fixture/expected" "$out"
+}
+
+@test "golden: go-root-multi-image (Manifest-Fixture, wie self-ci)" {
+  golden_check_preview "go-root-multi-image"
+}
+
 @test "golden: go-repo"                { golden_check "go-repo"; }
 @test "golden: go-cgo"                 { golden_check "go-cgo"; }
 @test "golden: go-cgo-transitive"      { golden_check "go-cgo-transitive"; }

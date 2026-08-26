@@ -62,6 +62,8 @@ jobs:
         run: bash tests/conventions/check-summary-coverage.sh
       - name: Check goldens do not freeze invalid rendered values
         run: bash tests/conventions/check-rendered-goldens.sh
+      - name: Check the README fact badges match go.mod and LICENSE
+        run: bash tests/conventions/check-repo-badges.sh
 
   renovate-config-check:
     runs-on: ubuntu-latest
