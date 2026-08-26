@@ -206,8 +206,35 @@ jobs:
               float_cell="—"
             fi
           else
-            result="✓ no release (nothing to bump)"
-            url_cell="—"
+            # `release_created` ist auch dann false, wenn der Release fuer DIESEN
+            # Commit bereits existiert — etwa nach "Re-run all jobs" auf einem
+            # Lauf, der NACH dem Tag gescheitert ist (Audit F-1). Die
+            # nachgelagerten Jobs haengen an `release_created` und werden dann
+            # uebersprungen, und uebersprungen zaehlt fuer GitHub als Erfolg.
+            # Der Lauf meldete "✓ no release (nothing to bump)" und war gruen,
+            # obwohl Image, Scan und Publish aus dem gescheiterten Versuch
+            # fehlen.
+            #
+            # Unterschieden wird nicht ueber run_attempt: ein Neustart eines
+            # ohnehin erfolgreichen Laufs ist harmlos. Das Kennzeichen ist, ob
+            # der aktuelle Commit schon ein Release-Tag traegt — dann gab es
+            # etwas zu bumpen, es ist bereits gebumpt, und dieser Lauf hat
+            # nichts gebaut.
+            existing="$(git tag --points-at HEAD -l 'v[0-9]*' 2>/dev/null | head -n1 || true)"
+            if [[ -n "$existing" ]]; then
+              result="▲ kein Release erzeugt — ${existing} existiert bereits fuer diesen Commit"
+              url_cell="https://github.com/${REPO}/releases/tag/${existing}"
+              warn="${existing} exists for this commit, so release_created=false"
+              warn+=" and every downstream job (image build, scan, publish) was SKIPPED."
+              warn+=" A green run here does NOT mean those artefacts exist: if an earlier"
+              warn+=" attempt failed after the tag was created, they are missing."
+              warn+=" Re-running this workflow will not build them — dispatch the build"
+              warn+=" for ${existing} instead."
+              echo "::warning::${warn}"
+            else
+              result="✓ no release (nothing to bump)"
+              url_cell="—"
+            fi
             float_cell="—"
           fi
           {
