@@ -130,11 +130,26 @@ jobs:
 
 Der Katalog folgt [Semantic Versioning](https://semver.org/), getrieben von [release-please](https://github.com/googleapis/release-please) über Conventional Commits.
 
-| Pin       | Verhalten                       |
-|-----------|---------------------------------|
-| `@v4`     | immer das neueste 4.x.y         |
-| `@v4.2`   | immer das neueste 4.2.x         |
-| `@v4.2.3` | unveränderlich                  |
+| Pin       | Workflow-Definition       | nachgeladene Actions/Skripte |
+|-----------|---------------------------|------------------------------|
+| `@v4`     | immer das neueste 4.x.y   | `v4`                         |
+| `@v4.2`   | immer das neueste 4.2.x   | `v4`                         |
+| `@v4.2.3` | unveränderlich            | `v4`                         |
+
+**Ein Pin friert die Workflow-Datei ein, nicht alles, was sie ausführt.** 15 Atome
+checken zur Laufzeit den Katalog aus, um Composite-Actions und Skripte unter
+`actions/` und `scripts/` zu laden — und zwar am **schwebenden Major-Tag**, nicht
+an der Version, mit der sie aufgerufen wurden. Ein Aufruf von `@v4.2.3` führt
+also die Workflow-Datei aus 4.2.3 aus, lädt dabei aber die Skripte, auf die `v4`
+gerade zeigt.
+
+Das ist so gewollt: Adopter bekommen Sicherheitsfixes an den Skripten, ohne neu
+pinnen zu müssen, und die Composite-Actions bleiben untereinander zu ihrem Major
+kohärent. Wer eine wirklich unveränderliche Lieferkette braucht — jede
+ausgeführte Zeile an eine Revision gebunden —, bekommt sie mit diesem Pin
+**nicht**; das wäre eine eigene Entscheidung (technisch über
+`github.job_workflow_sha` möglich) mit dem umgekehrten Nachteil, dass ein
+gepinnter Adopter auch fehlerhafte Skripte behält, bis er selbst nachzieht.
 
 **Breaking Changes** (jede Änderung an der Input-/Output-/Secret-Form eines Atoms) bumpen den Major. Details in [CONTRIBUTING.md](CONTRIBUTING.md).
 
