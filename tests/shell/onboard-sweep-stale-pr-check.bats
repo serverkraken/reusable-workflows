@@ -75,3 +75,31 @@ run_check() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"GH_TOKEN"* ]]
 }
+
+# === Sichtbarkeit bei API-Fehlern ===
+#
+# Das Skript ist ausdruecklich fail-open (siehe Kopf): ein Sweep, der Repos
+# aktuell halten soll, darf bei einem Rate-Limit nicht stumm alles
+# ueberspringen, und der Force-Push trifft nur bot-eigene Branches.
+#
+# Was gefehlt hat, ist nicht ein anderes Verhalten, sondern die Sichtbarkeit:
+# ein API-Fehler sah im Sweep-Bericht genauso aus wie ein echtes Ergebnis. Das
+# Urteil bleibt, die Vermutung wird benannt.
+
+@test "stale-pr-check: ein 500 beim Lock meldet den Fehler und bleibt fail-open" {
+  run_check lock-500 owner/repo v4.7.0
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::lock fetch failed"* ]]
+  [[ "$output" == *"HTTP 500"* ]]
+  # Verhalten unveraendert: fail-open heisst weiterhin "stale".
+  [[ "$output" == *"stale"* ]]
+}
+
+@test "stale-pr-check: ein 404 beim Lock meldet NICHTS" {
+  # Gegenprobe: 404 ist der legitime Fall (Legacy-PR ohne Lock). Eine Warnung
+  # dafuer waere Rauschen, und Rauschen liest niemand.
+  run_check lock-404 owner/repo v4.7.0
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"::warning::"* ]]
+  [ "$output" = "stale" ]
+}
