@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-08-26T20:51:53Z_
+_Last updated by the onboarding workflow: 2026-08-26T20:58:07Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -39,7 +39,7 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/tshock-kraken-mapservice | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/tshock-kraken-mapservice/pull/75) | — | add-open, no-legacy | — |
 | serverkraken/tshock-kraken-plugin | 2026-07-27 | v4 | [PR](https://github.com/serverkraken/tshock-kraken-plugin/pull/15) | [PR](https://github.com/serverkraken/tshock-kraken-plugin/pull/16) | add-open, cleanup-open | — |
 | serverkraken/tshock-kraken-webui | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/tshock-kraken-webui/pull/56) | — | add-open, no-legacy | — |
-| serverkraken/homelab-mail-nue | 2026-06-13 | v4 | [PR](https://github.com/serverkraken/homelab-mail-nue/pull/55) | — | add-open, no-legacy | — |
+| serverkraken/homelab-mail-nue | 2026-08-26 | v4 | [PR](https://github.com/serverkraken/homelab-mail-nue/pull/224) | — | add-open, no-legacy | — |
 | serverkraken/kannichdasessen | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/kannichdasessen/pull/3) | — | add-open, no-legacy | — |
 | serverkraken/renovate-config | 2026-08-03 | v4 | [PR](https://github.com/serverkraken/renovate-config/pull/1) | — | add-open, no-legacy | — |
 | serverkraken/wartung | 2026-08-26 | v4 | [PR](https://github.com/serverkraken/wartung/pull/55) | — | add-open, no-legacy | serverkraken/homelab-study |
