@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -267,5 +268,97 @@ func TestPreviewLockErrors(t *testing.T) {
 	}
 	if _, err := renderedFiles(out); err == nil || !strings.Contains(err.Error(), "invalid preview lock") {
 		t.Fatalf("invalid lock err=%v", err)
+	}
+}
+
+// Audit B-7. Der Riegel prueft seit Einfuehrung des Befehls (#181) nur, ob
+// --out GENAU der Quellpfad ist. Ein Unterverzeichnis lief durch und legte acht
+// Dateien im untersuchten Repo ab.
+//
+// Schwerer wiegt der zweite Fall, der dabei auffiel: --out auf den KATALOG.
+// preview schreibt .github/workflows/release.yml, release-please-config.json
+// und .release-please-manifest.json - alle drei gibt es in diesem Repo
+// ebenfalls. Ein `preview --out .` im Katalog haette dessen eigene
+// Release-Maschinerie mit der eines Adopters ueberschrieben.
+
+func TestPreviewRefusesToWriteIntoASourceTree(t *testing.T) {
+	base := t.TempDir()
+	repo := filepath.Join(base, "quelle")
+	catalog := filepath.Join(base, "katalog")
+	for _, d := range []string{repo, catalog} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, c := range []struct{ name, out, wantSubstring string }{
+		{"Unterverzeichnis des Quell-Repos", filepath.Join(repo, "vorschau"), "source repo"},
+		{"tief im Quell-Repo", filepath.Join(repo, "a", "b", "c"), "source repo"},
+		{"Unterverzeichnis des Katalogs", filepath.Join(catalog, "vorschau"), "catalog"},
+		{"der Katalog selbst", catalog, "catalog"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := (Service{Detector: &fakeDetector{}, Renderer: &fakeRenderer{}}).
+				Preview(context.Background(), Request{
+					RepoPath:    repo,
+					CatalogPath: catalog,
+					OutPath:     c.out,
+					PinVersion:  "v4",
+				})
+			if err == nil {
+				t.Fatal("erwartet: preview weist den Ausgabepfad ab")
+			}
+			if !strings.Contains(err.Error(), "must not be inside the "+c.wantSubstring) {
+				t.Fatalf("nicht der Riegel, sondern: %v", err)
+			}
+		})
+	}
+}
+
+func TestPreviewRefusesASymlinkIntoTheCatalog(t *testing.T) {
+	// Ein lexikalischer Vergleich haette hier nichts gemerkt: der Pfad sieht
+	// aussen aus und loest nach innen auf.
+	if runtime.GOOS == "windows" {
+		t.Skip("Symlinks verhalten sich unter Windows anders")
+	}
+	base := t.TempDir()
+	repo := filepath.Join(base, "quelle")
+	catalog := filepath.Join(base, "katalog")
+	for _, d := range []string{repo, catalog} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(base, "sieht-aussen-aus")
+	if err := os.Symlink(catalog, link); err != nil {
+		t.Fatal(err)
+	}
+	_, err := (Service{Detector: &fakeDetector{}, Renderer: &fakeRenderer{}}).
+		Preview(context.Background(), Request{
+			RepoPath: repo, CatalogPath: catalog, OutPath: filepath.Join(link, "vorschau"),
+			PinVersion: "v4",
+		})
+	if err == nil || !strings.Contains(err.Error(), "must not be inside the catalog") {
+		t.Fatalf("Symlink in den Katalog muss abgewiesen werden, bekam: %v", err)
+	}
+}
+
+func TestPreviewAcceptsAnOutsideOutputPath(t *testing.T) {
+	// Der gueltige Fall darf nicht mitverboten werden - CI ruft preview mit
+	// `-out "$(mktemp -d)"`.
+	base := t.TempDir()
+	repo := filepath.Join(base, "quelle")
+	catalog := filepath.Join(base, "katalog")
+	for _, d := range []string{repo, catalog} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := (Service{Detector: &fakeDetector{}, Renderer: &fakeRenderer{}}).
+		Preview(context.Background(), Request{
+			RepoPath: repo, CatalogPath: catalog, OutPath: filepath.Join(base, "daneben"),
+			PinVersion: "v4",
+		}); err != nil {
+		t.Fatalf("ein Ausgabepfad ausserhalb beider Baeume muss durchgehen: %v", err)
 	}
 }
