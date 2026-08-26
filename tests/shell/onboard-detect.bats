@@ -1513,3 +1513,46 @@ _paths_of() {
   run _paths_of "$(_pnpm_repo 'packages: [\n  "apps/web",\n  "apps/api"\n]\n')"
   [ "$output" = '["apps/api","apps/web"]' ]
 }
+
+# --- Komponenten drei Ebenen tief (Audit B-12) ------------------------------
+#
+# Der Go-Detektor begrenzt das Komponenten-VERZEICHNIS auf drei Ebenen
+# (fallbackMarkerPaths: depth <= 3); `find` hier begrenzte die gefundene DATEI
+# auf drei — also das Verzeichnis auf zwei. Gemessen an
+# services/team-a/api/go.mod: Go fand beide Komponenten, diese Engine
+# kollabierte das Repo auf ["."].
+
+_nested_repo() {  # <tiefe: 3|4>
+  local dir="$BATS_TEST_TMPDIR/nested"
+  rm -rf "$dir"
+  if [[ "$1" == "3" ]]; then
+    mkdir -p "$dir/services/team-a/api" "$dir/services/team-b/worker"
+    printf 'module a\ngo 1.22\n' > "$dir/services/team-a/api/go.mod"
+    printf 'module b\ngo 1.22\n' > "$dir/services/team-b/worker/go.mod"
+  else
+    mkdir -p "$dir/a/b/c/d" "$dir/a/b/c/e"
+    printf 'module d\ngo 1.22\n' > "$dir/a/b/c/d/go.mod"
+    printf 'module e\ngo 1.22\n' > "$dir/a/b/c/e/go.mod"
+  fi
+  echo "$dir"
+}
+
+@test "Komponenten drei Ebenen tief werden gefunden" {
+  run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$(_nested_repo 3)' | jq -c '[.components[].path]|sort'"
+  [ "$output" = '["services/team-a/api","services/team-b/worker"]' ]
+}
+
+@test "vier Ebenen bleiben ausserhalb der Grenze, wie im Go-Detektor" {
+  run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$(_nested_repo 4)' | jq -c '[.components[].path]'"
+  [ "$output" = '["."]' ]
+}
+
+# Ein Schraegstrich am Ende des Repo-Pfads darf nichts aendern. `${p#"$repo"/}`
+# stand an vier Stellen woertlich; endet $repo auf `/`, wird das Muster zu `//`
+# und passt nicht mehr — die Komponenten trugen dann ihren vollen Pfad. Dieser
+# Zweig ist der einzige, den keine bestehende Fixture durchlief.
+@test "Schraegstrich am Ende aendert die Komponentenpfade nicht" {
+  local d; d="$(_nested_repo 3)"
+  run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$d/' | jq -c '[.components[].path]|sort'"
+  [ "$output" = '["services/team-a/api","services/team-b/worker"]' ]
+}

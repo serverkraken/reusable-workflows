@@ -124,6 +124,33 @@ _component_is_flutter() {
 # (makejinja.toml OR bootstrap/templates/). The .sops.yaml + template
 # conjunction prevents a false positive on a service repo that merely ships a
 # kubernetes/ deploy dir.
+# _repo_rel — <pfad> relativ zu <repo>, robust gegen Schraegstriche am Ende.
+#
+# `${p#"$repo"/}` stand an VIER Stellen woertlich. Endet `$repo` auf einem
+# Schraegstrich, wird das Muster zu `…//` und passt nicht mehr — der Praefix
+# bleibt stehen, und aus einer Komponente `services/team-a/api` wird der volle
+# Pfad. Der Aufrufer darf beides uebergeben.
+#
+# Gefunden, als das Paritaets-Gate die neue Fixture monorepo-nested-go
+# durchlief: es reicht Pfade MIT Schraegstrich, und die Bash-Engine lieferte
+# absolute Komponentenpfade, `languages: []` und `primary_language: generic`.
+# Die Fixture ist zugleich die einzige, die den Fallback-Zweig mit mehreren
+# Komponenten durchlaeuft — deshalb war das nie sichtbar.
+#
+# Signature: _repo_rel <repo> <pfad>
+_norm_repo() {
+  local repo="$1"
+  while [[ "$repo" == */ && "$repo" != "/" ]]; do repo="${repo%/}"; done
+  printf '%s' "$repo"
+}
+
+_repo_rel() {
+  local repo p
+  repo="$(_norm_repo "$1")"
+  p="$2"
+  printf '%s' "${p#"$repo"/}"
+}
+
 # root_language_signals — die Sprachmarker im Wurzelverzeichnis, als Zeilen.
 #
 # Frueher stand diese Liste nur inline im Legacy-Block von onboard-detect.sh.
@@ -189,7 +216,11 @@ _gitops_manifests_paths() {
 }
 
 emit_profile_json() {
-  local repo="$1"
+  local repo
+  # Schraegstrich am Ende einmal hier abschneiden. Sonst entsteht weiter
+  # unten `$repo/.github/...` mit doppeltem `//`, und das schleppt sich
+  # durch jeden abgeleiteten Pfad.
+  repo="$(_norm_repo "$1")"
   local target_repo="${TARGET_REPO:-}"
   local default_branch="${OVERRIDE_DEFAULT_BRANCH:-main}"
   local current_version="${OVERRIDE_CURRENT_VERSION:-0.0.0}"
@@ -446,7 +477,7 @@ emit_unassigned_subdir_dockerfile_warnings() {
   # dasselbe (skipHidden).
   local orphans=() f rel
   while IFS= read -r f; do
-    rel="${f#"$repo"/}"
+    rel="$(_repo_rel "$repo" "$f")"
     [[ "$rel" == */* ]] && orphans+=("$rel")
   done < <(find "$repo" -type d -name '.*' -prune -o -type f \
              \( -name 'Dockerfile' -o -name 'Containerfile' \
@@ -509,7 +540,8 @@ apply_release_type_override() {
 #   3) Sub-Dockerfile fallback: 2+ Dockerfiles in subdirs without language markers
 #   4) Single-component fallback (path=".")
 detect_components() {
-  local repo="$1"
+  local repo
+  repo="$(_norm_repo "$1")"
 
   # 1) Explicit monorepo markers
   local paths=()
@@ -637,10 +669,18 @@ detect_components() {
     while IFS= read -r m; do
       local d
       d=$(dirname "$m")
-      d="${d#"$repo"/}"
+      d="$(_repo_rel "$repo" "$d")"
       [[ "$d" == "." ]] && continue
       paths+=("$d")
-    done < <(find "$repo" -mindepth 2 -maxdepth 3 \( -name 'go.mod' -o -name 'pyproject.toml' -o -name 'Cargo.toml' -o -name 'Chart.yaml' \) 2>/dev/null | sort -u)
+    # -maxdepth 4, nicht 3: `find` zaehlt die DATEI, der Go-Detektor das
+    # VERZEICHNIS (fallbackMarkerPaths: depth der Komponente <= 3). Mit
+    # maxdepth 3 war hier also nur eine Komponententiefe von 2 erlaubt, und
+    # `services/team-a/api/go.mod` (Dateitiefe 4) fiel raus (Audit B-12).
+    #
+    # Gemessen an genau diesem Layout: Go fand beide Komponenten, diese Engine
+    # kollabierte das ganze Monorepo auf ["."] — der Schalter use_go_cli
+    # entschied damit, ob so ein Repo richtig onboardet wird.
+    done < <(find "$repo" -mindepth 2 -maxdepth 4 \( -name 'go.mod' -o -name 'pyproject.toml' -o -name 'Cargo.toml' -o -name 'Chart.yaml' \) 2>/dev/null | sort -u)
   fi
 
   # 3) Sub-Dockerfile/Containerfile fallback (no language markers but multiple sub-Dockerfiles/Containerfiles)
@@ -651,10 +691,12 @@ detect_components() {
     while IFS= read -r f; do
       local d
       d=$(dirname "$f")
-      d="${d#"$repo"/}"
+      d="$(_repo_rel "$repo" "$d")"
       [[ "$d" == "." ]] && continue
       sub_dockerfile_dirs+=("$d")
-    done < <(find "$repo" -mindepth 2 -maxdepth 3 \( -name 'Dockerfile' -o -name 'Containerfile' \) 2>/dev/null | sort -u)
+    # Dieselbe Zaehlweise wie oben (fallbackDockerfilePaths erlaubt ebenfalls
+    # Komponententiefe <= 3).
+    done < <(find "$repo" -mindepth 2 -maxdepth 4 \( -name 'Dockerfile' -o -name 'Containerfile' \) 2>/dev/null | sort -u)
     if [[ ${#sub_dockerfile_dirs[@]} -ge 2 ]]; then
       paths=("${sub_dockerfile_dirs[@]}")
     fi
@@ -1035,7 +1077,8 @@ detect_release_signals() {
 # emitting one entry per file (excluding OWNED filenames the renderer produces).
 # Signature: detect_legacy_ci <repo>
 detect_legacy_ci() {
-  local repo="${1:-}"
+  local repo
+  repo="$(_norm_repo "${1:-}")"
   local dir="$repo/.github/workflows"
   if [[ ! -d "$dir" ]]; then
     echo '[]'; return
@@ -1099,7 +1142,7 @@ detect_legacy_ci() {
       summary="unrecognized legacy workflow; manual review needed"
     fi
 
-    local rel="${f#"$repo"/}"
+    local rel; rel="$(_repo_rel "$repo" "$f")"
     entries+=("$(jq -nc \
       --arg path "$rel" \
       --arg summary "$summary" \
