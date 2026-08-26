@@ -1,0 +1,11 @@
+name: cleanup
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch: {}
+
+jobs:
+  cleanup-repo-svc:
+    uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v4
+    with:
+      package_name: "${{ github.event.repository.name }}-svc"

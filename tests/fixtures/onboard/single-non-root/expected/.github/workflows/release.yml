@@ -1,0 +1,45 @@
+name: release
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+  security-events: write
+  actions: read
+
+jobs:
+  release-please:
+    uses: serverkraken/reusable-workflows/.github/workflows/semantic-release.yml@v4
+    secrets: inherit
+
+  docker-build-svc:
+    needs: [release-please]
+    if: contains(fromJSON(needs.release-please.outputs.paths_released), 'svc')
+    uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
+    with:
+      context: "svc"
+      dockerfile: "svc/Dockerfile"
+      image_name: "single-non-root-svc"
+      tag: "v${{ fromJSON(needs.release-please.outputs.releases)['svc'].version }}"
+      ref: "${{ fromJSON(needs.release-please.outputs.releases)['svc'].tag_name }}"
+      sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
+      attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
+      sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
+    secrets: inherit
+
+  scan-svc:
+    needs: [docker-build-svc]
+    uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@v4
+    with:
+      image_ref: "${{ needs.docker-build-svc.outputs.image_ref }}"
+      platforms: linux/amd64,linux/arm64
+      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+    secrets: inherit
