@@ -187,6 +187,62 @@ golden_check() {
   diff -r "$FIX/$fixture/expected" "$target"
 }
 
+# Audit L-4: die Manifest-Fixture hatte ein `expected/`-Verzeichnis, das von
+# NIEMANDEM verglichen wurde.
+#
+# `golden_check` faehrt mit der Bash-Engine, und die verweigert Adopter-
+# Manifeste ausdruecklich ("does not support manifests"). Das Paritaets-Gate
+# vergleicht Engine gegen Engine und traegt diese Fixture deshalb als
+# "begruendete Absage" — es vergleicht dort also ebenfalls nichts.
+#
+# Sichtbar wurde es an einem Detail: dieser Baum ist mit `@v4` gerendert, alle
+# geprueften Goldens mit `@v2`. Er wurde nie nachgezogen, weil ihn nie etwas
+# gelesen hat.
+#
+# Damit waren die Template-Zweige fuer `severity` und `fail_on_findings`
+# unbelegt: geparst und validiert, aber ihre Weitergabe ins gerenderte
+# release.yml/prerelease.yml nie gemessen — dieselbe Klasse wie J-0c beim
+# chart-image-pins-Zweig.
+go_bin() {
+  local bin="${BATS_RUN_TMPDIR:-$TARGET}/sk-workflows-golden"
+  if [[ ! -x "$bin" ]]; then
+    (cd "$REPO_ROOT" && go build -o "$bin" ./cmd/sk-workflows) >&2 || return 1
+  fi
+  printf '%s' "$bin"
+}
+
+# Wie golden_check, nur ueber die Go-CLI — und mit dem Pin, mit dem dieser Baum
+# vorliegt (v4; die Bash-Goldens stehen auf v2).
+golden_check_go() {
+  local fixture="$1"
+  command -v go >/dev/null 2>&1 || skip "go nicht installiert"
+  local bin; bin="$(go_bin)" || { echo "go build fehlgeschlagen"; return 1; }
+
+  local target="$TARGET/repo"
+  mkdir -p "$target"
+  "$bin" detect --repo-path "$FIX/$fixture" --profile-json > "$target/_profile.json"
+  "$bin" render --catalog "$REPO_ROOT" --target "$target" --profile "$target/_profile.json" --pin v4
+  rm "$target/_profile.json"
+
+  local lock="$target/.github/onboard.lock.json"
+  if [[ -f "$lock" ]]; then
+    jq 'del(.rendered_at)' "$lock" > "$lock.det" && mv "$lock.det" "$lock"
+  fi
+
+  if [[ "${UPDATE_GOLDEN:-0}" == "1" ]]; then
+    rm -rf "$FIX/$fixture/expected"
+    mkdir -p "$FIX/$fixture/expected"
+    cp -R "$target/." "$FIX/$fixture/expected/"
+    skip "UPDATE_GOLDEN — rewrote $fixture/expected"
+  fi
+
+  diff -r "$FIX/$fixture/expected" "$target"
+}
+
+@test "golden: go-root-multi-image (Manifest-Fixture, Go-Engine)" {
+  golden_check_go "go-root-multi-image"
+}
+
 @test "golden: go-repo"                { golden_check "go-repo"; }
 @test "golden: go-cgo"                 { golden_check "go-cgo"; }
 @test "golden: go-cgo-transitive"      { golden_check "go-cgo-transitive"; }
