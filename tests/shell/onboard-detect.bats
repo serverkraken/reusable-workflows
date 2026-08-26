@@ -1381,3 +1381,49 @@ _repo_with_dockerfile() {  # <dateiname> <kopfzeile-roh>
   run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$d' | jq -c '[.components[].dockerfiles[].image_name]'"
   [ "$output" = '["acme/svc"]' ]
 }
+
+# --- mehrdeutige Sprachsignale ----------------------------------------------
+#
+# Der Legacy-Modus brach dabei seit je ab; der --profile-json-Modus nahm still
+# `.[0]` der erkannten Sprachen. Gemessen an go.mod + pyproject.toml im
+# Wurzelverzeichnis: primary_language=go, warnings=[], und die gerenderte ci.yml
+# trug lint-go-root und test-go-root — die Python-Haelfte fiel ersatzlos weg,
+# ohne ein Wort. Der Go-Detektor bricht an derselben Stelle ab; damit entschied
+# der Schalter `use_go_cli` darueber, ob so ein Repo ueberhaupt onboardbar ist.
+
+@test "mehrdeutige Sprachsignale brechen auch im JSON-Modus ab" {
+  run bash "$REPO_ROOT/scripts/onboard-detect.sh" --profile-json "$FIX/ambiguous"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ambiguous language signals: go python"* ]]
+}
+
+@test "eindeutige Signale bleiben im JSON-Modus unberuehrt" {
+  run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$FIX/go-repo' | jq -r '.components[0].primary_language'"
+  [ "$status" -eq 0 ]
+  [ "$output" = "go" ]
+}
+
+# --- verwaiste Dockerfiles in Unterverzeichnissen ---------------------------
+#
+# Der Go-Detektor meldet sie seit je, diese Engine nicht. Der Adopter erfuhr
+# also je nach onboardender Engine, dass zwei seiner Images stillschweigend
+# nicht gebaut werden — oder eben nicht.
+
+@test "nicht zugeordnete Dockerfiles in Unterverzeichnissen werden gemeldet" {
+  run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$FIX/go-root-subdir-dockerfile' | jq -r '.warnings[].code'"
+  [ "$status" -eq 0 ]
+  [ "$output" = "subdir_dockerfiles_unassigned" ]
+}
+
+@test "ein Dockerfile im Wurzelverzeichnis loest die Warnung nicht aus" {
+  run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$FIX/multi-dockerfile' | jq -c '[.warnings[].code]'"
+  [ "$output" = '[]' ]
+}
+
+# Der Aufrufer darf den Pfad mit Schraegstrich am Ende uebergeben. Ohne
+# Normalisierung schlug der Praefix-Schnitt fehl und JEDES Dockerfile galt als
+# "in einem Unterverzeichnis" — auch das im Wurzelverzeichnis.
+@test "ein Schraegstrich am Ende des Repo-Pfads aendert nichts" {
+  run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$FIX/multi-dockerfile/' | jq -c '[.warnings[].code]'"
+  [ "$output" = '[]' ]
+}

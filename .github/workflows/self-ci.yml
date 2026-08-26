@@ -301,6 +301,21 @@ jobs:
   #       use_go_cli=true. Stubs gh CLI responses to keep the test hermetic
   #       (no network/API auth dependency) while still verifying the wrapper's
   #       target_repo metadata flow into outputs/profile_json.
+  # Beide Detektor-Engines auf jeder Fixture vergleichen. Vier Abweichungen
+  # (M-1, #317, #318, mehrdeutige Sprachsignale) wurden bisher einzeln von Hand
+  # gefunden - jede erst, nachdem sie schon im Katalog stand.
+  engine-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Compare both detector engines on every fixture
+        run: bash tests/conventions/check-engine-parity.sh
+
   onboard-detect-go-cli-happy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -584,6 +599,7 @@ jobs:
     needs:
       - lint-go-happy
       - lint-go-self
+      - engine-parity
       - test-go-self
       - lint-helm-happy
       - lint-helm-unittest-happy

@@ -124,6 +124,39 @@ _component_is_flutter() {
 # (makejinja.toml OR bootstrap/templates/). The .sops.yaml + template
 # conjunction prevents a false positive on a service repo that merely ships a
 # kubernetes/ deploy dir.
+# root_language_signals — die Sprachmarker im Wurzelverzeichnis, als Zeilen.
+#
+# Frueher stand diese Liste nur inline im Legacy-Block von onboard-detect.sh.
+# Der JSON-Modus brauchte dieselbe Liste fuer seine Mehrdeutigkeitspruefung -
+# und eine zweite, woertliche Kopie waere genau der Zwilling gewesen, an dem
+# `# onboard:image=` und `# onboard:release=` schon auseinandergelaufen sind.
+# Also einmal definiert, beide Pfade rufen sie.
+#
+# Signature: root_language_signals <repo-path>
+root_language_signals() {
+  local repo="$1"
+  [[ -f "$repo/go.mod" ]]         && echo go
+  [[ -f "$repo/pyproject.toml" ]] && echo python
+  [[ -f "$repo/Cargo.toml" ]]     && echo rust
+  [[ -f "$repo/Chart.yaml" ]]     && echo helm
+  _component_is_flutter "$repo"   && echo flutter
+  [[ -f "$repo/package.json" ]]   && echo node
+  return 0
+}
+
+# refuse_ambiguous_root_language — bricht ab, wenn mehr als ein Sprachmarker im
+# Wurzelverzeichnis liegt und keine Deklaration das aufloest.
+#
+# Signature: refuse_ambiguous_root_language <repo-path>
+refuse_ambiguous_root_language() {
+  local repo="$1" matches
+  mapfile -t matches < <(root_language_signals "$repo")
+  if (( ${#matches[@]} > 1 )); then
+    echo "::error::ambiguous language signals: ${matches[*]}; rerun with explicit language input" >&2
+    exit 1
+  fi
+}
+
 detect_gitops_kubernetes() {
   local repo="$1"
   [[ -d "$repo/kubernetes" ]] || return 1
@@ -329,6 +362,7 @@ emit_profile_json() {
   fi
 
   profile=$(emit_unsupported_language_warnings "$profile")
+  profile=$(emit_unassigned_subdir_dockerfile_warnings "$profile" "$repo")
   emit_no_release_eligible_warnings "$profile"
 }
 
@@ -378,6 +412,61 @@ emit_no_release_eligible_warnings() {
       ) as $extra
     | $root | .warnings += $extra
   '
+}
+
+# emit_unassigned_subdir_dockerfile_warnings — meldet Dockerfiles in
+# Unterverzeichnissen, die zu keiner Komponente gehoeren und deshalb NICHT
+# gebaut werden.
+#
+# Der Go-Detektor meldet das seit je (`subdir_dockerfiles_unassigned`), diese
+# Engine nicht. Gemessen an tests/fixtures/onboard/go-root-subdir-dockerfile:
+# Go warnt vor images/api/Dockerfile und images/worker/Dockerfile, Bash gab
+# `warnings: []` aus. Der Adopter erfuhr je nach onboardender Engine, dass zwei
+# seiner Images stillschweigend nicht gebaut werden - oder eben nicht.
+#
+# Nur der Einkomponenten-Fall, genau wie dort: sobald das Repo in Komponenten
+# zerfaellt, ist "gehoert zu keiner" nicht mehr sinnvoll bestimmbar.
+#
+# Signature: emit_unassigned_subdir_dockerfile_warnings <profile-json> <repo-path>
+emit_unassigned_subdir_dockerfile_warnings() {
+  local profile_json="$1" repo="$2"
+  # Schraegstriche am Ende abschneiden. Ohne das schlaegt der Praefix-Schnitt
+  # unten fehl und JEDES Dockerfile gilt als "in einem Unterverzeichnis" - auch
+  # das im Wurzelverzeichnis. Gos filepath.Rel stoert ein Schraegstrich nicht,
+  # diese Fassung schon, und der Aufrufer darf beides uebergeben.
+  while [[ "$repo" == */ && "$repo" != "/" ]]; do repo="${repo%/}"; done
+
+  local shape
+  shape=$(echo "$profile_json" | jq -r '"\(.components|length):\(.components[0].path // "")"')
+  [[ "$shape" == "1:." ]] || { echo "$profile_json"; return 0; }
+
+  # Versteckte Verzeichnisse werden uebersprungen - `.github/` ist eines, und
+  # ein Dockerfile darin ist keine verwaiste Komponente. Der Go-Detektor macht
+  # dasselbe (skipHidden).
+  local orphans=() f rel
+  while IFS= read -r f; do
+    rel="${f#"$repo"/}"
+    [[ "$rel" == */* ]] && orphans+=("$rel")
+  done < <(find "$repo" -type d -name '.*' -prune -o -type f \
+             \( -name 'Dockerfile' -o -name 'Containerfile' \
+                -o -name 'Dockerfile.*' -o -name 'Containerfile.*' \) \
+             -print 2>/dev/null | sort)
+
+  (( ${#orphans[@]} == 0 )) && { echo "$profile_json"; return 0; }
+
+  local joined_comma joined_space
+  joined_comma=$(IFS=,; echo "${orphans[*]}")
+  joined_space=$(IFS=,; echo "${orphans[*]}"); joined_space="${joined_space//,/, }"
+
+  echo "$profile_json" | jq \
+    --arg path "$joined_comma" \
+    --arg list "$joined_space" \
+    --arg n "${#orphans[@]}" '
+    .warnings += [{
+      code: "subdir_dockerfiles_unassigned",
+      path: $path,
+      message: ($n + " Dockerfile(s) in sub-directories are not attached to any component and will not be built: " + $list + ". Declare them in .github/onboard.yml (components[].dockerfiles or their own component).")
+    }]'
 }
 
 # detect_components — enumerate monorepo components or fall back to single-component.

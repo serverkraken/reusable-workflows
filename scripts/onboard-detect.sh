@@ -27,7 +27,7 @@
 #
 # Exits 1 on:
 #   - repo path missing
-#   - ambiguous language signals (more than one match, no override) — legacy mode only
+#   - ambiguous language signals (more than one match, no override) — both modes
 
 set -euo pipefail
 
@@ -136,6 +136,24 @@ if [[ "${1:-}" == "--profile-json" ]]; then
     exit 1
   fi
   refuse_manifest "$REPO_PATH"
+  # Mehrdeutige Wurzelsignale brechen hier ab, genau wie im Legacy-Modus.
+  #
+  # Bisher tat das nur der Legacy-Modus ("legacy mode only" stand sogar im
+  # Kopf dieser Datei). Der JSON-Modus nahm still `.[0]` der erkannten Sprachen.
+  # Gemessen an einem Repo mit go.mod UND pyproject.toml im Wurzelverzeichnis:
+  #
+  #   Legacy-Modus     rc=1, "ambiguous language signals: go python"
+  #   --profile-json   rc=0, primary_language=go, warnings=[]
+  #
+  # Und die gerenderte ci.yml traegt dann lint-go-root und test-go-root - die
+  # Python-Haelfte faellt ersatzlos weg, ohne ein Wort. Der Go-Detektor bricht
+  # an derselben Stelle ab; zwei Engines waren sich uneinig, ob so ein Repo
+  # ueberhaupt onboardbar ist.
+  #
+  # Der Weg heraus ist fuer beide Engines derselbe: die Sprache im Manifest
+  # deklarieren (`components[].language`). Diese Engine lehnt Manifeste ab und
+  # verweist dafuer auf die Go-CLI - siehe refuse_manifest oben.
+  refuse_ambiguous_root_language "$REPO_PATH"
   emit_profile_json "$REPO_PATH"
   exit 0
 fi
@@ -162,13 +180,8 @@ source "$SCRIPT_DIR/lib/onboard-detect-lib.sh"
 if [[ "$LANG_OVERRIDE" != "auto" ]]; then
   language="$LANG_OVERRIDE"
 else
-  matches=()
-  [[ -f "$REPO_PATH/go.mod" ]]         && matches+=(go)
-  [[ -f "$REPO_PATH/pyproject.toml" ]] && matches+=(python)
-  [[ -f "$REPO_PATH/Cargo.toml" ]]     && matches+=(rust)
-  [[ -f "$REPO_PATH/Chart.yaml" ]]     && matches+=(helm)
-  _component_is_flutter "$REPO_PATH"   && matches+=(flutter)
-  [[ -f "$REPO_PATH/package.json" ]]   && matches+=(node)
+  # Geteilt mit dem --profile-json-Pfad, damit beide Modi dieselbe Liste sehen.
+  mapfile -t matches < <(root_language_signals "$REPO_PATH")
 
   if (( ${#matches[@]} == 0 )); then
     if detect_gitops_kubernetes "$REPO_PATH"; then language=gitops; else language=simple; fi
