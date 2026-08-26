@@ -162,6 +162,10 @@ EOF
   grep -qx "version=v4.2.0" "$GITHUB_OUTPUT"
   grep -qx "source=release" "$GITHUB_OUTPUT"
   grep -qx "$INSTALL_DIR" "$GITHUB_PATH"
+  # Das Staging-Verzeichnis liegt in $install_dir, und das ueberlebt auf
+  # selbst-gehosteten Runnern den Job. Bleibt es liegen, waechst es mit jedem
+  # Lauf - also aufgeraeumt, nicht nur im Fehlerfall ueber den trap.
+  [ -z "$(ls -A "$INSTALL_DIR" | grep '^\.sk-extract' || true)" ]
 }
 
 @test "release install uses gh when token and gh are available" {
@@ -196,7 +200,7 @@ EOF
   mkdir -p "$tools"
   # gzip: GNU tar on Linux execs it as a child for -z (bsdtar on macOS
   # decompresses in-process, so its absence only shows up in CI).
-  for t in bash awk chmod dirname mkdir mktemp rm tar tr uname cp basename cat gzip; do
+  for t in bash awk chmod dirname mkdir mktemp rm tar tr uname cp mv basename cat gzip; do
     ln -s "$(command -v "$t")" "$tools/$t"
   done
   for t in sha256sum shasum; do
@@ -260,4 +264,57 @@ EOF
 
   [ "$status" -ne 0 ]
   [[ "$output" =~ "version is required" ]]
+}
+
+# Audit H-18: ein Archiv, das sauber entpackt und `sk-workflows` trotzdem nicht
+# enthaelt, darf nicht als erfolgreiche Installation durchgehen.
+#
+# $install_dir liegt per Vorgabe unter $RUNNER_TEMP bzw. /tmp, und das bleibt auf
+# selbst-gehosteten Runnern zwischen Jobs bestehen. Vor dem Fix blieb deshalb das
+# Binary der VORIGEN Installation stehen: `tar` rc=0, `chmod` rc=0, und
+# emit_outputs meldete die NEUE Version fuer ein altes Binary.
+#
+# Die Pruefsumme faengt das nicht ab: sie belegt, dass das Archiv dem entspricht,
+# was veroeffentlicht wurde - nicht, dass darin das Erwartete liegt.
+make_release_asset_without_binary() {
+  local version="$1"
+  local staging="$TMPDIR/staging-empty"
+  local asset="sk-workflows_${version}_linux_amd64.tar.gz"
+  mkdir -p "$staging"
+  echo "versehentlich nur die README veroeffentlicht" > "$staging/README.md"
+  tar -C "$staging" -czf "$RELEASE_DIR/$asset" README.md
+  local checksum
+  checksum="$(checksum_file "$RELEASE_DIR/$asset")"
+  echo "$checksum  $asset" > "$RELEASE_DIR/sk-workflows_${version}_checksums.txt"
+}
+
+@test "release asset without the binary fails instead of keeping a stale one" {
+  make_release_asset_without_binary "v4.9.0"
+  install_fake_curl
+  export SK_TEST_RELEASE_DIR="$RELEASE_DIR"
+  export INPUT_VERSION="v4.9.0"
+
+  # Ein persistenter Runner: die vorige Installation liegt noch da.
+  mkdir -p "$INSTALL_DIR"
+  {
+    echo "#!/usr/bin/env sh"
+    echo "echo release-v4.0.0-amd64"
+  } > "$INSTALL_DIR/sk-workflows"
+  chmod +x "$INSTALL_DIR/sk-workflows"
+
+  run bash "$SCRIPT"
+
+  # 1. Der Lauf scheitert - und sagt auch, woran.
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"without a sk-workflows binary"* ]] || { echo "$output"; false; }
+
+  # 2. Entscheidend: die neue Version wird NICHT als installiert gemeldet.
+  #    Genau das tat der alte Code, waehrend das alte Binary liegen blieb.
+  ! grep -qx "version=v4.9.0" "$GITHUB_OUTPUT"
+  ! grep -qx "source=release" "$GITHUB_OUTPUT"
+
+  # 3. Das alte Binary ist unangetastet - der Fix raeumt nichts weg, was er
+  #    nicht ersetzen konnte; er verschweigt es nur nicht mehr.
+  run "$INSTALL_DIR/sk-workflows"
+  [ "$output" = "release-v4.0.0-amd64" ]
 }
