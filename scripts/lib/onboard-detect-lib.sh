@@ -713,7 +713,12 @@ read_image_override() {
   #
   # Verankert an BEIDEN Enden: ohne `$` bestand jeder Wert, der mit einem
   # gueltigen Zeichen beginnt - dieselbe Falle wie I-17.
-  awk '/^# onboard:image=[a-z0-9._\/-]+$/{sub(/^# onboard:image=/,""); print; exit} NR>5{exit}' "$file"
+  # `sub(/[ \t\r]+$/,"")` zuerst: ein CR aus einem auf Windows geschriebenen
+  # Dockerfile oder ein vom Editor gelassenes Leerzeichen darf nicht ueber das
+  # Ergebnis entscheiden. Die Go-Fassung tut dasselbe in firstLines().
+  awk '{sub(/[ \t\r]+$/,"")}
+       /^# onboard:image=[a-z0-9._\/-]+$/{sub(/^# onboard:image=/,""); print; exit}
+       NR>5{exit}' "$file"
 }
 
 # Read `# onboard:release=true` or `# onboard:release=false` override from
@@ -722,9 +727,18 @@ read_image_override() {
 read_release_override() {
   local file="$1"
   [[ -f "$file" ]] || { echo ""; return; }
+  # War `grep -m1 -oE '^# onboard:release=(true|false)'` - nur am ZEILENANFANG
+  # verankert, und `-o` schneidet den Treffer heraus. `# onboard:release=false-
+  # aber-doch-ja` ergab damit "false", waehrend die Go-Fassung (exakter
+  # Zeilenvergleich) die Zeile verwarf und beim Default blieb. Bei einem
+  # `Dockerfile`, dessen Default release-faehig ist, entschieden die beiden
+  # Engines damit gegensaetzlich ueber die Auslieferung.
+  #
+  # Jetzt beidseitig verankert, mit demselben Zeilenende-Schnitt wie oben.
   head -n 5 "$file" 2>/dev/null \
-    | grep -m1 -oE '^# onboard:release=(true|false)' \
-    | sed 's/^# onboard:release=//' || true
+    | awk '{sub(/[ \t\r]+$/,"")}
+           /^# onboard:release=(true|false)$/{sub(/^# onboard:release=/,""); print; exit}' \
+    || true
 }
 
 # Derive image name from Dockerfile filename and component path.
