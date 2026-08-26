@@ -706,7 +706,14 @@ inventory_dockerfiles() {
 read_image_override() {
   local file="$1"
   [[ -f "$file" ]] || { echo ""; return; }
-  awk '/^# onboard:image=[A-Za-z0-9._\/-]+/{sub(/^# onboard:image=/,""); print; exit} NR>5{exit}' "$file"
+  # Dieselbe Regel wie fuer `image:` im Manifest und wie im Go-Detektor
+  # (manifest.ImagePattern): OCI-Namen sind kleingeschrieben. Hier stand die
+  # grossbuchstaben-tolerante Fassung, und `# onboard:image=Acme/UPPER` lief
+  # unbeanstandet durch, waehrend das Manifest denselben Wert laengst abweist.
+  #
+  # Verankert an BEIDEN Enden: ohne `$` bestand jeder Wert, der mit einem
+  # gueltigen Zeichen beginnt - dieselbe Falle wie I-17.
+  awk '/^# onboard:image=[a-z0-9._\/-]+$/{sub(/^# onboard:image=/,""); print; exit} NR>5{exit}' "$file"
 }
 
 # Read `# onboard:release=true` or `# onboard:release=false` override from

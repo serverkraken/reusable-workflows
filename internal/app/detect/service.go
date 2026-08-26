@@ -946,6 +946,9 @@ func resolveDockerfile(full, name, derivePath, imageOverride string) domain.Dock
 	return domain.Dockerfile{Path: name, ImageName: image, ImageNameSource: source, ReleaseEligible: eligible}
 }
 
+// Einmal kompiliert statt bei jedem Dockerfile neu.
+var imageOverrideRe = regexp.MustCompile(manifest.ImagePattern)
+
 func readImageOverride(file string) string {
 	for i, line := range firstLines(file, 5) {
 		if i >= 5 {
@@ -953,7 +956,11 @@ func readImageOverride(file string) string {
 		}
 		if strings.HasPrefix(line, "# onboard:image=") {
 			v := strings.TrimPrefix(line, "# onboard:image=")
-			if regexp.MustCompile(`^[A-Za-z0-9._/-]+$`).MatchString(v) {
+			// Dieselbe Regel wie fuer `image:` im Manifest - eine Definition,
+			// beide Aufrufstellen (Audit A-7/H-17). Hier stand eine woertliche
+			// Kopie des alten, grossbuchstaben-tolerantem Musters; nach dem
+			// Verschaerfen der Manifest-Fassung nahm sie `Acme/UPPER` weiter an.
+			if imageOverrideRe.MatchString(v) {
 				return v
 			}
 		}

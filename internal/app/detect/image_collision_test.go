@@ -259,3 +259,51 @@ func TestDerivedSuffixIsLowercasedToo(t *testing.T) {
 		}
 	}
 }
+
+// Die Regel fuer Image-Namen existierte zweimal woertlich: in manifest.go und
+// hier in readImageOverride, das `# onboard:image=` aus einem Dockerfile-Kopf
+// liest. Beim Verschaerfen auf Kleinschreibung (#316) habe ich nur die
+// Manifest-Fassung angefasst — der Zwilling nahm `Acme/UPPER` weiter an. Genau
+// die Divergenz, die M-1 beschreibt, diesmal von mir selbst erzeugt.
+//
+// Jetzt teilen sich beide manifest.ImagePattern: eine Definition, beide
+// Aufrufstellen.
+
+func writeDockerfileWithHeader(t *testing.T, repo, header string) {
+	t.Helper()
+	dir := filepath.Join(repo, "svc")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := header + "FROM scratch\n"
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestImageAnnotationFollowsTheManifestRule(t *testing.T) {
+	for _, c := range []struct {
+		name, header, want string
+	}{
+		{"gueltig", "# onboard:image=acme/svc\n", "acme/svc"},
+		{"Grossbuchstaben", "# onboard:image=Acme/UPPER\n", "$REPO-svc"},
+		{"Leerzeichen dahinter", "# onboard:image=acme/svc UND MEHR\n", "$REPO-svc"},
+		{"keine Annotation", "", "$REPO-svc"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			repo := t.TempDir()
+			writeDockerfileWithHeader(t, repo, c.header)
+			res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := res.Profile.Components[0].Dockerfiles[0].ImageName
+			if got != c.want {
+				t.Fatalf("image_name=%q, erwartet %q", got, c.want)
+			}
+		})
+	}
+}

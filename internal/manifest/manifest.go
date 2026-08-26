@@ -86,6 +86,18 @@ type Consumer struct {
 	Mode  string
 }
 
+// ImagePattern ist die EINE Regel fuer Image-Namen im Katalog.
+//
+// Sie existierte zweimal woertlich: hier und in detect.readImageOverride, das
+// `# onboard:image=` aus einem Dockerfile-Kopf liest. Beim Verschaerfen auf
+// Kleinschreibung (Audit A-7/H-17) habe ich nur diese Fassung angefasst - der
+// Zwilling nahm `Acme/UPPER` weiter unbeanstandet an. Genau die Divergenz, die
+// M-1 beschreibt, diesmal von mir selbst erzeugt.
+//
+// Deshalb exportiert: eine Definition, beide Aufrufstellen. Wer sie aendert,
+// aendert beide.
+const ImagePattern = `^[a-z0-9._/-]+$`
+
 var (
 	// OCI-Namen sind kleingeschrieben; die Distribution-Spec laesst im
 	// Repository-Namen nur [a-z0-9] plus Trenner zu (Audit A-7). Das Muster
@@ -95,7 +107,7 @@ var (
 	// Abgewiesen statt kleingeschrieben: anders als beim abgeleiteten Namen hat
 	// das hier jemand hingeschrieben. Den Wert eines Adopters still zu
 	// veraendern waere schlechter, als ihn darauf hinzuweisen.
-	imageRe  = regexp.MustCompile(`^[a-z0-9._/-]+$`)
+	imageRe  = regexp.MustCompile(ImagePattern)
 	scriptRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 	repoRe   = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	// platformsRe mirrors the buildx `--platform` list the docker-build atoms
