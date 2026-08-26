@@ -586,12 +586,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Verify findings_count > 0
+      - name: Verify findings_count is a number and greater than zero
         env:
           COUNT: ${{ needs.test-secret-scan-findings.outputs.findings_count }}
         run: |
-          if [[ "$COUNT" == "0" ]]; then
-            echo "::error::Expected secret findings on planted-secret fixture, got 0"
+          set -euo pipefail
+
+          # Audit K-17: die Pruefung war `[[ "$COUNT" == "0" ]]` — und genau
+          # deshalb bestand sie auch bei einer LEEREN Ausgabe. Ist das
+          # Output-Wiring kaputt, ist "" nicht gleich "0", und der Test war
+          # gruen, obwohl der Scan gar nichts gemeldet hat. Der haeufigste
+          # Weg, wie ein Atom-Output verlorengeht, war damit unsichtbar.
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "::error::findings_count ist keine Zahl, sondern '${COUNT:-<leer>}' — die Ausgabe des Atoms kommt nicht durch" >&2
+            exit 1
+          fi
+
+          # Keine exakte Zahl: die haengt am Regelsatz von gitleaks und wuerde
+          # bei jedem Versionssprung brechen, ohne dass etwas kaputt waere.
+          # Die Fixture traegt ein AWS-Schluesselpaar, also mindestens einen Fund.
+          if [[ "$COUNT" -lt 1 ]]; then
+            echo "::error::Expected secret findings on planted-secret fixture, got $COUNT" >&2
             exit 1
           fi
           echo "secret-scan correctly detected $COUNT secret(s)"
@@ -621,12 +636,71 @@ jobs:
         env:
           PATHS: ${{ needs.test-semantic-release-dry-run.outputs.paths_released }}
           RELEASES: ${{ needs.test-semantic-release-dry-run.outputs.releases }}
+          CREATED: ${{ needs.test-semantic-release-dry-run.outputs.release_created }}
+          TAG: ${{ needs.test-semantic-release-dry-run.outputs.tag_name }}
         run: |
           set -euo pipefail
+
+          # Audit K-3: die Form allein sagt nichts.
+          #
+          # Vorher wurden nur `type == "array"` und `type == "object"` geprueft
+          # plus ein diff der beiden Schluesselmengen. Ein Lauf mit `[]` und
+          # `{}` besteht alle drei: leer gegen leer ist gleich. Damit war ein
+          # Trockenlauf, der GAR NICHTS erzeugt hat, gruen — und genau das ist
+          # der Fall, den ein kaputtes Output-Wiring produziert.
+          #
+          # "Nicht leer" zu verlangen waere falsch: der Trockenlauf laeuft gegen
+          # den Katalog selbst, und "seit dem letzten Tag liegt nichts
+          # Releasebares an" ist ein voellig gueltiger Zustand. Geprueft wird
+          # deshalb die INVARIANTE zwischen dem Boolean und den Listen — die
+          # gilt in beiden Zustaenden und ist in beiden verletzbar.
           jq -e 'type == "array"' <<< "$PATHS" > /dev/null
           jq -e 'type == "object"' <<< "$RELEASES" > /dev/null
           # every released path has a map entry and vice versa
           diff <(jq -r '.[]' <<< "$PATHS" | sort) <(jq -r 'keys[]' <<< "$RELEASES" | sort)
+
+          n_paths=$(jq -r 'length' <<< "$PATHS")
+          n_rel=$(jq -r 'length' <<< "$RELEASES")
+          echo "release_created=$CREATED paths=$n_paths releases=$n_rel tag=${TAG:-<leer>}"
+
+          case "$CREATED" in
+            true)
+              # Ein Release wurde gemeldet: dann MUSS auch etwas darin stehen.
+              if [[ "$n_paths" -eq 0 || "$n_rel" -eq 0 ]]; then
+                echo "::error::release_created=true, aber paths_released=$n_paths und releases=$n_rel — das Output-Wiring liefert leere Listen" >&2
+                exit 1
+              fi
+              if [[ -z "$TAG" ]]; then
+                echo "::error::release_created=true, aber tag_name ist leer" >&2
+                exit 1
+              fi
+              ;;
+            false|"")
+              # Kein Release: dann darf auch nichts darin stehen.
+              #
+              # LEER ist hier gueltig und nicht etwa ein Ausfall: dieser Test
+              # ruft mit `dry_run: true` auf, und dann bekommt release-please
+              # `skip-github-release`/`skip-github-pull-request` gesetzt, tut
+              # nichts und emittiert folglich gar keine Ausgabe.
+              #
+              # Die erste Fassung dieser Pruefung hat genau deshalb hier
+              # abgebrochen ("die Ausgabe kommt nicht durch") — sie war zu
+              # streng, weil sie den Trockenlauf nicht kannte. Der Fehlschlag
+              # war aber lehrreich: `release_created` ist mal 'true', mal
+              # 'false', mal leer. Ein Aufrufer, der auf == 'false' prueft,
+              # liegt im Trockenlauf falsch. Der Vertrag waere staerker, wenn
+              # das Atom in diesem Fall ausdruecklich 'false' emittierte —
+              # notiert als eigener Punkt, nicht hier nebenbei geaendert.
+              if [[ "$n_paths" -ne 0 || "$n_rel" -ne 0 ]]; then
+                echo "::error::release_created='${CREATED:-<leer>}' meldet kein Release, aber paths_released=$n_paths und releases=$n_rel — die Ausgaben widersprechen sich" >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::release_created ist weder 'true' noch 'false' noch leer, sondern '$CREATED' — die Ausgabe ist unbrauchbar" >&2
+              exit 1
+              ;;
+          esac
 
   # ----- Audit K-7: der Aufruf oben prueft sonst nur, DASS der Workflow nicht
   #       scheitert. Die geparste Matrix ist seine eigentliche Entscheidung —
