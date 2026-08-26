@@ -1212,3 +1212,54 @@ _render_bad_profile() {  # <profil-inhalt>
   [ "$status" -eq 1 ]
   [ "$LEFTOVER" -eq 0 ]
 }
+
+# Audit J-3/J-4: das Template las `index .profile.components 0` — es sah also
+# nur die ERSTE Komponente. In einem Monorepo baute es ein Image und liess alle
+# weiteren stillschweigend aus; und weil `$c.path` nirgends einfloss, zeigte
+# `dockerfile:` auf `Dockerfile` statt auf `services/api/Dockerfile`, waehrend
+# `context:` ganz fehlte.
+#
+# Keine der sechs bestehenden prerelease-on-push-Zusicherungen benutzt ein
+# Monorepo-Profil — deshalb war der Fehler unsichtbar. Genau diese Luecke
+# schliesst dieser Test.
+@test "prerelease-on-push.yml builds EVERY component, not just the first" {
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/mono",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": true,
+    "components": [
+      {"path": "services/api", "languages": ["go"], "primary_language": "go",
+       "release_please_type": "go", "role": "service",
+       "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/mono-api","image_name_source":"derived","release_eligible":true}],
+       "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}},
+      {"path": "services/worker", "languages": ["go"], "primary_language": "go",
+       "release_please_type": "go", "role": "service",
+       "dockerfiles": [{"path":"Dockerfile","image_name":"serverkraken/mono-worker","image_name_source":"derived","release_eligible":true}],
+       "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": false}}
+    ],
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  wf="$tgt/.github/workflows/prerelease-on-push.yml"
+  [ -f "$wf" ]
+
+  # 1. BEIDE Komponenten bekommen ein build/scan-Paar. Vor dem Fix fehlte
+  #    services/worker vollstaendig.
+  grep -qE '^  build-services-api:' "$wf"      || { echo "api-Build fehlt"; cat "$wf"; false; }
+  grep -qE '^  build-services-worker:' "$wf"   || { echo "worker-Build fehlt — nur Komponente 0 gerendert"; cat "$wf"; false; }
+  grep -qE '^  scan-services-api:' "$wf"
+  grep -qE '^  scan-services-worker:' "$wf"
+
+  # 2. Kontext und Dockerfile relativ zur Komponente. Vor dem Fix stand dort
+  #    `dockerfile: "Dockerfile"` ohne Pfad und gar kein context.
+  grep -qF 'context: "services/api"' "$wf"
+  grep -qF 'dockerfile: "services/api/Dockerfile"' "$wf"
+  grep -qF 'context: "services/worker"' "$wf"
+  grep -qF 'dockerfile: "services/worker/Dockerfile"' "$wf"
+
+  # 3. Der scan-Job muss auf SEINEN Build zeigen, nicht auf einen fremden.
+  grep -qF 'needs.build-services-worker.outputs.image_ref' "$wf"
+
+  # 4. Und das Ergebnis muss gueltig bleiben.
+  if command -v actionlint >/dev/null 2>&1; then
+    actionlint "$wf"
+  fi
+}
