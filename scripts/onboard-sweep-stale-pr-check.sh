@@ -14,7 +14,34 @@
 #
 # The sweep treats "skip" as `skipped:open-pr` and "no-pr" / "stale" as
 # "fall through to drift-status / fresh-onboard".
+#
+# Fail-open bleibt so. Ein Sweep, dessen Aufgabe es ist, Repos aktuell zu
+# halten, soll bei einem Rate-Limit nicht stumm alles ueberspringen; und der
+# Force-Push trifft ausschliesslich bot-eigene Branches (push-bot-branch.sh
+# prueft die Autorschaft, Audit E-8).
+#
+# Was gefehlt hat, ist die SICHTBARKEIT: das Skript entschied auf einer
+# Vermutung und sagte es nicht. Ein API-Fehler sah im Sweep-Bericht genauso aus
+# wie ein echtes "es gibt keinen PR". Jeder Fehler ausser 404 wird deshalb
+# gemeldet - 404 ist der legitime Fall (Legacy-PR ohne Lock, oder gar kein
+# solcher Branch).
 set -euo pipefail
+
+# Meldet einen API-Fehlschlag, der KEIN 404 ist. gh schreibt den JSON-Body nach
+# stdout und eine Zeile wie `gh: Not Found (HTTP 404)` nach stderr; der Status
+# ist also nur als Text erreichbar.
+_note_api_failure() {
+  local what="$1" errfile="$2"
+  local body
+  body=$(tr -d '\n' < "$errfile")
+  [[ -z "$body" ]] && return 0
+  # Tolerant gegenueber der Schreibweise, wie apply-repo-defaults.sh es auch
+  # haelt: "Not Found" und "HTTP 404" mit oder ohne Klammern.
+  if grep -qiE 'HTTP 404|Not Found' <<< "$body"; then
+    return 0                        # legitim: nicht vorhanden
+  fi
+  echo "::warning::${what} failed for ${TARGET}: ${body} — deciding fail-open, the verdict below is a guess" >&2
+}
 
 TARGET="${1:-}"
 CURRENT_MINOR="${2:-}"
@@ -32,10 +59,13 @@ fi
 BRANCH="chore/onboard-reusable-workflows"
 
 # Step 1: does an open bot PR exist on the onboard branch?
+PR_ERR=$(mktemp)
+trap 'rm -f "$PR_ERR" "${LOCK_ERR:-}"' EXIT
 exists=$(gh api -X GET "/repos/$TARGET/pulls" -f state=open \
   -q "[.[] | select(.user.login == \"serverkraken-release-bot[bot]\")
             | select(.head.ref == \"$BRANCH\")
-      ] | length" 2>/dev/null || echo 0)
+      ] | length" 2>"$PR_ERR" || echo 0)
+_note_api_failure "PR listing" "$PR_ERR"
 
 if [[ "$exists" -eq 0 ]]; then
   echo "no-pr"
@@ -44,9 +74,13 @@ fi
 
 # Step 2: fetch lock from the bot branch and compare rendered_against.
 # gh api returns base64 content; decode and read the field.
+LOCK_ERR=$(mktemp)
 lock_b64=$(gh api \
   "/repos/$TARGET/contents/.github/onboard.lock.json?ref=$BRANCH" \
-  -q '.content' 2>/dev/null || true)
+  -q '.content' 2>"$LOCK_ERR" || true)
+# 404 heisst hier "der Branch traegt keinen Lock" - ein Legacy-PR, und der
+# gehoert zu Recht neu gerendert. Alles andere ist ein Fehler und wird gemeldet.
+_note_api_failure "lock fetch" "$LOCK_ERR"
 
 lock_rendered=$(printf '%s' "$lock_b64" | base64 -d 2>/dev/null \
                 | jq -r '.rendered_against // empty' 2>/dev/null || true)

@@ -70,8 +70,14 @@ fi
 # behavior — the error body leaks into the capture unless the caller discards
 # stdout on failure.
 case "$fixture" in
-  *.404.json) cat "$fixture"; echo "gh: HTTP 404" >&2; exit 1 ;;
-  *.403.json) cat "$fixture"; echo "gh: HTTP 403 forbidden" >&2; exit 1 ;;
-  *.500.json) cat "$fixture"; echo "gh: HTTP 500" >&2; exit 1 ;;
+  # Wortlaut wie beim echten gh - gemessen an gh 2.x:
+  #   gh: Not Found (HTTP 404)
+  #   gh: Bad credentials (HTTP 401)
+  # Der Stub schrieb frueher `gh: HTTP 404`, also OHNE die Klammerform. Ein
+  # Aufrufer, der auf "(HTTP 404)" prueft - so wie das echte Format aussieht -
+  # lief damit ins Leere, und der Test war gruen aus dem falschen Grund.
+  *.404.json) cat "$fixture"; echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+  *.403.json) cat "$fixture"; echo "gh: Forbidden (HTTP 403)" >&2; exit 1 ;;
+  *.500.json) cat "$fixture"; echo "gh: Internal Server Error (HTTP 500)" >&2; exit 1 ;;
   *) cat "$fixture"; exit 0 ;;
 esac
