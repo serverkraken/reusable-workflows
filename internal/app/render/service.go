@@ -385,7 +385,22 @@ func writeLock(targetPath, pinVersion, renderedAgainst, renderedAt, manifestSHA 
 		hashes[rel] = "sha256:" + hash
 	}
 	content := encodeLock(pinVersion, renderedAgainst, renderedAt, manifestSHA, files, hashes)
-	return os.WriteFile(filepath.Join(targetPath, filepath.FromSlash(lockPath)), content, 0o644)
+	lockFile := filepath.Join(targetPath, filepath.FromSlash(lockPath))
+	// Auch der Lock geht durch den Riegel (Audit C-7). H-3 hat die gerenderten
+	// Dateien abgesichert und den Lock uebersehen; die fruehe Pruefung in
+	// Render() sondiert `.github/workflows/`, faengt also nur ein Symlink-
+	// `.github`, nicht die Lock-DATEI selbst.
+	//
+	// Nachgestellt mit einem echten `.github/` und `onboard.lock.json` als
+	// Symlink nach draussen: die Go-Engine schrieb den Lock durch ihn hindurch
+	// und ueberschrieb die fremde Datei, mit rc=0 und ohne ein Wort. Die
+	// Bash-Engine wies denselben Fall laengst ab ("refusing to write through
+	// the symlink") - eine Abweichung, die die Fixture-Paritaet nicht sehen
+	// kann, weil keine Fixture Symlinks traegt.
+	if err := ensureInsideTarget(targetPath, lockFile); err != nil {
+		return err
+	}
+	return os.WriteFile(lockFile, content, 0o644)
 }
 
 func encodeLock(pinVersion, renderedAgainst, renderedAt, manifestSHA string, files []string, hashes map[string]string) []byte {
