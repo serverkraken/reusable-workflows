@@ -1089,3 +1089,50 @@ EOF2
   [ -f "$TARGET/.github/workflows/ci.yml" ]
   [ -f "$TARGET/.github/onboard.lock.json" ]
 }
+
+# --- ungueltiges Profil hinterlaesst keine halbe .github/ --------------------
+#
+# Gemessen an einem Profil mit leerem `components`: diese Engine rendert ci.yml
+# erfolgreich, scheitert dann an release.yml (`map has no entry for key
+# "monorepo"`) und beendet sich - die ci.yml bleibt liegen. Der Go-Renderer
+# prueft vorab und schreibt nichts.
+#
+# Das ist nicht bloss unschoen: onboard-drift.sh rendert in ein
+# Vergleichsverzeichnis, und ein Teilstand dort ergibt ein falsches
+# Drift-Urteil ("Datei fehlt" statt "Render fehlgeschlagen").
+
+_render_bad_profile() {  # <profil-inhalt>
+  local prof="$BATS_TEST_TMPDIR/bad.json" target="$BATS_TEST_TMPDIR/out/demo"
+  rm -rf "$BATS_TEST_TMPDIR/out"; mkdir -p "$target"
+  printf '%s' "$1" > "$prof"
+  run "$RENDER" "$REPO_ROOT" "$target" "$prof" v4
+  LEFTOVER=$(cd "$target" && ls -A | wc -l | tr -d ' ')
+}
+
+@test "leeres components-Array wird abgewiesen, ohne eine Datei zu hinterlassen" {
+  _render_bad_profile '{"components":[]}'
+  [ "$status" -eq 1 ]
+  [ "$LEFTOVER" -eq 0 ]
+  [[ "$output" == *"components must not be empty"* ]]
+}
+
+@test "leeres Profil wird abgewiesen, ohne eine Datei zu hinterlassen" {
+  _render_bad_profile ''
+  [ "$status" -eq 1 ]
+  [ "$LEFTOVER" -eq 0 ]
+}
+
+# Kaputtes JSON starb frueher im ersten `jq -r '.monorepo'` mit dessen rc=5.
+# Ein Aufrufer, der auf rc==1 prueft, behandelt das falsch.
+@test "kaputtes JSON endet mit rc=1, nicht mit jqs Rueckgabewert" {
+  _render_bad_profile 'kaputt'
+  [ "$status" -eq 1 ]
+  [ "$LEFTOVER" -eq 0 ]
+  [[ "$output" == *"invalid profile JSON"* ]]
+}
+
+@test "ein Array statt eines Objekts wird abgewiesen" {
+  _render_bad_profile '[]'
+  [ "$status" -eq 1 ]
+  [ "$LEFTOVER" -eq 0 ]
+}

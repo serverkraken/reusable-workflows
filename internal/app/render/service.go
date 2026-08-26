@@ -68,6 +68,25 @@ func (s Service) Render(ctx context.Context, req Request) error {
 	defer func() { _ = os.RemoveAll(scratch) }()
 
 	contextPath := filepath.Join(scratch, "ctx.json")
+	// Leeres target_repo VOR dem Templating auffuellen. Die Templates
+	// interpolieren den Wert direkt:
+	//
+	//	oci_registry: ghcr.io/{{ .profile.target_repo }}/charts
+	//
+	// Ist er leer, entsteht `ghcr.io//charts` - syntaktisch einwandfreies YAML
+	// mit einer Registry, die es nicht gibt, und actionlint sieht nichts, weil
+	// es ein gueltiger String ist. Gemessen an der Fixture service-with-helm.
+	//
+	// onboard-render.sh tut das laengst, und der Kommentar dort behauptet, der
+	// Go-Pfad tue es auch - belegt aber mit `preview`, einem anderen
+	// Unterbefehl. `render` selbst hatte den Rueckfall nie. repoName() darunter
+	// implementiert genau diese Herleitung und wurde bisher nur fuer den
+	// $REPO-Ersatz benutzt: die Faehigkeit lag eine Funktion weiter und war
+	// hier nicht angewandt.
+	rawProfile, err = fillTargetRepo(rawProfile, repoName(req.TargetPath, profile.TargetRepo))
+	if err != nil {
+		return err
+	}
 	if err := writeContext(contextPath, req.PinVersion, rawProfile); err != nil {
 		return err
 	}
@@ -125,6 +144,33 @@ func readProfile(path string) ([]byte, domain.Profile, error) {
 		return nil, domain.Profile{}, errors.New("invalid profile JSON: components must not be empty")
 	}
 	return content, profile, nil
+}
+
+// fillTargetRepo setzt target_repo im rohen Profil-JSON, wenn es fehlt oder
+// leer ist.
+//
+// Ueber eine Map statt ueber domain.Profile: der Kontext soll das Profil
+// unveraendert weiterreichen. Ein Umweg ueber die Struktur wuerde jedes Feld
+// verlieren, das dort (noch) nicht modelliert ist - und die Templates lesen
+// aus dem JSON, nicht aus der Struktur.
+func fillTargetRepo(rawProfile []byte, fallback string) ([]byte, error) {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(rawProfile, &m); err != nil {
+		return nil, fmt.Errorf("invalid profile JSON: %w", err)
+	}
+	var cur string
+	if v, ok := m["target_repo"]; ok {
+		_ = json.Unmarshal(v, &cur)
+	}
+	if cur != "" || fallback == "" {
+		return rawProfile, nil
+	}
+	enc, err := json.Marshal(fallback)
+	if err != nil {
+		return nil, err
+	}
+	m["target_repo"] = enc
+	return json.Marshal(m)
 }
 
 func writeContext(path, pin string, rawProfile []byte) error {
