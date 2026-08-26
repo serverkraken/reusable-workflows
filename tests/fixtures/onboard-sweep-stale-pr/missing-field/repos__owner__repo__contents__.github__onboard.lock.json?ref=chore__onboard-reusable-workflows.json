@@ -1,2 +1,6 @@
-eyJzY2hlbWFfdmVyc2lvbiI6MSwiY2F0YWxvZ192ZXJzaW9uIjoidjQiLCJyZW5kZXJlZF9h
-dCI6IjIwMjYtMDUtMjdUMDA6MDA6MDBaIiwiZmlsZXMiOnt9fQo=
+{
+  "name": "onboard.lock.json",
+  "path": ".github/onboard.lock.json",
+  "encoding": "base64",
+  "content": "eyJzY2hlbWFfdmVyc2lvbiI6IDEsICJjYXRhbG9nX3ZlcnNpb24iOiAidjQiLCAicmVuZGVyZWRfYXQiOiAiMjAyNi0wNS0zMFQwMDowMDowMFoiLCAiZmlsZXMiOiB7fX0="
+}
