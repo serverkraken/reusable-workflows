@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -158,6 +159,7 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	if hasManifest && man.Workflows != nil && man.Workflows.E2E != nil {
 		declared = append(declared, "e2e.yml")
 	}
+	declaredMissing := declaredFileWarnings(req.RepoPath, man, hasManifest)
 	var gitops *domain.GitOpsSignal
 	if !manifestComponents {
 		gitops = classifyGitOps(req.RepoPath, components)
@@ -208,6 +210,7 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	// Zuerst die Dateisystemfehler: wenn ein Verzeichnis nicht gelesen werden
 	// konnte, sind alle folgenden Aussagen ueber das Repo unter Vorbehalt.
 	profile.Warnings = append(profile.Warnings, fe.seen...)
+	profile.Warnings = append(profile.Warnings, declaredMissing...)
 	profile.Warnings = append(profile.Warnings, unsupportedLanguageWarnings(profile.Components, manifestComponents)...)
 	profile.Warnings = append(profile.Warnings, noReleaseEligibleWarnings(profile.Components)...)
 	if !hasManifest {
@@ -1104,6 +1107,58 @@ func checkPackageNameCollisions(components []domain.Component) error {
 		seen[base] = c.Path
 	}
 	return nil
+}
+
+// declaredFileWarnings meldet Dateien, die das Manifest benennt, die es aber
+// nicht gibt (Audit A-3, A-4).
+//
+// `workflows.keep` und `workflows.e2e.script` wurden bisher nur LEXIKALISCH
+// geprueft - Zeichensatz und Form, nicht Existenz. Gemessen: beide Werte gingen
+// kommentarlos durch, mit `warnings: []`.
+//
+// Was daran haengt, ist nicht dasselbe:
+//
+//   - `keep` nennt Workflows, die die Legacy-Erkennung AUSNEHMEN soll. Bei
+//     einem Tippfehler wird die gemeinte Datei nicht ausgenommen, und PR B
+//     schlaegt ihre Loeschung vor. Der Adopter deklariert Schutz und bekommt
+//     das Gegenteil.
+//   - `e2e.script` landet im gerenderten e2e.yml. Fehlt die Datei, scheitert
+//     der Job zur Laufzeit, planmaessig, im Repo des Adopters.
+//
+// Warnung statt Fehler, bewusst: die Loeschung geschieht in einem PR, den der
+// Adopter sieht, und die Warnung steht in dessen Text. Ein harter Fehler wuerde
+// dagegen ein veraltetes `keep` - der Adopter hat die Datei selbst entfernt -
+// zum Totalblocker fuer jedes kuenftige Onboarding machen. Der Defekt ist, dass
+// es STUMM war, nicht dass es durchging.
+func declaredFileWarnings(repo string, man *manifest.Manifest, hasManifest bool) []domain.Warning {
+	if !hasManifest || man == nil || man.Workflows == nil {
+		return nil
+	}
+	var out []domain.Warning
+	for _, name := range man.Workflows.Keep {
+		rel := path.Join(".github", "workflows", name)
+		if _, err := os.Stat(filepath.Join(repo, filepath.FromSlash(rel))); err != nil {
+			out = append(out, domain.Warning{
+				Code: "declared_file_missing",
+				Path: rel,
+				Message: fmt.Sprintf("workflows.keep names %q, which does not exist — it protects nothing, "+
+					"and a workflow you meant to keep may be proposed for removal; fix the name in %s or drop the entry",
+					rel, manifest.FileName),
+			})
+		}
+	}
+	if e2e := man.Workflows.E2E; e2e != nil && e2e.Script != "" {
+		if _, err := os.Stat(filepath.Join(repo, filepath.FromSlash(e2e.Script))); err != nil {
+			out = append(out, domain.Warning{
+				Code: "declared_file_missing",
+				Path: e2e.Script,
+				Message: fmt.Sprintf("workflows.e2e.script names %q, which does not exist — the rendered e2e.yml "+
+					"will fail on every scheduled run; add the script or fix the path in %s",
+					e2e.Script, manifest.FileName),
+			})
+		}
+	}
+	return out
 }
 
 // checkImageNameCollisions weist ein Profil ab, in dem zwei Dockerfiles
