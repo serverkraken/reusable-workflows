@@ -1217,3 +1217,26 @@ _crate() {
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '[.components[].path] == ["pkg-a","pkg-b"]'
 }
+
+@test "go.work: ein use-Pfad ausserhalb des Checkouts faellt weg" {
+  # B-11. Beim Cargo-Fix (#308) als miterledigt bezeichnet — war es nicht:
+  # `parseGoWork` blieb unangetastet, beide Engines lieferten `["../nachbar"]`.
+  local base="$BATS_TEST_TMPDIR/gowork-esc"
+  mkdir -p "$base/repo" "$base/nachbar"
+  printf 'module nachbar\ngo 1.22\n' > "$base/nachbar/go.mod"
+  printf 'go 1.22\n\nuse ../nachbar\n' > "$base/repo/go.work"
+  run "$DETECT" --profile-json "$base/repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[].path] | all(. == ".")'
+}
+
+@test "go.work: ein gewoehnliches use ./svc bleibt erhalten" {
+  # Gegenprobe: der fuehrende ./ muss weiterhin aufgeloest werden.
+  local repo="$BATS_TEST_TMPDIR/gowork-ok"
+  mkdir -p "$repo/svc"
+  printf 'module svc\ngo 1.22\n' > "$repo/svc/go.mod"
+  printf 'go 1.22\n\nuse ./svc\n' > "$repo/go.work"
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[].path] == ["svc"]'
+}

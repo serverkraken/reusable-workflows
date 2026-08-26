@@ -386,6 +386,15 @@ detect_components() {
         print
       }
     ' "$repo/go.work" | sed 's|^\./||')
+    # Auch hier eingrenzen (Audit B-11): ein `use ../nachbar` zeigte aus dem
+    # Checkout heraus. Die bereits gesammelten Pfade werden durch den Helfer
+    # geschickt, der sie aufloest und alles ausserhalb verwirft.
+    if (( ${#paths[@]} > 0 )); then
+      local _gw=("${paths[@]}"); paths=()
+      while IFS= read -r p; do
+        [[ -n "$p" ]] && paths+=("$p")
+      done < <(_expand_workspace_patterns "$repo" "${_gw[@]}")
+    fi
   elif [[ -f "$repo/Cargo.toml" ]] && grep -q '^\[workspace\]' "$repo/Cargo.toml" 2>/dev/null; then
     # Cargo workspace: members = [ "crates/a", "crates/*" ]  (single-line or multi-line)
     # Muster werden expandiert und auf das Repo eingegrenzt, siehe

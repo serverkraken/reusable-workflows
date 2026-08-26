@@ -578,7 +578,12 @@ func without(list []string, v string) []string {
 
 func explicitMonorepoPaths(repo string) []string {
 	if has(repo, "go.work") {
-		return parseGoWork(mustRead(filepath.Join(repo, "go.work")))
+		// Auch hier eingrenzen (Audit B-11): ein `use ../nachbar` zeigte aus
+		// dem Checkout heraus und wurde woertlich zur Komponente. Beim
+		// Cargo-Fix (#308) hatte ich das im PR-Text als miterledigt bezeichnet
+		// - es war es nicht, `parseGoWork` blieb unangetastet. Nachgemessen:
+		// beide Engines lieferten `["../nachbar"]`.
+		return expandWorkspacePatterns(repo, parseGoWork(mustRead(filepath.Join(repo, "go.work"))))
 	}
 	if has(repo, "Cargo.toml") && strings.Contains(mustRead(filepath.Join(repo, "Cargo.toml")), "[workspace]") {
 		return expandWorkspacePatterns(repo, parseCargoWorkspace(mustRead(filepath.Join(repo, "Cargo.toml"))))
