@@ -58,3 +58,56 @@ setup() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"GH_TOKEN"* ]]
 }
+
+# --- der Token darf nicht in argv stehen (Audit H-16) -----------------------
+#
+# Bisher lautete die Klon-URL
+# `https://x-access-token:${GH_TOKEN}@github.com/<repo>.git`. Damit stand der
+# Token im ARGV von git — auf einem self-hosted Runner ueber `ps` fuer jeden
+# Prozess auf demselben Host lesbar — und zusaetzlich in der .git/config des
+# Klons, also auf Platte.
+#
+# Der Klon-Pfad war ungetestet: alle bisherigen Faelle setzen
+# ONBOARD_SWEEP_TARGET_PATH und ueberspringen ihn. Genau deshalb ist es nicht
+# aufgefallen. Hier steht ein git-Stub im PATH, der argv und die relevanten
+# Umgebungsvariablen protokolliert.
+
+_git_stub() {
+  STUBDIR="$BATS_TEST_TMPDIR/stub"
+  mkdir -p "$STUBDIR"
+  ARGV_LOG="$BATS_TEST_TMPDIR/argv.txt"
+  ENV_LOG="$BATS_TEST_TMPDIR/env.txt"
+  cat > "$STUBDIR/git" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$ARGV_LOG"
+printf 'COUNT=%s KEY=%s VALUE=%s\n' "\${GIT_CONFIG_COUNT:-}" "\${GIT_CONFIG_KEY_0:-}" "\${GIT_CONFIG_VALUE_0:-}" >> "$ENV_LOG"
+# Klon vortaeuschen: Zielverzeichnis anlegen, damit das Skript weiterlaeuft.
+for a in "\$@"; do :; done
+mkdir -p "\${@: -1}"
+exit 0
+EOF
+  chmod +x "$STUBDIR/git"
+}
+
+@test "der Token steht nicht in den git-Argumenten" {
+  _git_stub
+  PATH="$STUBDIR:$PATH" GH_TOKEN="s3cr3t-token-wert" \
+    run "$SCRIPT" serverkraken/dummy v4
+  [ -f "$ARGV_LOG" ]
+  run cat "$ARGV_LOG"
+  [[ "$output" != *"s3cr3t-token-wert"* ]]
+  [[ "$output" != *"x-access-token:"* ]]
+  # Die URL selbst muss token-frei sein.
+  [[ "$output" == *"https://github.com/serverkraken/dummy.git"* ]]
+}
+
+@test "der Token wird stattdessen ueber die Umgebung gereicht" {
+  _git_stub
+  PATH="$STUBDIR:$PATH" GH_TOKEN="s3cr3t-token-wert" \
+    run "$SCRIPT" serverkraken/dummy v4
+  run cat "$ENV_LOG"
+  [[ "$output" == *"COUNT=1"* ]]
+  [[ "$output" == *"KEY=http.https://github.com/.extraheader"* ]]
+  # base64 von "x-access-token:s3cr3t-token-wert"
+  [[ "$output" == *"AUTHORIZATION: basic "* ]]
+}

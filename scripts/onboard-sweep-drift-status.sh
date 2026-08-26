@@ -31,8 +31,24 @@ else
   fi
   tmpdir=$(mktemp -d)
   trap 'rm -rf "$tmpdir"' EXIT
-  if ! git clone --depth=1 --quiet \
-       "https://x-access-token:${GH_TOKEN}@github.com/${TARGET}.git" \
+  # Der Token steckte in der Klon-URL und damit im ARGV von git (Audit H-16):
+  # auf einem self-hosted Runner ist argv ueber `ps` fuer jeden Prozess auf
+  # demselben Host lesbar. Zweiter Weg nach draussen: git schreibt die
+  # Remote-URL in .git/config des Klons, der Token lag also auch auf Platte.
+  #
+  # GIT_CONFIG_COUNT/KEY/VALUE (git >= 2.31) setzen dieselbe Konfiguration ueber
+  # die UMGEBUNG. Die steht nicht in argv, und sie wird nicht in den Klon
+  # uebernommen — die Remote-URL bleibt token-frei. `-c` waere kein Ersatz
+  # gewesen: -c-Argumente stehen genauso in argv.
+  #
+  # `tr -d '\n'` statt `base64 -w0`: -w gibt es in BSD-base64 nicht, und die
+  # bats-Suite laeuft auch auf macOS.
+  auth=$(printf '%s' "x-access-token:${GH_TOKEN}" | base64 | tr -d '\n')
+  if ! GIT_CONFIG_COUNT=1 \
+       GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+       GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${auth}" \
+       git clone --depth=1 --quiet \
+       "https://github.com/${TARGET}.git" \
        "$tmpdir/target" 2>/dev/null; then
     # Clone failure → emit "error" so the caller can bucket it as skipped.
     echo "error"
