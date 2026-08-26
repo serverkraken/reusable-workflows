@@ -741,6 +741,14 @@ derive_image_name() {
     seg="${cpath##*/}"
   fi
 
+  # OCI-Namen sind kleingeschrieben (Audit H-17). `services/MyService` ergab
+  # bisher `$REPO-MyService`, und das landete unveraendert im gerenderten
+  # image_name UND im GHCR-package_name. Die Templates lowercasen dieselbe
+  # Quelle laengst fuer das Job-ID-Suffix; die Herleitung tat es nicht.
+  # Der Go-Detektor macht dasselbe (deriveImageName).
+  seg="${seg,,}"
+  suffix="${suffix,,}"
+
   if [[ -n "$seg" && -n "$suffix" ]]; then
     echo "\$REPO-${seg}-${suffix}"
   elif [[ -n "$seg" ]]; then

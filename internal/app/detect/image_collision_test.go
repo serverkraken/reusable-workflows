@@ -181,3 +181,81 @@ func TestRootComponentIsExemptFromPackageNameCheck(t *testing.T) {
 		t.Fatalf("eine reine Wurzelkomponente muss durchgehen: %v", err)
 	}
 }
+
+// Audit H-17: OCI-Namen sind kleingeschrieben. Ein Verzeichnis
+// `services/MyService` ergab `$REPO-MyService`, und das landete unveraendert
+// im gerenderten `image_name` UND im GHCR-`package_name`:
+//
+//	image_name:   upper-out-MyService
+//	package_name: ${{ github.event.repository.name }}-MyService
+//
+// Die Templates lowercasen dieselbe Quelle laengst fuer das Job-ID-Suffix
+// (`strings.ToLower $base`) — die Herleitung tat es nicht.
+//
+// Nicht empirisch gegen eine Registry geprueft (lokal ist keine
+// OCI-Werkzeugkette vorhanden); die Grammatik der Distribution-Spec laesst im
+// Repository-Namen nur [a-z0-9] plus Trenner zu. Verifiziert ist das
+// RENDERING.
+
+func TestDerivedImageNameIsLowercased(t *testing.T) {
+	repo := t.TempDir()
+	dir := filepath.Join(repo, "services", "MyService")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := res.Profile.Components[0].Dockerfiles[0].ImageName
+	if got != "$REPO-myservice" {
+		t.Fatalf("image_name=%q, erwartet $REPO-myservice", got)
+	}
+	// Der Komponentenpfad selbst bleibt, wie er auf der Platte heisst — er ist
+	// ein Pfad, kein Image-Name.
+	if res.Profile.Components[0].Path != "services/MyService" {
+		t.Fatalf("path=%q — der Pfad darf nicht veraendert werden", res.Profile.Components[0].Path)
+	}
+}
+
+func TestDerivedSuffixIsLowercasedToo(t *testing.T) {
+	// `Dockerfile.Debug` → Suffix `Debug`, das genauso in den Image-Namen geht.
+	repo := t.TempDir()
+	dir := filepath.Join(repo, "svc")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile.Debug"),
+		[]byte("# onboard:release=true\nFROM scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Nur der ABGELEITETE Teil wird geprueft: `$REPO` ist ein Platzhalter und
+	// absichtlich gross — er wird spaeter durch das kleingeschriebene
+	// `owner/repo` ersetzt. Eine naive Pruefung auf "alles klein" schlug genau
+	// daran fehl.
+	for _, d := range res.Profile.Components[0].Dockerfiles {
+		derived := strings.TrimPrefix(d.ImageName, "$REPO")
+		if strings.ToLower(derived) != derived {
+			t.Fatalf("image_name=%q: der abgeleitete Teil %q enthaelt Grossbuchstaben",
+				d.ImageName, derived)
+		}
+		if derived != "-svc-debug" {
+			t.Fatalf("image_name=%q, erwartet $REPO-svc-debug", d.ImageName)
+		}
+	}
+}
