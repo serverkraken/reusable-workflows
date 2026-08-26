@@ -187,22 +187,22 @@ golden_check() {
   diff -r "$FIX/$fixture/expected" "$target"
 }
 
-# Audit L-4: die Manifest-Fixture hatte ein `expected/`-Verzeichnis, das von
-# NIEMANDEM verglichen wurde.
+# Audit L-4: die Manifest-Fixture wird NICHT von `golden_check` geprueft — die
+# Bash-Engine verweigert Adopter-Manifeste ("does not support manifests"), und
+# das Paritaets-Gate traegt sie deshalb als begruendete Absage.
 #
-# `golden_check` faehrt mit der Bash-Engine, und die verweigert Adopter-
-# Manifeste ausdruecklich ("does not support manifests"). Das Paritaets-Gate
-# vergleicht Engine gegen Engine und traegt diese Fixture deshalb als
-# "begruendete Absage" — es vergleicht dort also ebenfalls nichts.
+# Geprueft wird sie bisher ausschliesslich in `self-ci.yml` (Job
+# `onboard-preview-manifest-golden`). Das ist eine echte Zusicherung, aber sie
+# laeuft nur in der CI: lokal konnte niemand sehen, ob eine Template-Aenderung
+# diesen Baum bricht.
 #
-# Sichtbar wurde es an einem Detail: dieser Baum ist mit `@v4` gerendert, alle
-# geprueften Goldens mit `@v2`. Er wurde nie nachgezogen, weil ihn nie etwas
-# gelesen hat.
-#
-# Damit waren die Template-Zweige fuer `severity` und `fail_on_findings`
-# unbelegt: geparst und validiert, aber ihre Weitergabe ins gerenderte
-# release.yml/prerelease.yml nie gemessen — dieselbe Klasse wie J-0c beim
-# chart-image-pins-Zweig.
+# Beim Bauen habe ich mir das selbst bewiesen: ich hielt `rendered_against:
+# v4.14.0` und `ghcr.io/go-root-multi-image/...` fuer Drift eines ungepflegten
+# Baums und rendere ihn "richtig" neu — beides sind in Wahrheit bewusste
+# Parameter des CI-Jobs (`-rendered-against v4.14.0`, Zielname = Fixture-
+# Basisname). Der Job fiel prompt durch. Deshalb spiegelt dieser Test den
+# CI-Aufruf exakt, statt einen zweiten, leicht abweichenden Renderpfad zu
+# erfinden.
 go_bin() {
   local bin="${BATS_RUN_TMPDIR:-$TARGET}/sk-workflows-golden"
   if [[ ! -x "$bin" ]]; then
@@ -211,36 +211,39 @@ go_bin() {
   printf '%s' "$bin"
 }
 
-# Wie golden_check, nur ueber die Go-CLI — und mit dem Pin, mit dem dieser Baum
-# vorliegt (v4; die Bash-Goldens stehen auf v2).
-golden_check_go() {
+# Spiegelt self-ci.yml :: onboard-preview-manifest-golden — gleiche Flags,
+# gleiche Nachbearbeitung, gleicher Vergleich.
+golden_check_preview() {
   local fixture="$1"
-  command -v go >/dev/null 2>&1 || skip "go nicht installiert"
+  command -v go        >/dev/null 2>&1 || skip "go nicht installiert"
+  command -v gomplate  >/dev/null 2>&1 || skip "gomplate nicht installiert"
   local bin; bin="$(go_bin)" || { echo "go build fehlgeschlagen"; return 1; }
 
-  local target="$TARGET/repo"
-  mkdir -p "$target"
-  "$bin" detect --repo-path "$FIX/$fixture" --profile-json > "$target/_profile.json"
-  "$bin" render --catalog "$REPO_ROOT" --target "$target" --profile "$target/_profile.json" --pin v4
-  rm "$target/_profile.json"
+  local out="$TARGET/preview"
+  # Kein -target-repo: das riefe `gh` fuer Branch-/Release-Metadaten. Ohne das
+  # faellt target_repo auf den Fixture-Basisnamen zurueck und bleibt
+  # deterministisch — genau wie in der CI.
+  "$bin" preview -catalog-path "$REPO_ROOT" -repo-path "$FIX/$fixture" \
+    -pin-version v4 -rendered-against v4.14.0 -out "$out"
+  rm -f "$out/profile.json"
 
-  local lock="$target/.github/onboard.lock.json"
+  local lock="$out/.github/onboard.lock.json"
   if [[ -f "$lock" ]]; then
-    jq 'del(.rendered_at)' "$lock" > "$lock.det" && mv "$lock.det" "$lock"
+    jq 'del(.rendered_at)' "$lock" > "$lock.tmp" && mv "$lock.tmp" "$lock"
   fi
 
   if [[ "${UPDATE_GOLDEN:-0}" == "1" ]]; then
     rm -rf "$FIX/$fixture/expected"
     mkdir -p "$FIX/$fixture/expected"
-    cp -R "$target/." "$FIX/$fixture/expected/"
+    cp -R "$out/." "$FIX/$fixture/expected/"
     skip "UPDATE_GOLDEN — rewrote $fixture/expected"
   fi
 
-  diff -r "$FIX/$fixture/expected" "$target"
+  diff -r "$FIX/$fixture/expected" "$out"
 }
 
-@test "golden: go-root-multi-image (Manifest-Fixture, Go-Engine)" {
-  golden_check_go "go-root-multi-image"
+@test "golden: go-root-multi-image (Manifest-Fixture, wie self-ci)" {
+  golden_check_preview "go-root-multi-image"
 }
 
 @test "golden: go-repo"                { golden_check "go-repo"; }
