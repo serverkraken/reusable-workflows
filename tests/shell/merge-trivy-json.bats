@@ -199,3 +199,100 @@ import json
 print(len(json.load(open('out.json'))['Results'][0]['Misconfigurations']))"
   [ "$output" = "1" ]
 }
+
+# ---------------------------------------------------------------------------
+# Audit L-6: die Identitaet entscheidet, WAS ein Duplikat ist — sie sagt nichts
+# darueber, ob das Duplikat dasselbe AUSSAGT. Zwei Plattform-Berichte koennten
+# denselben CVE am selben Paket melden und sich in Severity oder FixedVersion
+# unterscheiden; der zweite fiel stillschweigend weg, und das Gate entschied
+# dann an einer Severity, die nur eine Plattform gesehen hat.
+#
+# Gemessen tritt das nicht auf: trivy 0.74.0 gegen node:10-alpine, amd64 und
+# arm64, ergab 76 Schwachstellen je Plattform, 76 gemeinsame Identitaeten und
+# null Abweichungen. Deshalb gemeldet statt abgebrochen — dieselbe Antwort wie
+# beim Regelkonflikt in merge-sarif-runs.py.
+
+# $1=Pfad, $2=Severity, $3=FixedVersion
+write_one_vuln() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+path, sev, fixed = sys.argv[1], sys.argv[2], sys.argv[3]
+json.dump({"SchemaVersion": 2, "ArtifactName": "example:latest",
+  "Results": [{"Target": "example (alpine 3.19)", "Class": "os-pkgs", "Type": "alpine",
+    "Vulnerabilities": [{"VulnerabilityID": "CVE-2024-1", "PkgID": "musl@1.2",
+      "PkgName": "musl", "InstalledVersion": "1.2.4",
+      "Severity": sev, "FixedVersion": fixed, "Status": "fixed"}]}]},
+  open(path, "w"))
+PY
+}
+
+@test "a dropped duplicate that disagrees is reported, not swallowed" {
+  write_one_vuln a.json HIGH 1.2.5
+  write_one_vuln b.json CRITICAL 1.2.6
+
+  run python3 "$SCRIPT" out.json a.json b.json
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+
+  # Der Fund bleibt einer — dedupliziert wird weiterhin.
+  [ "$(jq '.Results[0].Vulnerabilities | length' out.json)" -eq 1 ]
+  # Der erste gewinnt, wie bisher.
+  [ "$(jq -r '.Results[0].Vulnerabilities[0].Severity' out.json)" = "HIGH" ]
+  # Neu: es steht dran, und zwar mit beiden Werten.
+  [[ "$output" == *"::warning::"* ]] || { echo "$output"; false; }
+  [[ "$output" == *"CVE-2024-1"* ]]
+  [[ "$output" == *"'HIGH' vs 'CRITICAL'"* ]] || { echo "$output"; false; }
+  [[ "$output" == *"'1.2.5' vs '1.2.6'"* ]]
+  # Die Singularform muss stimmen: `kind[:-1]` ergaebe "Vulnerabilitie".
+  [[ "$output" == *"trivy vulnerability"* ]] || { echo "$output"; false; }
+}
+
+@test "identical duplicates stay silent" {
+  write_one_vuln a.json HIGH 1.2.5
+  write_one_vuln b.json HIGH 1.2.5
+
+  run python3 "$SCRIPT" out.json a.json b.json
+  [ "$status" -eq 0 ]
+  [ "$(jq '.Results[0].Vulnerabilities | length' out.json)" -eq 1 ]
+  # Eine Warnung bei jedem gewoehnlichen Multi-Plattform-Scan waere Laerm, der
+  # die echten Faelle zudeckt.
+  [[ "$output" != *"::warning::"* ]] || { echo "$output"; false; }
+}
+
+@test "an unrelated field differing stays silent" {
+  # `Layer` unterscheidet sich zwischen Plattformen regelmaessig und aendert am
+  # Bericht nichts — nur die Felder in MATERIAL_FIELDS zaehlen.
+  python3 - <<'PY'
+import json
+def doc(layer):
+    return {"SchemaVersion": 2, "ArtifactName": "example:latest",
+      "Results": [{"Target": "t", "Class": "os-pkgs", "Type": "alpine",
+        "Vulnerabilities": [{"VulnerabilityID": "CVE-1", "PkgID": "p@1",
+          "PkgName": "p", "InstalledVersion": "1", "Severity": "LOW",
+          "Layer": {"Digest": layer}}]}]}
+json.dump(doc("sha256:aaa"), open("a.json", "w"))
+json.dump(doc("sha256:bbb"), open("b.json", "w"))
+PY
+  run python3 "$SCRIPT" out.json a.json b.json
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"::warning::"* ]] || { echo "$output"; false; }
+}
+
+@test "a diverging misconfiguration is reported too" {
+  python3 - <<'PY'
+import json
+def doc(status):
+    return {"SchemaVersion": 2, "ArtifactName": "example:latest",
+      "Results": [{"Target": "Dockerfile", "Class": "config", "Type": "dockerfile",
+        "Misconfigurations": [{"ID": "DS002", "AVDID": "AVD-DS-0002",
+          "Namespace": "builtin.dockerfile.DS002", "Query": "data.x",
+          "Severity": "HIGH", "Status": status,
+          "CauseMetadata": {"StartLine": 3, "EndLine": 3}}]}]}
+json.dump(doc("FAIL"), open("a.json", "w"))
+json.dump(doc("PASS"), open("b.json", "w"))
+PY
+  run python3 "$SCRIPT" out.json a.json b.json
+  [ "$status" -eq 0 ]
+  [ "$(jq '.Results[0].Misconfigurations | length' out.json)" -eq 1 ]
+  [[ "$output" == *"trivy misconfiguration DS002"* ]] || { echo "$output"; false; }
+  [[ "$output" == *"'FAIL' vs 'PASS'"* ]]
+}
