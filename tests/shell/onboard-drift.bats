@@ -304,3 +304,41 @@ GHEOF
 
   [ "$status" -ne 0 ]
 }
+
+# === Lock-Pfade, die aus dem Repo herausfuehren ===
+#
+# Suchmuster "Pfad verlaesst den Checkout": die Vergleichsschleife haengt den
+# Lock-Schluessel direkt an $TARGET. Ein Lock mit `"../geheim/secret.txt"` liess
+# drift die Datei AUSSERHALB des Repos lesen und im Bericht nennen — der
+# Drift-Bericht wird damit zu einem Existenz- und Inhalts-Orakel gegen den
+# Runner. Der Go-Pfad prueft dasselbe (lockPathInsideTarget).
+
+@test "drift: ein Lock-Eintrag ausserhalb des Repos wird abgewiesen" {
+  local base="$BATS_TEST_TMPDIR/lockesc"
+  mkdir -p "$base/repo/.github" "$base/geheim"
+  echo "GEHEIMNIS" > "$base/geheim/secret.txt"
+  printf 'module x\ngo 1.22\n' > "$base/repo/go.mod"
+  cat > "$base/repo/.github/onboard.lock.json" <<'JSON'
+{"schema_version":1,"catalog_version":"v4","rendered_at":"2026-01-01T00:00:00Z",
+ "files":{"../geheim/secret.txt":"sha256:deadbeef"}}
+JSON
+  run bash "$DRIFT" "$base/repo" "$REPO_ROOT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"points outside the repository"* ]]
+  # Der Pfad muss im Text stehen, sonst muesste jemand den ganzen Lock
+  # durchsuchen.
+  [[ "$output" == *"../geheim/secret.txt"* ]]
+}
+
+@test "drift: ein absoluter Lock-Eintrag wird abgewiesen" {
+  local base="$BATS_TEST_TMPDIR/lockabs"
+  mkdir -p "$base/repo/.github"
+  printf 'module x\ngo 1.22\n' > "$base/repo/go.mod"
+  cat > "$base/repo/.github/onboard.lock.json" <<'JSON'
+{"schema_version":1,"catalog_version":"v4","rendered_at":"2026-01-01T00:00:00Z",
+ "files":{"/etc/hosts":"sha256:deadbeef"}}
+JSON
+  run bash "$DRIFT" "$base/repo" "$REPO_ROOT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"absolute path"* ]]
+}
