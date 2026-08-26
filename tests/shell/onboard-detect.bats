@@ -1470,3 +1470,46 @@ _profile_of() {  # <repo> <override>
   [[ "$output" == *"language_override_not_applied"* ]]
   [[ "$output" != *'"python"'* ]]
 }
+
+# --- pnpm-workspace.yaml in Flow-Schreibweise (Audit H-9) -------------------
+#
+# `packages: ["apps/*"]` ist gueltiges YAML und bedeutet dasselbe wie die
+# Block-Form. Gelesen wurde nur die Block-Form — der Kommentar im Code nannte
+# die Flow-Form sogar als Beispiel und beschrieb damit, was er NICHT tat.
+# Gemessen: das Monorepo fiel lautlos zu einer einzigen Wurzelkomponente
+# zusammen, ohne Jobs je Paket.
+
+_pnpm_repo() {  # <workspace-inhalt>
+  local dir="$BATS_TEST_TMPDIR/pnpm"
+  rm -rf "$dir"; mkdir -p "$dir/apps/web" "$dir/apps/api"
+  printf '{"name":"root"}\n' > "$dir/package.json"
+  printf '{"name":"web"}\n' > "$dir/apps/web/package.json"
+  printf '{"name":"api"}\n' > "$dir/apps/api/package.json"
+  printf '%b' "$1" > "$dir/pnpm-workspace.yaml"
+  echo "$dir"
+}
+
+_paths_of() {
+  bash "$REPO_ROOT/scripts/onboard-detect.sh" --profile-json "$1" \
+    | jq -c '[.components[].path] | sort'
+}
+
+@test "pnpm Block-Schreibweise ergibt zwei Komponenten" {
+  run _paths_of "$(_pnpm_repo 'packages:\n  - apps/*\n')"
+  [ "$output" = '["apps/api","apps/web"]' ]
+}
+
+@test "pnpm Flow-Schreibweise ergibt dieselben zwei Komponenten" {
+  run _paths_of "$(_pnpm_repo 'packages: ["apps/*"]\n')"
+  [ "$output" = '["apps/api","apps/web"]' ]
+}
+
+@test "pnpm Flow mit einfachen Anfuehrungszeichen" {
+  run _paths_of "$(_pnpm_repo "packages: ['apps/*']\n")"
+  [ "$output" = '["apps/api","apps/web"]' ]
+}
+
+@test "pnpm Flow ueber mehrere Zeilen" {
+  run _paths_of "$(_pnpm_repo 'packages: [\n  "apps/web",\n  "apps/api"\n]\n')"
+  [ "$output" = '["apps/api","apps/web"]' ]
+}

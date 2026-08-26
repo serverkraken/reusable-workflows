@@ -766,26 +766,82 @@ func expandWorkspacePatterns(repo string, patterns []string) []string {
 	return out
 }
 
+// expandPNPM liest `packages:` aus pnpm-workspace.yaml — in Block- UND in
+// Flow-Schreibweise (Audit H-9).
+//
+// Bisher wurde nur die Block-Form gelesen:
+//
+//	packages:          erkannt
+//	  - apps/*
+//
+//	packages: ["apps/*"]   NICHT erkannt
+//
+// Beides ist gueltiges YAML und bedeutet dasselbe. Gemessen an einem Repo mit
+// apps/web und apps/api: die Block-Form ergab zwei Komponenten, die Flow-Form
+// eine einzige Wurzelkomponente — das Monorepo fiel lautlos in sich zusammen,
+// ohne Jobs je Paket und ohne Release-Konfiguration je Paket.
+//
+// Beide Engines hatten denselben blinden Fleck, das Fixture-Paritaets-Gate
+// konnte es also nicht sehen. Der Kommentar in der Bash-Fassung nannte die
+// Flow-Form sogar als Beispiel — beschrieben war, was der Code nicht tat.
 func expandPNPM(repo, content string) []string {
 	var patterns []string
-	inPackages := false
-	for _, raw := range strings.Split(content, "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "packages:" {
-			inPackages = true
+	lines := strings.Split(content, "\n")
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(line, "packages:") {
 			continue
 		}
-		if inPackages && strings.HasPrefix(line, "-") {
-			pat := strings.TrimSpace(strings.TrimPrefix(line, "-"))
-			pat = strings.Trim(pat, "\"'")
-			patterns = append(patterns, pat)
+		rest := strings.TrimSpace(strings.TrimPrefix(line, "packages:"))
+		if strings.HasPrefix(rest, "[") {
+			// Flow-Form, ggf. ueber mehrere Zeilen bis zur schliessenden Klammer.
+			buf := rest
+			for !strings.Contains(buf, "]") && i+1 < len(lines) {
+				i++
+				buf += " " + strings.TrimSpace(lines[i])
+			}
+			patterns = append(patterns, parseFlowSeq(buf)...)
 			continue
 		}
-		if inPackages && line != "" && !strings.HasPrefix(raw, " ") && !strings.HasPrefix(raw, "\t") {
-			inPackages = false
+		if rest != "" {
+			// `packages: irgendwas` ohne Klammer ist keine Sequenz.
+			continue
+		}
+		for j := i + 1; j < len(lines); j++ {
+			raw := lines[j]
+			item := strings.TrimSpace(raw)
+			if item == "" {
+				continue
+			}
+			if strings.HasPrefix(item, "-") {
+				patterns = append(patterns, strings.Trim(strings.TrimSpace(strings.TrimPrefix(item, "-")), "\"'"))
+				continue
+			}
+			if !strings.HasPrefix(raw, " ") && !strings.HasPrefix(raw, "\t") {
+				i = j - 1
+				break
+			}
 		}
 	}
 	return expandWorkspacePatterns(repo, patterns)
+}
+
+// parseFlowSeq zerlegt `[ "a", 'b' , c ]` in die einzelnen Werte.
+func parseFlowSeq(s string) []string {
+	if open := strings.Index(s, "["); open >= 0 {
+		s = s[open+1:]
+	}
+	if close := strings.LastIndex(s, "]"); close >= 0 {
+		s = s[:close]
+	}
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		v := strings.Trim(strings.TrimSpace(part), "\"'")
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // fsErrors sammelt Dateisystemfehler, die waehrend der Erkennung auftreten.

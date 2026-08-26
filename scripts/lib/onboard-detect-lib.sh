@@ -571,12 +571,41 @@ detect_components() {
       done < <(_expand_workspace_patterns "$repo" "${_cargo_members[@]}")
     fi
   elif [[ -f "$repo/pnpm-workspace.yaml" ]]; then
-    # packages: ["apps/*", "packages/foo"]  — expand globs against the repo
+    # `packages:` in BEIDEN Schreibweisen (Audit H-9):
+    #
+    #   packages:                 Block
+    #     - apps/*
+    #
+    #   packages: ["apps/*"]      Flow, auch ueber mehrere Zeilen
+    #
+    # Beides ist gueltiges YAML und bedeutet dasselbe. Gelesen wurde bisher nur
+    # die Block-Form — der Kommentar hier nannte die Flow-Form als Beispiel und
+    # beschrieb damit genau das, was der Code NICHT tat. Ein pnpm-Monorepo mit
+    # Flow-Syntax fiel lautlos zu einer einzigen Wurzelkomponente zusammen.
+    # Der Go-Detektor hatte denselben blinden Fleck (expandPNPM).
     local _pnpm_patterns=()
     while IFS= read -r pat; do
       [[ -n "$pat" ]] && _pnpm_patterns+=("$pat")
     done < <(awk '
-      /^packages:/{flag=1; next}
+      function emit_flow(s,   n, i, parts, v) {
+        sub(/^[^[]*\[/, "", s)
+        sub(/\].*$/, "", s)
+        n = split(s, parts, ",")
+        for (i = 1; i <= n; i++) {
+          v = parts[i]
+          gsub(/^[[:space:]\042\047]+|[[:space:]\042\047]+$/, "", v)
+          if (v != "") print v
+        }
+      }
+      # Flow-Form: sammeln bis zur schliessenden Klammer.
+      /^packages:[[:space:]]*\[/ {
+        buf = $0
+        while (buf !~ /\]/ && (getline nextline) > 0) buf = buf " " nextline
+        emit_flow(buf)
+        flag = 0
+        next
+      }
+      /^packages:[[:space:]]*$/{flag=1; next}
       flag && /^[[:space:]]*-/{
         line=$0
         gsub(/.*-[[:space:]]*/, "", line)
