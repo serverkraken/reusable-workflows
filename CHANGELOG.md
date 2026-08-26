@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.18.8](https://github.com/serverkraken/reusable-workflows/compare/v4.18.7...v4.18.8) (2026-08-26)
+
+
+### Bug Fixes
+
+* **detect:** Drei weitere Walker verwarfen Dateisystemfehler ([#310](https://github.com/serverkraken/reusable-workflows/issues/310)) ([36feed4](https://github.com/serverkraken/reusable-workflows/commit/36feed4c72b48ac370c5e4e3534a1bccec535a9a))
+* **detect:** go.work-Pfade wurden doch nicht eingegrenzt ([#309](https://github.com/serverkraken/reusable-workflows/issues/309)) ([24299f7](https://github.com/serverkraken/reusable-workflows/commit/24299f7ed5cc820677dd081e37b0a74232f2af1a))
+* **detect:** Zwei Komponenten teilten sich einen release-please-Paketnamen ([#313](https://github.com/serverkraken/reusable-workflows/issues/313)) ([63a29ea](https://github.com/serverkraken/reusable-workflows/commit/63a29ea4b0a34fe349635a11c43b0654dc3d4231))
+* **sweep:** Ein API-Fehler sah aus wie ein Ergebnis ([#312](https://github.com/serverkraken/reusable-workflows/issues/312)) ([590b227](https://github.com/serverkraken/reusable-workflows/commit/590b22732208bef1b040fedd0a4dc51c1e0378d3))
+
 ## [4.18.7](https://github.com/serverkraken/reusable-workflows/compare/v4.18.6...v4.18.7) (2026-08-25)
 
 
