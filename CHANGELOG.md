@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.18.10](https://github.com/serverkraken/reusable-workflows/compare/v4.18.9...v4.18.10) (2026-08-26)
+
+
+### Bug Fixes
+
+* **detect:** der erzwungene Release-Typ erreichte nie die gerenderte Datei (B-4, H-6) ([#322](https://github.com/serverkraken/reusable-workflows/issues/322)) ([9121f4c](https://github.com/serverkraken/reusable-workflows/commit/9121f4c2a1a214974b6f98c5efcdc30623aa7e42))
+* **preview:** --out durfte in den Quell- und in den Katalogbaum schreiben (B-7) ([#324](https://github.com/serverkraken/reusable-workflows/issues/324)) ([1da960a](https://github.com/serverkraken/reusable-workflows/commit/1da960a86f228a9ab1c09c880d201d2ff5ab239f))
+* **render:** der Lock ging am Symlink-Riegel vorbei (C-7) ([#323](https://github.com/serverkraken/reusable-workflows/issues/323)) ([1fff396](https://github.com/serverkraken/reusable-workflows/commit/1fff3968033b4f2d5b39016fa702541d8583d230))
+* **render:** ghcr.io//charts — der Rueckfall lag eine Funktion weiter und wurde nicht angewandt ([#320](https://github.com/serverkraken/reusable-workflows/issues/320)) ([6c975eb](https://github.com/serverkraken/reusable-workflows/commit/6c975eb5fa934f942525d0a52df4d1c625634c60))
+
 ## [4.18.9](https://github.com/serverkraken/reusable-workflows/compare/v4.18.8...v4.18.9) (2026-08-26)
 
 
