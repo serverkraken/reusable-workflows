@@ -69,25 +69,25 @@ func TestParseValidManifest(t *testing.T) {
 
 func TestParseManifestRejects(t *testing.T) {
 	tests := map[string]struct{ src, want string }{
-		"missing schema":     {"components:\n  - path: .\n", "line 1: `schema` is required"},
-		"wrong schema":       {"schema: 2\n", "line 1: unsupported schema 2"},
-		"unknown top key":    {"schema: 1\nfoo: 1\n", "line 2: unknown key \"foo\""},
-		"unknown comp key":   {"schema: 1\ncomponents:\n  - path: .\n    platform: x\n", "line 4: unknown key \"platform\""},
-		"empty components":   {"schema: 1\ncomponents: []\n", "line 2: `components` must not be empty"},
-		"duplicate path":     {"schema: 1\ncomponents:\n  - path: a\n  - path: a\n", "line 4: duplicate component path \"a\""},
-		"path escapes":       {"schema: 1\ncomponents:\n  - path: ../x\n", "line 3: path must stay inside the repository"},
+		"missing schema":      {"components:\n  - path: .\n", "line 1: `schema` is required"},
+		"wrong schema":        {"schema: 2\n", "line 1: unsupported schema 2"},
+		"unknown top key":     {"schema: 1\nfoo: 1\n", "line 2: unknown key \"foo\""},
+		"unknown comp key":    {"schema: 1\ncomponents:\n  - path: .\n    platform: x\n", "line 4: unknown key \"platform\""},
+		"empty components":    {"schema: 1\ncomponents: []\n", "line 2: `components` must not be empty"},
+		"duplicate path":      {"schema: 1\ncomponents:\n  - path: a\n  - path: a\n", "line 4: duplicate component path \"a\""},
+		"path escapes":        {"schema: 1\ncomponents:\n  - path: ../x\n", "line 3: path must stay inside the repository"},
 		"absolute dockerfile": {"schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: /etc/Dockerfile\n", "line 5: path must stay inside the repository"},
-		"bad image":          {"schema: 1\ncomponents:\n  - path: .\n    image: 'Bad Name'\n", "line 4: image must match"},
-		"bad language":       {"schema: 1\ncomponents:\n  - path: .\n    language: cobol\n", "line 4: language must be one of"},
-		"bad type":           {"schema: 1\ncomponents:\n  - path: .\n    type: kustomize\n", "line 4: type must be one of"},
-		"bad bool":           {"schema: 1\ncomponents:\n  - path: .\n    unittest: yes\n", "line 4: expected true or false"},
-		"mode push":          {"schema: 1\ngitops:\n  - repo: a/b\n    mode: push\n", "line 4: gitops mode push is not yet supported"},
-		"bad mode":           {"schema: 1\ngitops:\n  - repo: a/b\n    mode: manual\n", "line 4: mode must be one of"},
-		"bad repo":           {"schema: 1\ngitops:\n  - repo: nope\n", "line 3: repo must be owner/name"},
-		"e2e no script":      {"schema: 1\nworkflows:\n  e2e:\n    schedule: \"0 3 * * *\"\n", "line 3: `script` is required"},
-		"bad schedule":       {"schema: 1\nworkflows:\n  e2e:\n    script: run.sh\n    schedule: daily\n", "line 5: schedule must be a 5-field cron expression"},
-		"scalar where map":   {"schema: 1\nrelease: true\n", "line 2: expected a mapping"},
-		"yaml error":         {"schema: 1\n\tx: 1\n", "line 2: tabs"},
+		"bad image":           {"schema: 1\ncomponents:\n  - path: .\n    image: 'Bad Name'\n", "line 4: image must match"},
+		"bad language":        {"schema: 1\ncomponents:\n  - path: .\n    language: cobol\n", "line 4: language must be one of"},
+		"bad type":            {"schema: 1\ncomponents:\n  - path: .\n    type: kustomize\n", "line 4: type must be one of"},
+		"bad bool":            {"schema: 1\ncomponents:\n  - path: .\n    unittest: yes\n", "line 4: expected true or false"},
+		"mode push":           {"schema: 1\ngitops:\n  - repo: a/b\n    mode: push\n", "line 4: gitops mode push is not yet supported"},
+		"bad mode":            {"schema: 1\ngitops:\n  - repo: a/b\n    mode: manual\n", "line 4: mode must be one of"},
+		"bad repo":            {"schema: 1\ngitops:\n  - repo: nope\n", "line 3: repo must be owner/name"},
+		"e2e no script":       {"schema: 1\nworkflows:\n  e2e:\n    schedule: \"0 3 * * *\"\n", "line 3: `script` is required"},
+		"bad schedule":        {"schema: 1\nworkflows:\n  e2e:\n    script: run.sh\n    schedule: daily\n", "line 5: schedule must be a 5-field cron expression"},
+		"scalar where map":    {"schema: 1\nrelease: true\n", "line 2: expected a mapping"},
+		"yaml error":          {"schema: 1\n\tx: 1\n", "line 2: tabs"},
 		"bad platforms": {"schema: 1\ncomponents:\n  - path: .\n    platforms: linux-amd64\n",
 			`line 4: platforms must be a comma-separated list of os/arch[/variant], got "linux-amd64"`},
 		"bad platforms trailing comma": {"schema: 1\ncomponents:\n  - path: .\n    platforms: linux/amd64,\n",
@@ -95,7 +95,10 @@ func TestParseManifestRejects(t *testing.T) {
 		"bad dockerfile platforms": {"schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: Dockerfile\n        platforms: 'linux/amd64 linux/arm64'\n",
 			`line 6: platforms must be a comma-separated list of os/arch[/variant], got "linux/amd64 linux/arm64"`},
 		"script escapes repo": {"schema: 1\nworkflows:\n  e2e:\n    script: ../run.sh\n",
-			"line 4: path must stay inside the repository"},
+			// Die Meldung nennt jetzt das FELD: die Regel gilt fuer path,
+			// context, script und values, und wer sie verletzt, soll lesen
+			// koennen, welches gemeint ist.
+			"line 4: script must stay inside the repository"},
 		"script bad charset": {"schema: 1\nworkflows:\n  e2e:\n    script: 'run script.sh'\n",
 			`line 4: script must be a repo-relative path matching ^[A-Za-z0-9._/-]+$, got "run script.sh"`},
 		"schedule punctuation": {"schema: 1\nworkflows:\n  e2e:\n    script: run.sh\n    schedule: \"0 3 * * mon;tue\"\n",
@@ -680,10 +683,10 @@ func TestParseManifestChartPins(t *testing.T) {
 
 func TestParseManifestChartPinsRejected(t *testing.T) {
 	cases := map[string]string{
-		"missing values":  "schema: 1\nrelease:\n  chart_pins:\n    key: images.{name}.tag\n",
+		"missing values":   "schema: 1\nrelease:\n  chart_pins:\n    key: images.{name}.tag\n",
 		"key without name": "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    key: images.tag\n",
-		"escaping path":   "schema: 1\nrelease:\n  chart_pins:\n    values: ../outside.yaml\n",
-		"unknown key":     "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    nope: 1\n",
+		"escaping path":    "schema: 1\nrelease:\n  chart_pins:\n    values: ../outside.yaml\n",
+		"unknown key":      "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    nope: 1\n",
 	}
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -820,5 +823,50 @@ func TestParseManifestSeverityRejectsUnknownValues(t *testing.T) {
 				t.Fatalf("error %q does not mention %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// Audit A-1: `context` lief durch cleanRelPath, das absolute Pfade und `..`
+// abweist — und sonst nichts. Die Zeichenklasse galt nur fuer `script`.
+//
+// Gemessen, alles angenommen:
+//
+//	context: "git@github.com:angreifer/repo.git"   unveraendert durchgereicht
+//	context: "svc#main"                            unveraendert durchgereicht
+//
+// Der erste Fall ist der ernste: `git@host:pfad` ist eine gueltige ENTFERNTE
+// Build-Quelle fuer buildx. Der Wert landet im `context:` des docker-build-
+// Atoms, das damit aus einem fremden Repository baute und das Ergebnis in die
+// Registry des Adopters schoebe.
+//
+// Der ROHE Wert wird geprueft, nicht der bereinigte: filepath.Clean macht aus
+// `https://evil/x` ein `https:/evil/x` und damit aus einer erkennbaren URL
+// etwas, das wie ein Pfad aussieht.
+func TestManifestRejectsNonPathContexts(t *testing.T) {
+	for _, c := range []struct{ name, value string }{
+		{"ssh-Git-Quelle", "git@github.com:angreifer/repo.git"},
+		{"Ref-Trenner", "svc#main"},
+		{"https-URL", "https://github.com/x/y.git#main"},
+		{"Doppelpunkt", "svc:tag"},
+		{"Leerzeichen", "svc extra"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			src := "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: svc/Dockerfile\n        context: \"" + c.value + "\"\n"
+			if _, err := Parse([]byte(src)); err == nil {
+				t.Fatalf("erwartet: %q wird abgewiesen", c.value)
+			} else if !strings.Contains(err.Error(), "context must be a repo-relative path") {
+				t.Fatalf("nicht die Pfadregel, sondern: %v", err)
+			}
+		})
+	}
+}
+
+func TestManifestAcceptsOrdinaryContexts(t *testing.T) {
+	// Der gueltige Fall darf nicht mitverboten werden.
+	for _, v := range []string{".", "svc", "services/api", "apps/web-ui", "a.b/c_d-e"} {
+		src := "schema: 1\ncomponents:\n  - path: .\n    dockerfiles:\n      - path: svc/Dockerfile\n        context: \"" + v + "\"\n"
+		if _, err := Parse([]byte(src)); err != nil {
+			t.Fatalf("context %q muss durchgehen: %v", v, err)
+		}
 	}
 }
