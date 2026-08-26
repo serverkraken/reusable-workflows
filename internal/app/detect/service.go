@@ -214,6 +214,49 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(req.RepoPath, profile.Components, fe)...)
 	}
 
+	// `--language-override` muss das PROFIL erreichen, nicht nur die
+	// Legacy-Zeilen (Audit B-4).
+	//
+	// Der Eingang ist beschrieben als "auto = detect, otherwise force
+	// release-type". Gemessen an einem go-Repo mit `--language-override python`:
+	//
+	//	Legacy   language=python  release_type=python
+	//	Profil   primary_language=go  release_please_type=go
+	//
+	// Gerendert wird aus dem PROFIL: release-please-config.json trug weiter
+	// `"release-type": "go"`. Der Schalter war fuer alles, was der Adopter
+	// hinterher sieht, ein stiller Leerlauf.
+	//
+	// Bewusst nur release_please_type, nicht primary_language: der Eingang
+	// verspricht den Release-Typ. Wuerde er auch die Sprachwahl erzwingen,
+	// rendere ein erzwungenes `python` auf einem reinen Go-Repo Python-Jobs
+	// gegen ein Repo ohne pyproject.toml - CI, die sofort scheitert. Ein
+	// Versprechen einloesen, keins dazuerfinden.
+	//
+	// Nur die Wurzelkomponente, dieselbe Begruendung wie bei
+	// manifestRootLanguage: ein repo-weiter Einzelwert kann sinnvoll nur die
+	// Wurzel meinen. Trifft er keine, sagt eine Warnung das - sonst waere der
+	// Schalter im Monorepo wieder stumm wirkungslos, also genau der Fehler,
+	// den dieser Fix behebt.
+	if ov := strings.TrimSpace(req.LanguageOverride); ov != "" && ov != "auto" {
+		applied := false
+		for i := range profile.Components {
+			if profile.Components[i].Path == "." {
+				profile.Components[i].ReleasePleaseType = releasePleaseType(ov)
+				applied = true
+			}
+		}
+		if !applied {
+			profile.Warnings = append(profile.Warnings, domain.Warning{
+				Code: "language_override_not_applied",
+				Path: ".",
+				Message: fmt.Sprintf("language override %q was not applied: this repo has no root component, "+
+					"and a repo-wide release type cannot be assigned to sub-components; declare release types "+
+					"per component in .github/onboard.yml instead", ov),
+			})
+		}
+	}
+
 	// Das Manifest schlaegt die Wurzelsignale. Ohne diesen Vorrang war die
 	// Mehrdeutigkeits-Absage fuer den Adopter UNENTRINNBAR, gemessen:
 	//
