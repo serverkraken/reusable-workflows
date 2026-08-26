@@ -746,6 +746,47 @@ jobs:
           EOF
           echo "matrix: $n Eintraege, beide Felder gesetzt, Namen wie uebergeben"
 
+  # ----- Audit K-16: `release.yml` ist der Einstiegspunkt, den Adopter
+  #       referenzieren (`uses: …/workflows/release.yml@v4`) — und wurde von
+  #       der self-CI NIE aufgerufen. Genau hier hat schon einmal ein fehlender
+  #       `permissions`-Block alle Cross-Repo-Aufrufe gebrochen; getestet war
+  #       das nirgends.
+  #
+  #       Der Trockenlauf beruehrt nichts: release-please bekommt
+  #       `skip-github-release`, setzt keine Ausgabe, und weil docker-build und
+  #       trivy-image an `release_created == 'true'` haengen, entfallen sie von
+  #       selbst. Geprueft wird damit das WIRING — Permissions-Union,
+  #       Eingabe-Weitergabe, Gestalt der verschachtelten Aufrufe.
+  test-release-orchestrator-dry-run:
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+    with:
+      dry_run: true
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on_release: '["ubuntu-latest"]'
+      build_image: false
+      run_trivy: false
+
+  assert-release-orchestrator-skips-build:
+    needs: test-release-orchestrator-dry-run
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Der Trockenlauf darf nichts gebaut haben
+        env:
+          RESULT: ${{ needs.test-release-orchestrator-dry-run.result }}
+        run: |
+          set -euo pipefail
+          # Der Aufruf selbst muss durchlaufen — daran haengt die ganze
+          # Wiring-Aussage. Ein Fehlschlag hier bedeutet: der oeffentliche
+          # Orchestrator ist fuer Adopter kaputt.
+          if [[ "$RESULT" != "success" ]]; then
+            echo "::error::release.yml (Trockenlauf) endete mit '$RESULT' — der Orchestrator, den Adopter referenzieren, laeuft nicht durch" >&2
+            exit 1
+          fi
+          echo "release.yml lief im Trockenlauf durch — Wiring intakt."
+
   # ----- onboard dry-run: exercise detect + render against the catalog itself -----
   test-onboard-dry-run:
     uses: ./.github/workflows/onboard.yml
@@ -843,6 +884,8 @@ jobs:
       - test-onboard-dry-run-go
       - test-docker-build-multi
       - assert-docker-build-multi-matrix
+      - test-release-orchestrator-dry-run
+      - assert-release-orchestrator-skips-build
       - test-goreleaser
       - test-helm-publish
       - test-release-flutter-android
