@@ -90,8 +90,31 @@ for dir in "$FIXTURES"/*/; do
   prof=$(mktemp); printf '%s' "$go_out" > "$prof"
   a=$(mktemp -d)/demo; b=$(mktemp -d)/demo
   mkdir -p "$a" "$b"
-  "$BIN" render --catalog "$ROOT" --target "$a" --profile "$prof" --pin v4 >/dev/null 2>&1 || true
-  bash "$ROOT/scripts/onboard-render.sh" "$ROOT" "$b" "$prof" v4 >/dev/null 2>&1 || true
+  go_render_err=$(mktemp); bash_render_err=$(mktemp)
+  "$BIN" render --catalog "$ROOT" --target "$a" --profile "$prof" --pin v4 >/dev/null 2>"$go_render_err"; go_rc=$?
+  bash "$ROOT/scripts/onboard-render.sh" "$ROOT" "$b" "$prof" v4 >/dev/null 2>"$bash_render_err"; bash_rc=$?
+
+  # Die Rueckgabewerte pruefen, NICHT bloss die Ergebnisverzeichnisse.
+  #
+  # Die erste Fassung haengte `|| true` an beide Aufrufe und verglich dann die
+  # Baeume. Damit haette ein Lauf, in dem BEIDE Renderer scheitern, zwei leere
+  # Verzeichnisse verglichen und "gleich" gemeldet - ein Gate, das nichts
+  # prueft und gruen ist.
+  #
+  # Nachgestellt mit einem gomplate, das mit 127 endet: Go hinterlaesst dabei
+  # ein halbes .github/ und faellt durch, die Bash-Engine bricht schon an ihrer
+  # `command -v gomplate`-Pruefung ab und schreibt nichts. Auch eine
+  # Leerheitspruefung haette das also nur halb gesehen.
+  if (( go_rc != 0 || bash_rc != 0 )); then
+    echo "FEHLER: $name — Rendern fehlgeschlagen (go rc=$go_rc, bash rc=$bash_rc):" >&2
+    head -c 300 "$go_render_err" >&2; echo >&2
+    head -c 300 "$bash_render_err" >&2; echo >&2
+    fail=1
+    rm -f "$go_render_err" "$bash_render_err" "$prof"
+    rm -rf "$(dirname "$a")" "$(dirname "$b")"
+    continue
+  fi
+  rm -f "$go_render_err" "$bash_render_err"
 
   # `rendered_at` ist sekundengenau. Faellt der eine Lauf in die naechste
   # Sekunde, unterscheiden sich die Locks - das ist ein Wettlauf, keine

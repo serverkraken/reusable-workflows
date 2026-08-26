@@ -313,6 +313,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # Der Vergleich rendert, und beide Renderer rufen gomplate.
+      - name: Install gomplate
+        run: sudo ./scripts/install-gomplate.sh
       - name: Compare both detector engines on every fixture
         run: bash tests/conventions/check-engine-parity.sh
 
