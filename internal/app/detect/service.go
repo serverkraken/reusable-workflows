@@ -238,6 +238,7 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	profile.Warnings = append(profile.Warnings, fe.seen...)
 	profile.Warnings = append(profile.Warnings, declaredMissing...)
 	profile.Warnings = append(profile.Warnings, unsupportedLanguageWarnings(profile.Components, manifestComponents)...)
+	profile.Warnings = append(profile.Warnings, helmOnlyKeyWarnings(profile.Components, manifestComponents)...)
 	profile.Warnings = append(profile.Warnings, noReleaseEligibleWarnings(profile.Components)...)
 	if !hasManifest {
 		profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(req.RepoPath, profile.Components, fe)...)
@@ -1547,6 +1548,61 @@ func unsupportedLanguageWarnings(components []domain.Component, fromManifest boo
 			PrimaryLanguage: c.PrimaryLanguage,
 			Message:         "no lint/test atom for primary_language=" + c.PrimaryLanguage + "; rendered ci.yml will fall back to secscan only",
 		})
+	}
+	return out
+}
+
+// helmOnlyKeyWarnings meldet Manifest-Schluessel, die nur an einer
+// Helm-Komponente etwas bewirken, aber an einer anderen stehen (Audit J-8).
+//
+// `app_version` rendert einen extra-files-Eintrag auf eine Chart.yaml. An
+// einer Go-Komponente zeigt der auf eine Datei, die es nicht gibt;
+// release-please protokolliert "did not exist" und macht weiter. Das Release
+// geht raus, der Adopter hat etwas erklaert, und es passiert nichts.
+//
+// `unittest` ist noch stiller: es wird ausschliesslich innerhalb der
+// lint-helm-Jobs ausgegeben, also an einer Nicht-Helm-Komponente ueberhaupt
+// nicht. Kein Eintrag, keine Meldung, keine Wirkung.
+//
+// Warnung und nicht Fehler, und die Pruefung sitzt NACH der Erkennung statt im
+// Parser: eine Komponente kann auch durch Erkennung ein Chart sein, ohne
+// `type: helm` im Manifest zu tragen (release-please-config.monorepo.json.tmpl
+// unterscheidet die beiden Faelle ausdruecklich). Im Parser abgewiesen wuerde
+// genau dieser legitime Fall zerbrechen; erst hier steht primary_language
+// fest.
+//
+// Nur fuer Manifest-Komponenten: ohne Manifest kann niemand die Schluessel
+// gesetzt haben.
+func helmOnlyKeyWarnings(components []domain.Component, fromManifest bool) []domain.Warning {
+	if !fromManifest {
+		return nil
+	}
+	var out []domain.Warning
+	for _, c := range components {
+		if c.PrimaryLanguage == "helm" {
+			continue
+		}
+		if c.AppVersion {
+			out = append(out, domain.Warning{
+				Code: "helm_only_key_on_non_helm",
+				Path: c.Path,
+				Message: fmt.Sprintf("app_version is set on %q (primary_language=%s), but it only affects a helm "+
+					"component — it renders an extra-files entry pointing at a Chart.yaml that does not exist, "+
+					"release-please logs \"did not exist\" and the release goes out unchanged; drop the key or "+
+					"declare the component as type: helm in %s",
+					c.Path, c.PrimaryLanguage, manifest.FileName),
+			})
+		}
+		if c.Unittest {
+			out = append(out, domain.Warning{
+				Code: "helm_only_key_on_non_helm",
+				Path: c.Path,
+				Message: fmt.Sprintf("unittest is set on %q (primary_language=%s), but it is only emitted inside the "+
+					"lint-helm job — nothing at all is rendered for this component; drop the key or declare the "+
+					"component as type: helm in %s",
+					c.Path, c.PrimaryLanguage, manifest.FileName),
+			})
+		}
 	}
 	return out
 }

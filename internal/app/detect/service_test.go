@@ -931,3 +931,90 @@ components:
 		}
 	}
 }
+
+// Audit J-8. `app_version` und `unittest` wirken ausschliesslich an einer
+// Helm-Komponente. An einer anderen gesetzt passierte NICHTS - kein Eintrag,
+// keine Meldung. Der Adopter erklaert etwas und bekommt Schweigen.
+//
+// Die Gegenprobe ist der wichtigere Teil des Tests: an einem erkannten Chart
+// OHNE `type: helm` im Manifest darf nicht gewarnt werden. Genau dieser Fall
+// waere zerbrochen, haette die Pruefung im Parser statt nach der Erkennung
+// gesessen.
+func TestHelmOnlyKeysOnNonHelmComponentWarn(t *testing.T) {
+	build := func(t *testing.T, man string, files map[string]string) domain.Profile {
+		t.Helper()
+		tmp := t.TempDir()
+		mustMkdir(t, filepath.Join(tmp, ".github"))
+		mustWrite(t, filepath.Join(tmp, ".github", "onboard.yml"), man)
+		for p, c := range files {
+			mustMkdir(t, filepath.Dir(filepath.Join(tmp, p)))
+			mustWrite(t, filepath.Join(tmp, p), c)
+		}
+		res, err := (Service{}).Detect(context.Background(), Request{RepoPath: tmp})
+		if err != nil {
+			t.Fatalf("detect: %v", err)
+		}
+		return res.Profile
+	}
+	codes := func(p domain.Profile) []string {
+		var out []string
+		for _, w := range p.Warnings {
+			if w.Code == "helm_only_key_on_non_helm" {
+				out = append(out, w.Path+": "+w.Message)
+			}
+		}
+		return out
+	}
+
+	t.Run("app_version auf einer Go-Komponente warnt", func(t *testing.T) {
+		p := build(t,
+			"schema: 1\ncomponents:\n  - path: .\n    language: go\n    app_version: true\n",
+			map[string]string{"go.mod": "module x\n"})
+		got := codes(p)
+		if len(got) != 1 || !strings.Contains(got[0], "app_version") {
+			t.Fatalf("warnings=%v", got)
+		}
+	})
+
+	t.Run("unittest auf einer Go-Komponente warnt", func(t *testing.T) {
+		p := build(t,
+			"schema: 1\ncomponents:\n  - path: .\n    language: go\n    unittest: true\n",
+			map[string]string{"go.mod": "module x\n"})
+		got := codes(p)
+		if len(got) != 1 || !strings.Contains(got[0], "unittest") {
+			t.Fatalf("warnings=%v", got)
+		}
+	})
+
+	t.Run("beide Schluessel warnen einzeln", func(t *testing.T) {
+		p := build(t,
+			"schema: 1\ncomponents:\n  - path: .\n    language: go\n    app_version: true\n    unittest: true\n",
+			map[string]string{"go.mod": "module x\n"})
+		if got := codes(p); len(got) != 2 {
+			t.Fatalf("want 2 warnings, got %v", got)
+		}
+	})
+
+	t.Run("type: helm warnt nicht", func(t *testing.T) {
+		p := build(t,
+			"schema: 1\ncomponents:\n  - path: charts/app\n    type: helm\n    app_version: true\n    unittest: true\n",
+			map[string]string{"charts/app/Chart.yaml": "apiVersion: v2\nname: app\nversion: 0.1.0\n"})
+		if got := codes(p); len(got) != 0 {
+			t.Fatalf("helm component must not warn: %v", got)
+		}
+	})
+
+	// Der Fall, der einen Parser-Fix zerbrochen haette: Chart nur ERKANNT,
+	// nicht deklariert. primary_language wird trotzdem helm.
+	t.Run("erkanntes Chart ohne type: helm warnt nicht", func(t *testing.T) {
+		p := build(t,
+			"schema: 1\ncomponents:\n  - path: charts/app\n    app_version: true\n    unittest: true\n",
+			map[string]string{"charts/app/Chart.yaml": "apiVersion: v2\nname: app\nversion: 0.1.0\n"})
+		if len(p.Components) != 1 || p.Components[0].PrimaryLanguage != "helm" {
+			t.Fatalf("Vorbedingung verfehlt, primary_language=%q", p.Components[0].PrimaryLanguage)
+		}
+		if got := codes(p); len(got) != 0 {
+			t.Fatalf("erkanntes Chart muss ohne Warnung durchgehen: %v", got)
+		}
+	})
+}
