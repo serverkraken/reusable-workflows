@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.20.1](https://github.com/serverkraken/reusable-workflows/compare/v4.20.0...v4.20.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* **gh:** der Adapter verschluckte Fehler und machte die Fehlerbehandlung darüber zu totem Code ([#356](https://github.com/serverkraken/reusable-workflows/issues/356)) ([1fb101a](https://github.com/serverkraken/reusable-workflows/commit/1fb101a10a2429507cda6e9d2b9f999b3ea32621))
+* **templates:** Profildaten in string-Eingaengen quoten, sonst kippt der Typ ([#358](https://github.com/serverkraken/reusable-workflows/issues/358)) ([cfb272b](https://github.com/serverkraken/reusable-workflows/commit/cfb272bcd7cccae09eb04e4187bd88c8faf3916e))
+
 ## [4.20.0](https://github.com/serverkraken/reusable-workflows/compare/v4.19.0...v4.20.0) (2026-08-26)
 
 
