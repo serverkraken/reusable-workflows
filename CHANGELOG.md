@@ -1,5 +1,14 @@
 # Changelog
 
+## [4.18.11](https://github.com/serverkraken/reusable-workflows/compare/v4.18.10...v4.18.11) (2026-08-26)
+
+
+### Bug Fixes
+
+* **detect:** `keep` und `e2e.script` durften Dateien nennen, die es nicht gibt (A-3, A-4) ([#328](https://github.com/serverkraken/reusable-workflows/issues/328)) ([6fe8220](https://github.com/serverkraken/reusable-workflows/commit/6fe82202fcce26ad66fe70c5f1591f00025d0990))
+* **manifest:** `context` durfte eine entfernte Build-Quelle sein (A-1) ([#325](https://github.com/serverkraken/reusable-workflows/issues/325)) ([8880201](https://github.com/serverkraken/reusable-workflows/commit/8880201d92e3878e153984c88bcf426596224875))
+* **sweep:** der GH_TOKEN stand im argv von git clone (H-16) ([#329](https://github.com/serverkraken/reusable-workflows/issues/329)) ([9c5c68a](https://github.com/serverkraken/reusable-workflows/commit/9c5c68aa9e09e7ca5ad9e6694876883c6536b8ce))
+
 ## [4.18.10](https://github.com/serverkraken/reusable-workflows/compare/v4.18.9...v4.18.10) (2026-08-26)
 
 
