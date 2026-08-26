@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -584,5 +585,62 @@ func TestDeclaredFilesThatExistAreSilent(t *testing.T) {
 		if w.Code == "declared_file_missing" {
 			t.Fatalf("vorhandene Datei darf nicht gemeldet werden: %+v", w)
 		}
+	}
+}
+
+// Audit H-9: `packages:` in pnpm-workspace.yaml wurde nur in Block-Form
+// gelesen. Beides ist gueltiges YAML und bedeutet dasselbe:
+//
+//	packages:                erkannt
+//	  - apps/*
+//
+//	packages: ["apps/*"]     NICHT erkannt
+//
+// Gemessen an einem Repo mit apps/web und apps/api: die Block-Form ergab zwei
+// Komponenten, die Flow-Form eine einzige Wurzelkomponente. Das Monorepo fiel
+// lautlos in sich zusammen — keine Jobs je Paket, keine Release-Konfiguration
+// je Paket. BEIDE Engines hatten denselben blinden Fleck, das
+// Fixture-Paritaets-Gate konnte es also nicht sehen.
+
+func TestPNPMWorkspaceReadsBothYAMLStyles(t *testing.T) {
+	for _, c := range []struct {
+		name, workspace string
+	}{
+		{"Block", "packages:\n  - apps/*\n"},
+		{"Flow einzeilig", "packages: [\"apps/*\"]\n"},
+		{"Flow mit zwei Eintraegen", "packages: [\"apps/web\", \"apps/api\"]\n"},
+		{"Flow mit einfachen Anfuehrungszeichen", "packages: ['apps/*']\n"},
+		{"Flow ueber mehrere Zeilen", "packages: [\n  \"apps/web\",\n  \"apps/api\"\n]\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			repo := t.TempDir()
+			if err := os.WriteFile(filepath.Join(repo, "package.json"), []byte(`{"name":"root"}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for _, sub := range []string{"apps/web", "apps/api"} {
+				dir := filepath.Join(repo, filepath.FromSlash(sub))
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"x"}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(repo, "pnpm-workspace.yaml"), []byte(c.workspace), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, comp := range res.Profile.Components {
+				got = append(got, comp.Path)
+			}
+			sort.Strings(got)
+			if len(got) != 2 || got[0] != "apps/api" || got[1] != "apps/web" {
+				t.Fatalf("Komponenten=%v, erwartet [apps/api apps/web]", got)
+			}
+		})
 	}
 }
