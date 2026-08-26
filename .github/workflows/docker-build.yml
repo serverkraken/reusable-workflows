@@ -127,6 +127,36 @@ jobs:
       moving_tag: ${{ steps.resolve.outputs.moving_tag }}
       image_name: ${{ steps.resolve.outputs.image_name }}
     steps:
+      # Fork-Guard (Audit D-9). `pull_request_target` ist das EINZIGE Ereignis,
+      # bei dem Secrets bereitstehen UND der Aufrufer eine fremde Revision
+      # auschecken kann. Genau diese Kombination — bekannt als "pwn request" —
+      # baut Code aus einem Fork mit den Registry-Zugangsdaten des Adopters,
+      # signiert ihn mit dessen cosign-Identitaet und attestiert ihn. Ein
+      # veroeffentlichtes, signiertes Schadimage laesst sich nicht
+      # zurueckholen.
+      #
+      # Abgewiesen statt gewarnt: bei allen anderen Befunden dieses Audits war
+      # Sichtbarkeit die richtige Antwort, hier nicht — die Warnung erschiene
+      # erst, wenn das Image bereits gebaut, gepusht und signiert ist.
+      #
+      # Nicht erreichbar ueber die gerenderten Workflows dieses Katalogs: die
+      # Templates uebergeben `ref` nur in release.yml (den Tag von
+      # release-please), und `pull_request_target` kommt in keinem davon vor.
+      # Der Riegel gilt Konsumenten, die ihren eigenen Aufrufer schreiben.
+      - name: Refuse a caller-supplied ref on pull_request_target
+        if: github.event_name == 'pull_request_target' && inputs.ref != ''
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          {
+            echo "::error::refusing to check out '$REF' on pull_request_target."
+            echo "On this event the workflow has access to repository secrets while"
+            echo "the ref may point at a fork. Building, pushing and SIGNING that"
+            echo "code would publish an artefact you cannot take back."
+            echo "Use pull_request (no secrets) for untrusted contributions, or"
+            echo "call this atom from an event whose ref you control."
+          } >&2
+          exit 1
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.ref }}
@@ -232,6 +262,24 @@ jobs:
             echo "::notice::Skipping $PLATFORM — not in inputs.platforms"
           fi
 
+      # Fork-Guard wie in den anderen Jobs (Audit D-9). Dieser Checkout haengt
+      # zusaetzlich an der Plattform-Auswahl, deshalb steht der Riegel als
+      # eigener Schritt davor und nicht in derselben `if`-Bedingung — er soll
+      # auch dann greifen, wenn diese Plattform gar nicht gebaut wird.
+      - name: Refuse a caller-supplied ref on pull_request_target
+        if: github.event_name == 'pull_request_target' && inputs.ref != ''
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          {
+            echo "::error::refusing to check out '$REF' on pull_request_target."
+            echo "On this event the workflow has access to repository secrets while"
+            echo "the ref may point at a fork. Building, pushing and SIGNING that"
+            echo "code would publish an artefact you cannot take back."
+            echo "Use pull_request (no secrets) for untrusted contributions, or"
+            echo "call this atom from an event whose ref you control."
+          } >&2
+          exit 1
       - if: steps.check.outputs.selected == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -341,6 +389,36 @@ jobs:
       moving_ref: ${{ steps.compose.outputs.moving_ref }}
       digest: ${{ steps.merge_step.outputs.digest }}
     steps:
+      # Fork-Guard (Audit D-9). `pull_request_target` ist das EINZIGE Ereignis,
+      # bei dem Secrets bereitstehen UND der Aufrufer eine fremde Revision
+      # auschecken kann. Genau diese Kombination — bekannt als "pwn request" —
+      # baut Code aus einem Fork mit den Registry-Zugangsdaten des Adopters,
+      # signiert ihn mit dessen cosign-Identitaet und attestiert ihn. Ein
+      # veroeffentlichtes, signiertes Schadimage laesst sich nicht
+      # zurueckholen.
+      #
+      # Abgewiesen statt gewarnt: bei allen anderen Befunden dieses Audits war
+      # Sichtbarkeit die richtige Antwort, hier nicht — die Warnung erschiene
+      # erst, wenn das Image bereits gebaut, gepusht und signiert ist.
+      #
+      # Nicht erreichbar ueber die gerenderten Workflows dieses Katalogs: die
+      # Templates uebergeben `ref` nur in release.yml (den Tag von
+      # release-please), und `pull_request_target` kommt in keinem davon vor.
+      # Der Riegel gilt Konsumenten, die ihren eigenen Aufrufer schreiben.
+      - name: Refuse a caller-supplied ref on pull_request_target
+        if: github.event_name == 'pull_request_target' && inputs.ref != ''
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          {
+            echo "::error::refusing to check out '$REF' on pull_request_target."
+            echo "On this event the workflow has access to repository secrets while"
+            echo "the ref may point at a fork. Building, pushing and SIGNING that"
+            echo "code would publish an artefact you cannot take back."
+            echo "Use pull_request (no secrets) for untrusted contributions, or"
+            echo "call this atom from an event whose ref you control."
+          } >&2
+          exit 1
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.ref }}
