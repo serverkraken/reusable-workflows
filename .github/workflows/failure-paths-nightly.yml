@@ -2,7 +2,15 @@
 # Nightly cron exercising all designed-failure-path tests of the catalog
 # against the broken fixtures. Runs at 04:00 UTC daily and on
 # workflow_dispatch. Does NOT run on pull_request — that's the whole
-# point: keeps the 14 designed-red test-*-fail jobs out of the PR check
+# point: keeps the designed-red test-*-fail jobs out of the PR check
+#
+# Bewusst OHNE Anzahl (Audit K-24): die Kommentare nannten 14 bzw. 15,
+# tatsaechlich sind es 18 — und der Fund selbst sprach von 17. Eine Zahl,
+# die von Hand mitgezogen werden muss, driftet zuverlaessig. Wer sie
+# braucht, zaehlt nach:
+#
+#   rg -c '^  test-[a-z0-9-]*-fail:$' .github/workflows/failure-paths-nightly.yml
+#   rg -c '^  assert-[a-z0-9-]*:$'    .github/workflows/failure-paths-nightly.yml
 # rollup so the PR top-level badge stays green.
 #
 # Each test-X-fail job calls the atom workflow with a fixture engineered
@@ -543,7 +551,8 @@ jobs:
           echo "e2e-kind failed as designed and uploaded diagnostics"
 
   # ----- Regression Reporter -----
-  # Runs after all 15 assert-* jobs. The job always runs (if: always()),
+  # Runs after ALL assert-* jobs (siehe needs: unten). The job always runs
+  # (if: always()),
   # but the bash step short-circuits when no asserts failed — gating in
   # bash rather than via the workflow-level `if:` expression. An earlier
   # smoke-test (issue #147) showed that `if: always() && contains(needs.*.result,
@@ -594,7 +603,7 @@ jobs:
           ' | paste -sd ',' -)
 
           if [[ -z "$failed" ]]; then
-            echo "All 15 assert-*-fail jobs returned success — no regression to report."
+            echo "Alle assert-*-Jobs meldeten Erfolg — keine Regression zu berichten."
             exit 0
           fi
 

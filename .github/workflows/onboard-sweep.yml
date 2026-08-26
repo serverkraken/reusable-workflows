@@ -203,6 +203,60 @@ jobs:
       dry_run: ${{ fromJSON(inputs.dry_run || 'false') }}
       use_go_cli: ${{ fromJSON(inputs.use_go_cli || 'true') }}
 
+  # Audit K-20, gleiche Luecke wie in drift-check.yml: `summary` laeuft nur bei
+  # ERFOLGREICHEM `enumerate`. Scheitert das Aufzaehlen, kommentiert niemand das
+  # fortlaufende Issue — und ein ausbleibender Kommentar ist von "es gab nichts
+  # zu tun" nicht zu unterscheiden.
+  #
+  # summary-exempt: Dieser Job existiert genau fuer den Fall, dass der Sammler
+  # `summary` NICHT laeuft — ihn an dessen needs zu haengen waere ein
+  # Widerspruch in sich.
+  report-enumerate-failure:
+    needs: enumerate
+    if: always() && needs.enumerate.result != 'success' && needs.enumerate.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Mint App token for catalog repo
+        id: cat-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: serverkraken
+          repositories: reusable-workflows
+
+      - name: Report that the sweep never started
+        env:
+          GH_TOKEN: ${{ steps.cat-token.outputs.token }}
+          RESULT: ${{ needs.enumerate.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="**Onboard sweep hat gar nicht erst begonnen.**
+
+          Der \`enumerate\`-Job endete mit \`$RESULT\`, es wurde also kein
+          einziges Adopter-Repo angefasst. Das Ausbleiben von Aenderungen
+          bedeutet hier NICHT, dass nichts zu tun war.
+
+          Lauf: $RUN_URL"
+          printf '%s\n' "$body" >> "$GITHUB_STEP_SUMMARY"
+
+          drift_issue=$(gh issue list \
+            --repo serverkraken/reusable-workflows \
+            --state open --limit 100 --json number,title \
+            -q '.[] | select(.title == "Onboarding Drift Report") | .number' \
+            | head -1)
+          if [[ -n "$drift_issue" ]]; then
+            gh issue comment "$drift_issue" --repo serverkraken/reusable-workflows --body "$body"
+          else
+            gh issue create --repo serverkraken/reusable-workflows \
+              --title "Onboard sweep fehlgeschlagen — $(date -u +%Y-%m-%d)" --body "$body"
+          fi
+
   summary:
     needs: [enumerate, update-batch, fresh-batch]
     if: always() && needs.enumerate.result == 'success'
