@@ -98,6 +98,29 @@ type Consumer struct {
 // aendert beide.
 const ImagePattern = `^[a-z0-9._/-]+$`
 
+// RelPathPattern ist die EINE Regel fuer repo-relative Pfade im Manifest:
+// `path`, `context`, `script`, `values`.
+//
+// Sie existierte als `scriptRe` und galt nur fuer `script`. `context` lief
+// durch cleanRelPath, das absolute Pfade und `..` abweist - und sonst nichts.
+// Gemessen, alles angenommen:
+//
+//	context: "git@github.com:angreifer/repo.git"   unveraendert durchgereicht
+//	context: "svc#main"                            unveraendert durchgereicht
+//	context: "https://github.com/x/y.git#main"     zu "https:/..." verstuemmelt
+//
+// Der erste Fall ist der ernste: `git@host:pfad` ist eine gueltige ENTFERNTE
+// Build-Quelle fuer buildx. Der Wert landet im `context:` des docker-build-
+// Atoms, das damit aus einem fremden Repository baut und das Ergebnis in die
+// Registry des Adopters schiebt. Auch das `#` ist kein Zufall: buildx trennt
+// damit Ref und Unterverzeichnis einer entfernten Quelle ab.
+//
+// Unabhaengig davon, wie erreichbar das im Einzelfall ist: der Validator heisst
+// cleanRelPath und verspricht in seiner eigenen Fehlermeldung, dass der Pfad im
+// Repository bleibt. Ein Wert mit `@`, `:` oder `#` ist kein repo-relativer
+// Pfad, und genau das soll die Funktion durchsetzen.
+const RelPathPattern = `^[A-Za-z0-9._/-]+$`
+
 var (
 	// OCI-Namen sind kleingeschrieben; die Distribution-Spec laesst im
 	// Repository-Namen nur [a-z0-9] plus Trenner zu (Audit A-7). Das Muster
@@ -107,9 +130,14 @@ var (
 	// Abgewiesen statt kleingeschrieben: anders als beim abgeleiteten Namen hat
 	// das hier jemand hingeschrieben. Den Wert eines Adopters still zu
 	// veraendern waere schlechter, als ihn darauf hinzuweisen.
-	imageRe  = regexp.MustCompile(ImagePattern)
-	scriptRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
-	repoRe   = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+	imageRe = regexp.MustCompile(ImagePattern)
+	// scriptRe und die Pfadpruefung in cleanRelPath teilen sich dieselbe Regel:
+	// die Zeichenklasse galt bisher NUR fuer `script`, nicht fuer `context`
+	// oder `path` (Audit A-1). cleanRelPath heisst so und meldet "path must
+	// stay inside the repository" - hielt das aber nur gegen `/` am Anfang und
+	// `..`, nicht gegen alles andere, was kein Pfad ist.
+	relPathRe = regexp.MustCompile(RelPathPattern)
+	repoRe    = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	// platformsRe mirrors the buildx `--platform` list the docker-build atoms
 	// forward verbatim: os/arch with an optional /vN variant, comma-separated,
 	// no spaces.
@@ -239,11 +267,8 @@ func decode(root *Node) (*Manifest, error) {
 			}
 			scriptLine := e.Map["script"].Line
 			raw := e2e.Script
-			if e2e.Script, err = cleanRelPath(raw, scriptLine); err != nil {
+			if e2e.Script, err = cleanRelPath(raw, scriptLine, "script"); err != nil {
 				return nil, err
-			}
-			if !scriptRe.MatchString(e2e.Script) {
-				return nil, fmt.Errorf("line %d: script must be a repo-relative path matching %s, got %q", scriptLine, scriptRe.String(), raw)
 			}
 			if e2e.Schedule, err = optionalString(e, "schedule"); err != nil {
 				return nil, err
@@ -273,7 +298,7 @@ func decode(root *Node) (*Manifest, error) {
 			if pins.Values, err = requiredString(cp, "values"); err != nil {
 				return nil, err
 			}
-			if pins.Values, err = cleanRelPath(pins.Values, cp.Map["values"].Line); err != nil {
+			if pins.Values, err = cleanRelPath(pins.Values, cp.Map["values"].Line, "values"); err != nil {
 				return nil, err
 			}
 			if key, err := optionalString(cp, "key"); err != nil {
@@ -336,7 +361,7 @@ func decodeComponent(n *Node) (Component, error) {
 	if c.Path, err = requiredString(n, "path"); err != nil {
 		return c, err
 	}
-	if c.Path, err = cleanRelPath(c.Path, n.Map["path"].Line); err != nil {
+	if c.Path, err = cleanRelPath(c.Path, n.Map["path"].Line, "path"); err != nil {
 		return c, err
 	}
 	if c.Language, err = optionalString(n, "language"); err != nil {
@@ -394,7 +419,7 @@ func decodeComponent(n *Node) (Component, error) {
 			if spec.Path, err = requiredString(item, "path"); err != nil {
 				return c, err
 			}
-			if spec.Path, err = cleanRelPath(spec.Path, item.Map["path"].Line); err != nil {
+			if spec.Path, err = cleanRelPath(spec.Path, item.Map["path"].Line, "path"); err != nil {
 				return c, err
 			}
 			if spec.Image, err = optionalImage(item, "image"); err != nil {
@@ -585,16 +610,28 @@ func optionalRelPath(n *Node, key string) (string, error) {
 	if err != nil || v == "" {
 		return v, err
 	}
-	return cleanRelPath(v, n.Map[key].Line)
+	return cleanRelPath(v, n.Map[key].Line, key)
 }
 
-func cleanRelPath(p string, line int) (string, error) {
+// cleanRelPath prueft einen repo-relativen Pfad. `what` ist der Feldname und
+// steht in der Fehlermeldung: die Regel gilt fuer `path`, `context`, `script`
+// und `values`, und wer sie verletzt, soll lesen koennen, WELCHES Feld gemeint
+// ist.
+func cleanRelPath(p string, line int, what string) (string, error) {
 	if filepath.IsAbs(p) || strings.HasPrefix(p, "/") {
-		return "", fmt.Errorf("line %d: path must stay inside the repository, got %q", line, p)
+		return "", fmt.Errorf("line %d: %s must stay inside the repository, got %q", line, what, p)
 	}
 	clean := filepath.ToSlash(filepath.Clean(p))
 	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", fmt.Errorf("line %d: path must stay inside the repository, got %q", line, p)
+		return "", fmt.Errorf("line %d: %s must stay inside the repository, got %q", line, what, p)
+	}
+	// Geprueft wird der ROHE Wert, nicht der bereinigte: filepath.Clean macht
+	// aus `https://evil/x` ein `https:/evil/x` und damit aus einer erkennbaren
+	// URL etwas, das wie ein Pfad aussieht. Die Verstuemmelung darf nicht die
+	// Pruefung entschaerfen.
+	if !relPathRe.MatchString(p) {
+		return "", fmt.Errorf("line %d: %s must be a repo-relative path matching %s, got %q",
+			line, what, RelPathPattern, p)
 	}
 	return clean, nil
 }
