@@ -1,0 +1,30 @@
+name: dockerhub-login
+description: |
+  Optional login to Docker Hub, so base-image pulls count against an account
+  instead of the runner's shared egress IP. Silently does nothing when no
+  credentials are configured — repos without the secrets must stay unaffected.
+
+inputs:
+  username:
+    description: 'Docker Hub username. Empty = skip login.'
+    required: false
+    default: ''
+  token:
+    description: 'Docker Hub PAT. Empty = skip login.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # Die Bedingung sitzt HIER und nicht beim Aufrufer: ein `if:` am Step des
+    # Aufrufers kann nicht auf den `secrets`-Kontext zugreifen, ueber `inputs`
+    # geht es sauber. Repos ohne die Secrets uebergeben leere Zeichenketten und
+    # ueberspringen den Schritt still.
+    - name: Log in to Docker Hub
+      if: inputs.username != '' && inputs.token != ''
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+      with:
+        registry: docker.io
+        username: ${{ inputs.username }}
+        password: ${{ inputs.token }}

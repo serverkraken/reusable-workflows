@@ -111,6 +111,8 @@ with:
 | output  | `tag`           | string  | —        | —                                              | Final tag (auto-computed if input was empty) |
 | secret  | `release_please_app_client_id`  | — | **yes** | — | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
+| secret  | `dockerhub_username`            | — | no | — | Docker Hub username. Empty skips the login and base-image pulls fall back to anonymous — rate-limited **per egress IP**, which a whole runner pool shares. |
+| secret  | `dockerhub_token`               | — | no | — | Docker Hub PAT. See `dockerhub_username`. Authenticated pulls count against the **account** instead. |
 
 ---
 
@@ -588,6 +590,17 @@ Logs in to `ghcr.io` using the workflow actor and `GITHUB_TOKEN` by default.
 |-------|------------|--------|----------|----------------------|-------------|
 | input | `username` | string | no       | `${{ github.actor }}` | GHCR username |
 | input | `token`    | string | no       | `${{ github.token }}` | GHCR token |
+
+### `actions/dockerhub-login`
+
+Optional login to `docker.io`, so base-image pulls count against an account
+instead of the runner's shared egress IP. Does nothing when either input is
+empty — repos without the credentials stay unaffected.
+
+| Kind  | Name       | Type   | Required | Default | Description |
+|-------|------------|--------|----------|---------|-------------|
+| input | `username` | string | no       | `''`    | Docker Hub username. Empty = skip login. |
+| input | `token`    | string | no       | `''`    | Docker Hub PAT. Empty = skip login. |
 
 ### `actions/compute-prerelease-tag`
 
