@@ -45,6 +45,25 @@ if [[ ! -f "$PROFILE" ]]; then
   exit 1
 fi
 
+# Kaputtes JSON stirbt sonst im ersten `jq -r '.monorepo'` mit dessen rc=5,
+# statt mit einer Meldung und rc=1 - ein Aufrufer, der auf rc==1 prueft,
+# behandelt das falsch. Deshalb steht die Pruefung VOR jedem Lesezugriff.
+# Das Profil abweisen, BEVOR die erste Datei geschrieben wird.
+#
+# Gemessen an einem Profil mit leerem `components`: diese Engine rendert ci.yml
+# erfolgreich, scheitert dann an release.yml (`map has no entry for key
+# "monorepo"`) und beendet sich mit rc=1 - die ci.yml bleibt liegen. Der
+# Go-Renderer prueft dasselbe vorab (readProfile, "components must not be
+# empty") und schreibt nichts.
+#
+# Ein halb gerendertes .github/ ist nicht bloss unschoen: onboard-drift.sh
+# rendert in ein Vergleichsverzeichnis, und ein Teilstand dort ergibt ein
+# falsches Drift-Urteil ("Datei fehlt" statt "Render fehlgeschlagen").
+if ! jq -e 'type == "object" and (.components | type == "array") and (.components | length > 0)' "$PROFILE" >/dev/null 2>&1; then
+  echo "::error::invalid profile JSON: components must not be empty ($PROFILE)" >&2
+  exit 1
+fi
+
 # Welche Dateien gerendert werden, entscheidet dieses Skript — nicht die
 # Templates. Was diese Entscheidung beeinflusst und hier unbekannt ist, faellt
 # deshalb still unter den Tisch, statt aufzufallen.

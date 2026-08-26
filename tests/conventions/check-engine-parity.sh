@@ -68,10 +68,74 @@ for dir in "$FIXTURES"/*/; do
     diff -u <(printf '%s' "$go_out" | jq -S . 2>/dev/null) \
             <(printf '%s' "$bash_out" | jq -S . 2>/dev/null) >&2 || true
     fail=1
+    continue
   fi
+
+  # Weisen BEIDE Engines die Erkennung ab (mehrdeutige Signale), gibt es kein
+  # Profil zu rendern. Der Fall ist oben schon als "gleich" bestaetigt.
+  if [[ -z "$go_out" ]]; then
+    continue
+  fi
+
+  # --- und dasselbe fuer den Renderer -----------------------------------
+  #
+  # Erkennung UND Rendern liegen doppelt vor. Ein Vergleich nur der Profile
+  # haette `oci_registry: ghcr.io//charts` nicht gesehen: die Profile waren
+  # identisch, erst die Templates machten aus dem leeren target_repo eine
+  # Registry, die es nicht gibt.
+  #
+  # Beide Ziele heissen gleich ("demo") und liegen bloss in verschiedenen
+  # Elternverzeichnissen: aus dem Zielbasisnamen leiten beide Engines $REPO ab,
+  # verschiedene Namen ergaeben also eine Abweichung, die keine ist.
+  prof=$(mktemp); printf '%s' "$go_out" > "$prof"
+  a=$(mktemp -d)/demo; b=$(mktemp -d)/demo
+  mkdir -p "$a" "$b"
+  go_render_err=$(mktemp); bash_render_err=$(mktemp)
+  "$BIN" render --catalog "$ROOT" --target "$a" --profile "$prof" --pin v4 >/dev/null 2>"$go_render_err"; go_rc=$?
+  bash "$ROOT/scripts/onboard-render.sh" "$ROOT" "$b" "$prof" v4 >/dev/null 2>"$bash_render_err"; bash_rc=$?
+
+  # Die Rueckgabewerte pruefen, NICHT bloss die Ergebnisverzeichnisse.
+  #
+  # Die erste Fassung haengte `|| true` an beide Aufrufe und verglich dann die
+  # Baeume. Damit haette ein Lauf, in dem BEIDE Renderer scheitern, zwei leere
+  # Verzeichnisse verglichen und "gleich" gemeldet - ein Gate, das nichts
+  # prueft und gruen ist.
+  #
+  # Nachgestellt mit einem gomplate, das mit 127 endet: Go hinterlaesst dabei
+  # ein halbes .github/ und faellt durch, die Bash-Engine bricht schon an ihrer
+  # `command -v gomplate`-Pruefung ab und schreibt nichts. Auch eine
+  # Leerheitspruefung haette das also nur halb gesehen.
+  if (( go_rc != 0 || bash_rc != 0 )); then
+    echo "FEHLER: $name — Rendern fehlgeschlagen (go rc=$go_rc, bash rc=$bash_rc):" >&2
+    head -c 300 "$go_render_err" >&2; echo >&2
+    head -c 300 "$bash_render_err" >&2; echo >&2
+    fail=1
+    rm -f "$go_render_err" "$bash_render_err" "$prof"
+    rm -rf "$(dirname "$a")" "$(dirname "$b")"
+    continue
+  fi
+  rm -f "$go_render_err" "$bash_render_err"
+
+  # `rendered_at` ist sekundengenau. Faellt der eine Lauf in die naechste
+  # Sekunde, unterscheiden sich die Locks - das ist ein Wettlauf, keine
+  # Abweichung der Engines. Also normalisieren, statt den Vergleich flaky zu
+  # machen oder die Lock-Datei ganz auszunehmen.
+  for lock in "$a/.github/onboard.lock.json" "$b/.github/onboard.lock.json"; do
+    [[ -f "$lock" ]] || continue
+    tmp=$(mktemp)
+    jq -S '.rendered_at = "NORMALISIERT"' "$lock" > "$tmp" && mv "$tmp" "$lock"
+  done
+
+  if ! diff -r "$a" "$b" >/dev/null 2>&1; then
+    echo "FEHLER: $name — die Engines rendern verschiedene Dateien:" >&2
+    diff -r "$a" "$b" >&2 || true
+    fail=1
+  fi
+  rm -f "$prof"
+  rm -rf "$(dirname "$a")" "$(dirname "$b")"
 done
 
 if (( fail )); then
   exit 1
 fi
-echo "OK: $checked Fixtures, beide Engines gleich; $declined mit begruendeter Absage der Bash-Engine."
+echo "OK: $checked Fixtures, beide Engines liefern gleiches Profil UND gleiche gerenderte Dateien; $declined mit begruendeter Absage der Bash-Engine."
