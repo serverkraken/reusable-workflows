@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.21.1](https://github.com/serverkraken/reusable-workflows/compare/v4.21.0...v4.21.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* **detect:** helm-only Manifest-Schluessel an einer Nicht-Helm-Komponente blieben stumm ([#371](https://github.com/serverkraken/reusable-workflows/issues/371)) ([565c110](https://github.com/serverkraken/reusable-workflows/commit/565c110b528ade75b8a290f0ff588b9619a31e75))
+* **onboard:** ein GitOps-Repo ohne Workload-Manifeste bekam einen Job, der nur scheitern kann ([#369](https://github.com/serverkraken/reusable-workflows/issues/369)) ([c54efcd](https://github.com/serverkraken/reusable-workflows/commit/c54efcd154664100ee98f73a14e8807079310e61))
+* **templates:** prerelease-on-push baute nur die erste Komponente ([#367](https://github.com/serverkraken/reusable-workflows/issues/367)) ([ec2da0c](https://github.com/serverkraken/reusable-workflows/commit/ec2da0c3db548b5601b46a0aaf9060db306acfbc))
+* **templates:** Trigger und Dispatch-Inputs richteten sich nach der falschen Komponente ([#370](https://github.com/serverkraken/reusable-workflows/issues/370)) ([73bd212](https://github.com/serverkraken/reusable-workflows/commit/73bd21238e30b033d1e0e9a18c20c31382474b8b))
+
 ## [4.21.0](https://github.com/serverkraken/reusable-workflows/compare/v4.20.2...v4.21.0) (2026-08-26)
 
 
