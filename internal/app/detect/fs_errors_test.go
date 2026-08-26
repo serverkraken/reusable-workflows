@@ -142,3 +142,66 @@ func TestUnreadableDirIsNotAnEmptyDockerfileList(t *testing.T) {
 			res.Profile.Warnings)
 	}
 }
+
+// Weitere Walker derselben Form, die der Fund B-6 nicht aufzaehlte:
+// detectCGO, unassignedSubdirDockerfileWarnings und hasMainUnderCmd. Den
+// benannten Fundort zu reparieren und drei identische Geschwister
+// stehenzulassen waere genau das Muster "Faehigkeit nicht ueberall angewandt".
+
+func TestMissingCmdDirIsNotAnError(t *testing.T) {
+	// "Existiert nicht" ist hier der NORMALFALL - die allermeisten Repos haben
+	// kein cmd/. Eine Warnung dafuer waere Rauschen, und Rauschen liest
+	// niemand.
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range res.Profile.Warnings {
+		if w.Code == "path_unreadable" {
+			t.Fatalf("ein fehlendes cmd/ darf nicht gemeldet werden: %+v", w)
+		}
+	}
+}
+
+func TestUnreadableCmdDirIsReportedExactlyOnce(t *testing.T) {
+	skipIfRoot(t)
+
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := filepath.Join(repo, "cmd", "tool")
+	if err := os.MkdirAll(cmd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cmd, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(repo, "cmd"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(repo, "cmd"), 0o755) })
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	for _, w := range res.Profile.Warnings {
+		if w.Code == "path_unreadable" && w.Path == "cmd" {
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatalf("ein vorhandenes, aber unlesbares cmd/ muss gemeldet werden; Warnungen=%+v", res.Profile.Warnings)
+	}
+	// Mehrere Walker laufen ueber dasselbe Verzeichnis. Ohne Entdopplung stand
+	// der Pfad zweimal in den Warnungen - gemessen.
+	if n != 1 {
+		t.Fatalf("path_unreadable fuer cmd erscheint %dx, erwartet genau einmal", n)
+	}
+}
