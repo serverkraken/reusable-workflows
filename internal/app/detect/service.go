@@ -1415,10 +1415,31 @@ func mustRead(path string) string {
 	return string(b)
 }
 
+// firstLines liest die ersten n Zeilen und schneidet Leerzeichen, Tabs und ein
+// CR am Zeilenende ab.
+//
+// Beide Aufrufer sind Annotationsleser (`# onboard:image=`, `# onboard:release=`)
+// und vergleichen die Zeile als Ganzes. Ohne den Schnitt entscheidet ein
+// unsichtbares Zeichen ueber das Ergebnis:
+//
+//	# onboard:release=true<CR>     auf Windows geschrieben -> Go verwarf sie
+//	# onboard:release=true<space>  vom Editor gelassen     -> Go verwarf sie
+//
+// Die Bash-Fassung nahm beide an (ihr grep war nur am Zeilenanfang verankert),
+// also entschieden die zwei Engines gegensaetzlich darueber, ob ein Image
+// ueberhaupt ausgeliefert wird - und zwar unsichtbar im Diff. Ein auf Windows
+// geschriebenes Dockerfile ist voellig normal; die Annotation dort still zu
+// ignorieren waere in beiden Engines falsch, nicht nur uneinheitlich.
+//
+// Gilt nur fuer das Zeilenende. Eine EINGERUECKTE Annotation weisen beide
+// Engines ab, und das bleibt so: das ist einheitlich und beabsichtigt.
 func firstLines(path string, n int) []string {
 	lines := strings.Split(mustRead(path), "\n")
 	if len(lines) > n {
-		return lines[:n]
+		lines = lines[:n]
+	}
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " \t\r")
 	}
 	return lines
 }

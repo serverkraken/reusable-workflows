@@ -1328,3 +1328,56 @@ _repo_with_annotation() {
   [ "$status" -eq 0 ]
   [ "$output" = '["$REPO-svc"]' ]
 }
+
+# --- unsichtbare Zeichen am Zeilenende --------------------------------------
+#
+# `read_release_override` matchte mit `grep -oE '^# onboard:release=(true|false)'`
+# nur den Zeilenanfang; die Go-Fassung vergleicht die Zeile exakt. Beide Engines
+# entschieden damit gegensaetzlich ueber die Auslieferung eines Images, und zwar
+# in beide Richtungen:
+#
+#   # onboard:release=true<CR>            Go verwarf sie,  Bash nahm sie
+#   # onboard:release=false-aber-doch-ja  Go verwarf sie,  Bash nahm sie
+#
+# Ein CRLF-Dockerfile ist nichts Exotisches - auf Windows geschrieben ist es der
+# Normalfall. Beide Engines schneiden das Zeilenende jetzt ab und verankern
+# beidseitig.
+
+_release_flags() {
+  bash "$REPO_ROOT/scripts/onboard-detect.sh" --profile-json "$1" \
+    | jq -c '[.components[].dockerfiles[].release_eligible]'
+}
+
+_repo_with_dockerfile() {  # <dateiname> <kopfzeile-roh>
+  local dir="$BATS_TEST_TMPDIR/rel" 
+  rm -rf "$dir"; mkdir -p "$dir/svc"
+  printf 'module x\ngo 1.22\n' > "$dir/svc/go.mod"
+  printf '%bFROM scratch\n' "$2" > "$dir/svc/$1"
+  echo "$dir"
+}
+
+@test "release=true mit CR aus Windows wird gelesen" {
+  run _release_flags "$(_repo_with_dockerfile Dockerfile.dev '# onboard:release=true\r\n')"
+  [ "$output" = '[true]' ]
+}
+
+@test "release=true mit Leerzeichen dahinter wird gelesen" {
+  run _release_flags "$(_repo_with_dockerfile Dockerfile.dev '# onboard:release=true \n')"
+  [ "$output" = '[true]' ]
+}
+
+@test "release=false mit Text dahinter ist ungueltig, Default gilt" {
+  run _release_flags "$(_repo_with_dockerfile Dockerfile '# onboard:release=false-aber-doch-ja\n')"
+  [ "$output" = '[true]' ]
+}
+
+@test "echtes release=false unterdrueckt die Auslieferung weiter" {
+  run _release_flags "$(_repo_with_dockerfile Dockerfile '# onboard:release=false\n')"
+  [ "$output" = '[false]' ]
+}
+
+@test "onboard:image mit CR aus Windows wird gelesen" {
+  local d; d="$(_repo_with_dockerfile Dockerfile '# onboard:image=acme/svc\r\n')"
+  run bash -c "bash '$REPO_ROOT/scripts/onboard-detect.sh' --profile-json '$d' | jq -c '[.components[].dockerfiles[].image_name]'"
+  [ "$output" = '["acme/svc"]' ]
+}

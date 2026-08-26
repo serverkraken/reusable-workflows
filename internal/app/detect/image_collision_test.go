@@ -307,3 +307,68 @@ func TestImageAnnotationFollowsTheManifestRule(t *testing.T) {
 		})
 	}
 }
+
+// Unsichtbare Zeichen am Zeilenende entschieden ueber die Auslieferung.
+//
+// readReleaseOverride vergleicht die Zeile exakt (`case "# onboard:release=true"`),
+// die Bash-Fassung matchte mit `grep -oE '^…'` nur den Anfang. Damit entschieden
+// die beiden Engines gegensaetzlich, und zwar in BEIDE Richtungen:
+//
+//	# onboard:release=true<CR>            Go: verworfen   Bash: true
+//	# onboard:release=false-aber-doch-ja  Go: verworfen   Bash: false
+//
+// Der erste Fall ist der wahrscheinlichere: ein auf Windows geschriebenes
+// Dockerfile traegt CRLF. Beide Engines schneiden das Zeilenende jetzt ab und
+// verankern beidseitig.
+
+func TestAnnotationIgnoresInvisibleLineEnds(t *testing.T) {
+	for _, c := range []struct {
+		name, file, header string
+		want               bool
+	}{
+		{"sauber", "Dockerfile.dev", "# onboard:release=true\n", true},
+		{"Leerzeichen dahinter", "Dockerfile.dev", "# onboard:release=true \n", true},
+		{"Tab dahinter", "Dockerfile.dev", "# onboard:release=true\t\n", true},
+		{"CRLF aus Windows", "Dockerfile.dev", "# onboard:release=true\r\n", true},
+		// Kein Endanker-Ersatz: was hinter dem Wert steht, ist kein Leerraum
+		// und macht die Annotation ungueltig - der Default gilt weiter.
+		{"Text dahinter zaehlt nicht", "Dockerfile", "# onboard:release=false-aber-doch-ja\n", true},
+		{"angehaengte Zeichen", "Dockerfile", "# onboard:release=falsex\n", true},
+		{"echtes false", "Dockerfile", "# onboard:release=false\n", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			repo := t.TempDir()
+			dir := filepath.Join(repo, "svc")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, c.file), []byte(c.header+"FROM scratch\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := res.Profile.Components[0].Dockerfiles[0].ReleaseEligible; got != c.want {
+				t.Fatalf("release_eligible=%v, erwartet %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestImageAnnotationSurvivesCRLF(t *testing.T) {
+	repo := t.TempDir()
+	writeDockerfileWithHeader(t, repo, "# onboard:image=acme/svc\r\n")
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ein auf Windows geschriebenes Dockerfile ist normal. Die Annotation dort
+	// still zu ignorieren waere in beiden Engines falsch, nicht bloss uneinheitlich.
+	if got := res.Profile.Components[0].Dockerfiles[0].ImageName; got != "acme/svc" {
+		t.Fatalf("image_name=%q, erwartet %q", got, "acme/svc")
+	}
+}
