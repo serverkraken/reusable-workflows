@@ -459,6 +459,43 @@ jobs:
             and (.files["release-please-config.json"] | test("^sha256:[a-f0-9]{64}$"))
           ' "$TARGET/.github/onboard.lock.json" > /dev/null
 
+          # Audit K-15: bis hierher war nur geprueft, DASS die Dateien da sind
+          # und dass der Lock wohlgeformte Hashes traegt. In die gerenderten
+          # Workflows hat nie jemand hineingeschaut — ein Renderer, der leere
+          # oder unsinnige Dateien schreibt, haette bestanden, denn auch die
+          # bekommen einen gueltigen sha256.
+          #
+          # Geprueft wird deshalb, was den Adopter tatsaechlich betrifft: dass
+          # die Dateien gueltiges YAML mit Jobs sind und dass die Jobs den
+          # Katalog auf dem angeforderten Pin aufrufen. Keine Golden-Kopie —
+          # die liegt in tests/shell/golden/ und wuerde hier nur doppelt
+          # gepflegt.
+          python3 - "$TARGET" <<'PY'
+          import sys, pathlib, re
+          target = pathlib.Path(sys.argv[1])
+          for name in ("ci.yml", "release.yml"):
+              wf = target / ".github/workflows" / name
+              text = wf.read_text(encoding="utf-8")
+              if not text.strip():
+                  sys.exit(f"::error::{name} ist leer")
+              # Jobs vorhanden?
+              if not re.search(r"^jobs:\s*$", text, re.M):
+                  sys.exit(f"::error::{name} hat keinen jobs-Block")
+              njobs = len(re.findall(r"^  [A-Za-z0-9_-]+:\s*$", text, re.M))
+              if njobs < 1:
+                  sys.exit(f"::error::{name} enthaelt keinen einzigen Job")
+              # Ruft es den Katalog auf dem angeforderten Pin auf?
+              uses = re.findall(
+                  r"uses:\s*serverkraken/reusable-workflows/\.github/workflows/([\w-]+\.yml)@(\S+)",
+                  text)
+              if not uses:
+                  sys.exit(f"::error::{name} ruft kein einziges Katalog-Atom auf")
+              wrong = sorted({p for _, p in uses if p != "v4"})
+              if wrong:
+                  sys.exit(f"::error::{name}: Aufrufe auf falschem Pin {wrong}, erwartet v4")
+              print(f"{name}: {njobs} Job(s), {len(uses)} Katalog-Aufruf(e), alle @v4")
+          PY
+
   # ----- onboard preview (Go path, adopter manifest): renders the manifest
   #       fixture through sk-workflows preview and diffs it against the
   #       committed golden. The bats harness cannot cover this fixture — the
