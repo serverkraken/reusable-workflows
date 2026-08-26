@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.21.2](https://github.com/serverkraken/reusable-workflows/compare/v4.21.1...v4.21.2) (2026-08-26)
+
+
+### Bug Fixes
+
+* **templates:** Cleanup putzte nur die release-faehigen Images, prerelease pusht aber alle ([#372](https://github.com/serverkraken/reusable-workflows/issues/372)) ([71ac276](https://github.com/serverkraken/reusable-workflows/commit/71ac276a05316a99833ec42bb3a8ce5647c8e1df))
+* **templates:** eine einzelne Nicht-Wurzel-Komponente wurde nie gebaut - grün und still ([#374](https://github.com/serverkraken/reusable-workflows/issues/374)) ([bd7bd36](https://github.com/serverkraken/reusable-workflows/commit/bd7bd36cdd400d9308e1b6c99ac8db7c25caaebd))
+
 ## [4.21.1](https://github.com/serverkraken/reusable-workflows/compare/v4.21.0...v4.21.1) (2026-08-26)
 
 
