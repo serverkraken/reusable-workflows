@@ -639,9 +639,33 @@ func displayPlatforms(p string) string {
 }
 
 // chartVersion reads `version:` from a Chart.yaml; empty when absent.
+// chartVersion liest die `version:` des Charts — nur den Schluessel auf der
+// obersten Ebene (Audit B-9).
+//
+// Vorher wurde jede Zeile erst getrimmt und dann auf `version:` geprueft. Damit
+// matchte auch das eingerueckte `version:` eines Eintrags unter
+// `dependencies:`. Gemessen an einem Chart, dessen Abhaengigkeitsblock vor der
+// eigenen Version steht:
+//
+//	dependencies:
+//	  - name: redis
+//	    version: 17.11.3     <- das wurde gelesen
+//	version: 2.5.0           <- das ist die Chart-Version
+//
+// Der Wert seedet `.release-please-manifest.json` (siehe
+// configs/release-please-manifest.json.tmpl). Das Chart waere also mit 17.11.3
+// als Ausgangsversion gestartet, und der naechste Release haette daraus 17.11.4
+// gemacht — 15 Hauptversionen zu hoch, und Versionen lassen sich nicht
+// zurueckdrehen.
+//
+// Die Pruefung auf fehlende Einrueckung ist genau die YAML-Regel fuer einen
+// Schluessel auf Dokumentebene; mehr Parser braucht es dafuer nicht.
 func chartVersion(path string) string {
-	for _, l := range strings.Split(mustRead(path), "\n") {
-		l = strings.TrimSpace(l)
+	for _, raw := range strings.Split(mustRead(path), "\n") {
+		if strings.HasPrefix(raw, " ") || strings.HasPrefix(raw, "\t") || strings.HasPrefix(raw, "-") {
+			continue
+		}
+		l := strings.TrimSpace(raw)
 		if !strings.HasPrefix(l, "version:") {
 			continue
 		}

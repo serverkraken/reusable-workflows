@@ -644,3 +644,58 @@ func TestPNPMWorkspaceReadsBothYAMLStyles(t *testing.T) {
 		})
 	}
 }
+
+// Audit B-9: chartVersion trimmte jede Zeile, bevor es auf `version:` pruefte —
+// damit matchte auch das EINGERUECKTE `version:` eines Eintrags unter
+// `dependencies:`. Gemessen an einem Chart, dessen Abhaengigkeitsblock vor der
+// eigenen Version steht, ergab das 17.11.3 (die Redis-Version) statt 2.5.0.
+//
+// Der Wert seedet .release-please-manifest.json: das Chart waere mit 17.11.3
+// als Ausgangsversion gestartet, der naechste Release haette 17.11.4 daraus
+// gemacht — 15 Hauptversionen zu hoch, und Versionen lassen sich nicht
+// zurueckdrehen.
+
+func TestChartVersionIgnoresDependencyVersions(t *testing.T) {
+	for _, c := range []struct{ name, chart, want string }{
+		{
+			"dependencies vor der eigenen version",
+			"apiVersion: v2\nname: demo\ndependencies:\n  - name: redis\n    version: 17.11.3\nversion: 2.5.0\n",
+			"2.5.0",
+		},
+		{
+			"eigene version zuerst",
+			"apiVersion: v2\nname: demo\nversion: 2.5.0\ndependencies:\n  - name: redis\n    version: 17.11.3\n",
+			"2.5.0",
+		},
+		{
+			"mit Kommentar dahinter",
+			"apiVersion: v2\nname: demo\nversion: \"3.1.0\"  # gepinnt\n",
+			"3.1.0",
+		},
+		{
+			// Ein Chart ohne eigene version ist ungueltig, darf aber keinesfalls
+			// die einer Abhaengigkeit erben.
+			"nur dependencies, keine eigene version",
+			"apiVersion: v2\nname: demo\ndependencies:\n  - name: redis\n    version: 17.11.3\n",
+			"",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			repo := writeManifestRepo(t, "schema: 1\ncomponents:\n  - path: charts/demo\n    language: helm\n")
+			dir := filepath.Join(repo, "charts", "demo")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "Chart.yaml"), []byte(c.chart), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := res.Profile.Components[0].Version; got != c.want {
+				t.Fatalf("version=%q, erwartet %q", got, c.want)
+			}
+		})
+	}
+}
