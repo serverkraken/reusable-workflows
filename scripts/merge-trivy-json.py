@@ -53,6 +53,50 @@ def _where(finding: dict):
     return where if any(v is not None for v in where) else None
 
 
+# Felder, deren Abweichung den Bericht inhaltlich aendert (Audit L-6).
+#
+# Die Identitaet oben entscheidet, WAS ein Duplikat ist. Sie sagt nichts
+# darueber, ob das Duplikat dasselbe AUSSAGT: zwei Plattform-Scans koennten
+# denselben CVE am selben Paket melden und sich in Severity oder FixedVersion
+# unterscheiden. Der zweite fiel bisher stillschweigend weg, und das Gate
+# entschied dann an einer Severity, die nur eine der beiden Plattformen sah.
+#
+# Gemessen tritt das im tatsaechlichen Anwendungsfall nicht auf: trivy 0.74.0
+# gegen node:10-alpine, linux/amd64 und linux/arm64, ergab 76 Schwachstellen je
+# Plattform, 76 gemeinsame Identitaeten und null Abweichungen in Severity,
+# FixedVersion und Status. Das ist ein Bild von einem Image, kein Beweis —
+# dieselbe Lage wie beim Regelkonflikt in merge-sarif-runs.py, und deshalb
+# dieselbe Antwort: gemeldet statt abgebrochen. Ein Abbruch wuerde Scans an
+# einem Ereignis brechen, das noch nie beobachtet wurde; Stillschweigen macht
+# aus einem Fehlbericht einen unsichtbaren Fehlbericht.
+# Kein `kind[:-1]`: daraus wuerde "Vulnerabilitie".
+SINGULAR = {
+    "Vulnerabilities": "vulnerability",
+    "Secrets": "secret",
+    "Misconfigurations": "misconfiguration",
+}
+
+MATERIAL_FIELDS = {
+    "Vulnerabilities": ("Severity", "FixedVersion", "Status"),
+    "Secrets": ("Severity",),
+    "Misconfigurations": ("Severity", "Status", "Resolution"),
+}
+
+
+def _label(kind: str, finding: dict) -> str:
+    """Wie ein Fund in einer Meldung heisst — die ID, die ein Mensch wiedererkennt."""
+    # `ID` vor `AVDID`: bei Fehlkonfigurationen ist das die kurze Kennung
+    # ("DS002"), die trivy auch in seiner eigenen Tabelle zeigt — danach sucht
+    # jemand im Log. `AVDID` ("AVD-DS-0002") bleibt der Rueckfall.
+    # Die Reihenfolge ist kollisionsfrei: Schwachstellen tragen kein `ID`,
+    # Secrets tragen `RuleID`.
+    for field in ("VulnerabilityID", "RuleID", "ID", "AVDID"):
+        value = finding.get(field)
+        if value:
+            return str(value)
+    return kind
+
+
 def _identity(kind: str, finding: dict) -> str:
     fields = IDENTITY_FIELDS[kind]
     key = [_where(finding) if f == "_where" else finding.get(f) for f in fields]
@@ -77,7 +121,9 @@ def merge(documents: list[dict]) -> dict:
     merged = dict(documents[0])
     merged_results: list[dict] = []
     by_key: dict[str, dict] = {}
-    seen: dict[str, set[str]] = {}
+    # ident -> der BEHALTENE Fund, nicht nur seine Identitaet: nur so laesst
+    # sich ein spaeteres Duplikat inhaltlich mit ihm vergleichen (Audit L-6).
+    seen: dict[str, dict[str, dict]] = {}
 
     for doc in documents:
         for result in doc.get("Results") or []:
@@ -89,7 +135,7 @@ def merge(documents: list[dict]) -> dict:
                     if kind in result:
                         target[kind] = []
                 by_key[key] = target
-                seen[key] = set()
+                seen[key] = {}
                 merged_results.append(target)
 
             for kind in FINDING_KEYS:
@@ -99,9 +145,26 @@ def merge(documents: list[dict]) -> dict:
                 target.setdefault(kind, [])
                 for finding in findings:
                     ident = _identity(kind, finding)
-                    if ident in seen[key]:
+                    kept = seen[key].get(ident)
+                    if kept is not None:
+                        differing = [
+                            f
+                            for f in MATERIAL_FIELDS.get(kind, ())
+                            if kept.get(f) != finding.get(f)
+                        ]
+                        if differing:
+                            detail = ", ".join(
+                                f"{f}: {kept.get(f)!r} vs {finding.get(f)!r}"
+                                for f in differing
+                            )
+                            print(
+                                f"::warning::trivy {SINGULAR.get(kind, kind)} {_label(kind, finding)} "
+                                f"in {result.get('Target')} differs between reports "
+                                f"({detail}); keeping the first",
+                                file=sys.stderr,
+                            )
                         continue
-                    seen[key].add(ident)
+                    seen[key][ident] = finding
                     target[kind].append(finding)
 
     merged["Results"] = merged_results
