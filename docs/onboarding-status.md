@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-08-25T17:02:05Z_
+_Last updated by the onboarding workflow: 2026-08-26T20:08:48Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -42,7 +42,7 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/homelab-mail-nue | 2026-06-13 | v4 | [PR](https://github.com/serverkraken/homelab-mail-nue/pull/55) | — | add-open, no-legacy | — |
 | serverkraken/kannichdasessen | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/kannichdasessen/pull/3) | — | add-open, no-legacy | — |
 | serverkraken/renovate-config | 2026-08-03 | v4 | [PR](https://github.com/serverkraken/renovate-config/pull/1) | — | add-open, no-legacy | — |
-| serverkraken/wartung | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/wartung/pull/49) | [PR](https://github.com/serverkraken/wartung/pull/50) | add-open, cleanup-open | serverkraken/homelab-study |
+| serverkraken/wartung | 2026-08-26 | v4 | [PR](https://github.com/serverkraken/wartung/pull/55) | — | add-open, no-legacy | serverkraken/homelab-study |
 | serverkraken/oracle-cloud | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/oracle-cloud/pull/2) | — | add-open, no-legacy | — |
 | serverkraken/mailstack | 2026-08-25 | v4 | [PR](https://github.com/serverkraken/mailstack/pull/111) | — | add-open, no-legacy | serverkraken/homelab-mail-nue |
 | serverkraken/llm-host | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/llm-host/pull/2) | — | add-open, no-legacy | — |
