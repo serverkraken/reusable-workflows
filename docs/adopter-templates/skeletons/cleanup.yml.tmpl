@@ -27,27 +27,50 @@
 {{- $repoExpr := "${{ github.event.repository.name }}" -}}
 {{- $pkgs := coll.Slice -}}
 {{- $slugs := coll.Slice -}}
+{{- /* ALLE Dockerfiles, nicht nur die release-faehigen (Audit J-23).
+
+     Der Filter stand hier auf `.release_eligible` - dieselbe Menge, die
+     release.yml baut. prerelease.yml baut aber JEDES Dockerfile, und es
+     pusht: der Job hat `packages: write` und ruft docker-build mit
+     `prerelease: true`. Gemessen an einem Repo mit Dockerfile UND
+     Dockerfile.dev:
+
+       prerelease baut   $REPO   und   $REPO-dev
+       cleanup putzte    $REPO
+
+     `$REPO-dev` wuchs also unbegrenzt, und genau dafuer ist
+     prerelease_age_days da. Im Grenzfall - eine Komponente, deren einziges
+     Dockerfile nicht release-faehig ist - blieb die Liste sogar LEER, der
+     nackte Job lief gegen das Standardpaket $REPO, das niemand pusht, und
+     der Cleanup tat gar nichts.
+
+     Der Fund nannte nur diesen Grenzfall ("Komponente mit nur
+     Dockerfile.dev"). Er ist der auffaelligere, aber nicht der haeufigere:
+     betroffen ist jedes nicht-release-faehige Dockerfile, auch neben einem
+     release-faehigen.
+
+     NICHT betroffen ist die Zusicherung im Kopf, dass Ein-Image-Adopter
+     byte-gleich bleiben: wer nur ein `Dockerfile` hat, hat auch nur ein
+     Dockerfile insgesamt, und die Menge ist unveraendert. */ -}}
 {{- range .profile.components -}}
   {{- range .dockerfiles -}}
-    {{- if .release_eligible -}}
-      {{- $img := .image_name -}}
-      {{- $pkg := "" -}}
-      {{- $slug := "" -}}
-      {{- if strings.HasPrefix "$REPO" $img -}}
-        {{- $tail := strings.TrimPrefix "$REPO" $img -}}
-        {{- $pkg = printf "%s%s" $repoExpr $tail -}}
-        {{- $slug = printf "repo%s" $tail -}}
-      {{- else if strings.Contains "/" $img -}}
-        {{- $pkg = index (strings.SplitN "/" 2 $img) 1 -}}
-        {{- $slug = $pkg -}}
-      {{- else -}}
-        {{- $pkg = $img -}}
-        {{- $slug = $img -}}
-      {{- end -}}
-      {{- if not (coll.Has $pkgs $pkg) -}}
-        {{- $pkgs = coll.Append $pkg $pkgs -}}
-        {{- $slugs = coll.Append (strings.ReplaceAll "." "-" (strings.ReplaceAll "/" "-" $slug)) $slugs -}}
-      {{- end -}}
+    {{- $img := .image_name -}}
+    {{- $pkg := "" -}}
+    {{- $slug := "" -}}
+    {{- if strings.HasPrefix "$REPO" $img -}}
+      {{- $tail := strings.TrimPrefix "$REPO" $img -}}
+      {{- $pkg = printf "%s%s" $repoExpr $tail -}}
+      {{- $slug = printf "repo%s" $tail -}}
+    {{- else if strings.Contains "/" $img -}}
+      {{- $pkg = index (strings.SplitN "/" 2 $img) 1 -}}
+      {{- $slug = $pkg -}}
+    {{- else -}}
+      {{- $pkg = $img -}}
+      {{- $slug = $img -}}
+    {{- end -}}
+    {{- if not (coll.Has $pkgs $pkg) -}}
+      {{- $pkgs = coll.Append $pkg $pkgs -}}
+      {{- $slugs = coll.Append (strings.ReplaceAll "." "-" (strings.ReplaceAll "/" "-" $slug)) $slugs -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}

@@ -9,6 +9,10 @@ jobs:
     uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v2
     with:
       package_name: "${{ github.event.repository.name }}"
+  cleanup-repo-dev:
+    uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v2
+    with:
+      package_name: "${{ github.event.repository.name }}-dev"
   cleanup-repo-worker:
     uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v2
     with:
