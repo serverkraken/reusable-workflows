@@ -58,6 +58,30 @@ func (s Service) Preview(ctx context.Context, req Request) (Result, error) {
 	if sameCleanPath(req.RepoPath, req.OutPath) {
 		return Result{}, errors.New("preview output must not be the source repo path")
 	}
+	// Gleichheit allein reicht nicht (Audit B-7): der Riegel prueft seit
+	// Einfuehrung des Befehls (#181) nur, ob --out GENAU der Quellpfad ist. Ein
+	// UNTERVERZEICHNIS lief durch und legte acht Dateien im untersuchten Repo
+	// ab.
+	//
+	// Schwerer wiegt der zweite Fall, der dabei auffiel: --out auf den KATALOG.
+	// preview schreibt .github/workflows/release.yml, release-please-config.json
+	// und .release-please-manifest.json - alle drei gibt es in diesem Repo
+	// ebenfalls. Ein `preview --out .` im Katalog haette dessen eigene
+	// Release-Maschinerie mit der eines Adopters ueberschrieben.
+	//
+	// Beides ist dieselbe Regel: nicht in einen Baum schreiben, aus dem gelesen
+	// wird.
+	for _, src := range []struct{ path, what string }{
+		{req.RepoPath, "source repo"},
+		{req.CatalogPath, "catalog"},
+	} {
+		if src.path == "" {
+			continue
+		}
+		if err := outsideOf(req.OutPath, src.path, src.what); err != nil {
+			return Result{}, err
+		}
+	}
 	if err := os.MkdirAll(req.OutPath, 0o755); err != nil {
 		return Result{}, err
 	}
@@ -132,6 +156,48 @@ func renderedFiles(outPath string) ([]string, error) {
 	}
 	sort.Strings(files)
 	return files, nil
+}
+
+// outsideOf weist ab, wenn out UNTERHALB von src landet.
+//
+// Symlinks werden aufgeloest, sonst genuegte ein Link auf den Katalog, um am
+// Riegel vorbeizukommen. out existiert beim ersten Lauf noch nicht - geprueft
+// wird deshalb der tiefste bereits existierende Vorfahre, dieselbe Bauart wie
+// render.ensureInsideTarget.
+func outsideOf(out, src, what string) error {
+	root, err := filepath.Abs(src)
+	if err != nil {
+		return err
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	probe, err := filepath.Abs(out)
+	if err != nil {
+		return err
+	}
+	for {
+		if _, err := os.Lstat(probe); err == nil {
+			break
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			break
+		}
+		probe = parent
+	}
+	if resolved, err := filepath.EvalSymlinks(probe); err == nil {
+		probe = resolved
+	}
+	rel, err := filepath.Rel(root, probe)
+	if err != nil {
+		return nil
+	}
+	if rel == ".." || filepath.IsAbs(rel) || len(rel) > 2 && rel[:3] == ".."+string(filepath.Separator) {
+		return nil
+	}
+	return fmt.Errorf("preview output must not be inside the %s (%s resolves under %s); "+
+		"render into a directory outside it, e.g. \"$(mktemp -d)\"", what, out, root)
 }
 
 func sameCleanPath(a, b string) bool {
