@@ -681,12 +681,47 @@ func TestParseManifestChartPins(t *testing.T) {
 	}
 }
 
+// Gegenprobe zur Zeichenklasse aus J-22: waere sie zu eng, wuerde sie
+// legitime Schluessel abweisen, und der Fix waere schlimmer als der Fund.
+// Deshalb explizit die Formen, die Helm-values-Dateien tatsaechlich tragen.
+func TestParseManifestChartPinsKeyAcceptsLegitimateForms(t *testing.T) {
+	for _, key := range []string{
+		"images.{name}.tag",
+		"image_pins.{name}.tag",
+		"my-chart.images.{name}.tag",
+		"{name}.tag",
+		"a1.{name}.v2_tag",
+	} {
+		t.Run(key, func(t *testing.T) {
+			src := "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    key: '" + key + "'\n"
+			m, err := Parse([]byte(src))
+			if err != nil {
+				t.Fatalf("legitimer Schluessel abgewiesen: %v", err)
+			}
+			if m.Release.ChartPins.Key != key {
+				t.Fatalf("key = %q, want %q", m.Release.ChartPins.Key, key)
+			}
+		})
+	}
+}
+
 func TestParseManifestChartPinsRejected(t *testing.T) {
 	cases := map[string]string{
 		"missing values":   "schema: 1\nrelease:\n  chart_pins:\n    key: images.{name}.tag\n",
 		"key without name": "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    key: images.tag\n",
 		"escaping path":    "schema: 1\nrelease:\n  chart_pins:\n    values: ../outside.yaml\n",
 		"unknown key":      "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    nope: 1\n",
+
+		// Audit J-22. `values` lief immer durch cleanRelPath; `key` durch
+		// nichts ausser der {name}-Pruefung. Beide Formen wurden gemessen
+		// angenommen und bis ins gerenderte release.yml durchgereicht.
+		//
+		// Der Ausdruck ist der ernste Fall: GitHub wertet ihn beim Adopter zur
+		// Laufzeit aus, und der Token landet im key_template, das
+		// chart-image-bump.py in die values-Datei schreibt.
+		"key with quote":      "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    key: 'images.{name}.tag\"'\n",
+		"key with expression": "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    key: 'images.{name}.tag${{ secrets.GITHUB_TOKEN }}'\n",
+		"key with newline":    "schema: 1\nrelease:\n  chart_pins:\n    values: v.yaml\n    key: \"images.{name}.tag\\n      evil: yes\"\n",
 	}
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {

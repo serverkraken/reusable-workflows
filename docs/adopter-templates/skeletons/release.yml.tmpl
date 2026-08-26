@@ -18,7 +18,25 @@
 name: release
 on:
   push:
-    branches: [{{ .profile.default_branch }}]
+    {{- /* Gequotet, und zwar per strings.Quote statt per Literal-
+         Anfuehrungszeichen wie an den uebrigen Interpolationen.
+
+         Unquotiert wurde der Branchname zum YAML-Skalar seines Aussehens.
+         Gemessen an legalen Git-Branchnamen:
+
+           default_branch: true    ->  branches: [true]   -> Boolean, der
+                                       Filter trifft den Branch nie
+           default_branch: x,y     ->  branches: [x,y]    -> ZWEI Branches
+           default_branch: a]b     ->  branches: [a]b]    -> Datei abgewiesen
+
+         Die ersten beiden sind die schlimmeren: actionlint meldet dort
+         nichts, und das Release feuert einfach nie (Audit J-20).
+
+         strings.Quote und nicht "{{ ... }}", weil default_branch als
+         einziger dieser Werte NICHT durch die Manifest-Validierung laeuft -
+         er kommt von der GitHub-API. Git erlaubt ein Anfuehrungszeichen im
+         Branchnamen, und das wuerde ein Literal-Quote wieder aufbrechen. */}}
+    branches: [{{ .profile.default_branch | strings.Quote }}]
 {{- if and (index .profile "release") (index .profile.release "dispatch_trigger") }}
   workflow_dispatch: {}
 {{- end }}

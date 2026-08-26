@@ -67,6 +67,51 @@ def input_types() -> dict[str, set[str]]:
     return types
 
 
+# Zweiter Prueffall, aus Audit J-20. Die Suche oben trifft `key: {{ ... }}` —
+# `branches: [{{ .profile.default_branch }}]` fiel durch die Maschen, weil der
+# Wert in einer Flow-Sequenz steht. Der Fund sass also genau im blinden Fleck
+# des Gates, das diese Klasse verhindern soll.
+#
+# Betrifft NICHT nur type=string-Eingaenge: `branches` ist gar kein Eingang,
+# sondern ein Trigger-Schluessel. Die Regel ist allgemeiner — ein einzelnes
+# Element aus Profildaten in einer Flow-Sequenz gehoert gequotet.
+#
+# `join` ist ausgenommen, und zwar eng: nur wenn der Ausdruck woertlich damit
+# beginnt. join erzeugt ABSICHTLICH mehrere Elemente; ein Quote daraus machte
+# eine einzige Zeichenkette und damit einen `needs:`-Eintrag, den es nicht
+# gibt. Ein Literalpraefix (`[docker-build{{ ... }}]`) trifft das Muster
+# ohnehin nicht.
+def check_flow_sequences() -> tuple[list[str], int]:
+    bad: list[str] = []
+    ok = 0
+    total = 0
+    for tpl in sorted((ROOT / "docs/adopter-templates").rglob("*.tmpl")):
+        for lineno, line in enumerate(tpl.read_text(encoding="utf-8").splitlines(), 1):
+            m = re.match(r"^\s*([\w-]+):\s+\[(\{\{.*\}\})\]\s*$", line)
+            if not m:
+                continue
+            key, expr = m.groups()
+            inner = expr[2:-2].strip()
+            total += 1
+            if inner.startswith("join "):
+                continue
+            if "strings.Quote" in inner or "data.ToJSON" in inner:
+                ok += 1
+                continue
+            bad.append(
+                f"  {tpl.relative_to(ROOT)}:{lineno}: {key} steht ungequotet "
+                f"in einer Flow-Sequenz: {expr}"
+            )
+    # Gegenprobe wie oben: findet das Muster gar keine Stelle, passt es nicht
+    # mehr auf die Templates und Gruen waere bedeutungslos.
+    if total == 0:
+        bad.append(
+            "  (keine einzige Flow-Sequenz-Interpolation gefunden — das Muster "
+            "passt nicht mehr auf die Templates, dieser Teil prueft nichts)"
+        )
+    return bad, ok
+
+
 def main() -> int:
     types = input_types()
     if not types:
@@ -120,7 +165,22 @@ def main() -> int:
         )
         return 1
 
-    print(f"OK: {quoted} Profildaten-Interpolationen in string-Eingaengen, alle gequotet.")
+    seq_bad, seq_ok = check_flow_sequences()
+    if seq_bad:
+        print("FEHLER: ungequotete Profildaten in einelementigen Flow-Sequenzen:", file=sys.stderr)
+        print("\n".join(seq_bad), file=sys.stderr)
+        print(
+            "\nSchreibweise: `key: [{{ ... | strings.Quote }}]`. Unquotiert wird der "
+            "Wert zum YAML-Skalar seines Aussehens: `[true]` ist ein Boolean, "
+            "`[x,y]` sind ZWEI Elemente.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(
+        f"OK: {quoted} Profildaten-Interpolationen in string-Eingaengen "
+        f"und {seq_ok} in Flow-Sequenzen, alle gequotet."
+    )
     return 0
 
 

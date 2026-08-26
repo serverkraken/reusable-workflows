@@ -14,16 +14,28 @@
   (no Dockerfiles at all) is emitted for the first component only, so a
   monorepo never gets two noop jobs.
 
-  The on: block (and the Flutter workflow_dispatch inputs) is still derived
-  from the first component only — the Flutter dispatch inputs only make
-  sense single-component; a monorepo with an attached Flutter app keeps
-  index-0 semantics there.
+  Die Flutter-workflow_dispatch-Inputs richten sich nach ALLEN Komponenten,
+  nicht nur nach der ersten. Der jobs-Block unten laeuft ueber alle und gibt
+  fuer jede Flutter-Komponente einen Job aus, der `inputs.version` und
+  `inputs.prerelease` referenziert. Stand das on: bei Komponente 0 und die
+  Flutter-App weiter hinten (z.B. services/api + apps/mobile), dann rendert
+  `workflow_dispatch: {}` ohne Inputs, waehrend der Job sie benutzt —
+  actionlint: "property \"version\" is not defined in object type {}", und
+  bei GitHub wird `inputs.prerelease` zu Null, also ein leerer Wert fuer
+  einen boolean-Eingang des Atoms (Audit J-17).
+
+  Mehrere Flutter-Komponenten teilen sich dieselben zwei Inputs; eine
+  Version und ein Prerelease-Flag gelten fuer den ganzen Dispatch.
 */ -}}
 {{- $pin := .pin -}}
 {{- $c := index .profile.components 0 -}}
+{{- $anyFlutter := false -}}
+{{- range $comp := .profile.components -}}
+{{- if and (has $comp.release_signals "flutter_android") $comp.release_signals.flutter_android }}{{ $anyFlutter = true }}{{ end -}}
+{{- end -}}
 name: prerelease
 on:
-{{- if and (has $c.release_signals "flutter_android") $c.release_signals.flutter_android }}
+{{- if $anyFlutter }}
   workflow_dispatch:
     inputs:
       version:
