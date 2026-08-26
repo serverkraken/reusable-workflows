@@ -121,6 +121,29 @@ const ImagePattern = `^[a-z0-9._/-]+$`
 // Pfad, und genau das soll die Funktion durchsetzen.
 const RelPathPattern = `^[A-Za-z0-9._/-]+$`
 
+// ChartPinKeyPattern gilt fuer `release.chart_pins.key`.
+//
+// Der Nachbarschluessel `values` laeuft durch cleanRelPath und damit durch
+// RelPathPattern. `key` lief durch NICHTS ausser der Pruefung, dass er
+// "{name}" enthaelt. Gemessen, beides angenommen:
+//
+//	key: 'images.{name}.tag"'                        -> zerbrach das gerenderte YAML
+//	key: 'images.{name}.tag${{ secrets.GITHUB_TOKEN }}'
+//
+// Der zweite Fall ist der ernste. Der Wert landet als
+// `key_template: "..."` im release.yml des Adopters, und GitHub wertet den
+// Ausdruck dort zur LAUFZEIT aus. Der Token steht danach im key_template, das
+// chart-image-bump.py als gepunkteten Pfad in die values-Datei schreibt.
+//
+// `key` ist ein gepunkteter Pfad in eine Helm-values-Datei mit dem Platzhalter
+// {name} - Buchstaben, Ziffern, Punkt, Unterstrich, Bindestrich und die
+// geschweiften Klammern des Platzhalters. Weder `$` noch Anfuehrungszeichen
+// gehoeren dazu (Audit J-22).
+//
+// Der Fund nannte `values`; das ist validiert. Das Loch war der Schluessel
+// direkt daneben.
+const ChartPinKeyPattern = `^[A-Za-z0-9._{}-]+$`
+
 var (
 	// OCI-Namen sind kleingeschrieben; die Distribution-Spec laesst im
 	// Repository-Namen nur [a-z0-9] plus Trenner zu (Audit A-7). Das Muster
@@ -136,8 +159,9 @@ var (
 	// oder `path` (Audit A-1). cleanRelPath heisst so und meldet "path must
 	// stay inside the repository" - hielt das aber nur gegen `/` am Anfang und
 	// `..`, nicht gegen alles andere, was kein Pfad ist.
-	relPathRe = regexp.MustCompile(RelPathPattern)
-	repoRe    = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+	relPathRe     = regexp.MustCompile(RelPathPattern)
+	chartPinKeyRe = regexp.MustCompile(ChartPinKeyPattern)
+	repoRe        = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	// platformsRe mirrors the buildx `--platform` list the docker-build atoms
 	// forward verbatim: os/arch with an optional /vN variant, comma-separated,
 	// no spaces.
@@ -308,6 +332,9 @@ func decode(root *Node) (*Manifest, error) {
 			}
 			if !strings.Contains(pins.Key, "{name}") {
 				return nil, fmt.Errorf("line %d: chart_pins.key must contain {name}, got %q", cp.Line, pins.Key)
+			}
+			if !chartPinKeyRe.MatchString(pins.Key) {
+				return nil, fmt.Errorf("line %d: chart_pins.key must match %s, got %q", cp.Line, ChartPinKeyPattern, pins.Key)
 			}
 			m.Release.ChartPins = pins
 		}

@@ -805,6 +805,44 @@ render_prerelease_for_profile() {
   refute_grep -q "noop" "$rendered"
 }
 
+# Der jobs-Block laeuft ueber ALLE Komponenten und gibt fuer jede Flutter-App
+# einen Job aus, der inputs.version/inputs.prerelease benutzt. Der on:-Block sah
+# frueher nur Komponente 0 an. Steht die Flutter-App weiter hinten, rendert
+# `workflow_dispatch: {}` ohne Inputs, waehrend der Job sie referenziert —
+# actionlint weist die Datei dann beim Adopter zurueck, und GitHub setzt
+# inputs.prerelease auf Null, also einen leeren Wert fuer einen boolean-Eingang
+# (Audit J-17). Absichtlich services/api VOR apps/mobile, damit die Flutter-
+# Komponente nicht die erste ist.
+@test "prerelease.yml declares dispatch inputs when the flutter component is NOT first" {
+  rendered=$(render_prerelease_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/mono",
+    "default_branch": "main", "current_version": "1.0.0", "monorepo": true,
+    "components": [
+      {"path": "services/api", "languages": ["go"], "primary_language": "go",
+       "release_please_type": "go", "role": "service",
+       "dockerfiles": [{"path": "services/api/Dockerfile", "context": "services/api",
+         "image_name": "mono-api", "release_eligible": true}],
+       "release_signals": {"goreleaser_config": null, "chart_yaml": null}},
+      {"path": "apps/mobile", "languages": ["dart"], "primary_language": "flutter",
+       "release_please_type": "simple", "role": "app", "dockerfiles": [],
+       "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}
+    ],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  # Der Job, der die Inputs benutzt ...
+  grep -qF "version: \${{ inputs.version }}" "$rendered"
+  grep -qF "prerelease: \${{ inputs.prerelease }}" "$rendered"
+  # ... und die Deklaration, ohne die er ungueltig waere.
+  refute_grep -qF "workflow_dispatch: {}" "$rendered"
+  grep -qE "^      version:" "$rendered"
+  grep -qE "^      prerelease:" "$rendered"
+
+  # Der Beweis, dass beides zusammenpasst: actionlint meldete hier
+  # `property "version" is not defined in object type {}`.
+  command -v actionlint >/dev/null 2>&1 || return 0
+  actionlint "$rendered"
+}
+
 @test "prerelease.yml keeps noop for a flutter package (no android/)" {
   rendered=$(render_prerelease_for_profile '{
     "schema_version": 1, "target_repo": "serverkraken/pkg",
