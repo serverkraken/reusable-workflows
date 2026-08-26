@@ -498,6 +498,8 @@ the same way.
 
 | Kind    | Name                            | Type    | Required | Default                                         | Description |
 |---------|---------------------------------|---------|----------|-------------------------------------------------|-------------|
+| input   | `dry_run`                       | boolean | no       | `false`                                         | Trockenlauf: reicht `dry_run` an semantic-release durch. Weil die nachgelagerten Jobs an `release_created == 'true'` haengen und release-please im Trockenlauf gar keine Ausgabe setzt, entfallen Build und Scan von selbst — kein Tag, kein Image, kein Release. |
+| input   | `runs_on_release`               | string  | no       | `'["self-hosted","Linux","low-performance"]'` | Runner-Labels fuer den semantic-release-Schritt, als JSON-Array. Durchgereicht. |
 | input   | `build_image`                   | boolean | no       | `true`                                          | `false` → release-only (library repos) |
 | input   | `run_trivy`                     | boolean | no       | `true`                                          | Run trivy-image after build (only when `build_image`) |
 | input   | `dockerfile`                    | string  | no       | `'./Dockerfile'`                                | Pass-through to docker-build |

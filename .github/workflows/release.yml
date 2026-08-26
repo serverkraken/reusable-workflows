@@ -5,6 +5,30 @@ name: release
 on:
   workflow_call:
     inputs:
+      dry_run:
+        description: >-
+          Trockenlauf: reicht `dry_run` an semantic-release durch, das dann
+          `skip-github-release`/`skip-github-pull-request` setzt. Weil die
+          nachgelagerten Jobs an `release_created == 'true'` haengen und
+          release-please im Trockenlauf gar keine Ausgabe setzt, entfallen
+          Build und Scan von selbst — es entsteht kein Tag, kein Image, kein
+          Release.
+
+          Existiert, damit dieser Orchestrator ueberhaupt testbar ist (Audit
+          K-16): er ist der Einstiegspunkt, den Adopter referenzieren, und
+          wurde von der self-CI nie aufgerufen — obwohl genau hier schon
+          einmal ein fehlender `permissions`-Block Cross-Repo-Aufrufe brach.
+        required: false
+        type: boolean
+        default: false
+      runs_on_release:
+        description: >-
+          Runner-Labels fuer den semantic-release-Schritt, als JSON-Array.
+          Wird durchgereicht; ohne diesen Eingang laesst sich der Orchestrator
+          nicht auf GitHub-gehosteten Runnern pruefen.
+        required: false
+        type: string
+        default: '["self-hosted","Linux","low-performance"]'
       build_image:
         required: false
         type: boolean
@@ -99,6 +123,9 @@ jobs:
   semantic-release:
     uses: ./.github/workflows/semantic-release.yml
     secrets: inherit
+    with:
+      dry_run: ${{ inputs.dry_run }}
+      runs_on: ${{ inputs.runs_on_release }}
 
   docker-build:
     needs: semantic-release
