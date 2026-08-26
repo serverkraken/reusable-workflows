@@ -12,3 +12,13 @@ linters:
         - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
+
+# gofmt als Formatierer einschalten.
+#
+# Zwei Testdateien lagen ungeformt im Repo (internal/manifest/manifest_test.go
+# und yaml_test.go) — `gofmt -l` meldete sie, golangci-lint nicht, weil es in
+# v2 keinen `formatters`-Abschnitt gab. Ein Formatierungs-Gate, das niemand
+# faehrt, ist keines.
+formatters:
+  enable:
+    - gofmt
