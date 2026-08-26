@@ -7,15 +7,37 @@
   branch is baked (`develop`) — GitHub does not evaluate expressions in `on:`.
 */ -}}
 {{- $pin := .pin -}}
-{{- $c := index .profile.components 0 -}}
 name: prerelease-on-push
 on:
   push:
     branches: [develop]
 
 jobs:
+{{- /* Audit J-3/J-4: hier stand `$c := index .profile.components 0` — der
+     Workflow sah also NUR die erste Komponente. In einem Monorepo baute er
+     damit ein Image und liess alle weiteren stillschweigend aus, und weil
+     `$c.path` nirgends einfloss, zeigte `dockerfile:` auf `Dockerfile` statt
+     auf `services/api/Dockerfile`; `context:` fehlte ganz.
+
+     Nebeneinander gerendert an tests/fixtures/onboard/monorepo-go:
+
+       prerelease.yml            build-services-api    context "services/api"
+                                 build-services-worker context "services/worker"
+       prerelease-on-push.yml    build                 dockerfile "Dockerfile"
+
+     Der Aufbau spiegelt jetzt prerelease.yml.tmpl: Schleife ueber die
+     Komponenten, Job-Suffix aus dem Pfad, Kontext und Dockerfile relativ zur
+     Komponente. */ -}}
+{{- $any := false -}}
+{{- range $i, $c := .profile.components }}
+{{- $isRoot := eq $c.path "." -}}
+{{- $slug := "" -}}
+{{- if ne $c.path "." }}{{ $slug = regexp.Replace "[^A-Za-z0-9_-]" "-" (strings.ReplaceAll "/" "-" $c.path) }}{{ end -}}
+{{- $suffix := "" -}}
+{{- if $slug }}{{ $suffix = printf "-%s" $slug }}{{ end -}}
 {{- if and (has $c.release_signals "flutter_android") $c.release_signals.flutter_android }}
-  build:
+{{- $any = true }}
+  build{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/release-flutter-android.yml@{{ $pin }}
     secrets: inherit
     with:
@@ -24,6 +46,7 @@ jobs:
       prerelease: true
       dart_define_secret_names: {{`${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}`}}
 {{- else if gt (len $c.dockerfiles) 0 }}
+{{- $any = true }}
 {{- /* One build+scan pair per Dockerfile, mirroring release.yml.tmpl. The
      multi-image path here used to be a single docker-build-multi call; that
      atom exposes no per-image outputs, so nothing could be scanned and every
@@ -37,9 +60,10 @@ jobs:
   {{- $base = regexp.Replace "[^A-Za-z0-9_-]" "-" $base -}}
   {{- $imgSuffix = printf "-%s" (strings.ToLower $base) -}}
 {{- end }}
+{{- $ctx := $c.path }}{{ if (index $df "context") }}{{ $ctx = index $df "context" }}{{ end }}
 {{- if gt $idx 0 }}
 {{ end }}
-  build{{ $imgSuffix }}:
+  build{{ $suffix }}{{ $imgSuffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@{{ $pin }}
     permissions:
       contents: read
@@ -51,7 +75,14 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
+    {{- if ne $ctx "." }}
+      context: "{{ $ctx }}"
+    {{- end }}
+    {{- if not $isRoot }}
+      dockerfile: "{{ $c.path }}/{{ $df.path }}"
+    {{- else }}
       dockerfile: "{{ $df.path }}"
+    {{- end }}
       image_name: "{{ $df.image_name }}"
     {{- if (index $df "platforms") }}
       platforms: "{{ index $df "platforms" }}"
@@ -59,8 +90,8 @@ jobs:
       sign: {{`${{ fromJSON(vars.SK_SIGN || 'true') }}`}}
       attest: {{`${{ fromJSON(vars.SK_ATTEST || 'true') }}`}}
       sbom: {{`${{ fromJSON(vars.SK_SBOM || 'true') }}`}}
-  scan{{ $imgSuffix }}:
-    needs: build{{ $imgSuffix }}
+  scan{{ $suffix }}{{ $imgSuffix }}:
+    needs: build{{ $suffix }}{{ $imgSuffix }}
     uses: serverkraken/reusable-workflows/.github/workflows/trivy-image.yml@{{ $pin }}
     permissions:
       contents: read
@@ -69,7 +100,7 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: "{{ printf "${{ needs.build%s.outputs.image_ref }}" $imgSuffix }}"
+      image_ref: "{{ printf "${{ needs.build%s%s.outputs.image_ref }}" $suffix $imgSuffix }}"
     {{- if (index $df "scanners") }}
       scanners: "{{ index $df "scanners" }}"
     {{- end }}
@@ -95,8 +126,10 @@ jobs:
     {{- end }}
 {{- end }}
 
-{{- else }}
-  # No prerelease-able artifact for this component.
+{{- end }}
+{{- end }}
+{{- if not $any }}
+  # Keine Komponente steuert ein Prerelease-Artefakt bei.
   noop:
     runs-on: ubuntu-latest
     steps:
