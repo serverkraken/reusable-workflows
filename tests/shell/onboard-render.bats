@@ -135,7 +135,7 @@ release-please-config.json"
   seed_profile "service-with-helm"
   "$RENDER" "$REPO_ROOT" "$TARGET" "$TARGET/profile.json" "v2"
   grep -q "helm-publish.yml@v2" "$TARGET/.github/workflows/release.yml"
-  grep -q "chart_path: charts/svc" "$TARGET/.github/workflows/release.yml"
+  grep -q 'chart_path: "charts/svc"' "$TARGET/.github/workflows/release.yml"
 }
 
 # ---- Monorepo rendering (3.5) ----
@@ -266,6 +266,23 @@ golden_check_preview() {
 # @test below compares that path against a hand-curated golden under
 # tests/shell/golden/ci/<case>.yml via `diff -u`.
 
+# Vergleicht gegen ein handgepflegtes Golden — oder schreibt es neu, wenn
+# UPDATE_GOLDEN=1 gesetzt ist.
+#
+# Diesen Zweig gab es fuer die neun Dateien unter tests/shell/golden/ nicht:
+# sie mussten von Hand nachgezogen werden, waehrend die Fixture-Goldens laengst
+# einen Erneuerungspfad hatten. Genau deshalb sind sie beim Quoting-Fix
+# (Audit J-10/J-14/J-18) liegengeblieben und zwoelf Tests fielen um, obwohl die
+# Aenderung richtig war.
+golden_diff() {
+  local golden="$1" rendered="$2"
+  if [[ "${UPDATE_GOLDEN:-0}" == "1" ]]; then
+    cp "$rendered" "$golden"
+    skip "UPDATE_GOLDEN — rewrote ${golden##*/}"
+  fi
+  diff -u "$golden" "$rendered"
+}
+
 render_ci_for_profile() {
   local profile_json="$1"
   local profile="$BATS_TEST_TMPDIR/profile-$$.json"
@@ -307,7 +324,7 @@ render_prerelease_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
     "legacy_ci": [], "warnings": []
   }')
-  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-go.yml" "$rendered"
+  golden_diff "$BATS_TEST_DIRNAME/golden/ci/single-go.yml" "$rendered"
 }
 
 @test "ci.yml emits SK_* override expressions for Go test atom" {
@@ -367,7 +384,7 @@ render_prerelease_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
     "legacy_ci": [], "warnings": []
   }')
-  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-python.yml" "$rendered"
+  golden_diff "$BATS_TEST_DIRNAME/golden/ci/single-python.yml" "$rendered"
 }
 
 @test "ci.yml renders lint+test jobs for a single rust component" {
@@ -380,7 +397,7 @@ render_prerelease_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
     "legacy_ci": [], "warnings": []
   }')
-  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-rust.yml" "$rendered"
+  golden_diff "$BATS_TEST_DIRNAME/golden/ci/single-rust.yml" "$rendered"
 }
 
 @test "ci.yml emits SK_* override expressions for Rust test atom" {
@@ -412,7 +429,7 @@ render_prerelease_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": "Chart.yaml"}}],
     "legacy_ci": [], "warnings": []
   }')
-  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-helm.yml" "$rendered"
+  golden_diff "$BATS_TEST_DIRNAME/golden/ci/single-helm.yml" "$rendered"
 }
 
 # Byte-identity guard for live chart adopters (calert-helm, helm-chart-tshock,
@@ -429,7 +446,7 @@ render_prerelease_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
     "legacy_ci": [], "warnings": []
   }')
-  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-helm-subdir.yml" "$rendered"
+  golden_diff "$BATS_TEST_DIRNAME/golden/ci/single-helm-subdir.yml" "$rendered"
   refute_grep -q "charts_dir" "$rendered"
   refute_grep -q "helm-publish" "$rendered"
 }
@@ -459,7 +476,7 @@ render_prerelease_for_profile() {
     "legacy_ci": [], "warnings": []
   }'
   ci=$(render_ci_for_profile "$profile")
-  grep -qF "charts_dir: charts/mailstack" "$ci"
+  grep -qF 'charts_dir: "charts/mailstack"' "$ci"
   grep -qF "unittest: true" "$ci"
   grep -q "helm-publish-dryrun-charts-mailstack:" "$ci"
   # Charts publish to the org-wide namespace (ghcr.io/<owner>/charts), the
@@ -483,7 +500,7 @@ render_prerelease_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": "Chart.yaml"}}],
     "legacy_ci": [], "warnings": []
   }')
-  grep -qF "working_directory: ." "$rendered"
+  grep -qF 'working_directory: "."' "$rendered"
   grep -qF "unittest: true" "$rendered"
 }
 
@@ -503,7 +520,7 @@ render_prerelease_for_profile() {
     ],
     "legacy_ci": [], "warnings": []
   }')
-  diff -u "$BATS_TEST_DIRNAME/golden/ci/monorepo-mixed.yml" "$rendered"
+  golden_diff "$BATS_TEST_DIRNAME/golden/ci/monorepo-mixed.yml" "$rendered"
 }
 
 @test "ci.yml renders secscan-only for an unsupported language" {
@@ -517,7 +534,7 @@ render_prerelease_for_profile() {
     "legacy_ci": [],
     "warnings": [{"code":"no_lint_test_atom","primary_language":"node","message":"no lint/test atom for primary_language=node; rendered ci.yml will fall back to secscan only"}]
   }')
-  diff -u "$BATS_TEST_DIRNAME/golden/ci/unsupported-node.yml" "$rendered"
+  golden_diff "$BATS_TEST_DIRNAME/golden/ci/unsupported-node.yml" "$rendered"
 }
 
 @test "ci.yml secscan wires SK_TRIVY_SEVERITY and SK_TRIVY_VERSION" {
@@ -544,7 +561,7 @@ render_prerelease_for_profile() {
       "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
     "legacy_ci": [], "warnings": []
   }')
-  diff -u "$BATS_TEST_DIRNAME/golden/ci/single-flutter.yml" "$rendered"
+  golden_diff "$BATS_TEST_DIRNAME/golden/ci/single-flutter.yml" "$rendered"
 }
 
 @test "ci.yml flutter test job carries the coverage SK_ override" {
@@ -574,7 +591,7 @@ render_prerelease_for_profile() {
     "gitops": {"manifests_paths": ["kubernetes/apps","kubernetes/argo"],
       "has_kube_linter_config": true, "has_gitleaks_config": true, "sops": true}
   }')
-  diff -u "$BATS_TEST_DIRNAME/golden/ci/gitops.yml" "$rendered"
+  golden_diff "$BATS_TEST_DIRNAME/golden/ci/gitops.yml" "$rendered"
 }
 
 @test "ci.yml gitops omits config_path when adopter has no own config" {
@@ -696,7 +713,7 @@ render_prerelease_for_profile() {
     "legacy_ci": [], "warnings": []
   }')
   grep -qF "release-flutter-android.yml@v4" "$rendered"
-  grep -qF "version: \${{ needs.release-please.outputs.tag_name }}" "$rendered"
+  grep -qF 'version: "${{ needs.release-please.outputs.tag_name }}"' "$rendered"
   grep -qF "dart_define_secret_names: \${{ vars.SK_FLUTTER_DART_DEFINE_SECRETS || '' }}" "$rendered"
 }
 

@@ -47,7 +47,7 @@ jobs:
   build-flutter-{{ $suffix }}:
     uses: serverkraken/reusable-workflows/.github/workflows/build-flutter-android.yml@{{ $pin }}
     with:
-      working_directory: {{ $c.path }}
+      working_directory: "{{ $c.path }}"
     secrets: inherit
 {{- end }}
 {{- end }}

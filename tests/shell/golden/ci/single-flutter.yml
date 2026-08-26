@@ -17,11 +17,11 @@ jobs:
   lint-flutter-root:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-flutter.yml@v4
     with:
-      working_directory: .
+      working_directory: "."
     secrets: inherit
   test-flutter-root:
     uses: serverkraken/reusable-workflows/.github/workflows/test-flutter.yml@v4
     with:
-      working_directory: .
+      working_directory: "."
       coverage_threshold: ${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}
     secrets: inherit

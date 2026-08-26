@@ -17,13 +17,13 @@ jobs:
   lint-python-root:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-python.yml@v4
     with:
-      working_directory: .
+      working_directory: "."
       python_version: ${{ vars.SK_PYTHON_VERSION || '' }}
     secrets: inherit
   test-python-root:
     uses: serverkraken/reusable-workflows/.github/workflows/test-python.yml@v4
     with:
-      working_directory: .
+      working_directory: "."
       python_version: ${{ vars.SK_PYTHON_VERSION || '' }}
       coverage_threshold: ${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}
     secrets: inherit

@@ -15,8 +15,8 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      dockerfile: images/tools/Dockerfile
-      image_name: acme/multi/tools
+      dockerfile: "images/tools/Dockerfile"
+      image_name: "acme/multi/tools"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -30,7 +30,7 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build-tools.outputs.image_ref }}
+      image_ref: "${{ needs.build-tools.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
@@ -47,8 +47,8 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      dockerfile: images/tools/Dockerfile.debug
-      image_name: acme/multi/tools-debug
+      dockerfile: "images/tools/Dockerfile.debug"
+      image_name: "acme/multi/tools-debug"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -62,7 +62,7 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build-tools-debug.outputs.image_ref }}
+      image_ref: "${{ needs.build-tools-debug.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
@@ -78,9 +78,9 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      context: images/api
-      dockerfile: images/api/Dockerfile
-      image_name: acme/multi/api
+      context: "images/api"
+      dockerfile: "images/api/Dockerfile"
+      image_name: "acme/multi/api"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -94,9 +94,9 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build-images-api.outputs.image_ref }}
+      image_ref: "${{ needs.build-images-api.outputs.image_ref }}"
       platforms: linux/amd64,linux/arm64
-      severity: CRITICAL
+      severity: "CRITICAL"
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
       fail_on_findings: false
   build-images-worker:
@@ -111,9 +111,9 @@ jobs:
     secrets: inherit
     with:
       prerelease: true
-      dockerfile: images/worker/Dockerfile
-      image_name: acme/multi/worker
-      platforms: linux/amd64
+      dockerfile: "images/worker/Dockerfile"
+      image_name: "acme/multi/worker"
+      platforms: "linux/amd64"
       sign: ${{ fromJSON(vars.SK_SIGN || 'true') }}
       attest: ${{ fromJSON(vars.SK_ATTEST || 'true') }}
       sbom: ${{ fromJSON(vars.SK_SBOM || 'true') }}
@@ -127,9 +127,9 @@ jobs:
       actions: read
     secrets: inherit
     with:
-      image_ref: ${{ needs.build-images-worker.outputs.image_ref }}
-      scanners: vuln,secret
-      platforms: linux/amd64
+      image_ref: "${{ needs.build-images-worker.outputs.image_ref }}"
+      scanners: "vuln,secret"
+      platforms: "linux/amd64"
       severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
       upload_sarif: false

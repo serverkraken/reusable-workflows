@@ -9,6 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	// `path`, nicht `path/filepath`: Image-Namen sind immer
+	// schraegstrich-getrennt, unabhaengig vom Betriebssystem — und gomplates
+	// `path.Base` im Template verhaelt sich genauso.
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -520,6 +524,57 @@ func checkSlugCollisions(profile domain.Profile) error {
 				slug, other, c.Path)
 		}
 		seen[slug] = c.Path
+	}
+	return checkImageSuffixCollisions(profile)
+}
+
+// imageJobSuffix bildet einen Image-Namen auf das ab, was release.yml.tmpl als
+// zweites Job-ID-Suffix anhaengt: letztes Pfadsegment, `$` entfernt, alles
+// Uebrige zu Bindestrichen, kleingeschrieben.
+func imageJobSuffix(imageName string) string {
+	base := path.Base(imageName)
+	base = strings.ReplaceAll(base, "$", "")
+	base = notJobIDChar.ReplaceAllString(base, "-")
+	return strings.ToLower(base)
+}
+
+// checkImageSuffixCollisions weist ein Profil zurueck, dessen Images innerhalb
+// EINER Komponente auf dasselbe Job-ID-Suffix abgebildet wuerden.
+//
+// Das ist nicht dasselbe wie H-4: dort kollidieren die Image-NAMEN zweier
+// Komponenten. Hier sind die Namen verschieden und nur die daraus abgeleiteten
+// Job-IDs fallen zusammen — `acme/my.image` und `acme/my-image` ergeben beide
+// das Suffix `my-image` (Audit J-19).
+//
+// Nachgestellt an genau diesen beiden Namen: das Rendern lief fehlerfrei durch
+// und erzeugte zweimal `docker-build-my-image`. actionlint meldet danach
+// "key ... is duplicated in jobs section" — aber erst beim Adopter, und GitHub
+// selbst nimmt still den zuletzt definierten Job.
+//
+// Nur release-faehige Dockerfiles zaehlen, und nur ab zweien: genau dann haengt
+// das Template ueberhaupt ein $imgSuffix an (siehe $releaseDfs dort). Sonst
+// wuerde hier ein Profil abgewiesen, das tadellos rendert.
+func checkImageSuffixCollisions(profile domain.Profile) error {
+	for _, c := range profile.Components {
+		var eligible []domain.Dockerfile
+		for _, df := range c.Dockerfiles {
+			if df.ReleaseEligible {
+				eligible = append(eligible, df)
+			}
+		}
+		if len(eligible) < 2 {
+			continue
+		}
+		seen := map[string]string{}
+		for _, df := range eligible {
+			suffix := imageJobSuffix(df.ImageName)
+			if other, dup := seen[suffix]; dup {
+				return fmt.Errorf(
+					"doppelte Job-ID-Endung %q in der Komponente %q: die Images %q und %q werden beide darauf abgebildet — GitHub wuerde den Workflow wegen doppelter Job-Keys verwerfen; eines der beiden umbenennen",
+					suffix, c.Path, other, df.ImageName)
+			}
+			seen[suffix] = df.ImageName
+		}
 	}
 	return nil
 }

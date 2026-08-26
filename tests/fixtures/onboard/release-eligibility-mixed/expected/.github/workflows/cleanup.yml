@@ -8,8 +8,8 @@ jobs:
   cleanup-repo:
     uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v2
     with:
-      package_name: ${{ github.event.repository.name }}
+      package_name: "${{ github.event.repository.name }}"
   cleanup-repo-worker:
     uses: serverkraken/reusable-workflows/.github/workflows/cleanup-images.yml@v2
     with:
-      package_name: ${{ github.event.repository.name }}-worker
+      package_name: "${{ github.event.repository.name }}-worker"
