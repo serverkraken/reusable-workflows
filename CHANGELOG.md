@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.18.7](https://github.com/serverkraken/reusable-workflows/compare/v4.18.6...v4.18.7) (2026-08-25)
+
+
+### Bug Fixes
+
+* **detect:** Ein Cargo-Glob wurde woertlich zur Komponente ([#308](https://github.com/serverkraken/reusable-workflows/issues/308)) ([ce115ca](https://github.com/serverkraken/reusable-workflows/commit/ce115caca6207eaa192c7025d67a1e29447a5f5f))
+* **detect:** Zwei Komponenten leiteten denselben Image-Namen ab ([#305](https://github.com/serverkraken/reusable-workflows/issues/305)) ([db244c9](https://github.com/serverkraken/reusable-workflows/commit/db244c941c5992f8e40e0913e290bb77bd29d646))
+* **install-gomplate:** Ein ausgetauschtes Release-Asset waere ungeprueft ausgefuehrt worden ([#301](https://github.com/serverkraken/reusable-workflows/issues/301)) ([6b5a388](https://github.com/serverkraken/reusable-workflows/commit/6b5a388e464e3b01b6cb3eab34c72b531ad9733a))
+* **merge-sarif:** Eine abweichende Regel gleicher ID verschwand kommentarlos ([#302](https://github.com/serverkraken/reusable-workflows/issues/302)) ([0dd50f5](https://github.com/serverkraken/reusable-workflows/commit/0dd50f5623ecf1b2b585ea79183d75889a80e309))
+* **render:** Ein .github-Symlink liess beide Engines ausserhalb des Checkouts schreiben ([#304](https://github.com/serverkraken/reusable-workflows/issues/304)) ([38cab3f](https://github.com/serverkraken/reusable-workflows/commit/38cab3f4ff5a66576a7798c375204db5ac179232))
+* **repo-defaults:** Ein Bypass auf die erzwungenen Reviews blieb unsichtbar ([#306](https://github.com/serverkraken/reusable-workflows/issues/306)) ([cc12095](https://github.com/serverkraken/reusable-workflows/commit/cc12095cf80fc975dfcebe21c11a5b6956bf8934))
+
+
+### Documentation
+
+* H-1 und D-1 eingeordnet, plus ein Kommentar, der nicht stimmte ([#307](https://github.com/serverkraken/reusable-workflows/issues/307)) ([d5a3258](https://github.com/serverkraken/reusable-workflows/commit/d5a3258018e5a7aa70dfc6c34367bc61f53c6abc))
+
 ## [4.18.6](https://github.com/serverkraken/reusable-workflows/compare/v4.18.5...v4.18.6) (2026-08-25)
 
 
