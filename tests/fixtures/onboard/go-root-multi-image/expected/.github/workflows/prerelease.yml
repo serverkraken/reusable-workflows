@@ -96,8 +96,9 @@ jobs:
     with:
       image_ref: ${{ needs.build-images-api.outputs.image_ref }}
       platforms: linux/amd64,linux/arm64
-      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      severity: CRITICAL
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+      fail_on_findings: false
   build-images-worker:
     uses: serverkraken/reusable-workflows/.github/workflows/docker-build.yml@v4
     permissions:
