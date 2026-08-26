@@ -165,6 +165,32 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		gitops = classifyGitOps(req.RepoPath, components)
 	}
 	if gitops != nil {
+		// Audit J-13: gitops OHNE Manifestpfade ist erreichbar.
+		//
+		// classifyGitOps verlangt `kubernetes/` + `.sops.yaml` +
+		// (`makejinja.toml` oder `bootstrap/templates/`). Die Pfadliste
+		// schliesst aber `bootstrap`, `components` und `flux-system` aus — ein
+		// Bootstrap-only-Repo erfuellt also die Erkennung und liefert eine
+		// LEERE Liste. Nachgestellt an genau diesem Aufbau.
+		//
+		// Gerendert wurde daraus `manifests_paths: |-` ohne Inhalt: gueltiges
+		// YAML mit leerem Wert, von actionlint unbeanstandet. Der Adopter bekam
+		// einen kube-validate-Job, der zur Laufzeit mit "nichts validiert …
+		// unter: " scheitert — laut, aber unverstaendlich.
+		//
+		// Statt einen Job auszuliefern, der garantiert scheitert, wird der Job
+		// ausgelassen (siehe ci.yml.tmpl) und die Lage hier benannt. Nicht
+		// abgewiesen: ein Bootstrap-only-GitOps-Repo ist legitim, es hat nur
+		// nichts zu validieren.
+		if len(gitops.ManifestPaths) == 0 {
+			declaredMissing = append(declaredMissing, domain.Warning{
+				Code: "gitops_without_manifests",
+				Path: "kubernetes",
+				Message: "kubernetes/ enthaelt ausser bootstrap/components/flux-system keine Verzeichnisse — " +
+					"es gibt nichts zu validieren, deshalb rendert ci.yml keinen kube-validate-Job. " +
+					"Wenn hier Manifeste liegen sollten, pruefe die Verzeichnisstruktur.",
+			})
+		}
 		components[0].PrimaryLanguage = "gitops"
 		components[0].ReleasePleaseType = "simple"
 		components[0].Role = "gitops"
