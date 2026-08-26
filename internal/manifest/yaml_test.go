@@ -59,14 +59,14 @@ release:
 
 func TestParseYAMLErrors(t *testing.T) {
 	tests := map[string]string{
-		"tab indent":        "a:\n\tb: 1\n",
-		"duplicate key":     "a: 1\na: 2\n",
-		"bad indent":        "a:\n   b: 1\n",
-		"anchor":            "a: &x 1\n",
-		"flow map":          "a: {b: 1}\n",
-		"multiline scalar":  "a: |\n  text\n",
-		"seq under scalar":  "a: 1\n  - b\n",
-		"missing value":     "a:\n",
+		"tab indent":         "a:\n\tb: 1\n",
+		"duplicate key":      "a: 1\na: 2\n",
+		"bad indent":         "a:\n   b: 1\n",
+		"anchor":             "a: &x 1\n",
+		"flow map":           "a: {b: 1}\n",
+		"multiline scalar":   "a: |\n  text\n",
+		"seq under scalar":   "a: 1\n  - b\n",
+		"missing value":      "a:\n",
 		"unterminated quote": "a: \"x\n",
 		"nested sequence":    "a:\n  - - b\n",
 	}
