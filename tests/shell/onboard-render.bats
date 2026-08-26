@@ -246,6 +246,7 @@ golden_check_preview() {
   golden_check_preview "go-root-multi-image"
 }
 
+@test "golden: gitops-bootstrap-only"  { golden_check "gitops-bootstrap-only"; }
 @test "golden: go-repo"                { golden_check "go-repo"; }
 @test "golden: go-cgo"                 { golden_check "go-cgo"; }
 @test "golden: go-cgo-transitive"      { golden_check "go-cgo-transitive"; }
@@ -613,11 +614,20 @@ render_prerelease_for_profile() {
 }
 
 # A gitops repo whose kubernetes/ holds only control dirs (bootstrap/components/
-# flux-system) yields manifests_paths: []. The range then emits an empty `|-`
-# block scalar — which must stay valid YAML (sops stays a sibling key, not
-# swallowed). Pins that contract so a future trimming change can't silently
-# break the rendered caller.
-@test "ci.yml gitops with zero workload dirs renders empty manifests_paths and stays valid YAML" {
+# flux-system) yields manifests_paths: [].
+#
+# Diese Zusicherung verlangte frueher, dass dann `manifests_paths: |-` mit
+# LEEREM Block-Skalar gerendert wird und gueltiges YAML bleibt. Gueltig war es —
+# aber der Adopter bekam damit einen kube-validate-Job, der zur Laufzeit
+# zwangslaeufig mit "nichts validiert … unter: " scheitert. Der Test hat also
+# die Anwesenheit eines Jobs festgeschrieben, der nur scheitern kann (Audit
+# J-13).
+#
+# Seine urspruengliche Absicht bleibt erhalten und wird weiter geprueft: dass
+# kein Trimming-Fehler die Nachbarschluessel verschluckt. Nur wird jetzt das
+# richtige Verhalten zugesichert — gar kein kube-validate —, waehrend kube-lint
+# und secret-scan unberuehrt weiterlaufen.
+@test "ci.yml gitops with zero workload dirs renders NO kube-validate job" {
   command -v yamllint >/dev/null 2>&1 || skip "yamllint not installed"
   rendered=$(render_ci_for_profile '{
     "schema_version": 1, "target_repo": "serverkraken/cluster",
@@ -629,10 +639,16 @@ render_prerelease_for_profile() {
     "gitops": {"manifests_paths": [],
       "has_kube_linter_config": false, "has_gitleaks_config": false, "sops": false}
   }')
-  grep -qF "kube-validate.yml@v4" "$rendered"
-  grep -qF "manifests_paths: |-" "$rendered"
-  refute_grep -qE '^[[:space:]]+kubernetes/' "$rendered"
-  grep -qF "sops: false" "$rendered"
+  # Kein Job, der nur scheitern kann.
+  refute_grep -qF "kube-validate.yml@v4" "$rendered"
+  refute_grep -qF "manifests_paths:" "$rendered"
+
+  # Die Nachbarn bleiben — der Rest des gitops-Arms ist unberuehrt.
+  grep -qF "kube-lint.yml@v4" "$rendered"
+  grep -qF "secret-scan.yml@v4" "$rendered"
+
+  # Und die urspruengliche Sorge bleibt geprueft: nichts wird verschluckt,
+  # das Ergebnis ist gueltiges YAML.
   yamllint -d relaxed "$rendered"
 }
 

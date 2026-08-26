@@ -356,6 +356,7 @@ emit_profile_json() {
   # Je Lauf zuruecksetzen: die Bibliothek wird einmal gesourct, aber mehrfach
   # aufgerufen (Tests, Sweep ueber mehrere Repos). Ohne das wuerde ein
   # unlesbarer Pfad aus Repo A in Repo Bs Profil auftauchen (Audit I-14).
+  _GITOPS_NO_MANIFESTS=0
   _PATH_UNREADABLE_FILE="$(mktemp)"
   export _PATH_UNREADABLE_FILE
   trap 'rm -f "$_PATH_UNREADABLE_FILE"' RETURN
@@ -505,6 +506,20 @@ emit_profile_json() {
           has_kube_linter_config: $has_kube_linter_config,
           has_gitleaks_config: $has_gitleaks_config,
           sops: $sops}')
+
+      # Audit J-13, gleiche Meldung wie die Go-Engine: gitops OHNE
+      # Manifestpfade ist erreichbar. detect_gitops_kubernetes verlangt
+      # `kubernetes/` + `.sops.yaml` + (makejinja.toml | bootstrap/templates),
+      # aber _gitops_manifests_paths schliesst bootstrap, components und
+      # flux-system aus — ein Bootstrap-only-Repo erfuellt also die Erkennung
+      # und liefert eine LEERE Liste. ci.yml.tmpl laesst den kube-validate-Job
+      # dann aus; ohne diese Meldung waere das stumm.
+      #
+      # Das Paritaets-Gate konnte die Divergenz nicht sehen: keine der 27
+      # Fixtures ist ein Bootstrap-only-Repo. Deshalb gibt es jetzt eine.
+      if [[ "$(echo "$manifests_paths" | jq -r 'length')" == "0" ]]; then
+        _GITOPS_NO_MANIFESTS=1
+      fi
     fi
   fi
 
@@ -540,6 +555,13 @@ emit_profile_json() {
   # Unlesbare Pfade, die waehrend der Erkennung auffielen (Audit I-14).
   # Dasselbe, was die Go-Engine ueber fsErrors.note ans Profil haengt.
   profile=$(emit_path_unreadable_warnings "$profile")
+  if [[ "${_GITOPS_NO_MANIFESTS:-0}" == "1" ]]; then
+    profile=$(jq -c '.warnings += [{
+      code: "gitops_without_manifests",
+      path: "kubernetes",
+      message: "kubernetes/ enthaelt ausser bootstrap/components/flux-system keine Verzeichnisse — es gibt nichts zu validieren, deshalb rendert ci.yml keinen kube-validate-Job. Wenn hier Manifeste liegen sollten, pruefe die Verzeichnisstruktur."
+    }]' <<<"$profile")
+  fi
   profile=$(apply_release_type_override "$profile" "${ONBOARD_RELEASE_TYPE_OVERRIDE:-}")
   emit_no_release_eligible_warnings "$profile"
 }

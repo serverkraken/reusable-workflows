@@ -156,6 +156,14 @@ jobs:
       coverage_threshold: {{`${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}`}}
     secrets: inherit
 {{- else if eq $c.primary_language "gitops" }}
+{{- /* Audit J-13: ohne Manifestpfade gar keinen kube-validate-Job rendern.
+     Bei leerer Liste entstand `manifests_paths: |-` ohne Inhalt — gueltiges
+     YAML mit leerem Wert, von actionlint unbeanstandet, aber der Job scheitert
+     zur Laufzeit mit "nichts validiert … unter: ". Erreichbar bei einem
+     Bootstrap-only-Repo: `kubernetes/` enthaelt dann nur bootstrap, components
+     oder flux-system, und genau die schliesst die Pfadliste aus.
+     Der Detektor meldet die Lage als `gitops_without_manifests`. */ -}}
+{{- if gt (len $.profile.gitops.manifests_paths) 0 }}
   kube-validate:
     uses: serverkraken/reusable-workflows/.github/workflows/kube-validate.yml@{{ $pin }}
     permissions:
@@ -167,6 +175,7 @@ jobs:
         {{- end }}
       sops: {{ $.profile.gitops.sops }}
     secrets: inherit
+{{- end }}
   kube-lint:
     uses: serverkraken/reusable-workflows/.github/workflows/kube-lint.yml@{{ $pin }}
     permissions:
