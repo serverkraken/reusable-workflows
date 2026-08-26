@@ -391,3 +391,61 @@ func (f *fakeStore) UpdateLockDefaultsMarker(_ string, marker string) error {
 	f.marker = marker
 	return f.lockErr
 }
+
+// Audit H-15: ohne Lock-Datei stieg mutateLock kommentarlos aus, waehrend
+// Tier 2 bereits auf GitHub angewandt war. Der Marker ist genau das, was den
+// naechsten Lauf davon abhaelt, es erneut zu tun — fehlt er, wendet jeder
+// weitere Sweep Tier 2 wieder an und ueberschreibt die bewussten Aenderungen
+// des Eigentuemers an den Komfortfeldern (Merge-Strategie, has_wiki,
+// has_issues, ...). Die zugesagte Eigenschaft "owner overrides to comfort
+// fields are respected after the first onboard" waere gebrochen, ohne dass es
+// jemand sieht.
+//
+// TestApplyNoLockSkipsMarkerMutation daneben deckt den ANDEREN Fall ab: mit
+// durchgereichtem Marker laeuft Tier 2 gar nicht, dann ist das Schweigen
+// richtig.
+
+func TestApplyNoLockWarnsWhenTier2WasApplied(t *testing.T) {
+	gh := cleanFakeGitHub()
+	store := &fakeStore{defaults: testDefaults(), targetExists: true}
+	res, err := (Service{GitHub: gh, Store: store}).Apply(context.Background(), Request{
+		CatalogPath: "catalog",
+		Repo:        "o/r",
+		TargetPath:  "target",
+		// Kein PrevMarker: Tier 2 laeuft.
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Tier2Applied {
+		t.Fatal("der Test misst nichts, wenn Tier 2 gar nicht lief")
+	}
+	got := strings.Join(res.Notices, "\n")
+	if !strings.Contains(got, "::warning::no .github/onboard.lock.json") {
+		t.Fatalf("Warnung fehlt: %q", got)
+	}
+	if !strings.Contains(got, "could NOT be recorded") {
+		t.Fatalf("Warnung nennt die Folge nicht: %q", got)
+	}
+	if store.marker != "" {
+		t.Fatalf("Marker ohne Lock geschrieben: %q", store.marker)
+	}
+}
+
+func TestApplyNoLockStaysSilentInDryRun(t *testing.T) {
+	// Im Trockenlauf wurde nichts angewandt, also fehlt auch nichts.
+	gh := cleanFakeGitHub()
+	store := &fakeStore{defaults: testDefaults(), targetExists: true}
+	res, err := (Service{GitHub: gh, Store: store}).Apply(context.Background(), Request{
+		CatalogPath: "catalog",
+		Repo:        "o/r",
+		TargetPath:  "target",
+		DryRun:      true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(res.Notices, "\n"); strings.Contains(got, "::warning::no .github/onboard.lock.json") {
+		t.Fatalf("im Trockenlauf darf nicht gewarnt werden: %q", got)
+	}
+}

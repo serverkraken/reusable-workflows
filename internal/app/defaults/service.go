@@ -193,6 +193,27 @@ func (s Service) mutateLock(req Request, res *domain.RepoDefaultsResult) error {
 		return err
 	}
 	if !exists {
+		// Ohne Lock-Datei kann der Marker nicht festgehalten werden — und das
+		// war bisher lautlos (Audit H-15). Tier 2 ist zu diesem Zeitpunkt
+		// bereits auf GitHub angewandt; der Marker ist genau das, was ihn beim
+		// naechsten Lauf davon abhaelt, es erneut zu tun.
+		//
+		// Folge ohne Hinweis: jeder weitere Sweep wendet Tier 2 wieder an und
+		// ueberschreibt dabei die bewussten Aenderungen des Eigentuemers an den
+		// Komfortfeldern (Merge-Strategie, has_wiki, has_issues, ...). Die
+		// Zusage "owner overrides to comfort fields are respected after the
+		// first onboard" waere damit gebrochen, ohne dass es jemand sieht.
+		//
+		// Nur melden, wenn Tier 2 tatsaechlich lief: wurde ein vorhandener
+		// Marker durchgereicht, gab es nichts anzuwenden und nichts zu
+		// verlieren.
+		if res.Tier2Applied {
+			res.Notices = append(res.Notices,
+				"::warning::no .github/onboard.lock.json in "+req.TargetPath+": tier-2 defaults were applied to "+
+					req.Repo+" but the defaults_applied_at marker could NOT be recorded. "+
+					"Every later run will re-apply them and overwrite owner changes to the comfort fields. "+
+					"Render the onboarding files first, or re-run once the lock exists.")
+		}
 		return nil
 	}
 	marker := req.PrevMarker

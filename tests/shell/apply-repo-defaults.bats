@@ -382,3 +382,46 @@ _catalog_with_config() {
   [ "$status" -eq 0 ]
   refute_grep -q $'^PUT\t/repos/o/r/branches/main/protection' "$GH_STUB_CALL_LOG"
 }
+
+# --- fehlende Lock-Datei: Tier 2 angewandt, Marker nicht festgehalten -------
+#
+# Audit H-15. Ohne Lock-Datei stieg das Skript kommentarlos aus
+# (`if [[ -f "$LOCK_PATH" ]]`), meldete aber weiter `tier_2_applied=true`.
+# Tier 2 ist zu dem Zeitpunkt bereits auf GitHub angewandt; der Marker ist
+# genau das, was den naechsten Lauf davon abhaelt, es erneut zu tun.
+#
+# Folge ohne Hinweis: jeder weitere Sweep wendet Tier 2 wieder an und
+# ueberschreibt die bewussten Aenderungen des Eigentuemers an den Komfortfeldern
+# (Merge-Strategie, has_wiki, has_issues, ...). Die zugesagte Eigenschaft
+# "owner overrides to comfort fields are respected after the first onboard"
+# waere gebrochen, ohne dass es jemand sieht.
+#
+# Der Go-Zwilling (defaults.mutateLock) hatte denselben stillen Ausstieg und
+# meldet jetzt denselben Wortlaut.
+
+@test "ohne Lock-Datei: angewandtes Tier 2 ohne Marker wird gemeldet" {
+  local tgt; tgt="$(prepare_target "")"   # kein Lock
+  run_with_stub api-drifted-tier2 --repo o/r --target-path "$tgt"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tier_2_applied=true"* ]]
+  [[ "$output" == *"::warning::no .github/onboard.lock.json"* ]]
+  [[ "$output" == *"could NOT be recorded"* ]]
+}
+
+@test "ohne Lock-Datei, aber Marker durchgereicht: keine Meldung" {
+  # Tier 2 laeuft dann gar nicht — es gibt nichts anzuwenden und nichts zu
+  # verlieren.
+  local tgt; tgt="$(prepare_target "")"
+  run_with_stub api-drifted --repo o/r --target-path "$tgt" --prev-marker 2026-05-26T18:00:00Z
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tier_2_applied=false"* ]]
+  [[ "$output" != *"::warning::no .github/onboard.lock.json"* ]]
+}
+
+@test "ohne Lock-Datei im Trockenlauf: keine Meldung" {
+  # Im Trockenlauf wurde nichts angewandt, also fehlt auch nichts.
+  local tgt; tgt="$(prepare_target "")"
+  run_with_stub api-drifted-tier2 --repo o/r --target-path "$tgt" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"::warning::no .github/onboard.lock.json"* ]]
+}
