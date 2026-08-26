@@ -87,7 +87,15 @@ type Consumer struct {
 }
 
 var (
-	imageRe  = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+	// OCI-Namen sind kleingeschrieben; die Distribution-Spec laesst im
+	// Repository-Namen nur [a-z0-9] plus Trenner zu (Audit A-7). Das Muster
+	// erlaubte Grossbuchstaben, und ein `image: Acme/UPPER` waere unbeanstandet
+	// bis zum Push durchgelaufen.
+	//
+	// Abgewiesen statt kleingeschrieben: anders als beim abgeleiteten Namen hat
+	// das hier jemand hingeschrieben. Den Wert eines Adopters still zu
+	// veraendern waere schlechter, als ihn darauf hinzuweisen.
+	imageRe  = regexp.MustCompile(`^[a-z0-9._/-]+$`)
 	scriptRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 	repoRe   = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	// platformsRe mirrors the buildx `--platform` list the docker-build atoms

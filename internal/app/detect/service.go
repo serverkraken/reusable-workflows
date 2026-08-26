@@ -1073,6 +1073,21 @@ func deriveImageName(filename, componentPath string) string {
 	if componentPath != "." {
 		seg = filepath.Base(componentPath)
 	}
+	// OCI-Namen sind kleingeschrieben (Audit H-17). Ein Verzeichnis
+	// `services/MyService` ergab bisher `$REPO-MyService`, und das landete
+	// unveraendert im gerenderten `image_name` UND im GHCR-`package_name`.
+	//
+	// Die Templates lowercasen dieselbe Quelle laengst fuer das Job-ID-Suffix
+	// (`strings.ToLower $base` in release.yml.tmpl) - die Herleitung tat es
+	// nicht. Also wieder Muster 4: die Faehigkeit ist da, nur nicht ueberall
+	// angewandt. Jetzt stimmen Job-ID und Image-Name wieder ueberein.
+	//
+	// Kleingeschrieben statt abgewiesen: der Verzeichnisname ist hier nur
+	// Rohstoff fuer einen Slug, kein vom Adopter geschriebener Wert. Ein
+	// ausdrueckliches `image:` im Manifest wird dagegen abgewiesen, siehe
+	// imageRe.
+	seg = strings.ToLower(seg)
+	suffix = strings.ToLower(suffix)
 	switch {
 	case seg != "" && suffix != "":
 		return "$REPO-" + seg + "-" + suffix

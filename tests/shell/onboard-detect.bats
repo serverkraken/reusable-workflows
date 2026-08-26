@@ -1266,3 +1266,18 @@ _crate() {
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '[.components[].path] == ["services/api","services/worker"]'
 }
+
+@test "abgeleitete Image-Namen sind kleingeschrieben" {
+  # OCI-Namen sind kleingeschrieben (Audit H-17). `services/MyService` ergab
+  # `$REPO-MyService`, und das landete unveraendert im gerenderten image_name
+  # UND im GHCR-package_name. Der Go-Detektor macht dasselbe.
+  local repo="$BATS_TEST_TMPDIR/upper"
+  mkdir -p "$repo/services/MyService"
+  printf 'module x\ngo 1.22\n' > "$repo/services/MyService/go.mod"
+  printf 'FROM scratch\n' > "$repo/services/MyService/Dockerfile"
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.components[].dockerfiles[].image_name] == ["$REPO-myservice"]'
+  # Der Komponentenpfad bleibt, wie er auf der Platte heisst.
+  echo "$output" | jq -e '[.components[].path] == ["services/MyService"]'
+}
