@@ -38,8 +38,9 @@ for f in "$tmp"/*.svg; do
   fi
   if ! cmp -s "$f" "docs/badges/$name"; then
     echo "FEHLER: docs/badges/$name ist nicht mehr aktuell:" >&2
-    diff <(rg -o 'aria-label="[^"]*"' "docs/badges/$name" || true) \
-         <(rg -o 'aria-label="[^"]*"' "$f" || true) >&2 || true
+    # grep, nicht rg: laeuft auch auf einem Runner ohne ripgrep.
+    diff <(grep -o 'aria-label="[^"]*"' "docs/badges/$name" || true) \
+         <(grep -o 'aria-label="[^"]*"' "$f" || true) >&2 || true
     fail=1
   fi
 done

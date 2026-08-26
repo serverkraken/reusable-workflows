@@ -14,7 +14,11 @@ setup() {
 
 teardown() { rm -rf "$TMPDIR"; }
 
-label_of() { rg -o 'aria-label="[^"]*"' "$1" | sed 's/aria-label="//; s/"$//'; }
+# grep, nicht rg: der CI-Runner hat kein ripgrep, und kein anderer Test in
+# diesem Verzeichnis setzt es voraus. (Beim ersten Anlauf stand hier `rg`, und
+# die self-CI fiel mit `rg: command not found` durch — waehrend es lokal grün
+# war.)
+label_of() { grep -o 'aria-label="[^"]*"' "$1" | sed 's/aria-label="//; s/"$//'; }
 
 @test "go.mod and LICENSE become two badges" {
   printf 'module example.com/x\n\ngo 1.24\n' > "$REPO/go.mod"
