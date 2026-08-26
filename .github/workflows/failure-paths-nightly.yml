@@ -603,7 +603,33 @@ jobs:
           ' | paste -sd ',' -)
 
           if [[ -z "$failed" ]]; then
-            echo "Alle assert-*-Jobs meldeten Erfolg — keine Regression zu berichten."
+            echo "Alle assert-*-Jobs meldeten Erfolg."
+
+            # Audit K-23: hier stand nur `exit 0`. Damit wurde eine einmal
+            # geoeffnete Regression NIE wieder geschlossen — das Issue blieb
+            # offen stehen und behauptete weiter einen Zustand, den es laengst
+            # nicht mehr gab. Wer es spaeter las, konnte nicht unterscheiden,
+            # ob die Regression noch besteht.
+            #
+            # Das ist die Umkehrung von K-20: dort lief der Meldeweg nicht,
+            # wenn es etwas zu melden gab; hier laeuft er nicht, wenn es etwas
+            # zu ENTWARNEN gibt. Beide Male bleibt der Leser im Unklaren.
+            #
+            # Kommentiert wird vor dem Schliessen, damit im Verlauf steht,
+            # WANN und durch welchen Lauf die Entwarnung kam.
+            open_issue=$(gh issue list \
+              --label failure-path-regression \
+              --state open --limit 1 --json number --jq '.[0].number // empty')
+            if [[ -n "$open_issue" ]]; then
+              gh issue comment "$open_issue" \
+                --body "Nightly $(date -u +%Y-%m-%d) — alle failure-path-Asserts sind wieder gruen. Kein offener Regressionsbefund mehr. Run: $RUN_URL"
+              gh issue close "$open_issue" \
+                --reason completed \
+                --comment "Automatisch geschlossen: der naechtliche Lauf hat die Regression nicht mehr beobachtet."
+              echo "Regressions-Issue #$open_issue geschlossen — wieder gruen."
+            else
+              echo "Kein offenes Regressions-Issue — nichts zu entwarnen."
+            fi
             exit 0
           fi
 
