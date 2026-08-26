@@ -34,6 +34,9 @@ stub_curl() {
   local payload="$1"
   cat > "$WORK/bin/curl" <<STUB
 #!/usr/bin/env bash
+# Argumente protokollieren, damit Tests pruefen koennen, WAS angefordert wurde
+# und nicht nur, was zurueckkam (Audit L-9).
+printf '%s\n' "\$*" >> "\${CURL_ARGV_LOG:-/dev/null}"
 out=""
 prev=""
 for a in "\$@"; do
@@ -46,7 +49,23 @@ STUB
 }
 
 run_install() {
-  run env PATH="$WORK/bin:$PATH" DEST="$DEST" bash "$SCRIPT"
+  export CURL_ARGV_LOG="$WORK/curl-argv"
+  : > "$CURL_ARGV_LOG"
+  run env PATH="$WORK/bin:$PATH" DEST="$DEST" CURL_ARGV_LOG="$CURL_ARGV_LOG" \
+    ${GOMPLATE_VERSION:+GOMPLATE_VERSION="$GOMPLATE_VERSION"} bash "$SCRIPT"
+}
+
+# Die Plattform hier unabhaengig herleiten, nicht aus dem Skript lesen: sonst
+# pruefte der Test seine eigene Kopie der Abbildung und nicht die des Skripts.
+expected_platform() {
+  local os arch
+  os=$(uname -s | tr '[:upper:]' '[:lower:]')
+  arch=$(uname -m)
+  case "$arch" in
+    x86_64) arch=amd64 ;;
+    aarch64|arm64) arch=arm64 ;;
+  esac
+  printf '%s-%s' "$os" "$arch"
 }
 
 @test "ein manipuliertes Asset wird abgewiesen" {
@@ -121,4 +140,56 @@ PY
   run env PATH="$WORK/bin:$PATH" DEST="$DEST" GOMPLATE_VERSION=v0.0.0 bash "$script"
   [ "$status" -eq 0 ]
   [ -x "$DEST" ]
+}
+
+# ---------------------------------------------------------------------------
+# Audit L-9: der curl-Stub hat die URL bisher vollstaendig ignoriert — er schrieb
+# nur die Nutzlast ans -o-Ziel. Geprueft wurde damit ausschliesslich, was
+# ZURUECKKAM, nie, WAS ANGEFORDERT wurde.
+#
+# Ein Tippfehler im Repo-Pfad, eine nicht interpolierte Version oder eine
+# falsche Plattform waeren in keinem Test aufgefallen: der Stub haette brav
+# dasselbe gueltige Asset abgelegt, die Pruefsumme haette gestimmt, und die
+# Installation waere gruen gewesen — waehrend im echten Lauf ein 404 kaeme.
+
+@test "die angeforderte URL nennt Repo, Version und Plattform" {
+  local platform; platform="$(expected_platform)"
+  # Die Version wird GESETZT, nicht aus dem Skript gekratzt: so prueft der Test
+  # die Interpolation und nicht seine eigene Lesart der Skriptzeile. Es muss
+  # eine Version mit gepinnter Pruefsumme sein, sonst bricht das Skript ab,
+  # bevor es ueberhaupt eine URL bildet.
+  local version="v3.11.7"
+
+  stub_curl "egal — hier zaehlt nur die Anfrage"
+  export GOMPLATE_VERSION="$version"
+  run_install
+  # Der Lauf scheitert an der Pruefsumme; das ist in Ordnung — die Anfrage ist
+  # zu diesem Zeitpunkt laengst gestellt, und genau um sie geht es hier.
+
+  local argv; argv="$(cat "$CURL_ARGV_LOG")"
+  [[ "$argv" == *"https://github.com/hairyhenderson/gomplate/releases/download/${version}/gomplate_${platform}"* ]] \
+    || { echo "angefordert wurde: $argv"; false; }
+}
+
+@test "der Download laeuft mit -f, damit eine Fehlerseite nicht zum Binary wird" {
+  stub_curl "egal"
+  run_install
+  # Ohne -f liefert curl bei 404 die Fehlerseite MIT Exit 0. Die Pruefsumme
+  # faengt das zwar auch, aber erst eine Stufe spaeter und mit einer Meldung,
+  # die nach Manipulation klingt statt nach "Asset gibt es nicht".
+  local argv; argv="$(cat "$CURL_ARGV_LOG")"
+  [[ "$argv" == *"-fsSL"* ]] || { echo "argv: $argv"; false; }
+}
+
+# Sichert die Eigenschaft aus Audit I-18 an der ANFRAGE ab, nicht erst am
+# Ergebnis: geladen wird in eine temporaere Datei NEBEN $DEST, nie nach $DEST.
+@test "geladen wird neben das Ziel, nicht darauf" {
+  stub_curl "egal"
+  run_install
+
+  local argv; argv="$(cat "$CURL_ARGV_LOG")"
+  [[ "$argv" != *" -o $DEST"* ]] || { echo "direkt nach DEST geladen: $argv"; false; }
+  # ... und zwar im selben Verzeichnis, sonst waere das spaetere mv kein
+  # Rename im selben Dateisystem und damit nicht atomar.
+  [[ "$argv" == *" -o $(dirname "$DEST")/.gomplate."* ]] || { echo "argv: $argv"; false; }
 }
