@@ -208,7 +208,7 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 	profile.Warnings = append(profile.Warnings, unsupportedLanguageWarnings(profile.Components, manifestComponents)...)
 	profile.Warnings = append(profile.Warnings, noReleaseEligibleWarnings(profile.Components)...)
 	if !hasManifest {
-		profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(req.RepoPath, profile.Components)...)
+		profile.Warnings = append(profile.Warnings, unassignedSubdirDockerfileWarnings(req.RepoPath, profile.Components, fe)...)
 	}
 
 	legacyLanguage, err := legacyLanguage(req.RepoPath, req.LanguageOverride)
@@ -279,10 +279,10 @@ func detectComponents(repo string, fe *fsErrors) ([]domain.Component, error) {
 			Languages:         langs,
 			PrimaryLanguage:   primary,
 			ReleasePleaseType: releasePleaseType(primary),
-			Role:              role(repo, p, dockerfiles),
+			Role:              role(repo, p, dockerfiles, fe),
 			Dockerfiles:       dockerfiles,
 			ReleaseSignals:    releaseSignals(repo, p),
-			CGO:               detectCGO(repo, p, primary),
+			CGO:               detectCGO(repo, p, primary, fe),
 		})
 	}
 	return components, nil
@@ -394,10 +394,10 @@ func componentsFromManifest(repo string, m *manifest.Manifest, fe *fsErrors) ([]
 			Languages:         langs,
 			PrimaryLanguage:   primary,
 			ReleasePleaseType: releasePleaseType(primary),
-			Role:              role(repo, mc.Path, dockerfiles),
+			Role:              role(repo, mc.Path, dockerfiles, fe),
 			Dockerfiles:       dockerfiles,
 			ReleaseSignals:    signals,
-			CGO:               detectCGO(repo, mc.Path, primary),
+			CGO:               detectCGO(repo, mc.Path, primary, fe),
 			Unittest:          mc.Unittest,
 			AppVersion:        mc.AppVersion,
 		}
@@ -719,19 +719,40 @@ func expandPNPM(repo, content string) []string {
 // root-eigenes Artefaktverzeichnis auf einem self-hosted Runner) soll das
 // Onboarding nicht unmoeglich machen. Es soll nur nicht unsichtbar sein. Die
 // Warnungen erscheinen im Onboarding-PR-Body, wo ein Mensch sie sieht.
-type fsErrors struct{ seen []domain.Warning }
+type fsErrors struct {
+	seen []domain.Warning
+	// Mehrere Walker laufen ueber dieselben Verzeichnisse; ohne Entdopplung
+	// erscheint derselbe Pfad mehrfach in den Warnungen und das Signal geht im
+	// Rauschen unter. Gemessen: ein unlesbares `cmd/` ergab zwei identische
+	// Eintraege.
+	byPath map[string]bool
+}
 
 func (e *fsErrors) note(repo, path string, err error) {
 	if e == nil || err == nil {
+		return
+	}
+	// "Existiert nicht" ist an mehreren Aufrufstellen der NORMALFALL - ein
+	// Repo ohne `cmd/` etwa. Nur Fehler melden, die tatsaechlich bedeuten,
+	// dass etwas da ist, aber nicht gelesen werden konnte.
+	if errors.Is(err, fs.ErrNotExist) {
 		return
 	}
 	rel, rerr := filepath.Rel(repo, path)
 	if rerr != nil || strings.HasPrefix(rel, "..") {
 		rel = path
 	}
+	slash := filepath.ToSlash(rel)
+	if e.byPath == nil {
+		e.byPath = map[string]bool{}
+	}
+	if e.byPath[slash] {
+		return
+	}
+	e.byPath[slash] = true
 	e.seen = append(e.seen, domain.Warning{
 		Code:    "path_unreadable",
-		Path:    filepath.ToSlash(rel),
+		Path:    slash,
 		Message: "could not be read during detection, so anything below it is missing from this profile: " + err.Error(),
 	})
 }
@@ -1019,12 +1040,12 @@ func deriveImageName(filename, componentPath string) string {
 	}
 }
 
-func role(repo, componentPath string, dockerfiles []domain.Dockerfile) string {
+func role(repo, componentPath string, dockerfiles []domain.Dockerfile, fe *fsErrors) string {
 	dir := filepath.Join(repo, componentPath)
 	if len(dockerfiles) > 0 {
 		return "service"
 	}
-	if hasMainUnderCmd(dir) || hasCargoBin(dir) || hasPythonScripts(dir) {
+	if hasMainUnderCmd(dir, fe) || hasCargoBin(dir) || hasPythonScripts(dir) {
 		return "cli"
 	}
 	if has(dir, "Chart.yaml") {
@@ -1060,14 +1081,23 @@ func releaseSignals(repo, componentPath string) domain.ReleaseSignal {
 	return sig
 }
 
-func detectCGO(repo, componentPath, primary string) bool {
+// detectCGO durchsucht die Komponente nach cgo-Nutzung. Ein unlesbares
+// Verzeichnis hiess frueher "kein cgo" (Audit B-6, an einer Stelle, die der
+// Fund nicht aufzaehlte): der gerenderte test-go-Job liefe dann ohne
+// CGO_ENABLED=1, und der Build scheitert erst dort - oder testet still die
+// falsche Konfiguration.
+func detectCGO(repo, componentPath, primary string, fe *fsErrors) bool {
 	if primary != "go" {
 		return false
 	}
 	dir := filepath.Join(repo, componentPath)
 	found := false
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".go") {
+		if err != nil {
+			fe.note(repo, path, err)
+			return nil
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".go") {
 			return nil
 		}
 		content := mustRead(path)
@@ -1239,13 +1269,17 @@ func noReleaseEligibleWarnings(components []domain.Component) []domain.Warning {
 // root component but carries Dockerfiles in sub-directories that no component
 // owns. Before the root-marker fix those Dockerfiles hijacked the layout; now
 // they are ignored loudly and the adopter manifest is the way to claim them.
-func unassignedSubdirDockerfileWarnings(repo string, components []domain.Component) []domain.Warning {
+func unassignedSubdirDockerfileWarnings(repo string, components []domain.Component, fe *fsErrors) []domain.Warning {
 	if len(components) != 1 || components[0].Path != "." {
 		return nil
 	}
 	var orphans []string
 	_ = filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			// Diese Funktion MELDET verwaiste Dockerfiles. Ein unlesbares
+			// Verzeichnis hiess bisher "nichts zu melden" - die Warnung blieb
+			// aus, und der Adopter erfuhr nichts.
+			fe.note(repo, path, err)
 			return nil
 		}
 		if skip := skipHidden(repo, path, d); skip != nil {
@@ -1343,9 +1377,16 @@ func ensureStrings(values []string) []string {
 	return values
 }
 
-func hasMainUnderCmd(dir string) bool {
+// hasMainUnderCmd entscheidet mit ueber `role: cli`. Ein fehlendes `cmd/` ist
+// der Normalfall und wird nicht gemeldet; ein VORHANDENES, aber unlesbares
+// schon (Audit B-6, weitere Fundstelle).
+func hasMainUnderCmd(dir string, fe *fsErrors) bool {
 	found := false
 	_ = filepath.WalkDir(filepath.Join(dir, "cmd"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			fe.note(dir, path, err)
+			return nil
+		}
 		if err == nil && !d.IsDir() && d.Name() == "main.go" {
 			found = true
 			return fs.SkipAll
