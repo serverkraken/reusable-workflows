@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-08-26T20:11:15Z_
+_Last updated by the onboarding workflow: 2026-08-26T20:51:53Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -21,7 +21,7 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/helm-chart-tshock | 2026-07-27 | v4 | [PR](https://github.com/serverkraken/helm-chart-tshock/pull/13) | [PR](https://github.com/serverkraken/helm-chart-tshock/pull/14) | add-open, cleanup-open | — |
 | serverkraken/helm-charts | 2026-07-27 | v4 | [PR](https://github.com/serverkraken/helm-charts/pull/2) | — | add-open, no-legacy | — |
 | serverkraken/homelab-incus-oracle | 2026-05-31 | v4 | [PR](https://github.com/serverkraken/homelab-incus-oracle/pull/183) | — | add-open, no-legacy | — |
-| serverkraken/homelab-study | 2026-05-31 | v4 | [PR](https://github.com/serverkraken/homelab-study/pull/755) | [PR](https://github.com/serverkraken/homelab-study/pull/779) | add-open, cleanup-open | — |
+| serverkraken/homelab-study | 2026-08-26 | v4 | [PR](https://github.com/serverkraken/homelab-study/pull/1135) | — | add-open, no-legacy | — |
 | serverkraken/juke.gallery-admin | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/juke.gallery-admin/pull/6) | — | add-open, no-legacy | — |
 | serverkraken/juke.gallery-rest | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/juke.gallery-rest/pull/11) | — | add-open, no-legacy | — |
 | serverkraken/juke.gallery-user | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/juke.gallery-user/pull/6) | — | add-open, no-legacy | — |
