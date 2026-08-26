@@ -526,7 +526,42 @@ jobs:
           # shellcheck disable=SC2046
           docker buildx imagetools create -t "$IMG:$TAG" \
             $(printf "$IMG@sha256:%s " *)
-          DIGEST=$(docker buildx imagetools inspect "$IMG:$TAG" --format '{{.Manifest.Digest}}')
+
+          # `create` pusht die Manifest-Liste, `inspect` liest denselben Tag
+          # unmittelbar danach wieder. Am 2026-08-26 ist genau hier ein Lauf
+          # abgebrochen:
+          #
+          #   ERROR: ghcr.io/serverkraken/reusable-workflows/test-multi-worker:...: not found
+          #
+          # `create` war dabei erfolgreich — der Schritt laeuft unter `bash -e`,
+          # ein Fehlschlag davor haette vorher abgebrochen. Derselbe Commit lief
+          # beim Neustart unveraendert durch. Der Tag war also erzeugt, nur noch
+          # nicht lesbar.
+          #
+          # Die Stelle ist die denkbar schlechteste: die Arch-Images sind zu dem
+          # Zeitpunkt bereits gepusht. Der Release bricht ab und hinterlaesst
+          # einen halben Zustand.
+          #
+          # Bewusst BEGRENZT: vier Wiederholungen mit wachsender Pause, zusammen
+          # 20 Sekunden. Bleibt es dabei, ist es kein Ausbreitungsproblem — dann
+          # soll der echte Fehler durchschlagen, statt wegretried zu werden.
+          # Genau daran ist in dieser Sitzung schon einmal ein 403 voreilig
+          # "transient" genannt worden.
+          DIGEST=""
+          for attempt in 1 2 3 4 5; do
+            if DIGEST=$(docker buildx imagetools inspect "$IMG:$TAG" \
+                          --format '{{.Manifest.Digest}}' 2>/dev/null); then
+              break
+            fi
+            if [[ "$attempt" == "5" ]]; then
+              echo "::error::manifest list $IMG:$TAG was created but is still not readable after 5 attempts" >&2
+              # Ohne Unterdrueckung laufen lassen, damit die echte Meldung im Log steht.
+              docker buildx imagetools inspect "$IMG:$TAG" --format '{{.Manifest.Digest}}'
+              exit 1
+            fi
+            echo "::notice::$IMG:$TAG not readable yet (attempt $attempt) — retrying"
+            sleep $(( attempt * 2 ))
+          done
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Resolve the commit that was actually built
