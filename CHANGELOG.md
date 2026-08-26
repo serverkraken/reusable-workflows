@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.20.2](https://github.com/serverkraken/reusable-workflows/compare/v4.20.1...v4.20.2) (2026-08-26)
+
+
+### Bug Fixes
+
+* **drift:** ein Adopter ohne Ergebnis verschwand still aus dem Bericht ([#363](https://github.com/serverkraken/reusable-workflows/issues/363)) ([c6dc1f1](https://github.com/serverkraken/reusable-workflows/commit/c6dc1f198ddff3620e59c22096587aaef8633fc0))
+* **sweep:** ein gescheitertes enumerate meldete gar nichts ([#361](https://github.com/serverkraken/reusable-workflows/issues/361)) ([6851261](https://github.com/serverkraken/reusable-workflows/commit/68512617b8ae197789e33923e905a811fb07a3f2))
+
 ## [4.20.1](https://github.com/serverkraken/reusable-workflows/compare/v4.20.0...v4.20.1) (2026-08-26)
 
 
