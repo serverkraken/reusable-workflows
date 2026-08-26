@@ -267,6 +267,7 @@ jobs:
         id: build
         env:
           CURRENT_VERSION: ${{ needs.enumerate.outputs.current_version }}
+          MATRIX: ${{ needs.enumerate.outputs.matrix }}
         run: |
           set -euo pipefail
           today=$(date -u +%Y-%m-%d)
@@ -313,6 +314,35 @@ jobs:
                 echo "| $t | $icon $s | $ver | $mods | $re |"
               done
             fi
+
+            # Audit K-21: bis hierher entsteht der Bericht ausschliesslich aus
+            # dem, was an Artefakten DA ist. Faellt ein check-Job aus — gekillter
+            # Runner, Timeout, abgebrochener Lauf — laedt `download-artifact`
+            # dessen Ergebnis einfach nicht mit, und der Adopter verschwindet
+            # still aus der Tabelle. Fuer den Leser sieht das aus wie "wurde
+            # geprueft und war sauber".
+            #
+            # Deshalb der Abgleich gegen die AUFGEZAEHLTE Matrix: erwartet wird
+            # jeder Eintrag aus enumerate, gefunden wird, was ein Artefakt
+            # geliefert hat. Die Differenz gehoert in den Bericht, nicht ins
+            # Schweigen.
+            expected=$(jq -r '.[].target' <<< "$MATRIX" | sort -u)
+            found=$(cat results/*.json 2>/dev/null | jq -r '.target' | sort -u || true)
+            missing=$(comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$found") | sed '/^$/d')
+            n_missing=$(printf '%s' "$missing" | grep -c . || true)
+
+            if [[ "$n_missing" -gt 0 ]]; then
+              echo
+              echo "## ⚠ Ohne Ergebnis: $n_missing Adopter"
+              echo
+              echo "Fuer diese Repos wurde **kein Ergebnis geliefert**. Das ist"
+              echo "NICHT dasselbe wie \"kein Drift\" — sie wurden nicht gemessen."
+              echo
+              while IFS= read -r m; do
+                [[ -n "$m" ]] && echo "- \`$m\`"
+              done <<< "$missing"
+            fi
+
             echo
             echo "---"
             onboard_url="${{ github.server_url }}/${{ github.repository }}/actions/workflows/onboard.yml"
