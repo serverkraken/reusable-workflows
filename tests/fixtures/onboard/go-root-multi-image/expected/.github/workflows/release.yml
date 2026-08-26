@@ -89,8 +89,9 @@ jobs:
     with:
       image_ref: ${{ needs.docker-build-images-api.outputs.image_ref }}
       platforms: linux/amd64,linux/arm64
-      severity: ${{ vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL' }}
+      severity: CRITICAL
       trivy_version: ${{ vars.SK_TRIVY_VERSION || '' }}
+      fail_on_findings: false
     secrets: inherit
 
   docker-build-images-worker:

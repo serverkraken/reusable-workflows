@@ -138,6 +138,136 @@ _component_is_flutter() {
 # Komponenten durchlaeuft — deshalb war das nie sichtbar.
 #
 # Signature: _repo_rel <repo> <pfad>
+# ---------------------------------------------------------------------------
+# _find_sorted — `find` mit sichtbarem Fehlschlag (Audit I-14)
+#
+# Sechs Aufrufstellen hatten die Form
+#
+#     done < <(find "$root" … 2>/dev/null | sort)
+#
+# und verschluckten damit zweierlei: die Fehlermeldung (`2>/dev/null`) und den
+# Exit-Status (Prozesssubstitution plus Pipe). `find` bricht bei einem
+# unlesbaren Verzeichnis nicht ab — es meldet non-zero und gibt trotzdem aus,
+# was es fand. Aus einem TEILergebnis wurde so ein vollstaendiges: Komponenten
+# fehlten im Profil, ohne dass irgendwo etwas davon stand.
+#
+# Die Go-Engine macht es an derselben Stelle laengst richtig (`fsErrors.note`):
+# sie laeuft weiter UND vermerkt eine `path_unreadable`-Warnung. Das hier zieht
+# nach — wieder ein Fall, in dem die Faehigkeit da war, nur nicht in beiden
+# Engines.
+#
+# "Existiert nicht" ist an mehreren Aufrufstellen der NORMALFALL (ein Repo ohne
+# `kubernetes/`, eine Komponente ohne Unterverzeichnis) und damit kein Fehler —
+# dieselbe Unterscheidung, die Go ueber `errors.Is(err, fs.ErrNotExist)` trifft.
+#
+# WICHTIG fuer Aufrufer: nicht in `< <(…)` verwenden. Eine Prozesssubstitution
+# ist eine Subshell, in der ein Eintrag in _PATH_UNREADABLE verloren geht —
+# genau der Fehler, den diese Funktion behebt. Stattdessen in eine Datei
+# schreiben und die Schleife daraus speisen (dasselbe Muster wie Audit I-7).
+# Seitenkanal als DATEI (Begruendung unten in _find_sorted): der Pfad wird
+# exportiert, damit ihn auch Subshells sehen, die ueber `$( )` entstehen.
+_PATH_UNREADABLE_FILE="${_PATH_UNREADABLE_FILE:-}"
+
+# _find_err_unquote — den Pfad aus einer find-Fehlerzeile auspacken.
+#
+# GNU find zitiert ihn, BSD find nicht:
+#
+#   GNU (Linux):   find: '/repo/services/geheim': Permission denied
+#   BSD (macOS):   find: /repo/services/geheim: Permission denied
+#
+# Genau daran ist der erste Anlauf in der self-CI gescheitert, waehrend er
+# lokal gruen war: die Anfuehrungszeichen wanderten in den Pfad, und aus
+# `services/geheim` wurde `'/…/services/geheim'`. Eigene Funktion, damit ein
+# Test beide Formen pruefen kann, ohne dass die Plattform mitentscheidet.
+#
+# Unter LC_ALL=C nutzt GNU find ASCII-Apostrophe; die typografischen werden
+# trotzdem abgeraeumt, falls jemand die Locale-Zeile entfernt.
+_find_err_unquote() {
+  local v="$1"
+  v="${v#\'}"; v="${v%\'}"
+  v="${v#$'\u2018'}"; v="${v%$'\u2019'}"
+  printf '%s' "$v"
+}
+
+_find_sorted() {
+  local root="$1"; shift
+  # Nicht vorhanden = leeres Ergebnis, kein Fehler.
+  [[ -e "$root" ]] || return 0
+
+  local raw err rc
+  raw="$(mktemp)"
+  err="$(mktemp)"
+  # LC_ALL=C: die Meldungen werden gleich zeilenweise zerlegt, und das soll
+  # nicht von der Locale des Runners abhaengen.
+  LC_ALL=C find "$root" "$@" >"$raw" 2>"$err"
+  rc=$?
+
+  if (( rc != 0 )); then
+    # Wie Go: weiterlaufen mit dem, was gefunden wurde, aber es vermerken.
+    #
+    # `find` meldet je unlesbarem Pfad eine Zeile der Form
+    #   find: <pfad>: <grund>
+    # Die wird zerlegt, damit hier - wie in der Go-Engine - der KONKRETE Pfad
+    # steht und nicht bloss die Suchwurzel. Laesst sich eine Zeile nicht
+    # zerlegen, faellt der Eintrag auf die Wurzel zurueck: lieber eine
+    # ungenaue Warnung als gar keine.
+    #
+    # Die absoluten Runner-Pfade werden dabei entfernt - sie landen sonst im
+    # Profil und damit im PR-Text. (Die Go-Engine haengt an dieser Stelle noch
+    # ihren absoluten Pfad an; hier nicht.)
+    local line rel reason base
+    base="${_FIND_REPO:-$root}"
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      if [[ "$line" =~ ^find:\ (.+):\ ([^:]+)$ ]]; then
+        rel="$(_repo_rel "$base" "$(_find_err_unquote "${BASH_REMATCH[1]}")")"
+        reason="${BASH_REMATCH[2]}"
+      else
+        rel="$root"
+        # Parametererweiterung statt sed: $base enthaelt Schraegstriche und
+        # kann Sonderzeichen enthalten, die in einem sed-Ausdruck gaeren wuerden.
+        reason="${line//"$base"\//}"
+        reason="${reason//"$base"/}"
+      fi
+      # Wurzel == Repo: _repo_rel gibt den Pfad unveraendert zurueck, weil kein
+      # "$repo/"-Praefix passt. Go schreibt an dieser Stelle ".".
+      [[ -n "$rel" && "$rel" != "$base" ]] || rel="."
+    # Eine DATEI, kein Array. Beim ersten Anlauf stand hier ein globales Array
+    # - und das war genau derselbe Fehler, den I-14 beschreibt, nur eine Ebene
+    # hoeher: `components=$(detect_components "$repo")` ist ebenfalls eine
+    # Subshell, in der jeder Array-Eintrag verfaellt. Gemessen an einem
+    # Verzeichnis mit Modus 000: weiterhin `warnings: []`, mit und ohne Fix.
+    # Ein Dateischreibvorgang ueberlebt jede Verschachtelung.
+      [[ -n "${_PATH_UNREADABLE_FILE:-}" ]] && printf '%s|%s\n' "$rel" "$reason" >> "$_PATH_UNREADABLE_FILE"
+    done < "$err"
+  fi
+
+  sort -u "$raw"
+  rm -f "$raw" "$err"
+  return 0
+}
+
+# emit_path_unreadable_warnings — haengt die gesammelten Fehler ans Profil.
+# Signature: emit_path_unreadable_warnings <profile-json>
+emit_path_unreadable_warnings() {
+  local profile="$1"
+  [[ -n "${_PATH_UNREADABLE_FILE:-}" && -s "$_PATH_UNREADABLE_FILE" ]] || { echo "$profile"; return 0; }
+
+  local extra="[]" entry path detail
+  # sort -u: denselben Pfad koennen mehrere find-Aufrufe melden; die Go-Engine
+  # entdoppelt ueber fsErrors.byPath.
+  while IFS= read -r entry; do
+    path="${entry%%|*}"
+    detail="${entry#*|}"
+    extra=$(jq -c --arg p "$path" --arg d "$detail" \
+      '. + [{code: "path_unreadable", path: $p,
+             message: ("could not be read during detection, so anything below it is missing from this profile: " + $d)}]' \
+      <<<"$extra")
+  done < <(sort -u "$_PATH_UNREADABLE_FILE")
+  jq -c --argjson extra "$extra" '.warnings += $extra' <<<"$profile"
+}
+
+
 _norm_repo() {
   local repo="$1"
   while [[ "$repo" == */ && "$repo" != "/" ]]; do repo="${repo%/}"; done
@@ -200,6 +330,12 @@ _gitops_manifests_paths() {
   local repo="$1"
   local dirs=()
   local d base
+  # Ueber eine Datei statt `< <(…)`: eine Prozesssubstitution ist eine Subshell,
+  # in der _find_sorted seinen Vermerk verlieren wuerde — genau der Fehler, den
+  # sie behebt (Audit I-14, Muster aus I-7).
+  local _list; _list="$(mktemp)"
+  _FIND_REPO="$repo"
+  _find_sorted "$repo/kubernetes" -mindepth 1 -maxdepth 1 -type d > "$_list"
   while IFS= read -r d; do
     [[ -n "$d" ]] || continue
     base=$(basename "$d")
@@ -207,7 +343,8 @@ _gitops_manifests_paths() {
       bootstrap|components|flux-system) continue ;;
     esac
     dirs+=("kubernetes/$base")
-  done < <(find "$repo/kubernetes" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+  done < "$_list"
+  rm -f "$_list"
   if (( ${#dirs[@]} == 0 )); then
     echo '[]'
   else
@@ -216,6 +353,12 @@ _gitops_manifests_paths() {
 }
 
 emit_profile_json() {
+  # Je Lauf zuruecksetzen: die Bibliothek wird einmal gesourct, aber mehrfach
+  # aufgerufen (Tests, Sweep ueber mehrere Repos). Ohne das wuerde ein
+  # unlesbarer Pfad aus Repo A in Repo Bs Profil auftauchen (Audit I-14).
+  _PATH_UNREADABLE_FILE="$(mktemp)"
+  export _PATH_UNREADABLE_FILE
+  trap 'rm -f "$_PATH_UNREADABLE_FILE"' RETURN
   local repo
   # Schraegstrich am Ende einmal hier abschneiden. Sonst entsteht weiter
   # unten `$repo/.github/...` mit doppeltem `//`, und das schleppt sich
@@ -394,6 +537,9 @@ emit_profile_json() {
 
   profile=$(emit_unsupported_language_warnings "$profile")
   profile=$(emit_unassigned_subdir_dockerfile_warnings "$profile" "$repo")
+  # Unlesbare Pfade, die waehrend der Erkennung auffielen (Audit I-14).
+  # Dasselbe, was die Go-Engine ueber fsErrors.note ans Profil haengt.
+  profile=$(emit_path_unreadable_warnings "$profile")
   profile=$(apply_release_type_override "$profile" "${ONBOARD_RELEASE_TYPE_OVERRIDE:-}")
   emit_no_release_eligible_warnings "$profile"
 }
@@ -476,13 +622,20 @@ emit_unassigned_subdir_dockerfile_warnings() {
   # ein Dockerfile darin ist keine verwaiste Komponente. Der Go-Detektor macht
   # dasselbe (skipHidden).
   local orphans=() f rel
+  # Ueber eine Datei statt `< <(…)`: eine Prozesssubstitution ist eine Subshell,
+  # in der _find_sorted seinen Vermerk verlieren wuerde — genau der Fehler, den
+  # sie behebt (Audit I-14, Muster aus I-7).
+  local _list; _list="$(mktemp)"
+  _FIND_REPO="$repo"
+  _find_sorted "$repo" -type d -name '.*' -prune -o -type f \
+    \( -name 'Dockerfile' -o -name 'Containerfile' \
+       -o -name 'Dockerfile.*' -o -name 'Containerfile.*' \) \
+    -print > "$_list"
   while IFS= read -r f; do
     rel="$(_repo_rel "$repo" "$f")"
     [[ "$rel" == */* ]] && orphans+=("$rel")
-  done < <(find "$repo" -type d -name '.*' -prune -o -type f \
-             \( -name 'Dockerfile' -o -name 'Containerfile' \
-                -o -name 'Dockerfile.*' -o -name 'Containerfile.*' \) \
-             -print 2>/dev/null | sort)
+  done < "$_list"
+  rm -f "$_list"
 
   (( ${#orphans[@]} == 0 )) && { echo "$profile_json"; return 0; }
 
@@ -666,6 +819,12 @@ detect_components() {
     root_has_marker=true
   fi
   if [[ ${#paths[@]} -eq 0 && "$root_has_marker" == "false" ]]; then
+    # Ueber eine Datei statt `< <(…)`: eine Prozesssubstitution ist eine
+    # Subshell, in der _find_sorted seinen Vermerk verlieren wuerde (Audit
+    # I-14, Muster aus I-7).
+    local _list; _list="$(mktemp)"
+    _FIND_REPO="$repo"
+    _find_sorted "$repo" -mindepth 2 -maxdepth 4 \( -name 'go.mod' -o -name 'pyproject.toml' -o -name 'Cargo.toml' -o -name 'Chart.yaml' \) > "$_list"
     while IFS= read -r m; do
       local d
       d=$(dirname "$m")
@@ -680,7 +839,8 @@ detect_components() {
     # Gemessen an genau diesem Layout: Go fand beide Komponenten, diese Engine
     # kollabierte das ganze Monorepo auf ["."] — der Schalter use_go_cli
     # entschied damit, ob so ein Repo richtig onboardet wird.
-    done < <(find "$repo" -mindepth 2 -maxdepth 4 \( -name 'go.mod' -o -name 'pyproject.toml' -o -name 'Cargo.toml' -o -name 'Chart.yaml' \) 2>/dev/null | sort -u)
+    done < "$_list"
+    rm -f "$_list"
   fi
 
   # 3) Sub-Dockerfile/Containerfile fallback (no language markers but multiple sub-Dockerfiles/Containerfiles)
@@ -688,6 +848,12 @@ detect_components() {
   # go.mod/Dockerfile/etc. must not be displaced by Dockerfiles living in sub-directories).
   if [[ ${#paths[@]} -eq 0 && "$root_has_marker" == "false" ]]; then
     local sub_dockerfile_dirs=()
+    # Ueber eine Datei statt `< <(…)`: eine Prozesssubstitution ist eine
+    # Subshell, in der _find_sorted seinen Vermerk verlieren wuerde (Audit
+    # I-14, Muster aus I-7).
+    local _list; _list="$(mktemp)"
+    _FIND_REPO="$repo"
+    _find_sorted "$repo" -mindepth 2 -maxdepth 4 \( -name 'Dockerfile' -o -name 'Containerfile' \) > "$_list"
     while IFS= read -r f; do
       local d
       d=$(dirname "$f")
@@ -696,7 +862,8 @@ detect_components() {
       sub_dockerfile_dirs+=("$d")
     # Dieselbe Zaehlweise wie oben (fallbackDockerfilePaths erlaubt ebenfalls
     # Komponententiefe <= 3).
-    done < <(find "$repo" -mindepth 2 -maxdepth 4 \( -name 'Dockerfile' -o -name 'Containerfile' \) 2>/dev/null | sort -u)
+    done < "$_list"
+    rm -f "$_list"
     if [[ ${#sub_dockerfile_dirs[@]} -ge 2 ]]; then
       paths=("${sub_dockerfile_dirs[@]}")
     fi
@@ -839,12 +1006,19 @@ inventory_dockerfiles() {
 
   # Collect Dockerfile + Containerfile names at component root only.
   local files=()
+  # Ueber eine Datei statt `< <(…)`: eine Prozesssubstitution ist eine Subshell,
+  # in der _find_sorted seinen Vermerk verlieren wuerde — genau der Fehler, den
+  # sie behebt (Audit I-14, Muster aus I-7).
+  local _list; _list="$(mktemp)"
+  _FIND_REPO="$repo"
+  _find_sorted "$p" -maxdepth 1 -type f \( \
+    -name 'Dockerfile' -o -name 'Dockerfile.*' \
+    -o -name 'Containerfile' -o -name 'Containerfile.*' \
+  \) > "$_list"
   while IFS= read -r f; do
     [[ -n "$f" ]] && files+=("$(basename "$f")")
-  done < <(find "$p" -maxdepth 1 -type f \( \
-             -name 'Dockerfile' -o -name 'Dockerfile.*' \
-             -o -name 'Containerfile' -o -name 'Containerfile.*' \
-           \) 2>/dev/null | sort || true)
+  done < "$_list"
+  rm -f "$_list"
 
   if (( ${#files[@]} == 0 )); then
     echo '[]'; return
@@ -1089,6 +1263,10 @@ detect_legacy_ci() {
 
   local entries=()
   local f
+  # Ueber eine Datei statt `< <(…)` (Audit I-14, Muster aus I-7).
+  local _list; _list="$(mktemp)"
+  _FIND_REPO="$repo"
+  _find_sorted "$dir" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) > "$_list"
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
     local base
@@ -1148,7 +1326,8 @@ detect_legacy_ci() {
       --arg summary "$summary" \
       --argjson replaced_by "$replacements" \
       '{path: $path, summary: $summary, replaced_by: $replaced_by}')")
-  done < <(find "$dir" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort || true)
+  done < "$_list"
+  rm -f "$_list"
 
   if [[ ${#entries[@]} -eq 0 ]]; then
     echo '[]'
