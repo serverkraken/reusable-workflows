@@ -219,6 +219,66 @@ EOF
   grep -q 'header = "Authorization: Bearer secret-token"' "$SK_TEST_CURL_CONFIG_LOG"
 }
 
+# Audit L-8: das Test-Geruest setzt SK_WORKFLOWS_ARCH fest auf "amd64" (setup()),
+# und kein Test hat das je ueberschrieben. Damit war der arm64-Zweig der
+# Architektur-Normalisierung unerreichbar — ebenso die beiden Fehlerpfade.
+#
+# Das ist nicht theoretisch: die Org faehrt native ARM64-Runner
+# ([self-hosted, Linux, ARM64]), und der Multi-Arch-Build verteilt bewusst auf
+# X64 UND ARM64 statt zu emulieren. Dieser Installer laeuft dort also
+# produktiv — auf dem Zweig, den keine Zusicherung beruehrt hat.
+@test "aarch64 and arm64 both resolve to the arm64 asset" {
+  install_fake_curl
+  export SK_TEST_RELEASE_DIR="$RELEASE_DIR"
+  export SK_TEST_CURL_ARGV_LOG="$TMPDIR/curl-argv"
+  export INPUT_VERSION="v4.3.0"
+  make_release_assets "v4.3.0" "arm64"
+
+  # `uname -m` meldet auf Linux aarch64, auf macOS arm64. Beide muessen auf
+  # denselben Asset-Namen fuehren.
+  for reported in aarch64 arm64; do
+    : > "$GITHUB_OUTPUT"
+    : > "$SK_TEST_CURL_ARGV_LOG"
+    rm -f "$INSTALL_DIR/sk-workflows"
+
+    SK_WORKFLOWS_ARCH="$reported" run bash "$SCRIPT"
+    [ "$status" -eq 0 ] || { echo "$reported: $output"; false; }
+
+    grep -qx "version=v4.3.0" "$GITHUB_OUTPUT" || { echo "$reported: keine Version"; false; }
+    # Der entscheidende Nachweis: geladen wurde das arm64-Asset, nicht amd64.
+    grep -q "sk-workflows_v4.3.0_linux_arm64.tar.gz" "$SK_TEST_CURL_ARGV_LOG" \
+      || { echo "$reported: falsches Asset — $(cat "$SK_TEST_CURL_ARGV_LOG")"; false; }
+    run "$INSTALL_DIR/sk-workflows"
+    [ "$output" = "release-v4.3.0-arm64" ] || { echo "$reported: falsches Binary: $output"; false; }
+  done
+}
+
+@test "an unsupported architecture fails loudly instead of guessing" {
+  install_fake_curl
+  export SK_TEST_RELEASE_DIR="$RELEASE_DIR"
+  export INPUT_VERSION="v4.3.0"
+
+  SK_WORKFLOWS_ARCH="riscv64" run bash "$SCRIPT"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unsupported architecture"* ]] || { echo "$output"; false; }
+  # Nichts installiert, nichts gemeldet — kein halber Zustand.
+  [ ! -e "$INSTALL_DIR/sk-workflows" ]
+  ! grep -q "^version=" "$GITHUB_OUTPUT"
+}
+
+@test "an unsupported OS fails loudly instead of guessing" {
+  install_fake_curl
+  export SK_TEST_RELEASE_DIR="$RELEASE_DIR"
+  export INPUT_VERSION="v4.3.0"
+
+  SK_WORKFLOWS_OS="darwin" run bash "$SCRIPT"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unsupported OS"* ]] || { echo "$output"; false; }
+  [ ! -e "$INSTALL_DIR/sk-workflows" ]
+}
+
 @test "release install fails on checksum mismatch" {
   make_release_assets "v4.2.2" "amd64"
   install_fake_curl

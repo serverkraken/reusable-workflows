@@ -21,6 +21,21 @@ jobs:
     uses: ./.github/workflows/semantic-release.yml
     secrets: inherit
 
+  # Der Katalog nutzt hier seinen EIGENEN ausgelieferten Workflow — dieselbe
+  # Datei, die Adopter ueber `release.badges: true` bekommen. Damit wird sie bei
+  # jedem Katalog-Release mitgelaufen, statt nur in einem einzigen Adopter-Repo
+  # (mailstack war bis dahin der einzige Nutzer org-weit).
+  #
+  # `secrets: inherit` wie im Adopter-Template: der Badge-Commit laeuft ueber
+  # die Release-App, nicht ueber github-actions[bot].
+  version-badges:
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    uses: ./.github/workflows/version-badges.yml
+    permissions:
+      contents: write
+    secrets: inherit
+
   sk-workflows-assets:
     name: build sk-workflows release assets
     needs: release
