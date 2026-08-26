@@ -1281,3 +1281,50 @@ _crate() {
   # Der Komponentenpfad bleibt, wie er auf der Platte heisst.
   echo "$output" | jq -e '[.components[].path] == ["services/MyService"]'
 }
+
+# --- `# onboard:image=` folgt derselben Regel wie das Manifest ---------------
+#
+# Die Annotation wurde mit `[A-Za-z0-9._/-]+` gelesen — nur am ZEILENANFANG
+# verankert. Zwei Defekte in einem Ausdruck:
+#
+#   `# onboard:image=acme/svc UND MEHR`  ->  image_name "acme/svc UND MEHR"
+#   `# onboard:image=Acme/UPPER`         ->  image_name "Acme/UPPER"
+#
+# Der erste ist der schwerere: ein Image-Name mit Leerzeichen waere ins
+# gerenderte image_name gelaufen. Der Go-Detektor wies ihn ab (beidseitig
+# verankert) — die Bash-Fassung nicht. Beide Engines lesen jetzt dieselbe
+# Regel, beidseitig verankert und kleingeschrieben.
+
+_image_names() {
+  bash "$REPO_ROOT/scripts/onboard-detect.sh" --profile-json "$1" \
+    | jq -c '[.components[].dockerfiles[].image_name]'
+}
+
+_repo_with_annotation() {
+  local dir="$BATS_TEST_TMPDIR/annot" header="$1"
+  rm -rf "$dir"; mkdir -p "$dir/svc"
+  printf 'module x\ngo 1.22\n' > "$dir/svc/go.mod"
+  printf '%sFROM scratch\n' "$header" > "$dir/svc/Dockerfile"
+  echo "$dir"
+}
+
+@test "onboard:image mit gueltigem Kleinbuchstaben-Namen wird uebernommen" {
+  run _image_names "$(_repo_with_annotation '# onboard:image=acme/svc
+')"
+  [ "$status" -eq 0 ]
+  [ "$output" = '["acme/svc"]' ]
+}
+
+@test "onboard:image mit Grossbuchstaben wird abgewiesen" {
+  run _image_names "$(_repo_with_annotation '# onboard:image=Acme/UPPER
+')"
+  [ "$status" -eq 0 ]
+  [ "$output" = '["$REPO-svc"]' ]
+}
+
+@test "onboard:image mit Text hinter dem Namen wird abgewiesen" {
+  run _image_names "$(_repo_with_annotation '# onboard:image=acme/svc UND MEHR
+')"
+  [ "$status" -eq 0 ]
+  [ "$output" = '["$REPO-svc"]' ]
+}
