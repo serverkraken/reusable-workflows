@@ -1,5 +1,20 @@
 # Changelog
 
+## [4.20.0](https://github.com/serverkraken/reusable-workflows/compare/v4.19.0...v4.20.0) (2026-08-26)
+
+
+### Features
+
+* **badges:** der Katalog nutzt jetzt seine eigenen Badges ([#350](https://github.com/serverkraken/reusable-workflows/issues/350)) ([04fdcfe](https://github.com/serverkraken/reusable-workflows/commit/04fdcfea0418aa1b02e3747bba1c9810d966d298))
+
+
+### Bug Fixes
+
+* **detect:** ein unlesbares Verzeichnis war ein leeres Ergebnis, kein Fehler ([#346](https://github.com/serverkraken/reusable-workflows/issues/346)) ([04fdfb3](https://github.com/serverkraken/reusable-workflows/commit/04fdfb30d3a14e82759549b9073bc01b71ea1a9f))
+* **sarif:** Artefakt-Indizes wurden nicht umgeschrieben, nur die Regel-Indizes ([#351](https://github.com/serverkraken/reusable-workflows/issues/351)) ([15e56a7](https://github.com/serverkraken/reusable-workflows/commit/15e56a7b41f41052cc08bd0c55eb9343a1021ba1))
+* **setup:** ein Release-Archiv ohne Binary galt als erfolgreiche Installation ([#345](https://github.com/serverkraken/reusable-workflows/issues/345)) ([f3d0d2d](https://github.com/serverkraken/reusable-workflows/commit/f3d0d2de46a9a93cb26425e99db3491122186b37))
+* **trivy:** ein Duplikat, das inhaltlich abweicht, verschwand stillschweigend ([#353](https://github.com/serverkraken/reusable-workflows/issues/353)) ([0ef8959](https://github.com/serverkraken/reusable-workflows/commit/0ef89595985f8e8081ab346ada0617c86ad46b4c))
+
 ## [4.19.0](https://github.com/serverkraken/reusable-workflows/compare/v4.18.13...v4.19.0) (2026-08-26)
 
 
