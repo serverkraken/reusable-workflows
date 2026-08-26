@@ -1,5 +1,24 @@
 # Changelog
 
+## [4.19.0](https://github.com/serverkraken/reusable-workflows/compare/v4.18.13...v4.19.0) (2026-08-26)
+
+
+### Features
+
+* **docker-build:** Docker-Hub-Login, damit Basis-Image-Pulls nicht anonym laufen ([#344](https://github.com/serverkraken/reusable-workflows/issues/344)) ([6205a69](https://github.com/serverkraken/reusable-workflows/commit/6205a696acf8c251ced446d080c8c3d1bd5220eb))
+
+
+### Bug Fixes
+
+* **atoms:** kein Fork-Guard auf dem aufrufer-bestimmten `ref` (D-9) ([#342](https://github.com/serverkraken/reusable-workflows/issues/342)) ([763a22e](https://github.com/serverkraken/reusable-workflows/commit/763a22efe1c8b7cd1c5439a4273c670228afa428))
+* **cli:** Schreibfehler auf den Vertragsausgaben wurden verworfen (C-8) ([#339](https://github.com/serverkraken/reusable-workflows/issues/339)) ([b24ce20](https://github.com/serverkraken/reusable-workflows/commit/b24ce20899c761f03ae9e032601fe5c4e45c76d5))
+* **docker-build:** Manifest-Tag direkt nach dem Erzeugen nicht lesbar bricht den Release ab ([#343](https://github.com/serverkraken/reusable-workflows/issues/343)) ([abcd71d](https://github.com/serverkraken/reusable-workflows/commit/abcd71d29d67fc502f716d7c2e5937420836cad9))
+
+
+### Documentation
+
+* **readme:** ein Pin friert die Workflow-Datei ein, nicht die nachgeladenen Skripte (D-11) ([#340](https://github.com/serverkraken/reusable-workflows/issues/340)) ([38a2e71](https://github.com/serverkraken/reusable-workflows/commit/38a2e7170c4b375a87426fae7e2754cca2699d79))
+
 ## [4.18.13](https://github.com/serverkraken/reusable-workflows/compare/v4.18.12...v4.18.13) (2026-08-26)
 
 
