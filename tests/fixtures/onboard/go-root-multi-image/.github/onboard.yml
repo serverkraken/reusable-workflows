@@ -13,6 +13,18 @@ components:
         image: acme/multi/tools-debug
   - path: images/api
     image: acme/multi/api
+    # Deckt das Scan-GATE ab (Audit L-4) - severity und fail_on_findings, im
+    # Unterschied zu scanners/upload_sarif am worker weiter unten, die den SCAN
+    # selbst betreffen. Beide Template-Zweige wurden von KEINER Fixture
+    # gerendert: sie waren geparst und validiert, aber ihre Weitergabe ins
+    # gerenderte release.yml/prerelease.yml war nie gemessen - dieselbe Klasse
+    # wie J-0c beim chart-image-pins-Zweig.
+    #
+    # Bewusst an einer ANDEREN Komponente als scanners/upload_sarif, damit die
+    # Vorgabewerte (`vars.SK_TRIVY_SEVERITY || 'HIGH,CRITICAL'`) an den uebrigen
+    # Images weiter mitgeprueft werden.
+    severity: CRITICAL
+    fail_on_findings: false
   - path: images/worker
     image: acme/multi/worker
     context: .
