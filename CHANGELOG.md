@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.18.9](https://github.com/serverkraken/reusable-workflows/compare/v4.18.8...v4.18.9) (2026-08-26)
+
+
+### Bug Fixes
+
+* **detect:** die Regel fuer Image-Namen stand zweimal da - und nur eine wurde verschaerft ([#317](https://github.com/serverkraken/reusable-workflows/issues/317)) ([d7e79d9](https://github.com/serverkraken/reusable-workflows/commit/d7e79d96f0b11c394d8359358bb7a9f82a779906))
+* **detect:** Grossbuchstaben aus Verzeichnisnamen landeten im OCI-Image-Namen ([#316](https://github.com/serverkraken/reusable-workflows/issues/316)) ([0380e3d](https://github.com/serverkraken/reusable-workflows/commit/0380e3d815b4f97934214126b15887ad27448ca9))
+* **detect:** mehrdeutige Sprachsignale — unentrinnbare Absage, stilles Raten, und ein Gate dagegen ([#319](https://github.com/serverkraken/reusable-workflows/issues/319)) ([fb73364](https://github.com/serverkraken/reusable-workflows/commit/fb73364db7c67990411a9cdd767f28475d25f367))
+* **detect:** unsichtbare Zeichen am Zeilenende entschieden ueber die Auslieferung ([#318](https://github.com/serverkraken/reusable-workflows/issues/318)) ([c32d595](https://github.com/serverkraken/reusable-workflows/commit/c32d5950454e3341bcf58e25e128c8c2b54bc548))
+* **drift:** Ein Lock-Eintrag konnte drift aus dem Repo herausfuehren ([#314](https://github.com/serverkraken/reusable-workflows/issues/314)) ([f418c60](https://github.com/serverkraken/reusable-workflows/commit/f418c605b0bdd7e646d5e6aa5a4f37c6aa5b9bcb))
+
 ## [4.18.8](https://github.com/serverkraken/reusable-workflows/compare/v4.18.7...v4.18.8) (2026-08-26)
 
 
