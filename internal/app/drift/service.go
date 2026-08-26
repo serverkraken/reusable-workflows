@@ -187,7 +187,42 @@ func readLock(path string) (domain.OnboardLock, error) {
 	if lock.Files == nil {
 		lock.Files = map[string]string{}
 	}
+	for _, rel := range sortedKeys(lock.Files) {
+		if err := lockPathInsideTarget(rel); err != nil {
+			return domain.OnboardLock{}, err
+		}
+	}
 	return lock, nil
+}
+
+// lockPathInsideTarget weist einen Lock zurueck, dessen Dateiliste aus dem
+// Repo herausfuehrt.
+//
+// Gefunden ueber das Suchmuster "Pfad verlaesst den Checkout", nicht ueber die
+// Fundliste. Die beiden Vergleichsschleifen joinen die Lock-Schluessel direkt
+// an den Zielpfad. Ein Lock mit `"../geheim/secret.txt"` liess drift die Datei
+// AUSSERHALB des Repos lesen und im Bericht nennen:
+//
+//	status=modified
+//	modified=../geheim/secret.txt
+//
+// Damit ist der Drift-Bericht ein Existenz- und Inhalts-Orakel gegen den
+// Runner: vorhanden oder nicht, und ob der sha256 einem gewaehlten Wert
+// entspricht. Auf einem self-hosted Runner ist das dessen Dateisystem.
+//
+// Geprueft wird beim LADEN, nicht in den Schleifen - so gilt es auch fuer jede
+// kuenftige Nutzung der Dateiliste. Die Pruefung ist rein lexikalisch: die
+// Dateien muessen nicht existieren, und ein fehlender Eintrag ist ein legitimes
+// Ergebnis ("(missing)").
+func lockPathInsideTarget(rel string) error {
+	if filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") {
+		return fmt.Errorf("lock lists an absolute path %q; every entry must be relative to the repository", rel)
+	}
+	clean := filepath.Clean(filepath.FromSlash(rel))
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("lock lists %q, which points outside the repository", rel)
+	}
+	return nil
 }
 
 func modifiedFiles(targetPath string, lock domain.OnboardLock) ([]string, error) {
