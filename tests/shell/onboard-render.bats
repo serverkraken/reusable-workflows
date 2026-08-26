@@ -305,6 +305,16 @@ render_release_for_profile() {
   echo "$target/.github/workflows/release.yml"
 }
 
+render_cleanup_for_profile() {
+  local profile="$1"
+  local target="$BATS_TEST_TMPDIR/render-cleanup-$$"
+  mkdir -p "$target"
+  printf '%s' "$profile" > "$target/_profile.json"
+  "$BATS_TEST_DIRNAME/../../scripts/onboard-render.sh" \
+    "$BATS_TEST_DIRNAME/../.." "$target" "$target/_profile.json" "v4" >&2
+  echo "$target/.github/workflows/cleanup.yml"
+}
+
 render_prerelease_for_profile() {
   local profile="$1"
   local target="$BATS_TEST_TMPDIR/render-prerelease-$$"
@@ -1316,4 +1326,66 @@ _render_bad_profile() {  # <profil-inhalt>
   if command -v actionlint >/dev/null 2>&1; then
     actionlint "$wf"
   fi
+}
+
+
+# ---- cleanup.yml Paket-Ableitung (Audit J-23) ----
+#
+# Die Ableitung hatte KEINEN direkten Test - sie war nur ueber Goldens
+# abgedeckt, und die trafen den Fall nicht. Genau darum konnte der Filter auf
+# `release_eligible` stehen, obwohl prerelease.yml jedes Dockerfile baut UND
+# pusht (`packages: write`, `prerelease: true`).
+
+# Der Grenzfall aus dem Fundtext. Frueher blieb die Paketliste LEER, der nackte
+# Job lief gegen das Standardpaket $REPO - das niemand pusht - und das einzige
+# tatsaechlich gepushte Image wurde nie geputzt.
+@test "cleanup.yml putzt das Paket einer Komponente mit NUR Dockerfile.dev" {
+  rendered=$(render_cleanup_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "1.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path": "Dockerfile.dev", "context": ".",
+        "image_name": "$REPO-dev", "release_eligible": false}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  grep -qF 'package_name: "${{ github.event.repository.name }}-dev"' "$rendered"
+}
+
+# Der haeufigere Fall, den der Fundtext nicht nennt: das nicht-release-faehige
+# Image steht NEBEN einem release-faehigen. Der Cleanup nannte dann nur das
+# release-faehige, und das dev-Image wuchs unbegrenzt weiter.
+@test "cleanup.yml putzt BEIDE Pakete bei Dockerfile + Dockerfile.dev" {
+  rendered=$(render_cleanup_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "1.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [
+        {"path": "Dockerfile", "context": ".", "image_name": "$REPO", "release_eligible": true},
+        {"path": "Dockerfile.dev", "context": ".", "image_name": "$REPO-dev", "release_eligible": false}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  grep -qF 'package_name: "${{ github.event.repository.name }}"' "$rendered"
+  grep -qF 'package_name: "${{ github.event.repository.name }}-dev"' "$rendered"
+}
+
+# Gegenprobe zur Zusicherung im Template-Kopf: wer genau EIN Image "$REPO"
+# veroeffentlicht, bekommt weiterhin den nackten Job ohne package_name und
+# bleibt damit drift-clean. Ohne diese Zusicherung wuerde die Erweiterung
+# jeden bestehenden Ein-Image-Adopter in Drift schicken.
+@test "cleanup.yml bleibt der nackte Job bei genau einem \$REPO-Image" {
+  rendered=$(render_cleanup_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/svc",
+    "default_branch": "main", "current_version": "1.0.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service",
+      "dockerfiles": [{"path": "Dockerfile", "context": ".",
+        "image_name": "$REPO", "release_eligible": true}],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null}}],
+    "legacy_ci": [], "topics": [], "warnings": []
+  }')
+  refute_grep -qF "package_name" "$rendered"
 }
