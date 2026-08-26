@@ -114,3 +114,70 @@ func TestRenamingResolvesTheCollision(t *testing.T) {
 		t.Fatalf("components=%+v", res.Profile.Components)
 	}
 }
+
+// Gefunden ueber das Suchmuster "nicht-injektive Abbildung", nicht ueber die
+// Fundliste: checkImageNameCollisions oben fing die Basename-Kollision nur,
+// wenn beide Komponenten ein Dockerfile tragen — ueber den daraus abgeleiteten
+// Image-Namen. OHNE Dockerfiles gab es nichts zu vergleichen, und die
+// gerenderte release-please-config.json sah so aus:
+//
+//	apps/api      -> package-name: api
+//	services/api  -> package-name: api
+//
+// release-please erzeugt daraus fuer beide Tags `api-vX.Y.Z`. Zwei Komponenten
+// teilen sich eine Versionsreihe.
+
+func writeGoComponent(t *testing.T, repo, rel string) {
+	t.Helper()
+	dir := filepath.Join(repo, filepath.FromSlash(rel))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDuplicatePackageNameWithoutDockerfilesIsRejected(t *testing.T) {
+	repo := t.TempDir()
+	writeGoComponent(t, repo, "apps/api")
+	writeGoComponent(t, repo, "services/api")
+
+	_, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err == nil {
+		t.Fatal("erwartet: Abbruch — beide Komponenten bekaemen den Paketnamen \"api\"")
+	}
+	for _, want := range []string{"package name", "apps/api", "services/api", "rename"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Fehlertext nennt %q nicht: %v", want, err)
+		}
+	}
+}
+
+func TestDistinctPackageNamesPass(t *testing.T) {
+	// Gegenprobe: ein gewoehnliches Monorepo darf die Pruefung nicht treffen.
+	repo := t.TempDir()
+	writeGoComponent(t, repo, "services/api")
+	writeGoComponent(t, repo, "services/worker")
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatalf("verschiedene Paketnamen muessen durchgehen: %v", err)
+	}
+	if len(res.Profile.Components) != 2 {
+		t.Fatalf("components=%+v", res.Profile.Components)
+	}
+}
+
+func TestRootComponentIsExemptFromPackageNameCheck(t *testing.T) {
+	// Die Wurzel traegt keinen Paketnamen aus dem Pfad — genau wie im Manifest.
+	// Ein Repo mit Wurzelkomponente und einem gleichnamigen Unterordner darf
+	// nicht abgewiesen werden.
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module x\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo}); err != nil {
+		t.Fatalf("eine reine Wurzelkomponente muss durchgehen: %v", err)
+	}
+}
