@@ -120,13 +120,57 @@ jobs:
             # PRs (rendered against an older minor of the same major) and
             # legacy PRs without rendered_against fall through — onboard.yml
             # force-pushes the branch and edits the existing PR.
-            case "$(scripts/onboard-sweep-stale-pr-check.sh "$full" "$CURRENT_MINOR")" in
+            #
+            # Exit-Code und Verdikt werden GETRENNT behandelt (Audit K-22).
+            #
+            # Vorher stand hier `stale|no-pr|*)` — der Wildcard verschluckte
+            # jede unerwartete Ausgabe, auch die LEERE nach einem Fehlschlag.
+            # Ein gescheiterter Check war damit von "kein PR" nicht zu
+            # unterscheiden, und der Sweep legte einen ZWEITEN Onboarding-PR
+            # an, obwohl schon einer offen war. Dieselbe Klasse wie F-7 und
+            # D-12: ein Fehlschlag wird zum leeren Ergebnis, und das zaehlt
+            # als "nichts gefunden".
+            #
+            # Das Skript ist ausdruecklich fail-open und liefert bei einem
+            # API-Ausfall trotzdem ein Verdikt; != 0 heisst dort NUR
+            # Konfigurationsfehler (fehlende Argumente, fehlendes GH_TOKEN).
+            # Genau das darf nicht als "kein PR" durchgehen.
+            #
+            # timeout: ohne das haengt der ganze Sweep an EINEM Repo, dessen
+            # gh-Aufruf nicht antwortet. 120 s sind grosszuegig fuer zwei
+            # API-Aufrufe; laeuft es ab, ist der Zustand unbekannt und das
+            # Repo wird uebersprungen statt geraten.
+            # rc VOR der Negation abfangen: nach `if ! cmd; then` ist `$?`
+            # der Status des NEGIERTEN Ausdrucks, also 0 — der Timeout-Fall
+            # waere sonst im falschen Zweig gelandet. Beim Nachstellen der
+            # vier Ausgaenge ist genau das aufgefallen.
+            pr_state=""
+            rc=0
+            pr_state=$(timeout 120 scripts/onboard-sweep-stale-pr-check.sh "$full" "$CURRENT_MINOR") || rc=$?
+            if (( rc != 0 )); then
+              if (( rc == 124 )); then
+                echo "::warning::stale-PR check timed out for ${full} — skipping this repo rather than risking a duplicate PR"
+                skipped_csv+="${full}:pr-check-timeout,"
+              else
+                echo "::error::stale-PR check failed for ${full} (exit ${rc}) — this is a configuration error (missing args or GH_TOKEN), not a verdict"
+                exit 1
+              fi
+              continue
+            fi
+            case "$pr_state" in
               skip)
                 skipped_csv+="${full}:open-pr,"
                 continue
                 ;;
-              stale|no-pr|*)
+              stale|no-pr)
                 ;;  # fall through to drift / fresh-onboard
+              *)
+                # Ein unbekanntes Verdikt ist ein Vertragsbruch des Skripts,
+                # kein Grund weiterzuraten.
+                echo "::warning::stale-PR check returned an unknown verdict for ${full}: [${pr_state}] — skipping this repo"
+                skipped_csv+="${full}:pr-check-unknown,"
+                continue
+                ;;
             esac
 
             if echo "$onboarded" | grep -qx "$name"; then
