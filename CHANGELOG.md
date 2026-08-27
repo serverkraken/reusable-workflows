@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.21.4](https://github.com/serverkraken/reusable-workflows/compare/v4.21.3...v4.21.4) (2026-08-27)
+
+
+### Bug Fixes
+
+* **manifest:** Cron-Bereiche, BOM, Flow-Mappings, app_version an der Wurzel und eine unechte Vereinigung ([#377](https://github.com/serverkraken/reusable-workflows/issues/377)) ([e987f24](https://github.com/serverkraken/reusable-workflows/commit/e987f245f2b8927b816628a3bec76ef13946c0ec))
+* **scripts:** Version als Regex, unmaskierte Annotationen, spaete Modus-Pruefung und kollidierende Badge-Namen ([#379](https://github.com/serverkraken/reusable-workflows/issues/379)) ([14e0c0c](https://github.com/serverkraken/reusable-workflows/commit/14e0c0c59ea4370f26401e5fa775ae9ac2c6cc47))
+
 ## [4.21.3](https://github.com/serverkraken/reusable-workflows/compare/v4.21.2...v4.21.3) (2026-08-27)
 
 
