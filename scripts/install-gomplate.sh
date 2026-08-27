@@ -42,9 +42,24 @@ declare -A GOMPLATE_SHA256=(
 
 if [[ -x "$DEST" ]]; then
   # gomplate's --version output: "gomplate version 3.11.7"
-  # Match the numeric tail of $VERSION (strip leading "v") against the existing binary.
+  #
+  # EXAKTER Vergleich statt Regex (Audit I-19). Vorher stand hier
+  # `grep -qE "version ${want}\b"` — die Version wurde also als regulaerer
+  # Ausdruck benutzt. Gemessen, beides faelschlich als "schon installiert":
+  #
+  #   gomplate version 3011.7        die Punkte sind Metazeichen
+  #   gomplate version 3.11.7-rc1    \b trifft vor dem Bindestrich
+  #
+  # Das wiegt schwerer als ein kosmetischer Fehltreffer: bei einem Treffer
+  # wird der Download UEBERSPRUNGEN — und damit die im Skript gepinnte
+  # SHA-256-Pruefung aus Audit I-1. Der Schutz entfaellt also genau dann,
+  # wenn ein unerwartetes Binary am Zielort liegt.
+  #
+  # Wie bei H-23 faellt die Regex ganz weg, statt besser maskiert zu werden:
+  # das letzte Feld der Ausgabe wird als Zeichenkette verglichen.
   want="${VERSION#v}"
-  if "$DEST" --version 2>/dev/null | grep -qE "version ${want}\b"; then
+  installed="$("$DEST" --version 2>/dev/null | awk '/version/ { print $NF; exit }')"
+  if [[ "$installed" == "$want" ]]; then
     echo "gomplate ${VERSION} already installed at $DEST — skipping download"
     exit 0
   fi

@@ -131,7 +131,7 @@ if [[ ! -s "$entries_file" ]]; then
   exit 0
 fi
 
-labels=() versions=() kinds=() tags=() files=()
+labels=() versions=() kinds=() tags=() files=() pkgpaths=()
 while IFS=$'\t' read -r path version; do
   rtype="" pkgname="" incl=""
   if [[ -n "$CONFIG" ]]; then
@@ -154,8 +154,41 @@ while IFS=$'\t' read -r path version; do
     [[ "$incl" == "false" ]] && tag="v${version}" || tag="${component}-v${version}"
   fi
   labels+=("$label"); versions+=("$version"); kinds+=("$kind"); tags+=("$tag")
+  # Der PFAD wird fuer die Kollisionsmeldung mitgefuehrt: die Labels sind im
+  # Kollisionsfall per Definition gleich, geaendert werden muss aber der
+  # package-name des jeweiligen Pfads (Audit I-22).
+  pkgpaths+=("$path")
   files+=("$(sanitize "$label").svg")
 done < "$entries_file"
+
+# Zwei Pakete duerfen nicht auf denselben Dateinamen abbilden (Audit I-22).
+#
+# Der Name entsteht aus `sanitize "$label"`, und das Label ist bei der
+# Wurzelkomponente der REPO-Name, sonst der Paket- bzw. Basisname. Heisst eine
+# Komponente wie das Repository, kollidieren beide. Gemessen an einem Repo
+# `demo` mit einer Komponente `services/demo` (package-name: demo):
+#
+#   badges=2                      gemeldet
+#   docs/badges/demo.svg          EINE Datei, zweimal geschrieben
+#   files=…/demo.svg,…/demo.svg   derselbe Pfad zweimal
+#
+# Der README zeigt danach zwei Bilder auf dieselbe Datei: das erste traegt den
+# Alt-Text "demo: v1.0.0", die Datei aber die Version des zweiten Pakets. Die
+# Wurzel-Badge wird still ueberschrieben, und der Lauf meldet Erfolg.
+#
+# Abgewiesen statt umbenannt oder gehasht — dieselbe Entscheidung wie bei H-4,
+# J-0b und J-19: der Name kommt aus einer Konfiguration, die jemand
+# geschrieben hat. Ihn hier still zu veraendern waere schlechter, als darauf
+# hinzuweisen. Der Ausweg steht in der Meldung.
+declare -A _seen_badge_file=()
+for i in "${!files[@]}"; do
+  f="${files[$i]}"
+  if [[ -n "${_seen_badge_file[$f]:-}" ]]; then
+    echo "::error::packages \"${_seen_badge_file[$f]}\" and \"${pkgpaths[$i]}\" both render the badge file $f (label \"${labels[$i]}\") — one would silently overwrite the other; set a distinct package-name for one of them in release-please-config.json" >&2
+    exit 1
+  fi
+  _seen_badge_file[$f]="${pkgpaths[$i]}"
+done
 
 # ---- snapshot before, render, snapshot after ---------------------------------
 snapshot() {

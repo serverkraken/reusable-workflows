@@ -124,3 +124,59 @@ setup() {
   run bash "$SCRIPT" table /nonexistent.json
   [ "$status" -ne 0 ]
 }
+
+# ---------- Audit I-20 / I-21 ----------
+
+# I-20. Der Tabellen-Modus maskiert laengst (`def md`), der Annotations-Modus
+# tat es nicht — dieselbe Datei, zwei Ausgaben, nur eine abgesichert.
+#
+# GitHub trennt die Eigenschaften eines Workflow-Kommandos mit `,` und beendet
+# den Kopf mit `::`. Vorher entstand woertlich:
+#
+#   ::error file=usr/share/doc/foo,bar/README:notes,line=3::…
+#
+# GitHub liest daraus `file=usr/share/doc/foo` und dahinter eine unbekannte
+# Eigenschaft — die Annotation landet an der falschen Datei oder gar nicht.
+@test "annotations: Komma und Doppelpunkt im Pfad werden maskiert (Audit I-20)" {
+  run bash "$SCRIPT" annotations "$FIX/annotation-escaping.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"file=usr/share/doc/foo%2Cbar/README%3Anotes,line=3::"* ]] || {
+    echo "$output"; false
+  }
+  # Die rohen Zeichen duerfen im Kopf nicht mehr stehen.
+  refute_grep -q 'file=[^:]*,bar' <<<"$output"
+}
+
+# Prozentzeichen zuerst, sonst maskiert der naechste Schritt das eben
+# eingefuegte `%` ein zweites Mal.
+@test "annotations: Prozentzeichen in der Nachricht wird maskiert (Audit I-20)" {
+  run bash "$SCRIPT" annotations "$FIX/annotation-escaping.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"100%25 Prozent"* ]] || { echo "$output"; false; }
+  [[ "$output" != *"100%2525"* ]] || { echo "doppelt maskiert: $output"; false; }
+}
+
+# I-21. Die Modus-Pruefung sass nur im `case` — also NACH dem Null-Funde-
+# Ausstieg. Ein Aufrufer mit einem Tippfehler lief gruen durch, solange der
+# Report leer war, und scheiterte erst beim ersten echten Fund: genau in dem
+# Moment, in dem der Bericht gebraucht wird.
+#
+# Der bestehende Test "unknown mode fails" nutzt mixed.json, also einen NICHT
+# leeren Report — der Fall war damit nie abgedeckt.
+@test "unbekannter Modus scheitert auch bei LEEREM Report (Audit I-21)" {
+  run bash "$SCRIPT" bogus "$FIX/empty.json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"unknown mode"* ]] || { echo "$output"; false; }
+}
+
+# Gegenprobe: ein GUELTIGER Modus bleibt bei leerem Report still und gruen.
+# Ohne diese Zusicherung koennte die vorgezogene Pruefung den Null-Funde-Pfad
+# stillschweigend kaputtmachen.
+@test "gueltiger Modus bleibt bei leerem Report still und gruen" {
+  run bash "$SCRIPT" annotations "$FIX/empty.json"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  run bash "$SCRIPT" table "$FIX/empty.json"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}

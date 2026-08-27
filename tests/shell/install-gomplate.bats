@@ -193,3 +193,49 @@ PY
   # Rename im selben Dateisystem und damit nicht atomar.
   [[ "$argv" == *" -o $(dirname "$DEST")/.gomplate."* ]] || { echo "argv: $argv"; false; }
 }
+
+# ---- Audit I-19: die installierte Version wurde als REGEX verglichen ----
+#
+# Vorher stand hier `grep -qE "version ${want}\b"`. Gemessen, beides
+# faelschlich als "schon installiert" fuer want=3.11.7:
+#
+#   gomplate version 3011.7        die Punkte sind Metazeichen
+#   gomplate version 3.11.7-rc1    \b trifft vor dem Bindestrich
+#
+# Das wiegt schwerer als ein kosmetischer Fehltreffer: bei einem Treffer wird
+# der Download UEBERSPRUNGEN — und damit die im Skript gepinnte SHA-256-Pruefung
+# aus I-1. Der Schutz entfaellt also genau dann, wenn am Zielort ein
+# unerwartetes Binary liegt.
+
+# Legt am Zielort ein "gomplate" ab, dessen --version die uebergebene Zeile
+# ausgibt. Ohne curl-Stub: schlaegt die Versionspruefung an, darf gar nicht
+# heruntergeladen werden — und ohne Stub scheitert ein Download hoerbar.
+stub_installed_gomplate() {
+  cat > "$DEST" <<STUB
+#!/usr/bin/env bash
+echo "$1"
+STUB
+  chmod +x "$DEST"
+}
+
+@test "eine exakt passende installierte Version ueberspringt den Download" {
+  stub_installed_gomplate "gomplate version 3.11.7"
+  PATH="$WORK/bin:$PATH" DEST="$DEST" GOMPLATE_VERSION="v3.11.7" run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already installed"* ]] || { echo "$output"; false; }
+}
+
+@test "eine Version, die nur als Regex passt, ueberspringt den Download NICHT (Audit I-19)" {
+  # 3011.7 trifft `3.11.7` als regulaeren Ausdruck (die Punkte sind
+  # Metazeichen), ist aber offensichtlich eine andere Version.
+  stub_installed_gomplate "gomplate version 3011.7"
+  PATH="$WORK/bin:$PATH" DEST="$DEST" GOMPLATE_VERSION="v3.11.7" run bash "$SCRIPT"
+  [[ "$output" != *"already installed"* ]] || { echo "$output"; false; }
+}
+
+@test "ein Prerelease derselben Zahlenfolge ueberspringt den Download NICHT (Audit I-19)" {
+  # `\b` traf vor dem Bindestrich, also galt 3.11.7-rc1 als 3.11.7.
+  stub_installed_gomplate "gomplate version 3.11.7-rc1"
+  PATH="$WORK/bin:$PATH" DEST="$DEST" GOMPLATE_VERSION="v3.11.7" run bash "$SCRIPT"
+  [[ "$output" != *"already installed"* ]] || { echo "$output"; false; }
+}

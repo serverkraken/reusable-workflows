@@ -87,6 +87,26 @@ NORMALISE='
 findings=$(jq -c "$NORMALISE" "$report")
 total=$(jq 'length' <<<"$findings")
 
+# Modus VOR dem Null-Funde-Ausstieg pruefen (Audit I-21).
+#
+# Die Pruefung sass frueher nur im `case` weiter unten — also NACH diesem
+# `exit 0`. Ein Aufrufer mit einem Tippfehler im Modus lief damit gruen durch,
+# solange der Report leer war, und scheiterte erst beim ersten echten Fund:
+# genau in dem Moment, in dem der Bericht gebraucht wird.
+#
+# Die Guelt-Liste steht hier UND im case, weil der case die Zweige ohnehin
+# auffuehrt; ein unbekannter Modus kann also gar nicht mehr bis dorthin
+# gelangen. Der Zweig `*)` dort bleibt trotzdem stehen — er kostet nichts und
+# faengt einen kuenftigen Modus ab, der hier ergaenzt, dort aber vergessen
+# wird.
+case "$mode" in
+  table | annotations) ;;
+  *)
+    echo "trivy-findings-report: unknown mode '$mode' (expected table|annotations)" >&2
+    exit 2
+    ;;
+esac
+
 if [[ "$total" -eq 0 ]]; then
   exit 0
 fi
@@ -119,13 +139,35 @@ case "$mode" in
   annotations)
     # shellcheck disable=SC2016
     jq -r --argjson max "$MAX_ANNOTATIONS" '
+      # Workflow-Kommandos maskieren (Audit I-20).
+      #
+      # Der Tabellen-Modus maskiert laengst (`def md`), dieser Zweig tat es
+      # nicht — dieselbe Datei, zwei Ausgaben, nur eine abgesichert.
+      #
+      # GitHub trennt die Eigenschaften eines Kommandos mit `,` und beendet
+      # den Kopf mit `::`. Ein Dateiname mit Komma oder Doppelpunkt zerlegt
+      # die Annotation also in etwas anderes, als gemeint war, und ein
+      # Zeilenumbruch in der Nachricht bricht sie ganz ab — die Folgezeile
+      # ist dann kein Kommando mehr, sondern blosse Log-Ausgabe.
+      #
+      # Reihenfolge: % ZUERST, sonst maskiert der naechste Schritt das eben
+      # eingefuegte Prozentzeichen ein zweites Mal.
+      def esc_msg:
+        tostring
+        | gsub("%"; "%25")
+        | gsub("\r"; "%0D")
+        | gsub("\n"; "%0A");
+      def esc_prop:
+        esc_msg
+        | gsub(":"; "%3A")
+        | gsub(","; "%2C");
       .[:$max][]
       | (if .file != null
-           then "::error file=" + .file + (if .line != null then ",line=" + (.line|tostring) else "" end) + "::"
+           then "::error file=" + (.file | esc_prop) + (if .line != null then ",line=" + (.line|tostring) else "" end) + "::"
          else "::error::" end) as $prefix
       | (if .kind == "vuln"
-           then "[\(.sev)] \(.id) in \(.pkg // "?") \(.installed // "?") " + (if .fixed != "" then "(fixed: \(.fixed))" else "(no fix)" end) + " — \(.title)"
-         else "[\(.sev)] \(.id) — \(.title)" end) as $msg
+           then "[\(.sev)] \(.id | esc_msg) in \(.pkg // "?" | esc_msg) \(.installed // "?" | esc_msg) " + (if .fixed != "" then "(fixed: \(.fixed | esc_msg))" else "(no fix)" end) + " — \(.title | esc_msg)"
+         else "[\(.sev)] \(.id | esc_msg) — \(.title | esc_msg)" end) as $msg
       | $prefix + $msg
     ' <<<"$findings"
     ;;
