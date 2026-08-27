@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.22.0](https://github.com/serverkraken/reusable-workflows/compare/v4.21.10...v4.22.0) (2026-08-27)
+
+
+### Features
+
+* **atoms:** der scharfe Pfad von vier Publish-Atomen lief nie ([#395](https://github.com/serverkraken/reusable-workflows/issues/395)) ([9346816](https://github.com/serverkraken/reusable-workflows/commit/934681620e47fd6e94d68b7d5a8dbd542e069b17))
+
 ## [4.21.10](https://github.com/serverkraken/reusable-workflows/compare/v4.21.9...v4.21.10) (2026-08-27)
 
 
