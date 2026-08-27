@@ -28,3 +28,7 @@ dist/
 .coverage
 __pycache__/
 *.pyc
+
+# Audit K-10: diese Fixture MUSS ihre erzeugte Datei selbst bauen —
+# waere sie eingecheckt, liefe der Test gruen ohne den Generator.
+tests/fixtures/flutter-app-codegen/lib/*.g.dart

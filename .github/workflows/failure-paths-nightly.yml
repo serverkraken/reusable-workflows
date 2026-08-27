@@ -306,6 +306,41 @@ jobs:
           fi
           echo "cleanup-images correctly failed for empty runs_on"
 
+  # ----- lint-flutter OHNE build_runner gegen eine Codegen-Fixture (K-10) -----
+  #
+  # Gegenprobe zu `lint-flutter-codegen` in self-ci.yml. Ohne diese hier koennte
+  # der dortige Test leer bestehen: waere die erzeugte Datei doch im Repo (oder
+  # der `part`-Verweis verschwunden), liefe analyze auch ohne Generator gruen,
+  # und niemand saehe es.
+  #
+  # Hier MUSS es scheitern — die Teil-Datei fehlt und die beiden erzeugten
+  # Funktionen existieren nicht.
+  test-lint-flutter-no-codegen:
+    uses: ./.github/workflows/lint-flutter.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      working_directory: tests/fixtures/flutter-app-codegen
+      use_build_runner: false
+
+  assert-lint-flutter-no-codegen:
+    needs: test-lint-flutter-no-codegen
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert the lint failed without code generation
+        env:
+          RESULT: ${{ needs.test-lint-flutter-no-codegen.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint-flutter to FAIL with use_build_runner:false on a codegen fixture, got result=${RESULT}"
+            echo "::error::if this is green, the fixture no longer needs the generator — and the happy-path test in self-ci proves nothing"
+            exit 1
+          fi
+          echo "lint-flutter failed without the generator, as it must — the codegen fixture is still load-bearing."
+
   # ----- goreleaser OHNE snapshot: der echte Publish-Pfad (Audit K-12) -----
   #
   # Jeder Aufruf uebergab `snapshot: true`. Gebaut wurde damit, veroeffentlicht
@@ -982,6 +1017,7 @@ jobs:
       - assert-trivy-image-gate-fail
       - assert-cleanup-images-destructive
       - assert-goreleaser-publish
+      - assert-lint-flutter-no-codegen
       - assert-lint-python-fail
       - assert-lint-rust-fail
       - assert-test-go-cov-fail
