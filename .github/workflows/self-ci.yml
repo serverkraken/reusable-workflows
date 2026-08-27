@@ -153,9 +153,7 @@ jobs:
       # Katalogs schreiben und die echte Basislinie verfaelschen.
       sarif: false
       runs_on: '["ubuntu-latest"]'
-    secrets:
-      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
-      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+    secrets: inherit
 
   # ----- lint-shell: Gate greift bei Funden -----
   lint-shell-findings:
@@ -176,9 +174,7 @@ jobs:
       # summary-Graph und behauptet nichts Falsches.
       fail_on_findings: false
       runs_on: '["ubuntu-latest"]'
-    secrets:
-      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
-      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+    secrets: inherit
 
   assert-lint-shell-findings:
     needs: [lint-shell-findings]
