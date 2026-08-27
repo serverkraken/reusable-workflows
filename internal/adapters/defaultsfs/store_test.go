@@ -107,3 +107,53 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+// Audit C-11. `null` ist gueltiges JSON und laesst die Map NIL zurueck —
+// Unmarshal meldet dabei KEINEN Fehler, und der Schreibzugriff danach paniked
+// mit "assignment to entry in nil map". Gemessen an vier Inhalten fiel nur
+// `null` aus der Reihe: [] und "text" liefern saubere Fehler, {} geht durch.
+//
+// Das wiegt schwerer als ein Absturz an anderer Stelle: dieser Schritt laeuft
+// NACH den GitHub-Mutationen. Ein Panic hinterlaesst die Repo-Defaults gesetzt,
+// den Lock aber unmarkiert — beim naechsten Lauf sieht es aus, als waere nie
+// etwas passiert.
+func TestUpdateLockDefaultsMarkerRejectsJSONNull(t *testing.T) {
+	dir := t.TempDir()
+	gh := filepath.Join(dir, ".github")
+	if err := os.MkdirAll(gh, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gh, "onboard.lock.json"), []byte("null\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("erwartet: Fehler, bekommen: Panic %v", r)
+		}
+	}()
+	err := (Store{}).UpdateLockDefaultsMarker(dir, "2026-01-01T00:00:00Z")
+	if err == nil {
+		t.Fatal("erwartet: Fehler bei einem Lock, der nur `null` enthaelt")
+	}
+	if !strings.Contains(err.Error(), "JSON null") {
+		t.Fatalf("Grund fehlt in der Meldung: %v", err)
+	}
+}
+
+// Gegenprobe: ein leeres OBJEKT ist ein legitimer Lock-Anfang und muss weiter
+// durchgehen. Ohne diese Zusicherung koennte die Nil-Pruefung stillschweigend
+// zu weit greifen.
+func TestUpdateLockDefaultsMarkerAcceptsEmptyObject(t *testing.T) {
+	dir := t.TempDir()
+	gh := filepath.Join(dir, ".github")
+	if err := os.MkdirAll(gh, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gh, "onboard.lock.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Store{}).UpdateLockDefaultsMarker(dir, "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatalf("ein leeres Objekt muss durchgehen: %v", err)
+	}
+}

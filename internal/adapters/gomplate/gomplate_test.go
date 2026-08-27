@@ -20,9 +20,55 @@ func TestExecuteInvokesGomplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "-c .=/ctx.json -f /template.yml.tmpl -o " + out + "\n"
+	// gomplate schreibt NEBEN das Ziel und wird danach umbenannt (Audit C-9).
+	// Der Test hielt vorher `-o <ziel>` fest — also genau das Verhalten, das
+	// bei einem Abbruch mittendrin eine halbe Datei im Adopter-Checkout
+	// hinterlaesst. Die Endung gehoert damit zum Vertrag.
+	want := "-c .=/ctx.json -f /template.yml.tmpl -o " + out + ".sk-render\n"
 	if string(got) != want {
 		t.Fatalf("output=%q want %q", got, want)
+	}
+	if _, err := os.Stat(out + ".sk-render"); err == nil {
+		t.Fatal("die temporaere Renderdatei blieb nach dem Rename liegen")
+	}
+}
+
+// Audit C-9. `gomplate -o <ziel>` streamt direkt dorthin. Bricht das Template
+// mittendrin ab, bleibt eine HALBE Datei liegen — gemessen an einer Vorlage,
+// die 50 Zeilen ausgibt und in Zeile 51 auf einen fehlenden Schluessel laeuft:
+// rc != 0, und out.yml lag trotzdem mit 741 Byte da.
+//
+// outputPath liegt im Adopter-Checkout. Der Lauf wird zwar rot, die
+// verstuemmelte Workflow-Datei bleibt aber im Arbeitsverzeichnis stehen, wo
+// ein Wiederholungslauf oder ein Mensch sie einchecken kann.
+func TestExecuteLeavesNoPartialFileWhenGomplateFails(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out.yml")
+
+	// Ein Fake, der erst schreibt und dann scheitert — genau das Verhalten,
+	// das ein streamendes gomplate bei einem spaeten Template-Fehler zeigt.
+	bin := filepath.Join(dir, "half-writing-gomplate")
+	if err := os.WriteFile(bin, []byte(`#!/usr/bin/env bash
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "-o" ]]; then printf 'halb geschrieben\n' > "$2"; shift 2; continue; fi
+  shift
+done
+echo boom >&2
+exit 1
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := (Adapter{Binary: bin}).Execute(context.Background(), "/t.tmpl", out, "/ctx.json")
+	if err == nil {
+		t.Fatal("erwartet: Fehler")
+	}
+	if _, statErr := os.Stat(out); statErr == nil {
+		b, _ := os.ReadFile(out)
+		t.Fatalf("Zieldatei wurde trotz Fehlschlag angelegt: %q", b)
+	}
+	if _, statErr := os.Stat(out + ".sk-render"); statErr == nil {
+		t.Fatal("die temporaere Renderdatei blieb liegen")
 	}
 }
 
