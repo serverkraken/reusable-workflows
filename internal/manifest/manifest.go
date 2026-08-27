@@ -169,6 +169,9 @@ var (
 	// cronRe accepts the five standard cron fields. The charset is deliberately
 	// narrow (digits, `*`, `,`, `-`, `/`, and names like MON-FRI) so quoting
 	// artefacts or shell punctuation never reach the rendered `schedule:`.
+	//
+	// Der Zeichensatz allein reicht NICHT: `61 25 32 13 8` passierte ihn
+	// anstandslos (Audit A-6). Die Bereiche prueft validateCron weiter unten.
 	cronRe    = regexp.MustCompile(`^[-0-9*,/A-Za-z]+( [-0-9*,/A-Za-z]+){4}$`)
 	languages = []string{"go", "python", "rust", "helm", "flutter", "node", "generic"}
 	types     = []string{"helm"}
@@ -297,8 +300,13 @@ func decode(root *Node) (*Manifest, error) {
 			if e2e.Schedule, err = optionalString(e, "schedule"); err != nil {
 				return nil, err
 			}
-			if e2e.Schedule != "" && !cronRe.MatchString(e2e.Schedule) {
-				return nil, fmt.Errorf("line %d: schedule must be a 5-field cron expression", e.Map["schedule"].Line)
+			if e2e.Schedule != "" {
+				if !cronRe.MatchString(e2e.Schedule) {
+					return nil, fmt.Errorf("line %d: schedule must be a 5-field cron expression", e.Map["schedule"].Line)
+				}
+				if err := validateCron(e2e.Schedule); err != nil {
+					return nil, fmt.Errorf("line %d: schedule %w", e.Map["schedule"].Line, err)
+				}
 			}
 			m.Workflows.E2E = e2e
 		}
@@ -686,4 +694,124 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// validateCron prueft die WERTE der fuenf Cron-Felder, nicht nur ihre Zeichen
+// (Audit A-6).
+//
+// cronRe prueft Zeichensatz und Feldzahl. `61 25 32 13 8` erfuellt beides und
+// lief bis ins gerenderte e2e.yml des Adopters durch. Dort faengt es
+// actionlint:
+//
+//	invalid CRON format "61 25 32 13 8" in schedule event:
+//	end of range (61) above maximum (59): 61
+//
+// Aber eben erst dort, ein Repo weiter, mit einer Meldung ueber die
+// Workflow-Datei statt ueber die Manifest-Zeile — dieselbe Klasse wie A-3,
+// A-4 und B-4: hier erklaert, dort gescheitert. Die Meldung nennt jetzt die
+// Zeile im Manifest und das Feld, das nicht passt.
+//
+// Bewusst KEIN vollstaendiger Cron-Dialekt: `@daily`, `L`, `W`, `#` und
+// Sekundenfelder kennt GitHub Actions nicht, und cronRe laesst `@` und `#`
+// ohnehin nicht durch. Geprueft wird genau das, was GitHub akzeptiert.
+func validateCron(expr string) error {
+	fields := strings.Fields(expr)
+	if len(fields) != 5 {
+		// cronRe hat das bereits sichergestellt; defensiv, damit der
+		// Validator auch allein aufgerufen korrekt bleibt.
+		return fmt.Errorf("must have 5 fields, got %d", len(fields))
+	}
+	specs := []struct {
+		name     string
+		min, max int
+		names    map[string]int
+	}{
+		{"minute", 0, 59, nil},
+		{"hour", 0, 23, nil},
+		{"day-of-month", 1, 31, nil},
+		{"month", 1, 12, cronMonths},
+		// 0 UND 7 sind Sonntag — beides ist bei GitHub gueltig.
+		{"day-of-week", 0, 7, cronWeekdays},
+	}
+	for i, s := range specs {
+		if err := validateCronField(fields[i], s.min, s.max, s.names); err != nil {
+			return fmt.Errorf("field %d (%s): %w", i+1, s.name, err)
+		}
+	}
+	return nil
+}
+
+var cronMonths = map[string]int{
+	"JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+	"JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+var cronWeekdays = map[string]int{
+	"SUN": 0, "MON": 1, "TUE": 2, "WED": 3, "THU": 4, "FRI": 5, "SAT": 6,
+}
+
+// validateCronField prueft eine kommagetrennte Liste aus `*`, `*/n`, `n`,
+// `a-b` und `a-b/n`.
+func validateCronField(field string, min, max int, names map[string]int) error {
+	for _, part := range strings.Split(field, ",") {
+		if part == "" {
+			return fmt.Errorf("empty list entry in %q", field)
+		}
+		body := part
+		if slash := strings.IndexByte(part, '/'); slash >= 0 {
+			body = part[:slash]
+			step := part[slash+1:]
+			n, err := strconv.Atoi(step)
+			if err != nil || n < 1 {
+				return fmt.Errorf("step %q must be a positive number", step)
+			}
+			// Ein Schritt groesser als die Spanne feuert nur einmal am
+			// Bereichsanfang. Das ist gueltig, aber fast immer ein Tippfehler
+			// — GitHub laesst es zu, deshalb bleibt es hier erlaubt.
+		}
+		if body == "*" {
+			continue
+		}
+		lo, hi := body, ""
+		if dash := strings.IndexByte(body, '-'); dash >= 0 {
+			lo, hi = body[:dash], body[dash+1:]
+		}
+		lov, err := cronValue(lo, min, max, names)
+		if err != nil {
+			return err
+		}
+		if hi == "" {
+			continue
+		}
+		hiv, err := cronValue(hi, min, max, names)
+		if err != nil {
+			return err
+		}
+		if lov > hiv {
+			return fmt.Errorf("range %q starts above its end", body)
+		}
+	}
+	return nil
+}
+
+func cronValue(tok string, min, max int, names map[string]int) (int, error) {
+	if tok == "" {
+		return 0, fmt.Errorf("empty value")
+	}
+	if names != nil {
+		if v, ok := names[strings.ToUpper(tok)]; ok {
+			return v, nil
+		}
+	}
+	v, err := strconv.Atoi(tok)
+	if err != nil {
+		if names != nil {
+			return 0, fmt.Errorf("%q is neither a number nor a known name", tok)
+		}
+		return 0, fmt.Errorf("%q is not a number", tok)
+	}
+	if v < min || v > max {
+		return 0, fmt.Errorf("%d is outside %d-%d", v, min, max)
+	}
+	return v, nil
 }

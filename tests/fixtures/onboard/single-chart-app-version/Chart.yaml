@@ -1,0 +1,6 @@
+apiVersion: v2
+name: app
+version: 0.3.0
+# x-release-please-version haengt am appVersion-Wert; ohne den Marker haette
+# der generic-Updater nichts zu tun.
+appVersion: "1.2.3" # x-release-please-version
