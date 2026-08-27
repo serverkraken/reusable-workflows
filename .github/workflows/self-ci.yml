@@ -209,6 +209,45 @@ jobs:
       runs_on: '["ubuntu-latest"]'
     secrets: inherit
 
+  # ----- tofu-plan: lokaler State, null-Provider, keine Credentials -----
+  tofu-plan-changes:
+    uses: ./.github/workflows/tofu-plan.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      working_directory: tests/fixtures/tofu-plan-local
+      # Kein Remote-Backend in der Fixture, also auch kein Lock.
+      lock: false
+      # Der Katalog hat keine eigenen PRs zu kommentieren; der Kommentarpfad
+      # wird ueber tofu-plan-render.bats abgedeckt, nicht hier.
+      comment_on_pr: false
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  assert-tofu-plan-changes:
+    needs: [tofu-plan-changes]
+    runs-on: ubuntu-latest
+    steps:
+      - name: has_changes muss true sein
+        env:
+          HAS_CHANGES: ${{ needs.tofu-plan-changes.outputs.has_changes }}
+          SUMMARY_LINE: ${{ needs.tofu-plan-changes.outputs.summary_line }}
+        run: |
+          set -euo pipefail
+          # Ohne State ist die Ressource immer neu. Ein 'false' hiesse, dass
+          # -detailed-exitcode falsch ausgewertet wird — genau der Fall, den
+          # `set +e` im Plan-Schritt abfaengt.
+          if [[ "$HAS_CHANGES" != "true" ]]; then
+            echo "::error::erwartet has_changes=true fuer einen Stack ohne State, bekam '${HAS_CHANGES}'" >&2
+            exit 1
+          fi
+          if [[ "$SUMMARY_LINE" != *"to add"* ]]; then
+            echo "::error::summary_line sollte 'to add' enthalten, war: '${SUMMARY_LINE}'" >&2
+            exit 1
+          fi
+          echo "tofu-plan meldete: ${SUMMARY_LINE}"
+
   # ----- test-go: happy -----
   test-go-happy:
     uses: ./.github/workflows/test-go.yml
@@ -734,6 +773,7 @@ jobs:
       - lint-shell-happy
       - assert-lint-shell-findings
       - tofu-validate-happy
+      - assert-tofu-plan-changes
       - test-go-happy
       - test-python-poetry-happy
       - test-python-uv-happy
