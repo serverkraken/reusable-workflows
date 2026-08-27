@@ -40,7 +40,10 @@ func (a Adapter) Execute(ctx context.Context, templatePath, outputPath, contextP
 	// ueber eine Grenze hinweg. ensureInsideTarget hat outputPath bereits
 	// geprueft; ein Geschwister davon liegt damit ebenfalls innerhalb.
 	tmpPath := outputPath + ".sk-render"
-	defer os.Remove(tmpPath) // nach erfolgreichem Rename ein No-op
+	// Nach erfolgreichem Rename ein No-op; der Rueckgabewert ist bewusst
+	// verworfen: liegt die Datei nicht mehr, ist genau das der
+	// gewuenschte Zustand.
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	cmd := exec.CommandContext(ctx, binary, "-c", ".="+contextPath, "-f", templatePath, "-o", tmpPath)
 	var stderr bytes.Buffer
