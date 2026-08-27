@@ -571,6 +571,14 @@ caller. A fork driving its own org has to change that constant.
 |--------|------|------|----------|---------|-------------|
 | input | `version` | string | no | `''` | kube-linter version (with or without leading v). Empty → pinned default. |
 
+### `actions/install-shellcheck`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `version` | string | no | `''` | shellcheck version (no leading v). Empty → pinned default. |
+| input | `shfmt` | string | no | `'false'` | When "true", also install shfmt. |
+| input | `shfmt_version` | string | no | `''` | shfmt version (no leading v). Empty → pinned default. |
+
 ### `actions/setup-sk-workflows`
 
 | Kind   | Name                | Type   | Required | Default                          | Description |
