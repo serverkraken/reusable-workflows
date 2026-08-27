@@ -132,6 +132,9 @@ jobs:
 | `lint-flutter.yml` / `test-flutter.yml` | dart format + flutter analyze / flutter test + Coverage-Gate |
 | `build-flutter-android.yml`  | PR-Gate: flutter build apk (debug, unsigniert) — kompiliert die Android-Seite |
 | `lint-helm.yml`              | helm lint + ct lint                                            |
+| `lint-shell.yml`             | shellcheck über getrackte Shell-Skripte, optional shfmt        |
+| `tofu-validate.yml`          | tofu fmt + init + validate + tflint je Stack, credential-frei  |
+| `tofu-plan.yml`              | tofu plan gegen das Backend, als Sticky-PR-Kommentar           |
 
 ### Versionierung und Pinning
 
@@ -169,10 +172,12 @@ Gemeinsame Bausteine unter `actions/`, intern von den Atomen genutzt und für fo
 | `actions/install-trivy`           | Trivy-CLI gepinnt installieren (direktes Binary, bewusst ohne trivy-action) |
 | `actions/install-gitleaks`        | gitleaks-CLI gepinnt installieren                            |
 | `actions/install-kube-linter`     | kube-linter-CLI gepinnt installieren                         |
+| `actions/install-shellcheck`      | shellcheck-CLI gepinnt installieren (+ optional shfmt)       |
 | `actions/setup-kube-toolchain`    | kustomize + kubeconform (+ optional sops/age) bereitstellen  |
 | `actions/setup-kind-toolchain`    | kind + kubectl + cilium-cli mit Presence-Check installieren, Fallback in job-privates Verzeichnis |
 | `actions/setup-flutter-toolchain` | Java + Android-SDK + Flutter + pub get + build_runner        |
 | `actions/setup-python-deps`       | Paketmanager erkennen (poetry/uv/pip) + Dependencies installieren |
+| `actions/setup-tofu-toolchain`    | OpenTofu (+ optional tflint) gepinnt installieren            |
 | `actions/setup-sk-workflows`      | die Go-Onboarding-CLI aus Release-Assets oder Source installieren |
 | `actions/ghcr-login`              | GHCR-Login-Wrapper                                           |
 | `actions/compute-prerelease-tag`  | OCI-gültigen Tag aus Branch + Kurz-SHA berechnen             |
