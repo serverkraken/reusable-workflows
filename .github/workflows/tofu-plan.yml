@@ -232,7 +232,14 @@ jobs:
         with:
           tofu_version: ${{ inputs.tofu_version }}
 
-      - name: Export TF_VAR_* from the tf_vars secret
+      # Frueher schrieb dieser Schritt die Werte nach $GITHUB_ENV — und damit
+      # galten sie fuer den GANZEN Job: fuer den Artefakt-Upload, fuer beide
+      # Kommentar-Schritte, fuer jede Action, die danach noch laeuft. Gebraucht
+      # werden sie in genau EINEM Schritt. Der Parser legt sie deshalb in eine
+      # Datei unter $RUNNER_TEMP (nicht im Workspace, damit sie in keinen
+      # Artefakt-Pfad geraten), und `Run tofu plan` sourct sie fuer die Dauer
+      # seiner eigenen Shell. Der letzte Schritt loescht die Datei.
+      - name: Parse the tf_vars secret
         if: steps.fork.outputs.is_fork == 'false'
         env:
           TF_VARS: ${{ secrets.tf_vars }}
@@ -240,9 +247,14 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${TF_VARS:-}" ]]; then
-            printf '%s\n' "$TF_VARS" | bash "$PARSER"
+            printf '%s\n' "$TF_VARS" | bash "$PARSER" "$RUNNER_TEMP/tf-vars.env"
           fi
 
+      # KEIN TF_VAR_* hier, und das ist kein Versehen: `tofu init` wertet
+      # Input-Variablen nicht aus. Es laedt Provider und Module und richtet das
+      # Backend ein — Variablen sind weder im `backend`-Block noch in
+      # `module.source` erlaubt. Der Schritt braucht die Werte also nicht, und
+      # was er nicht braucht, bekommt er nicht.
       - name: Initialize backend
         if: steps.fork.outputs.is_fork == 'false'
         env:
@@ -278,6 +290,18 @@ jobs:
         # dieselbe Falle wie in kube-lint.yml.
         run: |
           set -uo pipefail
+          # Die TF_VAR_* leben NUR in dieser Shell — nicht im Job. Der
+          # Parse-Schritt hat sie gequotet und maskiert abgelegt; `set -a`
+          # exportiert, was das Sourcen definiert, an den tofu-Kindprozess.
+          if [[ -f "$RUNNER_TEMP/tf-vars.env" ]]; then
+            set -a
+            # shellcheck disable=SC1091
+            . "$RUNNER_TEMP/tf-vars.env" || {
+              echo "::error::tf-vars.env liess sich nicht laden" >&2
+              exit 1
+            }
+            set +a
+          fi
           LOCK_ARGS=(-lock-timeout="$LOCK_TIMEOUT")
           [[ "$LOCK" == "true" ]] || LOCK_ARGS+=(-lock=false)
           set +e
@@ -465,4 +489,8 @@ jobs:
           DIR: ${{ inputs.working_directory }}
         run: |
           rm -f "$DIR/tfplan" plan.json plan.txt plan.err || true
-          echo "Plan-Artefakte entfernt (tfplan, plan.json, plan.txt, plan.err)"
+          # Die geparsten tf_vars stehen im Klartext in dieser Datei. Sie liegt
+          # zwar in $RUNNER_TEMP und nicht im Workspace, aber auf dem
+          # self-hosted Pool ueberlebt auch das Temp-Verzeichnis den Job.
+          rm -f "$RUNNER_TEMP/tf-vars.env" || true
+          echo "Plan-Artefakte entfernt (tfplan, plan.json, plan.txt, plan.err, tf-vars.env)"
