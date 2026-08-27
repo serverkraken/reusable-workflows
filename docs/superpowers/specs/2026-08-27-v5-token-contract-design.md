@@ -47,25 +47,74 @@ Der `catalog_token` ist für **jeden** Adopter und **jedes** Atom identisch —
 derselbe Scope, dieselben Rechte. Er ist damit ein natürlicher Kandidat für ein
 Organisations-Secret und muss gar nicht je Lauf gemintet werden.
 
+## Die App wird NICHT ersetzt
+
+Naheliegendes Missverständnis, deshalb ausdrücklich: `serverkraken-release-bot`
+bleibt und wird **zentraler**, nicht überflüssig.
+
+- Die App ist das, **was Tokens überhaupt ausstellt**. `create-github-app-token`
+  tauscht Client-ID plus Private Key gegen einen kurzlebigen, eng gescopten
+  Token. Ohne App gibt es nichts zu tauschen.
+- Unabhängig von D-1 ist der Actor `serverkraken-release-bot[bot]` tragend für
+  den Release-Weg: er umgeht die Org-Regel, die `github-actions[bot]` das
+  Anlegen von PRs verbietet. Ohne die App öffnet release-please keine
+  Release-PRs.
+
+Auch der Private Key bleibt. Was sich ändert, ist **wo** er benutzt wird:
+
+```
+HEUTE     Key ──> 18 Atome im Katalog (Code, der unter @v4 mitwandert)
+NACHHER   Key ──> eine Stelle im Repo des Adopters, tauscht einmal
+```
+
+Der eigentliche Gewinn ist nicht „weniger Key", sondern: **der Key gelangt
+nicht mehr in Code, der sich unter einem beweglichen Tag ändert.** Heute zeigt
+`@v4` auf Katalog-Code, den jedes Release verschiebt; wer ihn ändern kann,
+sieht den Key. Nachher lebt die Tausch-Stelle als materialisierte, im
+Onboarding-PR gereviewte Datei im Adopter-Repo — die wandert nicht mit.
+
 ## Offene Entwurfsfrage: Token-Lebensdauer
 
-Heute mintet **jedes Atom frisch**. Eine lange Pipeline hat deshalb immer einen
-gültigen Token. Zentral einmal minten heißt: der Token ist 1 Stunde gültig, und
-ein Release-Lauf mit Multi-Arch-Build plus Scans kann daran kratzen.
+**Korrektur zur ersten Fassung dieses Entwurfs.** Dort stand, `catalog_token`
+könne als Organisations-Secret „gar nicht je Lauf gemintet" werden und ein
+statischer Lesetoken könne nicht ablaufen. **Das geht mit einem App-Token
+nicht:** App-Installations-Tokens laufen immer nach einer Stunde ab, eine
+statische Variante gibt es nicht.
 
-Drei Auswege, in absteigender Empfehlung:
+Ein statischer Katalog-Lesetoken müsste deshalb ein anderer Credential-Typ
+sein:
 
-1. **`catalog_token` als Organisations-Secret**, gar nicht je Lauf gemintet.
-   Löst das Problem für 13 von 16 Atomen vollständig — ein statischer
-   Lesetoken kann nicht ablaufen. Die drei Schreiber minten weiter frisch,
-   und sie laufen alle **kurz** (Sekunden bis Minuten), nicht über Stunden.
-2. Token je Job minten statt je Workflow — reduziert die Ersparnis, behält
-   aber die Frische.
-3. Ablauf hinnehmen und dokumentieren. Nicht empfohlen: der Fehlerfall
-   erscheint als `401` mitten in einem langen Release.
+| Variante | statisch? | Haken |
+|---|---|---|
+| App-Token | nein, 1 h | genau deshalb diese Frage |
+| Fine-grained **PAT**, `contents: read` auf den Katalog | ja | hängt an einem **Benutzerkonto**, jährliche Rotation, neuer Credential-Typ |
+| **Deploy Key** auf dem Katalog-Repo | ja | Checkout über SSH statt HTTPS |
 
-**Empfehlung: (1).** Sie ist zugleich die einfachste und macht den häufigsten
-Pfad key-frei, ohne neue Ablauf-Risiken.
+Beides führt einen Credential ein, den es heute nicht gibt. Das ist keine
+Kleinigkeit und war in der ersten Fassung als gelöst dargestellt.
+
+### Woran es konkret hängt
+
+Der Katalog-Klon passiert früh in jedem Job. Wird ganz oben **einmal** gemintet
+und läuft ein Job 90 Minuten später an — weil er hinter einem langen
+Multi-Arch-Build wartet —, ist der Token abgelaufen und der Klon scheitert.
+
+Drei Wege:
+
+1. **Pro Job minten** (wie heute). Kein Ablaufproblem — aber jeder Job braucht
+   wieder den Key, und D-1 ist nicht gelöst.
+2. **Oben einmal minten, Token durchreichen.** Löst D-1, mit Ablaufrisiko bei
+   langen Pipelines.
+3. **Statischer Katalog-Credential** (PAT oder Deploy Key) für die 13 Leser,
+   App-Token nur für die 3 Schreiber. Löst beides, um den Preis eines neuen
+   Credential-Typs.
+
+**Empfehlung: (3) für die Leser, (2) für die drei Schreiber.** Die drei
+Schreiber laufen kurz — Sekunden bis Minuten —, dort ist die Stunde nie knapp.
+Für die 13 Leser entfällt mit (3) das Minting ersatzlos.
+
+Das ist eine Entscheidung über die Credential-Landschaft der Organisation, nicht
+bloß über YAML. Sie gehört ausdrücklich nicht in die Umsetzung hineinentschieden.
 
 ## Migration
 
@@ -77,7 +126,9 @@ Pfad key-frei, ohne neue Ablauf-Risiken.
 
 ## Was zu tun ist
 
-1. `catalog_token` als Organisations-Secret anlegen (manuell, einmalig).
+1. Entscheidung ueber den Katalog-Credential treffen (siehe
+   „Token-Lebensdauer"): statischer PAT/Deploy Key oder durchgereichter
+   App-Token. Danach einmalig anlegen — Org-Rechte noetig.
 2. 13 Leser-Atome: Key-Deklaration → `catalog_token`, Mint-Schritt entfällt.
 3. 3 Schreiber-Atome: Key-Deklaration bleibt vorerst, oder `app_token`.
 4. 2 Weiterreicher: Deklaration entsprechend anpassen.
