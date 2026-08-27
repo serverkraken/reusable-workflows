@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.23.0](https://github.com/serverkraken/reusable-workflows/compare/v4.22.1...v4.23.0) (2026-08-27)
+
+
+### Features
+
+* **fixtures:** die build_runner-Vorgabe der Flutter-Atome lief nie ([#403](https://github.com/serverkraken/reusable-workflows/issues/403)) ([408c1f6](https://github.com/serverkraken/reusable-workflows/commit/408c1f618b98dd88b692a1e9c82fa74ef0de79f0))
+* **onboard:** der Prerelease-Trigger war fest auf develop gebacken ([#400](https://github.com/serverkraken/reusable-workflows/issues/400)) ([83a058a](https://github.com/serverkraken/reusable-workflows/commit/83a058a89af8692881d2e3dcfc62819972cb6b32))
+
+
+### Bug Fixes
+
+* **templates:** e2e.yml quotet Skript und Cron jetzt selbst ([#402](https://github.com/serverkraken/reusable-workflows/issues/402)) ([ed6ca55](https://github.com/serverkraken/reusable-workflows/commit/ed6ca5548141b11f5076b68a0cc3919b2c998414))
+
 ## [4.22.1](https://github.com/serverkraken/reusable-workflows/compare/v4.22.0...v4.22.1) (2026-08-27)
 
 
