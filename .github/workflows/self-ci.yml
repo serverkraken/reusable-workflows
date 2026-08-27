@@ -194,6 +194,50 @@ jobs:
           fi
           echo "lint-shell meldete ${COUNT} Fund(e) — Gate-Pfad und scan_shebangs belegt"
 
+  # ----- tofu-validate: happy path -----
+  tofu-validate-happy:
+    uses: ./.github/workflows/tofu-validate.yml
+    permissions:
+      contents: read
+    with:
+      working_directories: |-
+        tests/fixtures/tofu-valid
+      # tflint braucht `tflint --init`, das Plugins aus GitHub zieht und im
+      # Self-CI unnoetig Rate-Limit kostet. Der tflint-Pfad wird ueber die
+      # Composite Action abgedeckt, nicht hier.
+      tflint: false
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  # ----- tofu-validate: ungueltiger Stack MUSS fehlschlagen -----
+  tofu-validate-invalid:
+    uses: ./.github/workflows/tofu-validate.yml
+    permissions:
+      contents: read
+    with:
+      working_directories: |-
+        tests/fixtures/tofu-invalid
+      tflint: false
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  assert-tofu-validate-invalid:
+    needs: [tofu-validate-invalid]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Das Atom muss den kaputten Stack ablehnen
+        env:
+          RESULT: ${{ needs.tofu-validate-invalid.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::erwartet 'failure' fuer den ungueltigen Stack, bekam '${RESULT}'" >&2
+            echo "::error::ein gruenes tofu-validate auf kaputter HCL bedeutet, dass das Gate nichts prueft" >&2
+            exit 1
+          fi
+          echo "tofu-validate hat den kaputten Stack korrekt abgelehnt"
+
   # ----- test-go: happy -----
   test-go-happy:
     uses: ./.github/workflows/test-go.yml
@@ -718,6 +762,8 @@ jobs:
       - lint-rust-happy
       - lint-shell-happy
       - assert-lint-shell-findings
+      - tofu-validate-happy
+      - assert-tofu-validate-invalid
       - test-go-happy
       - test-python-poetry-happy
       - test-python-uv-happy
