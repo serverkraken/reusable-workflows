@@ -306,6 +306,128 @@ jobs:
           fi
           echo "cleanup-images correctly failed for empty runs_on"
 
+  # ----- goreleaser OHNE snapshot: der echte Publish-Pfad (Audit K-12) -----
+  #
+  # Jeder Aufruf uebergab `snapshot: true`. Gebaut wurde damit, veroeffentlicht
+  # nie — bei einem Atom, dessen Zweck das Veroeffentlichen ist. Ungetestet
+  # blieben das Token-Wiring, das Anlegen des Releases und der Upload.
+  #
+  # Warum in der NIGHTLY und nicht in der PR-CI: dieser Pfad legt einen echten
+  # Tag im Katalog an, und zwar in demselben Namensraum, aus dem release-please
+  # seine Version ableitet. In der PR-CI liefe das parallel zu Merges auf
+  # `main`. Die Nightly laeuft zu fester Zeit; das Fenster ist praktisch zu.
+  # (Dieselbe Ueberlegung wie beim destruktiven cleanup-Test unten.)
+  #
+  # Zwei Riegel gegen Kollateralschaden:
+  #   * Der Tag ist eine SEMVER-PRERELEASE weit unterhalb der echten Reihe
+  #     (`v0.0.0-selftest.<run_id>`) — er kann nie "latest" werden.
+  #   * Die Fixture setzt `release.draft: true`. Ein Entwurf steht nicht in der
+  #     Release-Liste und ist fuer release-please unsichtbar. Der Publish-Pfad
+  #     laeuft trotzdem vollstaendig durch.
+  # Beides wird danach geloescht, auch wenn der Test scheitert.
+  prepare-goreleaser-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Create the throwaway tag
+        env:
+          TAG: v0.0.0-selftest.${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # goreleaser braucht im Nicht-Snapshot-Modus einen Tag AM Commit und
+          # verlangt Semver. Deshalb ein Prerelease-Tag statt eines freien
+          # Namens.
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "tag angelegt: $TAG"
+
+  test-goreleaser-publish:
+    needs: prepare-goreleaser-publish
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+    permissions:
+      contents: write
+    with:
+      runs_on: '["ubuntu-latest"]'
+      working_directory: tests/fixtures/cli-go-with-goreleaser
+      ref: v0.0.0-selftest.${{ github.run_id }}
+      # Der Punkt der Sache.
+      snapshot: false
+
+  assert-goreleaser-publish:
+    needs: [prepare-goreleaser-publish, test-goreleaser-publish]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Assert the release was really created with assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREPARE: ${{ needs.prepare-goreleaser-publish.result }}
+          ATOM: ${{ needs.test-goreleaser-publish.result }}
+          TAG: v0.0.0-selftest.${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$PREPARE" != "success" ]]; then
+            echo "::error::the throwaway tag was never created (result=${PREPARE}) — the test proves nothing"
+            exit 1
+          fi
+          if [[ "$ATOM" != "success" ]]; then
+            echo "::error::goreleaser failed with snapshot:false (result=${ATOM})"
+            exit 1
+          fi
+
+          # Der Entwurf traegt keinen Tag-Namen in der Release-Liste, deshalb
+          # ueber die API und nicht ueber `gh release view`.
+          rel=$(gh api "/repos/${GITHUB_REPOSITORY}/releases" \
+                  --jq "[.[] | select(.tag_name == \"${TAG}\")] | first")
+          if [[ -z "$rel" || "$rel" == "null" ]]; then
+            echo "::error::no release for ${TAG} — goreleaser built but published nothing"
+            exit 1
+          fi
+
+          draft=$(jq -r '.draft' <<<"$rel")
+          assets=$(jq -r '.assets | length' <<<"$rel")
+          echo "release: draft=${draft} assets=${assets}"
+
+          # Draft pruefen, sonst haette die Fixture-Sicherung still versagt und
+          # ein sichtbares Release im Katalog hinterlassen.
+          if [[ "$draft" != "true" ]]; then
+            echo "::error::the release is NOT a draft — release.draft in the fixture did not take effect"
+            exit 1
+          fi
+          # Ein Release ohne Assets waere ein leerer Publish: angelegt, aber
+          # nichts hochgeladen. Genau die Haelfte, die der Snapshot nie zeigt.
+          if (( assets == 0 )); then
+            echo "::error::the release carries no assets — nothing was uploaded"
+            exit 1
+          fi
+          echo "goreleaser created the release and uploaded ${assets} asset(s)."
+
+      - name: Remove the draft release and the tag
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v0.0.0-selftest.${{ github.run_id }}
+        run: |
+          # Aufraeumen auch bei Fehlschlag: sonst sammeln sich Entwuerfe und
+          # Tags je fehlgeschlagenem Lauf im Katalog an.
+          id=$(gh api "/repos/${GITHUB_REPOSITORY}/releases" \
+                 --jq "[.[] | select(.tag_name == \"${TAG}\")] | first | .id // empty" 2>/dev/null || true)
+          if [[ -n "$id" ]]; then
+            gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/releases/${id}" >/dev/null 2>&1 \
+              && echo "draft release removed" || echo "draft release could not be removed"
+          else
+            echo "no draft release to remove"
+          fi
+          gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" >/dev/null 2>&1 \
+            && echo "tag removed" || echo "tag already gone"
+
   # ----- cleanup-images DESTRUKTIV (Audit K-8) -----
   #
   # Der einzige positive Cleanup-Test war nicht-destruktiv: er lief gegen ein
@@ -853,6 +975,7 @@ jobs:
       - assert-trivy-fs-gate-fail
       - assert-trivy-image-gate-fail
       - assert-cleanup-images-destructive
+      - assert-goreleaser-publish
       - assert-lint-python-fail
       - assert-lint-rust-fail
       - assert-test-go-cov-fail

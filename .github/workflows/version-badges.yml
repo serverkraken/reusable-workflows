@@ -60,6 +60,17 @@ on:
         required: false
         type: boolean
         default: true
+      ref:
+        description: >-
+          Branch to check out, commit onto and push to. Leer = der Ref des
+          Aufrufers, was fuer den Normalfall (Release-Job auf dem
+          Default-Branch) richtig ist. Auf einem `pull_request` ist dieser Ref
+          ein DETACHED Merge-Commit — dort scheitert `git push` grundsaetzlich,
+          und genau deshalb war `commit: true` aus der PR-CI heraus nicht
+          erreichbar (Audit K-11). Ein Branchname macht den Pfad testbar.
+        required: false
+        type: string
+        default: ''
       commit_message:
         description: 'Commit message; keep `[skip ci]` unless you want release.yml to run again.'
         required: false
@@ -137,6 +148,24 @@ jobs:
           fi
 
 
+      # Der Ref kommt vom Aufrufer und landet in `actions/checkout`. Auf
+      # `pull_request_target` haette der Job Zugriff auf die Repo-Secrets,
+      # waehrend der Ref auf einen Fork zeigen kann — hier zusaetzlich heikel,
+      # weil dieser Job mit einem App-Token COMMITTET und PUSHT.
+      - name: Refuse a caller-supplied ref on pull_request_target
+        if: github.event_name == 'pull_request_target' && inputs.ref != ''
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          {
+            echo "::error::refusing to check out '$REF' on pull_request_target."
+            echo "On this event the workflow holds repository secrets while the"
+            echo "ref may point at a fork. This job commits and pushes with an"
+            echo "App token — that is not something you can take back."
+            echo "Use pull_request (no secrets) for untrusted contributions."
+          } >&2
+          exit 1
+
       - name: Mint App token for this repository
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -146,6 +175,7 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
+          ref: ${{ inputs.ref }}
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Mint catalog-scoped App token

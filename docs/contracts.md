@@ -41,6 +41,7 @@ release semantics — no signing, no upload, no version handling. Complements
 | input | `releases` | string | yes | — | The `releases` output of semantic-release.yml. Only components listed there are bumped, so a component that did not release keeps its pin. |
 | input | `key_template` | string | no | `images.{name}.tag` | Dotted path to the tag, with {name} for the image basename. |
 | input | `commit` | boolean | no | `true` | Commit and push. Set false for dry runs and self-CI. |
+| input | `ref` | string | no | `''` | Branch to check out, commit onto and push to. Empty keeps the caller's ref, which is right for the normal case (release job on the default branch). On a `pull_request` that ref is a DETACHED merge commit, where `git push` cannot work at all — pass a branch name to exercise the write path. |
 | input | `commit_message` | string | no | `fix(chart): Image-Pins auf die frisch gebauten Versionen` | Commit message. Keep the fix(chart) prefix or release-please will not cut a chart release. |
 | input | `runs_on` | string | no | `["self-hosted","Linux","low-performance"]` | JSON-encoded array of runner labels. |
 | output | `changed` | — | — | — | "true" when at least one pin moved. |
@@ -174,6 +175,7 @@ runner pods.
 | input   | `working_directory`  | string  | no       | `'.'`                       | Directory containing `go.mod` and `.goreleaser.yaml`. |
 | input   | `goreleaser_version` | string  | no       | `'~> v2'`                   | goreleaser version constraint (e.g. `~> v2`, `v2.5.0`, `latest`). |
 | input   | `snapshot`           | boolean | no       | `false`                     | Run in `--snapshot` mode (no publish). Useful for PR smoke tests. |
+| input   | `ref`                | string  | no       | `''`                        | Git ref (usually the freshly created tag) to check out. Empty keeps the caller's ref. In non-snapshot mode goreleaser needs a tag AT the checked-out commit, so a caller that creates the tag in the same run must pass it here. |
 | input   | `runs_on`            | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
 
 ---
@@ -484,6 +486,7 @@ the same way.
 | input   | `readme_path`                    | string  | no       | `'README.md'`                                  | README carrying the `<!-- version-badges:start/end -->` markers |
 | input   | `badges_dir`                     | string  | no       | `'docs/badges'`                                | Output directory for the SVG files |
 | input   | `commit`                         | boolean | no       | `true`                                         | Commit + push the result (false for dry runs / self-CI) |
+| input   | `ref`                            | string  | no       | `''`                                           | Branch to check out, commit onto and push to. Empty keeps the caller's ref, which is right for the normal case (release job on the default branch). On a `pull_request` that ref is a DETACHED merge commit, where `git push` cannot work at all — pass a branch name to exercise the write path. |
 | input   | `commit_message`                 | string  | no       | `'chore(badges): update version badges [skip ci]'` | Commit message |
 | secret  | `release_please_app_client_id`   | —       | **yes**  | —                                              | App Client ID (catalog checkout + badge commit) |
 | secret  | `release_please_app_private_key` | —       | **yes**  | —                                              | App private key |
