@@ -247,6 +247,63 @@ jobs:
           fi
           echo "lint-shell-empty: correctly observed failure"
 
+  # ----- lint-shell: shellcheck bricht fatal ab -----
+  # shellcheck beendet mit rc=2, wenn es eine Datei nicht LESEN kann — und
+  # legt dabei trotzdem einen gueltigen, leeren Bericht auf stdout:
+  #
+  #   $ shellcheck -f json1 -S style gibtsnicht.sh
+  #   rc=2 · stdout {"comments":[]} · stderr "openBinaryFile: does not exist"
+  #
+  # Daran lief die alte Pruefung (`rc != 0 && ! -s shellcheck.json`) vorbei:
+  # Bericht nicht leer → Bedingung greift nicht → gueltiges SARIF → Count 0 →
+  # gruen, ohne eine Zeile geprueft zu haben. Die Fixture traegt einen
+  # getrackten, KAPUTTEN Symlink mit .sh-Endung: `git ls-files` listet ihn,
+  # shellcheck kann ihn nicht oeffnen.
+  test-lint-shell-unreadable:
+    uses: ./.github/workflows/lint-shell.yml
+    secrets: inherit
+    with:
+      paths: |-
+        tests/fixtures/shell-unreadable/scripts/*.sh
+      # AUS: der Shebang-Pass wuerde den kaputten Link per `[[ -f ]]`
+      # aussortieren. Geprueft werden soll der Glob-Pass, der ihn weitergibt.
+      scan_shebangs: false
+      sarif: false
+
+  assert-lint-shell-unreadable:
+    needs: test-lint-shell-unreadable
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ein fataler shellcheck-Lauf darf nicht als Nullbefund durchgehen
+        env:
+          RESULT: ${{ needs.test-lint-shell-unreadable.result }}
+          FILES: ${{ needs.test-lint-shell-unreadable.outputs.file_count }}
+          COUNT: ${{ needs.test-lint-shell-unreadable.outputs.findings_count }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::erwartet 'failure' fuer eine unlesbare Datei, bekam '${RESULT}' — der fatale Lauf gilt wieder als Nullbefund" >&2
+            fail=1
+          fi
+          # `result == failure` allein bewiese nur, dass IRGENDWAS rot war.
+          # file_count == 1 zeigt, dass der Collect-Schritt lief und den Link
+          # weitergab; der Fehlschlag kam also aus dem shellcheck-Schritt und
+          # nicht aus Checkout, Token oder Toolchain.
+          if [[ "$FILES" != "1" ]]; then
+            echo "::error::file_count='${FILES}' statt '1' — der Lauf ist vor dem shellcheck-Schritt gescheitert, das Gate ist damit unbewiesen" >&2
+            fail=1
+          fi
+          # findings_count MUSS leer sein: liefe der Count-Schritt, dann haette
+          # der Lint-Schritt den fatalen rc durchgewinkt — genau der Fehler.
+          if [[ -n "$COUNT" ]]; then
+            echo "::error::findings_count='${COUNT}' — der Count-Schritt lief, der fatale rc wurde also akzeptiert" >&2
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "lint-shell-unreadable: fataler shellcheck-Lauf korrekt abgelehnt"
+
   # ----- test-go: cov-fail-path -----
   test-test-go-cov-fail:
     uses: ./.github/workflows/test-go.yml
@@ -1075,6 +1132,7 @@ jobs:
       - assert-lint-rust-fail
       - assert-lint-shell-fail
       - assert-lint-shell-empty
+      - assert-lint-shell-unreadable
       - assert-test-go-cov-fail
       - assert-test-python-cov-fail
       - assert-test-rust-cov-fail

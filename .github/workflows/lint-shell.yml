@@ -5,7 +5,7 @@
 #   inputs:  paths, severity, shellcheck_version, follow_sources,
 #            scan_shebangs, shfmt, sarif, fail_on_findings, report_slug, runs_on
 #   secrets: release_please_app_client_id, release_please_app_private_key
-#   outputs: findings_count
+#   outputs: findings_count, file_count
 name: lint-shell
 on:
   workflow_call:
@@ -72,8 +72,18 @@ on:
         default: '["self-hosted","Linux"]'
     outputs:
       findings_count:
-        description: 'Number of shellcheck findings.'
+        description: >-
+          Number of shellcheck findings — und der LEERE String, wenn
+          shellcheck gar nicht durchlief. Ein Aufrufer muss auf `== '0'`
+          pruefen, nicht auf `!= '0'`.
         value: ${{ jobs.lint.outputs.findings_count }}
+      file_count:
+        description: >-
+          Number of files the paths globs matched, gesetzt BEVOR das Atom bei
+          null Treffern abbricht. Damit laesst sich "am gewollten Check
+          gescheitert" von "vorher abgestuerzt" unterscheiden: leer heisst,
+          der Collect-Schritt lief nicht.
+        value: ${{ jobs.lint.outputs.file_count }}
     secrets:
       release_please_app_client_id:
         required: true
@@ -97,6 +107,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       findings_count: ${{ steps.count.outputs.findings_count }}
+      file_count: ${{ steps.files.outputs.count }}
     steps:
       # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
       # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
@@ -174,9 +185,18 @@ jobs:
           # auf dem self-hosted Pool ueberlebt der Workspace bis zum naechsten
           # Checkout.
           : > files.z
+          # `|| true` waere hier zweideutig. `git ls-files` beendet mit 0, wenn
+          # ein gueltiges Muster nichts trifft, und mit 128, wenn das Muster
+          # selbst ungueltig ist (kaputte Pathspec-Magic, Pfad ausserhalb des
+          # Repos). Verschluckt man beides, endet der zweite Fall in der
+          # Meldung "no matching files" — der Adopter sucht dann nach einer
+          # umbenannten Datei, waehrend sein Glob kaputt ist.
           while IFS= read -r glob; do
             [[ -z "$glob" ]] && continue
-            git --glob-pathspecs ls-files -z -- "$glob" >> files.z || true
+            if ! git --glob-pathspecs ls-files -z -- "$glob" >> files.z; then
+              echo "::error::git lehnte dieses paths-Muster ab (ungueltige Pathspec, nicht 'keine Treffer'): ${glob}" >&2
+              exit 1
+            fi
           done <<< "$PATHS"
           if [[ -f files.z ]]; then
             tr '\0' '\n' < files.z >> files.txt
@@ -191,7 +211,11 @@ jobs:
             : > shebang.z
             while IFS= read -r glob; do
               [[ -z "$glob" ]] && continue
-              git --glob-pathspecs ls-files -z -- "${glob%\*.sh}*" >> shebang.z || true
+              derived="${glob%\*.sh}*"
+              if ! git --glob-pathspecs ls-files -z -- "$derived" >> shebang.z; then
+                echo "::error::git lehnte das abgeleitete Shebang-Muster ab (ungueltige Pathspec, nicht 'keine Treffer'): ${derived} — aus paths: ${glob}" >&2
+                exit 1
+              fi
             done <<< "$PATHS"
             # Erste Zeile lesen, nicht die ganze Datei: bei Binaerdateien waere
             # ein grep ueber den vollen Inhalt teuer und irrefuehrend.
@@ -237,27 +261,56 @@ jobs:
         env:
           SEVERITY: ${{ inputs.severity }}
           FOLLOW: ${{ inputs.follow_sources }}
-        # shellcheck beendet bei FUNDEN mit rc=1, der Schritt darf daran nicht
-        # sterben — der SARIF-Upload und das Gate kommen danach. `|| true`
-        # waere aber falsch: es wuerfe auch einen Absturz weg, und der saehe
-        # dann aus wie "null Funde" (dieselbe Fehlerklasse wie Audit F-3 in
-        # kube-lint.yml). Deshalb rc einfangen und die Ausgabe pruefen.
+        # DER VERTRAG von shellcheck, gemessen, nicht vermutet:
+        #
+        #   rc=0  keine Funde,          stderr leer,      stdout = Bericht
+        #   rc=1  Funde,                stderr leer,      stdout = Bericht
+        #   rc>=2 FATAL (Datei nicht lesbar, kaputte Option) — und stdout
+        #         traegt trotzdem einen gueltigen, LEEREN Bericht:
+        #
+        #     $ shellcheck -f json1 -S style gibtsnicht.sh
+        #     rc=2 · stdout {"comments":[]} · stderr "openBinaryFile: does not exist"
+        #
+        # Genau daran ist die alte Pruefung (`rc != 0 && ! -s shellcheck.json`)
+        # vorbeigelaufen: der Bericht ist nicht leer, die Bedingung greift
+        # nicht, der Konverter erzeugt gueltiges SARIF, der Count ist 0 und der
+        # Job wird gruen — der Fall, gegen den der Kommentar hier argumentierte.
+        #
+        # WARUM DER WRAPPER: `rc` war nie shellchecks Code, sondern xargs'.
+        # xargs meldet fuer JEDEN Kindstatus zwischen 1 und 125 pauschal 123
+        # (GNU; BSD 1) und macht "Funde" von "fatal" ununterscheidbar. Der
+        # `sh -c`-Wrapper schreibt den ECHTEN Status jedes Aufrufs in
+        # shellcheck.rc; ausgewertet wird der hoechste. Ohne ihn waere jede
+        # rc-basierte Pruefung hier eine Pruefung auf xargs.
         run: |
           # Kein FILE_COUNT==0-Zweig mehr: der Collect-Schritt bricht in dem
           # Fall bereits ab, dieser Schritt laeuft dann gar nicht. Der frueher
           # hier erzeugte Ersatzbericht {"comments":[]} war genau die stille
           # Gruenfaerbung, die der Abbruch verhindert.
+          set -uo pipefail
           ARGS=(-f json1 -S "$SEVERITY")
           [[ "$FOLLOW" == "true" ]] && ARGS+=(-x)
+          : > shellcheck.rc
           set +e
           # -d '\n': die Liste ist zeilenbasiert und NUL-sicher erzeugt; ohne
           # das zerlegt xargs Pfade mit Leerzeichen.
-          xargs -a files.txt -d '\n' shellcheck "${ARGS[@]}" > shellcheck.json 2> shellcheck.err
-          rc=$?
+          xargs -a files.txt -d '\n' \
+            sh -c 'shellcheck "$@"; echo "$?" >> shellcheck.rc' shellcheck-batch "${ARGS[@]}" \
+            > shellcheck.json 2> shellcheck.err
+          xargs_rc=$?
           set -e
           cat shellcheck.err >&2 || true
-          if [[ "$rc" -ne 0 && ! -s shellcheck.json ]]; then
-            echo "::error::shellcheck exited $rc without producing a report — it did not check anything: $(tr -d '\n' < shellcheck.err)" >&2
+          rc="$(sort -n shellcheck.rc | tail -1)"
+          if [[ -z "$rc" ]]; then
+            echo "::error::shellcheck wurde gar nicht aufgerufen (xargs rc=${xargs_rc}) — es wurde nichts geprueft: $(tr -d '\n' < shellcheck.err)" >&2
+            exit 1
+          fi
+          if [[ "$rc" -ge 2 ]]; then
+            echo "::error::shellcheck brach mit rc=${rc} ab — der Bericht ist unvollstaendig, nicht leer: $(tr -d '\n' < shellcheck.err)" >&2
+            exit 1
+          fi
+          if [[ ! -s shellcheck.json ]]; then
+            echo "::error::shellcheck exited ${rc} without producing a report — it did not check anything: $(tr -d '\n' < shellcheck.err)" >&2
             exit 1
           fi
 

@@ -311,7 +311,8 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when shellcheck reports findings. |
 | input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow. |
 | input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
-| output | `findings_count` | — | — | — | Number of shellcheck findings. |
+| output | `findings_count` | — | — | — | Number of shellcheck findings — und der LEERE String, wenn shellcheck gar nicht durchlief. Ein Aufrufer muss auf `== '0'` pruefen, nicht auf `!= '0'`. |
+| output | `file_count` | — | — | — | Number of files the paths globs matched, gesetzt BEVOR das Atom bei null Treffern abbricht. Damit laesst sich "am gewollten Check gescheitert" von "vorher abgestuerzt" unterscheiden: leer heisst, der Collect-Schritt lief nicht. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
 
