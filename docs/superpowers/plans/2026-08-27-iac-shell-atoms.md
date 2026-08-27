@@ -419,7 +419,9 @@ on:
         description: >-
           Also check tracked files WITHOUT a .sh suffix whose first line is a
           shell shebang. A linter that silently skips `scripts/deploy` checks
-          half the scripts in many repos.
+          half the scripts in many repos. Scoped by the same `paths` globs
+          with the .sh requirement dropped, so it never widens into a
+          whole-repo scan.
         required: false
         type: boolean
         default: true
@@ -551,6 +553,17 @@ jobs:
             tr '\0' '\n' < files.z >> files.txt
           fi
           if [[ "$SCAN_SHEBANGS" == "true" ]]; then
+            # Der Shebang-Scan folgt DENSELBEN Globs wie oben, nur ohne die
+            # .sh-Bedingung: aus `scripts/**/*.sh` wird `scripts/**/*`.
+            # Ohne diese Ableitung durchsuchte er das ganze Repo und ignorierte
+            # damit die Angabe des Aufrufers — wer `paths: scripts/**/*.sh`
+            # setzt, erwartet eine Begrenzung auf scripts/, nicht einen Scan
+            # ueber jede getrackte Datei.
+            : > shebang.z
+            while IFS= read -r glob; do
+              [[ -z "$glob" ]] && continue
+              git ls-files -z -- "${glob%\*.sh}*" >> shebang.z || true
+            done <<< "$PATHS"
             # Erste Zeile lesen, nicht die ganze Datei: bei Binaerdateien waere
             # ein grep ueber den vollen Inhalt teuer und irrefuehrend.
             while IFS= read -r f; do
@@ -558,7 +571,7 @@ jobs:
               [[ "$f" == *.sh ]] && continue
               head -c 200 "$f" 2>/dev/null | head -1 \
                 | grep -Eq '^#!.*\b(ba|k|z|da)?sh\b' && echo "$f" >> files.txt || true
-            done < <(git ls-files)
+            done < <(tr '\0' '\n' < shebang.z)
           fi
           sort -u files.txt -o files.txt
           COUNT=$(wc -l < files.txt | tr -d ' ')
@@ -823,7 +836,9 @@ Das Gate muss **greifen**, der Job also fehlschlagen — geprüft wird per `cont
     with:
       paths: |-
         tests/fixtures/shell-findings/scripts/*.sh
-      scan_shebangs: false
+      # AN, damit die Fixture ohne .sh-Endung tatsaechlich geprueft wird.
+      # Der Scan folgt demselben Glob (scripts/*), bleibt also in der Fixture.
+      scan_shebangs: true
       sarif: false
       # Das Atom soll die Funde MELDEN, ohne den Self-CI-Lauf rot zu faerben.
       # Geprueft wird der Zaehler, nicht der Exit-Code — so bleibt der Job im
@@ -843,11 +858,14 @@ Das Gate muss **greifen**, der Job also fehlschlagen — geprüft wird per `cont
           COUNT: ${{ needs.lint-shell-findings.outputs.findings_count }}
         run: |
           set -euo pipefail
-          if [[ "${COUNT:-0}" -lt 1 ]]; then
-            echo "::error::erwartet >=1 Fund aus der Fixture, bekam '${COUNT}'" >&2
+          # >=2: je ein SC2086 aus bad.sh UND aus nosuffix. Ein Wert von 1
+          # hiesse, dass scan_shebangs die Datei ohne Endung nicht erfasst hat.
+          if [[ "${COUNT:-0}" -lt 2 ]]; then
+            echo "::error::erwartet >=2 Funde (bad.sh und nosuffix), bekam '${COUNT}'" >&2
+            echo "::error::genau 1 Fund bedeutet: scan_shebangs hat die Datei ohne .sh-Endung nicht erfasst" >&2
             exit 1
           fi
-          echo "lint-shell meldete ${COUNT} Fund(e) — Gate-Pfad belegt"
+          echo "lint-shell meldete ${COUNT} Fund(e) — Gate-Pfad und scan_shebangs belegt"
 ```
 
 - [ ] **Step 4: Wire both into the summary aggregator**
