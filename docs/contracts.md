@@ -480,8 +480,9 @@ nichts wert ist.
 | input  | `lock` | boolean | no | `true` | Take a state lock during plan. |
 | input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. |
 | input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
-| output | `has_changes` | — | — | — | true when the plan contains changes, false when it does not — und der LEERE String, wenn der Plan gar nicht lief (Fork-PR: das Atom ueberspringt sich). Ein Aufrufer muss `== 'true'` pruefen, nicht `!= 'false'`. |
+| output | `has_changes` | — | — | — | true when the plan contains changes, false when it does not — und der LEERE String, wenn der Plan nicht durchlief: Fork-PR (das Atom ueberspringt sich) ODER Plan-Fehler. Ein Aufrufer muss `== 'true'` pruefen, nicht `!= 'false'`. Wer "keine Aenderungen" von "nicht gelaufen" unterscheiden will, liest `plan_status`. |
 | output | `summary_line` | — | — | — | The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy". |
+| output | `plan_status` | — | — | — | `success`, wenn `tofu plan` durchlief (mit oder ohne Aenderungen), `failed` bei einem unerwarteten Exit-Code, und der LEERE String, wenn der Plan-Schritt gar nicht erst startete (Fork-PR, Abbruch im Backend-Init). Fuer Aufrufer mit `always()` oder `continue-on-error` ist das der einzige Weg, einen Fehlschlag von "es gibt nichts zu tun" zu unterscheiden. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
 | secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |

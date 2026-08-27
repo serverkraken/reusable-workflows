@@ -250,8 +250,16 @@ jobs:
         env:
           HAS_CHANGES: ${{ needs.tofu-plan-changes.outputs.has_changes }}
           SUMMARY_LINE: ${{ needs.tofu-plan-changes.outputs.summary_line }}
+          PLAN_STATUS: ${{ needs.tofu-plan-changes.outputs.plan_status }}
         run: |
           set -euo pipefail
+          # plan_status ist der oeffentliche Beweis, dass der Plan-Schritt
+          # ueberhaupt gelaufen ist. Ohne ihn liesse sich ein Fehlschlag im
+          # Backend-Init von einem echten Ergebnis nicht unterscheiden.
+          if [[ "$PLAN_STATUS" != "success" ]]; then
+            echo "::error::erwartet plan_status=success, bekam '${PLAN_STATUS}'" >&2
+            exit 1
+          fi
           # Ohne State ist die Ressource immer neu. Ein 'false' hiesse, dass
           # -detailed-exitcode falsch ausgewertet wird — genau der Fall, den
           # `set +e` im Plan-Schritt abfaengt.

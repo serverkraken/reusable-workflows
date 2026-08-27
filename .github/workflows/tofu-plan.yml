@@ -6,7 +6,7 @@
 #            plan_json, lock, lock_timeout, runs_on
 #   secrets: release_please_app_client_id, release_please_app_private_key,
 #            backend_access_key, backend_secret_key, tf_vars
-#   outputs: has_changes, summary_line
+#   outputs: has_changes, summary_line, plan_status
 #
 # SICHERHEIT — drei Punkte, die beim Aendern nicht verloren gehen duerfen:
 #
@@ -96,13 +96,23 @@ on:
       has_changes:
         description: >-
           true when the plan contains changes, false when it does not — und der
-          LEERE String, wenn der Plan gar nicht lief (Fork-PR: das Atom
-          ueberspringt sich). Ein Aufrufer muss `== 'true'` pruefen, nicht
-          `!= 'false'`.
+          LEERE String, wenn der Plan nicht durchlief: Fork-PR (das Atom
+          ueberspringt sich) ODER Plan-Fehler. Ein Aufrufer muss `== 'true'`
+          pruefen, nicht `!= 'false'`. Wer "keine Aenderungen" von "nicht
+          gelaufen" unterscheiden will, liest plan_status.
         value: ${{ jobs.plan.outputs.has_changes }}
       summary_line:
         description: 'The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy".'
         value: ${{ jobs.plan.outputs.summary_line }}
+      plan_status:
+        description: >-
+          `success`, wenn `tofu plan` durchlief (mit oder ohne Aenderungen),
+          `failed` bei einem unerwarteten Exit-Code, und der LEERE String,
+          wenn der Plan-Schritt gar nicht erst startete (Fork-PR, Abbruch im
+          Backend-Init). Fuer Aufrufer mit `always()` oder
+          `continue-on-error` ist das der einzige Weg, einen Fehlschlag von
+          "es gibt nichts zu tun" zu unterscheiden.
+        value: ${{ jobs.plan.outputs.plan_status }}
     secrets:
       release_please_app_client_id:
         required: true
@@ -138,6 +148,7 @@ jobs:
     outputs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
       summary_line: ${{ steps.plan.outputs.summary_line }}
+      plan_status: ${{ steps.plan.outputs.plan_status }}
     steps:
       - name: Reject an empty runs_on
         working-directory: ${{ github.workspace }}
@@ -336,12 +347,24 @@ jobs:
           set -e
           cat plan.err >&2 || true
           case "$rc" in
-            0) echo "has_changes=false" >> "$GITHUB_OUTPUT" ;;
-            2) echo "has_changes=true"  >> "$GITHUB_OUTPUT" ;;
+            0)
+              echo "has_changes=false" >> "$GITHUB_OUTPUT"
+              echo "plan_status=success" >> "$GITHUB_OUTPUT"
+              ;;
+            2)
+              echo "has_changes=true"  >> "$GITHUB_OUTPUT"
+              echo "plan_status=success" >> "$GITHUB_OUTPUT"
+              ;;
             *)
               echo "::error::tofu plan scheiterte (rc=$rc): $(tr -d '\n' < plan.err)" >&2
-              echo "has_changes=false" >> "$GITHUB_OUTPUT"
-              echo "failed=true" >> "$GITHUB_OUTPUT"
+              # has_changes bleibt hier BEWUSST ungesetzt. Frueher stand hier
+              # `has_changes=false` — und ein Aufrufer mit `always()` oder
+              # `continue-on-error` sah damit exakt den Wert, den er auch fuer
+              # "es gibt nichts zu tun" sieht. Das frueher hier gesetzte
+              # `failed` half ihm nicht: es war ein Schritt-Output, kein
+              # Workflow-Output, und ausserhalb des Atoms nicht lesbar.
+              # plan_status ersetzt es und ist oeffentlich.
+              echo "plan_status=failed" >> "$GITHUB_OUTPUT"
               exit 1
               ;;
           esac
@@ -376,20 +399,23 @@ jobs:
           DIR: ${{ inputs.working_directory }}
           HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
           SUMMARY_LINE: ${{ steps.plan.outputs.summary_line }}
-          FAILED: ${{ steps.plan.outputs.failed }}
+          PLAN_STATUS: ${{ steps.plan.outputs.plan_status }}
           RENDER: ${{ github.workspace }}/.catalog/scripts/tofu-plan-render.sh
         run: |
           tofu_version=$(tofu version 2>/dev/null | head -1 | awk '{print $2}' || echo unknown)
-          if [[ -z "${HAS_CHANGES:-}" ]]; then
-            # Leer heisst NICHT "keine Aenderungen": der Plan-Schritt ist gar
-            # nicht gelaufen (z.B. weil ein frueherer Schritt wie das
-            # Backend-Init fehlschlug). Ein "✓" waere hier die falsche
-            # Aussage — dieselbe Verwechslung wie in lint-shell.yml, dort
-            # fuer einen leeren findings_count.
-            result="✗ plan lief nicht durch"
-          elif [[ "${FAILED:-}" == "true" ]]; then
+          # Gefragt wird plan_status, nicht has_changes: seit das Atom bei
+          # einem Plan-Fehler gar kein has_changes mehr setzt, ist "leer"
+          # zweideutig (nicht gestartet ODER gescheitert). plan_status trennt
+          # beides — und der Fehlerfall muss zuerst geprueft werden.
+          if [[ "${PLAN_STATUS:-}" == "failed" ]]; then
             result="✗ plan failed"
-          elif [[ "$HAS_CHANGES" == "true" ]]; then
+          elif [[ -z "${PLAN_STATUS:-}" ]]; then
+            # Der Plan-Schritt ist gar nicht gelaufen (z.B. weil ein frueherer
+            # Schritt wie das Backend-Init fehlschlug). Ein "✓" waere hier die
+            # falsche Aussage — dieselbe Verwechslung wie in lint-shell.yml,
+            # dort fuer einen leeren findings_count.
+            result="✗ plan lief nicht durch"
+          elif [[ "${HAS_CHANGES:-}" == "true" ]]; then
             result="▲ changes pending"
           else
             result="✓ no changes"
@@ -403,6 +429,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|---|---|"
+            echo "| Plan | ${PLAN_STATUS:-nicht gelaufen} |"
             echo "| Changes | ${HAS_CHANGES:-unknown} |"
             echo "| Summary | ${SUMMARY_LINE:-unknown} |"
             if [[ -f plan.txt ]]; then
@@ -440,25 +467,25 @@ jobs:
           DIR: ${{ inputs.working_directory }}
           HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
           SUMMARY_LINE: ${{ steps.plan.outputs.summary_line }}
-          FAILED: ${{ steps.plan.outputs.failed }}
+          PLAN_STATUS: ${{ steps.plan.outputs.plan_status }}
           RENDER: ${{ github.workspace }}/.catalog/scripts/tofu-plan-render.sh
         run: |
           set -euo pipefail
           BODY_FILE=comment.md
           {
             echo "<!-- tofu-plan:${DIR} -->"
-            if [[ "${FAILED:-}" == "true" || -z "${HAS_CHANGES:-}" ]]; then
+            if [[ "${PLAN_STATUS:-}" != "success" ]]; then
               # Kein stiller Stand: ohne diesen Zweig behielte der Kommentar den
               # Text des letzten ERFOLGREICHEN Laufs, waehrend die Step-Summary
               # bereits "plan failed" zeigt — ein Reviewer saehe "keine
               # Aenderungen" fuer einen Plan, der nie durchgelaufen ist.
               echo "**OpenTofu plan — \`${DIR}\`: ✗ Plan nicht abgeschlossen — Details in der Step-Summary dieses Laufs**"
-            elif [[ "$HAS_CHANGES" == "true" ]]; then
+            elif [[ "${HAS_CHANGES:-}" == "true" ]]; then
               echo "**OpenTofu plan — \`${DIR}\`: ▲ ${SUMMARY_LINE}**"
             else
               echo "**OpenTofu plan — \`${DIR}\`: ✓ keine Aenderungen**"
             fi
-            if [[ "${FAILED:-}" != "true" && -n "${HAS_CHANGES:-}" && -f plan.txt ]]; then
+            if [[ "${PLAN_STATUS:-}" == "success" && -f plan.txt ]]; then
               echo ""
               echo "<details><summary>Plan anzeigen</summary>"
               echo ""
