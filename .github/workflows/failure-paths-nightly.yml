@@ -296,6 +296,103 @@ jobs:
           fi
           echo "cleanup-images correctly failed for empty runs_on"
 
+  # ----- trivy: das GATE, nicht die Erkennung (Audit K-5) -----
+  #
+  # integration.yml prueft laengst, dass trivy FINDET: test-trivy-fs-failure
+  # und test-trivy-image-cve zaehlen beide `findings_count > 0`. Beide setzen
+  # dabei aber `fail_on_findings: false` — ausdruecklich, damit der Job gruen
+  # bleibt und die Assertion die Zahl lesen kann.
+  #
+  # Damit war der GATE-Zweig
+  #
+  #     if: inputs.fail_on_findings && findings_count != '0'
+  #
+  # in KEINEM Aufruf je aktiv. Gemessen: jeder einzelne trivy-Aufruf im
+  # gesamten Katalog uebergibt `fail_on_findings: false` — acht Stellen in
+  # integration.yml, keine im Nightly. Ein Adopter, der sich auf das Gate
+  # verlaesst, verliess sich auf ungepruefte Zeilen.
+  #
+  # BEIDE Atome, obwohl die Zeile identisch aussieht: bei F-8 trugen drei
+  # Schwesteratome die richtige Form und das vierte nicht. "Ist eine Kopie"
+  # war schon einmal die Annahme, die danebenging.
+  #
+  # Hier im Nightly und nicht in integration.yml: ein absichtlich roter Job
+  # gehoert nicht in den PR-Pfad, wo er neben echten Fehlschlaegen steht.
+  test-trivy-fs-gate-fail:
+    uses: ./.github/workflows/trivy-fs.yml
+    secrets: inherit
+    with:
+      report_slug: gate
+      # Die Secret-Fixture, die test-trivy-fs-failure schon als "findet etwas"
+      # belegt — hier mit scharfem Gate.
+      paths_ignore: |
+        tests/fixtures/lint-test/helm-lint-fail
+        tests/fixtures/gitops-planted-secret
+      fail_on_findings: true
+      upload_sarif: false
+
+  assert-trivy-fs-gate-fail:
+    needs: test-trivy-fs-gate-fail
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert the gate failed the job
+        env:
+          RESULT: ${{ needs.test-trivy-fs-gate-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected trivy-fs to FAIL with fail_on_findings:true on a fixture that has findings, got: $RESULT"
+            exit 1
+          fi
+          echo "trivy-fs gate: correctly observed failure"
+
+  test-docker-build-for-trivy-gate:
+    uses: ./.github/workflows/docker-build.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/with-cve
+      dockerfile: tests/fixtures/with-cve/Dockerfile
+      image_name: ${{ github.repository }}/nightly-trivy-gate
+      sign: false
+      attest: false
+      sbom: false
+      platforms: linux/amd64
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
+
+  test-trivy-image-gate-fail:
+    needs: test-docker-build-for-trivy-gate
+    uses: ./.github/workflows/trivy-image.yml
+    secrets: inherit
+    with:
+      image_ref: ${{ needs.test-docker-build-for-trivy-gate.outputs.image_ref }}
+      # Wie in integration.yml: ohne das findet trivy auf alpine:3.15 nichts,
+      # weil alle HIGH/CRITICAL dort einen Upstream-Fix haben.
+      ignore_unfixed: false
+      platforms: linux/amd64
+      fail_on_findings: true
+      upload_sarif: false
+
+  assert-trivy-image-gate-fail:
+    needs: test-trivy-image-gate-fail
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert the gate failed the job
+        env:
+          RESULT: ${{ needs.test-trivy-image-gate-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected trivy-image to FAIL with fail_on_findings:true on an image with known CVEs, got: $RESULT"
+            exit 1
+          fi
+          echo "trivy-image gate: correctly observed failure"
+
   # ----- docker-build-multi: fail-path -----
   # Empty images array must fail at input validation before any runner
   # work begins. caller_id disambiguates concurrency from any happy-path
@@ -595,6 +692,8 @@ jobs:
       - assert-lint-helm-fail
       - assert-lint-helm-unittest-fail
       - assert-lint-helm-unittest-empty
+      - assert-trivy-fs-gate-fail
+      - assert-trivy-image-gate-fail
       - assert-lint-python-fail
       - assert-lint-rust-fail
       - assert-test-go-cov-fail
