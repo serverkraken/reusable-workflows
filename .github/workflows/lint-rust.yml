@@ -38,6 +38,24 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 15
     steps:
+      # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
+      # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
+      # arbeiten. `fromJSON` oben faengt nur KAPUTTES JSON ab — `[]` ist
+      # gueltiges JSON und kommt hier an.
+      # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
+      - name: Reject an empty runs_on
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install Rust toolchain (explicit)

@@ -66,6 +66,8 @@ jobs:
         run: bash tests/conventions/check-repo-badges.sh
       - name: Check profile data is quoted in string-typed template inputs
         run: python3 tests/conventions/check-template-scalar-quoting.py
+      - name: Check every runner-selecting job rejects an empty runs_on
+        run: python3 tests/conventions/check-runs-on-guard.py
 
   renovate-config-check:
     runs-on: ubuntu-latest
