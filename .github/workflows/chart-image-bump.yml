@@ -81,9 +81,25 @@ permissions:
   contents: write
 
 concurrency:
-  # Serialise with itself per repo: two release runs pinning the same file
-  # would otherwise race on the push.
-  group: chart-image-bump-${{ github.repository }}
+  # GETEILTE Gruppe mit chart-image-bump (Audit D-10).
+  #
+  # Beide Workflows committen und pushen in DASSELBE Repo auf denselben
+  # Branch, und beide laufen im Release. Vorher hatte jeder eine EIGENE
+  # Gruppe — jeder serialisierte also nur mit sich selbst, nie gegeneinander:
+  #
+  #   chart-image-bump-${{ github.repository }}
+  #   version-badges-${{ github.repository }}-${{ github.ref }}
+  #
+  # Der Gruppenname gehoert deshalb zur Sache, nicht zum Workflow: er nennt,
+  # WORAUF serialisiert wird (Pushes in dieses Repo), nicht WER pusht. Wer
+  # kuenftig einen dritten pushenden Workflow ergaenzt, traegt ihn hier ein.
+  #
+  # Bewusst OHNE `github.ref`: version-badges hatte den Ref bisher drin,
+  # chart-image-bump nicht. Eine gemeinsame Gruppe mit Ref waere fuer
+  # chart-image-bump eine LOCKERUNG gewesen. Ohne Ref ist sie mindestens so
+  # streng wie beide vorher — und diese Workflows laufen nur im Release, also
+  # selten.
+  group: repo-push-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
