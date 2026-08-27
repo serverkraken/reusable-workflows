@@ -666,8 +666,18 @@ jobs:
             echo "angelegt: ${b}"
           done
 
+  # HINTEREINANDER, nicht parallel. `version-badges` und `chart-image-bump`
+  # teilen sich seit D-10 die Concurrency-Gruppe `repo-push-<repo>` — sie
+  # serialisiert Pushes in dieses Repo. GitHub haelt je Gruppe genau EINEN
+  # laufenden und EINEN wartenden Lauf; jeder weitere bricht den wartenden ab.
+  #
+  # Gemessen am Lauf 33070088661: mit den neuen Aufrufen waren vier Mitglieder
+  # in der Gruppe (self-ci laeuft gleichzeitig), und zwei Jobs endeten auf
+  # `cancelled` — darunter der BESTEHENDE Dry-Run-Test. Die Kette haelt die
+  # Gruppe auf einem Mitglied je Workflow-Lauf.
   test-version-badges-commit:
-    needs: prepare-push-selftest
+    needs: [prepare-push-selftest, assert-chart-image-bump]
+    if: always() && needs.prepare-push-selftest.result == 'success'
     uses: ./.github/workflows/version-badges.yml
     secrets: inherit
     permissions:
@@ -749,7 +759,8 @@ jobs:
             && echo "branch removed" || echo "branch already gone"
 
   test-chart-image-bump-commit:
-    needs: prepare-push-selftest
+    needs: [prepare-push-selftest, assert-version-badges-commit]
+    if: always() && needs.prepare-push-selftest.result == 'success'
     uses: ./.github/workflows/chart-image-bump.yml
     secrets: inherit
     permissions:
