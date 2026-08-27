@@ -192,6 +192,37 @@ jobs:
               ' /tmp/pkg-versions.json \
             | paste -sd, -)
           echo "Stable versions over the keep threshold: ${STABLE_IDS:-<none>}"
+
+          # GitHub laesst die LETZTE getaggte Version eines Pakets nicht
+          # loeschen — dafuer muss das Paket selbst weg. Gemessen am Lauf
+          # 33056414560, als der destruktive Pfad zum ersten Mal ueberhaupt
+          # lief (Audit K-8):
+          #
+          #   Stable versions over the keep threshold: 1177517171
+          #   delete version API failed. You cannot delete the last tagged
+          #   version of a package. You must delete the package instead.
+          #
+          # Das trifft genau dann zu, wenn der Prune ALLE getaggten Versionen
+          # umfasst — praktisch also nur bei `keep_stable_versions: 0`. Bis
+          # hierher war das unbekannt, weil dieser Zweig nie ausgefuehrt wurde.
+          #
+          # Gemeldet und NICHT selbst behoben: das Paket zu loeschen ist eine
+          # deutlich groessere Handlung als Versionen zu pruneen, und ein
+          # Aufbewahrungs-Job soll sie nicht im Vorbeigehen treffen. Die
+          # Meldung nennt stattdessen beide Auswege.
+          if [[ -n "$STABLE_IDS" ]]; then
+            tagged_total=$(jq '[ .[]
+                  | select(.metadata.container.tags // [] | length > 0)
+                  | select(.metadata.container.tags | map(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | any)
+                ] | length' /tmp/pkg-versions.json)
+            prune_total=$(tr ',' '\n' <<<"$STABLE_IDS" | sed '/^$/d' | wc -l | tr -d ' ')
+            if (( prune_total >= tagged_total )); then
+              echo "::error::pruning would remove ALL ${tagged_total} tagged version(s) of ${PKG}, and GitHub refuses to delete a package's last tagged version" >&2
+              echo "::error::raise keep_stable_versions above 0, or delete the package deliberately via the GHCR UI/API" >&2
+              exit 1
+            fi
+          fi
+
           echo "stable_ids=$STABLE_IDS" >> "$GITHUB_OUTPUT"
 
       - name: Delete stale prerelease versions

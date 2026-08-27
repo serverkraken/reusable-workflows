@@ -327,6 +327,16 @@ jobs:
   # Deshalb auch der Tag `v0.0.1` ohne Zusatz: der Stable-Prune erkennt nur
   # `^v[0-9]+\.[0-9]+\.[0-9]+$`. Die Eindeutigkeit je Lauf steckt im
   # PAKETNAMEN, nicht im Tag.
+  # ZWEI Versionen, damit eine geloescht werden kann und eine bleibt.
+  #
+  # Der erste Anlauf pushte nur v0.0.1 und setzte keep_stable_versions:0.
+  # Gemessen am Lauf 33056414560: GitHub weist das ab — "You cannot delete
+  # the last tagged version of a package". Ein Test, der genau in diesen
+  # Grenzfall laeuft, prueft nicht den Prune, sondern eine Fehlermeldung.
+  #
+  # Mit zwei Versionen und keep:1 ist der Fall der realistische: der Prune
+  # soll die AELTERE treffen und die neuere stehenlassen. Damit belegt der
+  # Test auch, dass er das RICHTIGE loescht, nicht bloss irgendetwas.
   test-docker-build-for-cleanup:
     uses: ./.github/workflows/docker-build.yml
     secrets: inherit
@@ -344,19 +354,39 @@ jobs:
       runs_on_arm64: '["ubuntu-24.04-arm"]'
       runs_on_merge: '["ubuntu-latest"]'
 
-  test-cleanup-images-destructive:
+  test-docker-build-for-cleanup-second:
+    # needs, nicht parallel: die Reihenfolge von created_at entscheidet, welche
+    # Version der Prune behaelt. Zwei gleichzeitige Builds waeren ein Rennen.
     needs: test-docker-build-for-cleanup
+    uses: ./.github/workflows/docker-build.yml
+    secrets: inherit
+    with:
+      tag: v0.0.2
+      prerelease: false
+      context: tests/fixtures/minimal-go
+      dockerfile: tests/fixtures/minimal-go/Dockerfile
+      image_name: ${{ github.repository }}/nightly-cleanup-fixture-${{ github.run_id }}
+      platforms: linux/amd64
+      sign: false
+      attest: false
+      sbom: false
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
+
+  test-cleanup-images-destructive:
+    needs: test-docker-build-for-cleanup-second
     uses: ./.github/workflows/cleanup-images.yml
     secrets: inherit
     with:
       package_name: reusable-workflows/nightly-cleanup-fixture-${{ github.run_id }}
-      # 0 = nichts behalten. Das ist der Punkt: der Prune soll wirklich
-      # loeschen, nicht nur zaehlen.
-      keep_stable_versions: 0
+      # 1 = die neueste behalten, alles aeltere loeschen. Der Prune muss also
+      # wirklich etwas anfassen — und zwar genau v0.0.1.
+      keep_stable_versions: 1
       runs_on: '["ubuntu-latest"]'
 
   assert-cleanup-images-destructive:
-    needs: [test-docker-build-for-cleanup, test-cleanup-images-destructive]
+    needs: [test-docker-build-for-cleanup, test-docker-build-for-cleanup-second, test-cleanup-images-destructive]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -367,7 +397,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PKG: reusable-workflows/nightly-cleanup-fixture-${{ github.run_id }}
-          BUILD_RESULT: ${{ needs.test-docker-build-for-cleanup.result }}
+          BUILD_RESULT: ${{ needs.test-docker-build-for-cleanup-second.result }}
           CLEANUP_RESULT: ${{ needs.test-cleanup-images-destructive.result }}
         run: |
           set -euo pipefail
@@ -397,11 +427,19 @@ jobs:
 
           remaining=$(jq -r '[.[] | .metadata.container.tags // [] | .[]] | join(",")' <<<"$body")
           echo "remaining tags: [${remaining}]"
+
+          # Beide Richtungen pruefen. Nur "v0.0.1 ist weg" waere auch dann
+          # erfuellt, wenn der Prune ALLES geloescht haette — und das waere ein
+          # anderer, schlimmerer Fehler.
           if [[ "$remaining" == *"v0.0.1"* ]]; then
-            echo "::error::v0.0.1 still present after cleanup with keep_stable_versions:0 — the destructive path did NOT run"
+            echo "::error::v0.0.1 still present after cleanup with keep_stable_versions:1 — the prune deleted nothing"
             exit 1
           fi
-          echo "v0.0.1 deleted — destructive path intact."
+          if [[ "$remaining" != *"v0.0.2"* ]]; then
+            echo "::error::v0.0.2 is gone — the prune deleted the version it was supposed to KEEP"
+            exit 1
+          fi
+          echo "v0.0.1 deleted, v0.0.2 kept — the prune touched exactly the right version."
 
       - name: Remove the fixture package if anything survived
         if: always()
