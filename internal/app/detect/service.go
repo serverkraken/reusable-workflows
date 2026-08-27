@@ -217,6 +217,8 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		Topics:         topics,
 		Warnings:       []domain.Warning{},
 		GitOps:         gitops,
+		IaC:            classifyIaC(req.RepoPath),
+		Shell:          classifyShell(req.RepoPath),
 	}
 	if hasManifest {
 		profile.ManifestSHA256 = manifestSHA
@@ -1473,6 +1475,85 @@ func gitOpsManifestPaths(repo string) []string {
 		default:
 			out = append(out, filepath.ToSlash(filepath.Join("kubernetes", e.Name())))
 		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Verzeichnisse, in denen weder IaC noch eigene Skripte des Repos stehen.
+// .catalog ist der Katalog-Checkout aus einem Workflow-Lauf, vendor und
+// node_modules sind Fremdcode — Funde dort waeren nicht die des Adopters.
+var signalSkipDirs = map[string]bool{
+	".git": true, ".catalog": true, "vendor": true, "node_modules": true,
+	".terraform": true, ".venv": true, ".task": true,
+}
+
+// classifyIaC liefert die Verzeichnisse, die *.tf-Dateien enthalten.
+// Rueckgabe nil (nicht ein leeres Signal), wenn es keine gibt — der
+// Profilschluessel muss dann ganz fehlen.
+func classifyIaC(repo string) *domain.IaCSignal {
+	dirs := collectDirsWithSuffix(repo, ".tf")
+	if len(dirs) == 0 {
+		return nil
+	}
+	return &domain.IaCSignal{Directories: dirs}
+}
+
+// classifyShell liefert Globs statt Dateilisten. Wuerde hier jede einzelne
+// Datei stehen, aenderte jedes neue Skript das Profil und loeste Drift aus,
+// obwohl sich an der CI-Konfiguration nichts geaendert hat.
+func classifyShell(repo string) *domain.ShellSignal {
+	dirs := collectDirsWithSuffix(repo, ".sh")
+	if len(dirs) == 0 {
+		return nil
+	}
+	tops := map[string]bool{}
+	for _, d := range dirs {
+		top := d
+		if i := strings.Index(d, string(filepath.Separator)); i > 0 {
+			top = d[:i]
+		}
+		tops[top] = true
+	}
+	var out []string
+	for t := range tops {
+		if t == "." {
+			out = append(out, "*.sh")
+			continue
+		}
+		out = append(out, t+"/**/*.sh")
+	}
+	sort.Strings(out)
+	return &domain.ShellSignal{Paths: out}
+}
+
+// collectDirsWithSuffix liefert die repo-relativen Verzeichnisse, die
+// mindestens eine Datei mit der Endung enthalten — sortiert und dedupliziert.
+func collectDirsWithSuffix(repo, suffix string) []string {
+	seen := map[string]bool{}
+	_ = filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if signalSkipDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), suffix) {
+			return nil
+		}
+		rel, relErr := filepath.Rel(repo, filepath.Dir(path))
+		if relErr != nil {
+			return nil
+		}
+		seen[rel] = true
+		return nil
+	})
+	out := make([]string, 0, len(seen))
+	for d := range seen {
+		out = append(out, d)
 	}
 	sort.Strings(out)
 	return out
