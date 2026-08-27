@@ -40,3 +40,54 @@ setup() {
   run bash "$SCRIPT" gibtsnicht.txt 500
   [ "$status" -ne 0 ]
 }
+
+# Ohne Backticks im Plan bleibt es beim gewohnten dreifachen Zaun.
+@test "Zaun ist dreifach, wenn der Plan keine Backticks enthaelt" {
+  printf 'Plan: 1 to add, 0 to change, 0 to destroy.\n' > plan.txt
+  run bash "$SCRIPT" plan.txt 1000
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | head -1)" = '```' ]
+  [ "$(printf '%s\n' "$output" | tail -1)" = '```' ]
+}
+
+# Der Kern: der Planinhalt ist Adopter-Text. Enthaelt ein Output-Wert eine
+# Zeile aus drei Backticks, schloesse ein fester ```-Zaun genau dort — und
+# alles danach (`</details>`, ein Markdown-Link) rendert als ECHTES Markdown
+# im Kommentar des Bots. Der Zaun muss deshalb laenger sein als die laengste
+# Backtick-Folge im Inhalt.
+@test "Plan mit eigenem Code-Zaun kann nicht ausbrechen" {
+  printf 'vorher\n```\n</details>\n[phish](https://example.invalid)\nnachher\n' > plan.txt
+  run bash "$SCRIPT" plan.txt 10000
+  [ "$status" -eq 0 ]
+  first="$(printf '%s\n' "$output" | head -1)"
+  last="$(printf '%s\n' "$output" | tail -1)"
+  # Vier Backticks: eins mehr als die laengste Folge im Inhalt.
+  [ "$first" = '````' ]
+  [ "$last" = '````' ]
+  # Keine Zeile DAZWISCHEN darf den Block schliessen koennen, also keine
+  # Zeile darf so lang oder laenger sein als der Zaun.
+  inner="$(printf '%s\n' "$output" | sed '1d;$d')"
+  ! printf '%s\n' "$inner" | grep -qx '`\{4,\}'
+  # Der Inhalt ist vollstaendig da — gekuerzt wurde nichts.
+  [[ "$output" == *"</details>"* ]]
+  [[ "$output" == *"nachher"* ]]
+}
+
+# Auch gegen laengere Folgen: der Zaun waechst mit.
+@test "Zaun waechst ueber die laengste Backtick-Folge hinaus" {
+  printf 'a\n`````\nb\n' > plan.txt
+  run bash "$SCRIPT" plan.txt 10000
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | head -1)" = '``````' ]
+  [ "$(printf '%s\n' "$output" | tail -1)" = '``````' ]
+}
+
+# Nach `tail -c` endet der gekuerzte Inhalt nicht zwingend mit einem
+# Zeilenumbruch. Ohne den stuende der schliessende Zaun am Ende der letzten
+# Inhaltszeile und waere keiner mehr.
+@test "schliessender Zaun steht auch nach Kuerzung auf eigener Zeile" {
+  printf 'x%.0s' $(seq 1 400) > plan.txt
+  run bash "$SCRIPT" plan.txt 100
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | tail -1)" = '```' ]
+}

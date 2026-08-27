@@ -409,10 +409,12 @@ jobs:
               echo ""
               echo "<details><summary>Plan</summary>"
               echo ""
-              echo '```'
+              # Der Renderer setzt die Zaeune selbst — und zwar eine laenger
+              # als die laengste Backtick-Folge im Plan. Ein festes ```
+              # schloesse sich an der ersten solchen Zeile im Plan, und alles
+              # danach rendert als echtes Markdown.
               # 900k statt 1M: der Rest der Summary braucht auch Platz.
               bash "$RENDER" plan.txt 900000
-              echo '```'
               echo ""
               echo "</details>"
             fi
@@ -460,9 +462,11 @@ jobs:
               echo ""
               echo "<details><summary>Plan anzeigen</summary>"
               echo ""
-              echo '```'
+              # Zaeune kommen aus dem Renderer, nicht von hier: der Planinhalt
+              # ist Adopter-Text, und ein festes ``` liesse sich mit drei
+              # Backticks im Plan aufbrechen — der Rest stuende dann als
+              # echtes Markdown im Kommentar des Bots, Links eingeschlossen.
               bash "$RENDER" plan.txt 60000
-              echo '```'
               echo ""
               echo "</details>"
             fi

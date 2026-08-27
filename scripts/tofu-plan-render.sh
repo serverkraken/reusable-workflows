@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Kuerzt eine tofu-plan-Ausgabe auf ein Zeichenlimit.
+# Kuerzt eine tofu-plan-Ausgabe auf ein Zeichenlimit und legt sie in einen
+# Code-Block, aus dem ihr Inhalt nicht ausbrechen kann.
+#
+# Ausgabe ist der FERTIGE Block inklusive oeffnender und schliessender Zaeune —
+# der Aufrufer setzt keine eigenen mehr.
 #
 # GitHub nimmt hoechstens 65536 Zeichen pro Kommentar. Ein ungekuerzter Plan
 # laesst den Kommentar-Aufruf scheitern — der Plan kaeme dann gar nicht an.
@@ -7,6 +11,20 @@
 # Kopf UND Fuss bleiben erhalten: oben steht, was sich aendert, unten die
 # Zusammenfassungszeile ("Plan: 2 to add, ..."). Nur den Kopf zu behalten
 # verwuerfe genau die Zeile, auf die im Review zuerst geschaut wird.
+#
+# WARUM DIE ZAUNLAENGE BERECHNET WIRD: der Planinhalt ist Adopter-Text. Eine
+# feste ```-Zaun schliesst sich, sobald im Plan selbst eine Zeile aus drei
+# Backticks steht — ab da rendert der Rest als echtes Markdown IM Kommentar
+# des Bots. Ein Ausgabewert wie
+#
+#     ```
+#     </details>
+#     [Klicken Sie hier, um sich anzumelden](https://phish.example)
+#
+# stuende dann als anklickbarer Link unter dem Bot-Namen. Die Zaunlaenge ist
+# deshalb ein Zeichen laenger als die laengste Backtick-Folge im Inhalt: dann
+# gibt es im Inhalt keine Zeile, die den Block schliessen KANN. Innerhalb des
+# Blocks ist `</details>` wieder nur Text.
 set -euo pipefail
 
 FILE="${1:?Plan-Datei fehlt}"
@@ -17,14 +35,39 @@ if [[ ! -f "$FILE" ]]; then
   exit 1
 fi
 
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+
 SIZE=$(wc -c < "$FILE" | tr -d ' ')
 if [[ "$SIZE" -le "$LIMIT" ]]; then
-  cat "$FILE"
-  exit 0
+  cat "$FILE" > "$TMP"
+else
+  HALF=$(( LIMIT / 2 ))
+  {
+    head -c "$HALF" "$FILE"
+    printf '\n\n... [gekuerzt: %s von %s Zeichen entfernt — Volltext in der Step-Summary] ...\n\n' \
+      "$(( SIZE - LIMIT ))" "$SIZE"
+    tail -c "$HALF" "$FILE"
+  } > "$TMP"
 fi
 
-HALF=$(( LIMIT / 2 ))
-head -c "$HALF" "$FILE"
-printf '\n\n... [gekuerzt: %s von %s Zeichen entfernt — Volltext in der Step-Summary] ...\n\n' \
-  "$(( SIZE - LIMIT ))" "$SIZE"
-tail -c "$HALF" "$FILE"
+# Laengste Backtick-Folge im (bereits gekuerzten) Inhalt. `|| true`: grep
+# meldet 1, wenn gar kein Backtick vorkommt — der Normalfall.
+longest=$(LC_ALL=C grep -o '`\{1,\}' "$TMP" 2>/dev/null \
+  | awk '{ if (length($0) > m) m = length($0) } END { print m+0 }' || true)
+fence_len=$(( ${longest:-0} + 1 ))
+(( fence_len < 3 )) && fence_len=3
+
+fence=''
+for (( i = 0; i < fence_len; i++ )); do
+  fence+='`'
+done
+
+printf '%s\n' "$fence"
+cat "$TMP"
+# Die schliessende Zaun muss auf einer EIGENEN Zeile beginnen. Nach einem
+# `tail -c` endet der Inhalt nicht zwingend mit einem Zeilenumbruch.
+if [[ -s "$TMP" ]] && [[ "$(tail -c 1 "$TMP" | od -An -c | tr -d ' \n')" != '\n' ]]; then
+  printf '\n'
+fi
+printf '%s\n' "$fence"
