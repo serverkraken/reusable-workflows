@@ -27,6 +27,93 @@ braucht nirgends Schreibrechte.** Sie klonen den privaten Katalog, mehr nicht.
 Ein einziger zentraler `app_token` wäre deshalb *mächtiger als nötig* — er
 würde 13 Atomen Schreibrechte in die Hand geben, die heute nur lesen.
 
+## Nachgeprüft — drei Prämissen dieses Entwurfs waren falsch
+
+Zweitmeinungen von Codex und Gemini, jede Behauptung anschließend selbst gegen
+Code bzw. Primärquelle geprüft.
+
+### 1. Die „Lesetoken" sind keine Lesetoken
+
+**Kein einziger** der 32 Mint-Aufrufe im Repo setzt `permission-*`. Die README
+von `actions/create-github-app-token` sagt:
+
+> „By default, the token inherits **all** of the installation's permissions."
+
+Der Token ist auf das Katalog-Repo *begrenzt*, aber nicht auf Lesen
+*beschränkt*, und die App hat laut `docs/operations.md` `workflows: write`.
+Ein kompromittiertes „Leser"-Atom kann damit die Workflow-Dateien des Katalogs
+umschreiben — also `v4` faktisch übernehmen.
+
+**Die Einteilung „Leser/Schreiber" beschreibt die Absicht, nicht den
+Credential.** Das ist eine eigenständige Schwachstelle, schwerer als die von
+D-1 beschriebene, und sie ist **ohne Major-Bump behebbar** (siehe Schritt 0).
+
+### 2. Ein Token lässt sich nicht zwischen Jobs reichen
+
+Dieselbe README:
+
+> „the token is revoked in the `post` step of the action, which means it
+> **cannot be passed to another job**."
+
+`skip-token-revoke: true` löst nur die Widerruf-Hälfte. Hinzu kommt: die
+Maskierung, die die Action per `core.setSecret()` setzt, gilt im selben
+Runner-Prozess — sie propagiert **nicht** automatisch in einen Folgejob. Ein
+durchgereichter Token kann dort im Klartext in Logs landen.
+
+Damit ist Weg (2) — oben einmal minten, nach unten reichen — nicht bloß
+riskant, sondern nicht vorgesehen.
+
+### 3. Die Deklaration zu entfernen bewirkt nichts
+
+`secrets: inherit` reicht Secrets **implizit** weiter, unabhängig davon, was
+das gerufene Atom in `on.workflow_call.secrets` deklariert. Das Org-Secret ist
+auf „All private repositories" gesetzt.
+
+Solange der Key als benanntes Org-Secret existiert und `inherit` am Aufrufort
+steht, kann bösartiger Katalog-Code ihn schlicht referenzieren. **Die erste
+Fassung dieses Entwurfs hätte D-1 nicht gelöst.**
+
+### Was die Zweitmeinungen darüber hinaus ergaben
+
+- **Doppel-Mint:** `chart-image-bump` und `version-badges` minten BEIDE Tokens
+  (Schreib- und Lesetoken). Die Einteilung ist genauer: 13 reine Leser,
+  3 Schreiber, davon 2 zusätzlich lesend.
+- **`drift-check.yml`** benutzt den rohen Key an drei Stellen direkt aus dem
+  Org-Secret. Kein `workflow_call`-Atom, also außerhalb der 18 — ein Angreifer
+  bräuchte dort Push-Zugriff auf den Katalog, nicht nur den `v4`-Tag. Gehört
+  trotzdem in die Betrachtung, wenn D-1 als „alle Verwendungsstellen" gelesen
+  wird.
+- **Kein Leak** des Keys in `run:`, `env:` oder Outputs — unabhängig gesucht,
+  nichts gefunden.
+
+## Der bessere Weg: den Checkout überflüssig machen
+
+Beide Zweitmeinungen schlagen dasselbe vor, unabhängig voneinander: Composite
+Actions **direkt** cross-repo referenzieren statt den Katalog zu klonen.
+
+    uses: serverkraken/reusable-workflows/actions/setup-python-deps@v5
+
+Kein Checkout, kein Token, kein Credential. Die Org-Freigabe
+(`access_level=organization`) ist laut Runbook § 2 bereits gesetzt.
+
+**Eigene Messung, weil beide Zweitmeinungen hier zu weit gingen** — das gilt
+nicht für 13 Atome, sondern für acht:
+
+| | Atome |
+|---|---|
+| **nur Composite Actions** → Checkout eliminierbar | `lint-python`, `lint-flutter`, `docker-build`, `secret-scan`, `build-flutter-android`, `e2e-kind`, `test-python`, `test-flutter` |
+| **brauchen echte Repo-Inhalte** | `chart-image-bump`, `version-badges`, `onboard`, `trivy-image`, `trivy-fs`, `kube-validate`, `kube-lint`, `release-flutter-android` |
+
+Die zweite Hälfte lädt Skripte und Configs (`scripts/chart-image-bump.py`,
+`configs/kube-linter.yaml`). Die ließen sich in Composite Actions verlagern —
+eine Action kann eigene Dateien mitbringen und über `${{ github.action_path }}`
+ausführen. Derselbe Mechanismus, aber Umbauarbeit.
+
+**Noch nicht belegt:** ob die Org-Freigabe neben Reusable Workflows auch
+Composite Actions cross-repo ohne Token abdeckt. Die Doku formuliert „an action
+**or** reusable workflow", was dafür spricht. Vor jedem Umbau mit einem
+Testlauf nachweisen.
+
 ## Der Entwurf
 
 Zwei getrennte Secrets. Keins davon ist so mächtig wie der Key.
@@ -126,19 +213,47 @@ bloß über YAML. Sie gehört ausdrücklich nicht in die Umsetzung hineinentschi
 
 ## Was zu tun ist
 
-1. Entscheidung ueber den Katalog-Credential treffen (siehe
-   „Token-Lebensdauer"): statischer PAT/Deploy Key oder durchgereichter
-   App-Token. Danach einmalig anlegen — Org-Rechte noetig.
-2. 13 Leser-Atome: Key-Deklaration → `catalog_token`, Mint-Schritt entfällt.
-3. 3 Schreiber-Atome: Key-Deklaration bleibt vorerst, oder `app_token`.
-4. 2 Weiterreicher: Deklaration entsprechend anpassen.
-5. Adopter-Templates + Goldens.
-6. `docs/contracts.md` — der Secrets-Block ist Teil des Vertrags jedes Atoms.
-7. Konventions-Gate: kein Atom darf den Private Key deklarieren, das nicht
-   nachweislich einen adopter-gescopten Schreibtoken braucht.
+### Schritt 0 — sofort, additiv, ohne Major
 
-Schritt 7 ist der, der verhindert, dass das zurückrutscht — nach dem Muster
-der übrigen Gates dieses Katalogs.
+An allen 32 Mint-Aufrufen die Rechte verengen:
+
+```yaml
+permission-contents: read      # bzw. das, was die Stelle wirklich braucht
+```
+
+Behebt die unter „Nachgeprüft (1)" beschriebene Schwachstelle — die schwerere
+der beiden — ohne einen einzigen Adopter zu berühren. Unabhängig vom
+v5-Zeitplan. Zusätzlich prüfen, ob die App `workflows: write` überhaupt
+braucht.
+
+### Danach, in dieser Reihenfolge
+
+1. **Nachweisen**, dass Composite Actions cross-repo ohne Token erreichbar
+   sind (ein Testlauf). Trägt das, entfallen für 8 Atome Checkout UND
+   Credential vollständig.
+2. Für die 8 Atome mit echtem Dateibedarf entscheiden: Skripte in Composite
+   Actions verlagern (dann ebenfalls credential-frei) oder Katalog-Credential.
+3. **Nur falls (2) einen Credential braucht:** Typ entscheiden — dedizierte
+   Katalog-Leser-App mit `permission-contents: read` ist einem PAT oder Deploy
+   Key vorzuziehen, weil sie weder an einem Benutzerkonto hängt noch langlebig
+   ist. Wer ihn rotiert und wo er liegt, gehört zur Entscheidung.
+4. **Die 3 Schreiber-Atome bekommen `app_token`, ohne Rückfall auf den rohen
+   Key.** Diese Weiche stand in der ersten Fassung offen („Key-Deklaration
+   bleibt vorerst, oder `app_token`") — das wäre ein Widerspruch in sich
+   gewesen: ausgerechnet die mächtigsten Atome blieben über den unbefristeten
+   Key kompromittierbar, während v5 als Lösung für D-1 gilt.
+   Der Token muss **pro Schreiber-Job** gemintet werden, nicht oben einmal —
+   siehe „Nachgeprüft (2)". `chart-image-bump` läuft absichtlich NACH langen
+   Image-Builds; ein früh gemintetes Token wäre dort alt.
+5. `secrets: inherit` an den Aufrufstellen durch explizites Mapping ersetzen.
+   Ohne das bleibt der Key erreichbar, egal was die Atome deklarieren.
+6. Adopter-Templates, Goldens, `docs/contracts.md`.
+7. Konventions-Gate: kein `secrets: inherit` auf Katalog-Aufrufe, kein
+   Mint-Aufruf ohne `permission-*`, keine Key-Deklaration außerhalb der
+   Schreiber.
+8. Migrationsfenster mit hartem Ende, danach **den alten Key widerrufen**.
+   Solange `@v4` mit dem alten Key weiterlebt, ist D-1 nicht behoben, sondern
+   nur umgangen. Ein unbefristetes Parallelbestehen ist kein Endzustand.
 
 ## Warum das nicht nebenbei passiert
 
