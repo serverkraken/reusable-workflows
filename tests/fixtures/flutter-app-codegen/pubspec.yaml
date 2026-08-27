@@ -1,0 +1,22 @@
+name: catalog_test_flutter_codegen
+description: "Flutter fixture that REQUIRES code generation. Exercises the use_build_runner default (Audit K-10). Not a real app."
+publish_to: 'none'
+version: 0.0.0+0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  json_annotation: ^4.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.13
+  json_serializable: ^6.9.0
+
+flutter:
+  uses-material-design: true

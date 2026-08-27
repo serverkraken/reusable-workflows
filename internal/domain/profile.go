@@ -109,9 +109,14 @@ type E2ESpec struct {
 }
 
 type ReleaseSpec struct {
-	DispatchTrigger bool           `json:"dispatch_trigger"`
-	Badges          bool           `json:"badges,omitempty"`
-	ChartPins       *ChartPinsSpec `json:"chart_pins,omitempty"`
+	DispatchTrigger bool `json:"dispatch_trigger"`
+	Badges          bool `json:"badges,omitempty"`
+	// PrereleaseBranch bleibt leer, wenn das Manifest nichts sagt. Die Vorgabe
+	// `develop` setzt das Template — so bleibt im Profil sichtbar, was der
+	// Adopter WIRKLICH geschrieben hat, und bestehende Goldens aendern sich
+	// nicht (Audit J-25).
+	PrereleaseBranch string         `json:"prerelease_branch,omitempty"`
+	ChartPins        *ChartPinsSpec `json:"chart_pins,omitempty"`
 }
 
 // ChartPinsSpec drives the chart-image-bump job: after a release built new

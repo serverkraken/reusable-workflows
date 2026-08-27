@@ -12,6 +12,6 @@
     ".github/workflows/cleanup.yml": "sha256:b276551c369594569373dec50aa2e51d31edc5d7192cf9365140a740d2871b24",
     "release-please-config.json": "sha256:a8b82de44fb957b55f54b647a119bd0eee9147071e40b32ffab2349d39ac2cd8",
     ".release-please-manifest.json": "sha256:b80376d3af71f7b77b9d9194a4dde6706069dc1bd449f237d88eff2abe1f1329",
-    ".github/workflows/e2e.yml": "sha256:218506934bada1f0a1edb5283fb2c00273c389fe1009c710f91583163ebc63ee"
+    ".github/workflows/e2e.yml": "sha256:021ea84ac351d376c93d54e700ea30800b00b35e83af5d45766d3e262321702f"
   }
 }

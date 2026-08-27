@@ -132,6 +132,17 @@ def main() -> int:
                 # Durchgereichte GitHub-Expression: rendert zu ${{ ... }},
                 # beginnt also mit '$' und ist immer ein String.
                 continue
+            if "strings.Quote" in expr or "data.ToJSON" in expr:
+                # strings.Quote ist STRIKT STAERKER als Handquoting, nicht
+                # schwaecher: es erzeugt denselben gequoteten Skalar und
+                # behandelt zusaetzlich das eine Zeichen, an dem `key: "{{ }}"`
+                # zerbricht — ein Anfuehrungszeichen im Wert selbst.
+                #
+                # Die Flow-Sequenz-Pruefung oben akzeptiert es laengst; hier
+                # fehlte es nur. Aufgefallen bei J-15, als e2e.yml.tmpl von
+                # Handquoting auf strings.Quote umgestellt wurde und dieses
+                # Gate die staerkere Schreibweise abwies.
+                continue
             checked += 1
             offenders.append(
                 f"  {tpl.relative_to(ROOT)}:{lineno}: {key} ist type=string, "

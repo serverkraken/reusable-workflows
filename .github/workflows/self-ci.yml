@@ -757,6 +757,30 @@ jobs:
       working_directory: tests/fixtures/flutter-app
       use_build_runner: false
 
+  # ----- lint-flutter gegen eine Fixture, die OHNE Codegen nicht analysierbar
+  #       ist (Audit K-10).
+  #
+  # `use_build_runner` steht in allen vier Flutter-Atomen auf `true`, und JEDER
+  # Aufrufer im Katalog uebergab `false`. Der Vorgabepfad — der, den Adopter
+  # bekommen — lief nie: `dart run build_runner build`.
+  #
+  # Dieser Aufruf uebergibt den Eingang BEWUSST NICHT. Geprueft wird damit die
+  # tatsaechliche Vorgabe, nicht ein Wert, den der Test selbst setzt.
+  #
+  # Ein gruener Lauf IST hier die Zusicherung, und das ist keine schwache Form
+  # davon: lib/greeting.dart verweist per `part` auf eine Datei, die es im Repo
+  # nicht gibt. Ohne den Generator kann `flutter analyze` nicht bestehen. Die
+  # Gegenprobe in failure-paths-nightly.yml faehrt dieselbe Fixture mit
+  # `use_build_runner: false` und verlangt, dass sie SCHEITERT — sonst koennte
+  # dieser Test leer bestehen.
+  lint-flutter-codegen:
+    uses: ./.github/workflows/lint-flutter.yml
+    secrets: inherit
+    with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
+      working_directory: tests/fixtures/flutter-app-codegen
+
   test-flutter-happy:
     uses: ./.github/workflows/test-flutter.yml
     secrets: inherit
@@ -813,6 +837,7 @@ jobs:
       - onboard-preview-manifest-golden
       - onboard-apply-defaults-go-cli-dry-run
       - lint-flutter-happy
+      - lint-flutter-codegen
       - test-flutter-happy
       - build-flutter-android-happy
     if: always()
