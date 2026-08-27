@@ -361,6 +361,14 @@ jobs:
         # Fork-PR guard only: on push/schedule there is no pull_request
         # context, and the upload on the default branch is the one that forms
         # the code-scanning baseline.
+        #
+        # Zur Einordnung, damit die Bedingung nicht mehr verspricht, als das
+        # Atom halten kann: sie ist Guertel UND Hosentraeger. Das Atom laeuft
+        # auf einem Fork-PR ohnehin nicht — es checkt den Katalog fuer seine
+        # Composite Actions aus und mintet dafuer einen App-Token aus zwei
+        # `required: true`-Secrets, die GitHub an Forks nicht weiterreicht.
+        # "Auto-skipped on forks" beschreibt also das Verhalten DIESES
+        # Schritts, nicht eine Fork-Tauglichkeit des Atoms.
         if: inputs.sarif && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:

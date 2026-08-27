@@ -6,10 +6,18 @@
 #   secrets: release_please_app_client_id, release_please_app_private_key
 #   outputs: checked_directories
 #
-# Dieses Atom ist bewusst CREDENTIAL-FREI: `tofu init -backend=false`
-# ueberspringt die Backend-Initialisierung, laedt aber Module und Provider.
-# Damit laeuft es auf Fork-PRs und in Repos, deren Cloud-Token es noch gar
-# nicht gibt. Der Plan-Teil steht getrennt in tofu-plan.yml.
+# Dieses Atom braucht KEINE CLOUD- ODER BACKEND-CREDENTIALS: `tofu init
+# -backend=false` ueberspringt die Backend-Initialisierung, laedt aber Module
+# und Provider. Genau das trennt es von tofu-plan.yml — es laeuft in Repos,
+# deren Cloud-Token es noch gar nicht gibt, und es kann die Werte, die ein
+# Plan sehen wuerde, nicht sehen.
+#
+# Es ist damit aber NICHT secret-frei und laeuft NICHT auf Fork-PRs: wie jedes
+# Atom im Katalog checkt es den Katalog fuer seine Composite Actions aus und
+# mintet dafuer einen App-Token aus release_please_app_client_id und
+# release_please_app_private_key — beide `required: true`. GitHub reicht
+# Secrets nicht an Fork-PRs weiter, das Atom scheiterte dort also schon vor
+# seinem ersten tofu-Aufruf. Credential-frei ist der TOFU-Teil, nicht der Job.
 name: tofu-validate
 on:
   workflow_call:
