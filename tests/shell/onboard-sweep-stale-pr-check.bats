@@ -103,3 +103,18 @@ run_check() {
   [[ "$output" != *"::warning::"* ]]
   [ "$output" = "stale" ]
 }
+
+# Audit H-20. `gh api` liefert ohne --paginate nur die erste Seite (30
+# Eintraege). Hat ein Adopter mehr offene PRs, liegt der Bot-PR womoeglich
+# dahinter — die Pruefung meldet "no-pr", und der Sweep legt einen ZWEITEN
+# Onboarding-PR an, obwohl schon einer offen ist.
+#
+# Die Fixture stellt genau das her: 35 offene PRs, der Bot-PR an Position 33.
+# Wirksam ist der Test nur, weil gh-stub.sh seit H-20 ohne --paginate die erste
+# Seite abschneidet; vorher gab der Stub immer alles aus, und ein Test dagegen
+# waere in beiden Fassungen gruen gewesen.
+@test "stale-pr-check: Bot-PR hinter Seite 1 wird gefunden (Audit H-20)" {
+  run_check bot-pr-on-page-2 owner/repo v4.7.0
+  [ "$status" -eq 0 ]
+  [ "$output" = "skip" ] || { echo "output: $output"; false; }
+}

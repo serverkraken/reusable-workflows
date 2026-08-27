@@ -85,3 +85,109 @@ EOF
   # foo-extra row is still present
   grep -qE '^\| serverkraken/foo-extra \|' docs/onboarding-status.md
 }
+
+
+# ---- Audit H-23: Repo-Name als Regex ----
+#
+# Der Name wurde per sed nur an `/` maskiert und dann als ERE benutzt. Ein
+# Punkt blieb damit ein Metazeichen, das JEDES Zeichen trifft. Die Org hat vier
+# solche Repos (juke.gallery, juke.gallery-admin, juke.gallery-rest,
+# juke.gallery-user), ein Fehltreffer braucht aber ein Repo, das sich nur an
+# dieser Stelle unterscheidet — deshalb war der Fehler bisher latent.
+#
+# Der Test stellt genau dieses Paar her: `juke.gallery` gegen eine bereits
+# vorhandene Zeile `jukeXgallery`. Als Regex trifft der Punkt das X, das Repo
+# gilt faelschlich als vorhanden und faellt aus der Tabelle.
+@test "ein Punkt im Repo-Namen ist kein Regex-Metazeichen (Audit H-23)" {
+  cat > "$BIN/gh" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "repo" && "$2" == "list" ]]; then
+  printf 'serverkraken/juke.gallery\n'
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "$BIN/gh"
+
+  cat > docs/onboarding-status.md <<'EOF'
+# Onboarding Status
+
+_Last updated by the onboarding workflow: 2026-01-01T00:00:00Z_
+
+| Repository | Onboarded | Catalog Version | Add PR | Cleanup PR | Status | Consumers |
+|---|---|---|---|---|---|---|
+| serverkraken/jukeXgallery | yes | v4 | — | — | onboarded | — |
+EOF
+
+  run "$SCRIPT"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+
+  # Das echte Repo muss angehaengt worden sein ...
+  grep -q '^| serverkraken/juke\.gallery |' docs/onboarding-status.md || {
+    cat docs/onboarding-status.md; false
+  }
+  # ... und die fremde Zeile unberuehrt bleiben.
+  grep -q '^| serverkraken/jukeXgallery |' docs/onboarding-status.md
+}
+
+# Gegenprobe: ein Repo, das WIRKLICH schon in der Tabelle steht, darf nicht
+# doppelt angehaengt werden. Ohne diese Zusicherung koennte der Fix den
+# Duplikat-Schutz stillschweigend aushebeln.
+@test "ein bereits vorhandenes Repo wird nicht doppelt angehaengt" {
+  cat > "$BIN/gh" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "repo" && "$2" == "list" ]]; then
+  printf 'serverkraken/juke.gallery\n'
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "$BIN/gh"
+
+  cat > docs/onboarding-status.md <<'EOF'
+# Onboarding Status
+
+_Last updated by the onboarding workflow: 2026-01-01T00:00:00Z_
+
+| Repository | Onboarded | Catalog Version | Add PR | Cleanup PR | Status | Consumers |
+|---|---|---|---|---|---|---|
+| serverkraken/juke.gallery | yes | v4 | — | — | onboarded | — |
+EOF
+
+  run "$SCRIPT"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+
+  local n
+  n=$(grep -c '^| serverkraken/juke\.gallery |' docs/onboarding-status.md)
+  [ "$n" -eq 1 ] || { cat docs/onboarding-status.md; false; }
+}
+
+# ---- Audit H-22: stille Kappung durch --limit ----
+#
+# `gh repo list --limit N` schneidet ohne Hinweis ab. Die Org hat derzeit 41
+# Repos gegen ein Limit von 200, die alte Grenze griff also NICHT — sie war
+# eine latente Kappung. Jede feste Grenze ist aber irgendwann zu klein, und
+# genau dann soll es auffallen statt still Repos zu verlieren.
+@test "eine womoeglich abgeschnittene Repo-Liste wird gemeldet (Audit H-22)" {
+  cat > "$BIN/gh" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "repo" && "$2" == "list" ]]; then
+  printf 'serverkraken/a\nserverkraken/b\n'
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "$BIN/gh"
+
+  REPO_LIMIT=2 run "$SCRIPT"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [[ "$output" == *"probably truncated"* ]] || { echo "$output"; false; }
+}
+
+# Gegenprobe: unterhalb der Grenze bleibt es still. Sonst waere die Warnung
+# Rauschen bei jedem Lauf.
+@test "eine vollstaendige Repo-Liste meldet keine Kappung" {
+  REPO_LIMIT=50 run "$SCRIPT"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [[ "$output" != *"probably truncated"* ]] || { echo "$output"; false; }
+}

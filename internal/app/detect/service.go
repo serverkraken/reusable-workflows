@@ -1487,7 +1487,17 @@ func detectLegacyCI(repo string, declared []string) ([]domain.LegacyCI, error) {
 	if err != nil {
 		return nil, err
 	}
-	owned := map[string]bool{"ci.yml": true, "release.yml": true, "prerelease.yml": true, "prerelease-on-push.yml": true, "cleanup.yml": true}
+	// ci-android.yml gehoert dazu, seit der Renderer sie ausgibt (Audit H-24).
+	// Ohne den Eintrag stufte der Katalog seine EIGENE Ausgabe als
+	// "unrecognized legacy workflow; manual review needed" ein - gemessen an
+	// einem Flutter-Profil: rendern, dasselbe Repo wieder erkennen lassen, und
+	// ci-android.yml steht in legacy_ci. PR B haette ihre Loeschung
+	// vorgeschlagen, das naechste Onboarding sie wieder angelegt.
+	//
+	// Unbedingt, nicht nur wenn Android gerendert wurde - genauso wie
+	// prerelease-on-push.yml, das ebenfalls opt-in ist. Der Name gehoert dem
+	// Renderer, unabhaengig davon, ob dieser Adopter ihn gerade bekommt.
+	owned := map[string]bool{"ci.yml": true, "ci-android.yml": true, "release.yml": true, "prerelease.yml": true, "prerelease-on-push.yml": true, "cleanup.yml": true}
 	for _, d := range declared {
 		owned[d] = true
 	}

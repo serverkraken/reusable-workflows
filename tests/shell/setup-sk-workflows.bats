@@ -85,7 +85,15 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-cp "$SK_TEST_RELEASE_DIR/$(basename "$url")" "$out"
+src="$SK_TEST_RELEASE_DIR/$(basename "$url")"
+# Ohne -o schreibt echtes curl nach stdout. Der Doppelgaenger tat das nicht,
+# und jeder Aufruf, der die Ausgabe per Pipe liest, bekam nichts (Audit H-19:
+# die Releases-API wird genau so gelesen).
+if [[ -n "$out" ]]; then
+  cp "$src" "$out"
+else
+  cat "$src"
+fi
 EOF
   chmod +x "$FAKE_BIN/curl"
 }
@@ -377,4 +385,96 @@ make_release_asset_without_binary() {
   #    nicht ersetzen konnte; er verschweigt es nur nicht mehr.
   run "$INSTALL_DIR/sk-workflows"
   [ "$output" = "release-v4.0.0-amd64" ]
+}
+
+
+# ---- Float-Tag-Aufloesung (Audit H-19) ----
+#
+# Die Action sichert zu: "Empty uses the action ref when it is a v* tag", und
+# der Katalog ist auf `@v4` als Pin ausgelegt. Genau der Fall ging nicht:
+# `v4` und `v4.21` sind TAGS, keine Releases, und die Assets tragen immer die
+# volle Version. `gh release download v4` antwortete "release not found".
+#
+# Warum es niemandem auffiel: die Self-CI nutzt den LOKALEN Action-Pfad
+# (GITHUB_ACTION_REF leer), und der Release-Smoke-Test uebergibt die konkrete
+# Version. Der bestehende Test "version can resolve from GITHUB_ACTION_REF"
+# nutzt ebenfalls ein konkretes v4.3.0. Der Float-Zweig wurde nirgends
+# ausgefuehrt.
+
+# Antwort der Releases-API fuer den curl-Pfad hinterlegen. Der Dateiname ist
+# der basename der API-URL, weil das fake-curl genau danach nachschlaegt.
+stub_releases_api() {
+  cat > "$RELEASE_DIR/releases?per_page=100" <<'JSON'
+[
+  {"tag_name": "v5.0.0",       "draft": false, "prerelease": false},
+  {"tag_name": "v4.11.0-rc.1", "draft": false, "prerelease": true},
+  {"tag_name": "v4.10.0",      "draft": false, "prerelease": false},
+  {"tag_name": "v4.9.0",       "draft": false, "prerelease": false},
+  {"tag_name": "v4.3.0",       "draft": false, "prerelease": false}
+]
+JSON
+}
+
+# Ein Test, vier Zusicherungen auf einmal:
+#   v4.10.0 statt v4.9.0   -> sort -V, nicht lexikalisch
+#   v4.11.0-rc.1 uebergangen -> `-` ist ein Prerelease (dieselbe Regel, die
+#                               semantic-release.yml beim Verschieben der
+#                               Float-Tags anwendet)
+#   v5.0.0 uebergangen      -> anderer Major
+#   version=v4.10.0         -> der Output nennt die AUFGELOESTE Version
+@test "GITHUB_ACTION_REF=v4 loest auf die hoechste stabile v4-Version auf" {
+  make_release_assets "v4.10.0" "amd64"
+  install_fake_curl
+  stub_releases_api
+  export SK_TEST_RELEASE_DIR="$RELEASE_DIR"
+  export GITHUB_ACTION_REF="v4"
+
+  run bash "$SCRIPT"
+
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx "version=v4.10.0" "$GITHUB_OUTPUT"
+  [[ "$output" == *"resolved floating tag v4 to v4.10.0"* ]] || { echo "$output"; false; }
+}
+
+@test "ein Minor-Float-Tag v4.9 loest innerhalb seines Minors auf" {
+  make_release_assets "v4.9.0" "amd64"
+  install_fake_curl
+  stub_releases_api
+  export SK_TEST_RELEASE_DIR="$RELEASE_DIR"
+  export GITHUB_ACTION_REF="v4.9"
+
+  run bash "$SCRIPT"
+
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx "version=v4.9.0" "$GITHUB_OUTPUT"
+}
+
+# Gegenprobe: eine KONKRETE Version wird nicht angefasst. Ohne diese
+# Zusicherung koennte die Aufloesung stillschweigend jede Version umbiegen.
+@test "eine konkrete Version wird nicht aufgeloest" {
+  make_release_assets "v4.3.0" "amd64"
+  install_fake_curl
+  stub_releases_api
+  export SK_TEST_RELEASE_DIR="$RELEASE_DIR"
+  export GITHUB_ACTION_REF="v4.3.0"
+
+  run bash "$SCRIPT"
+
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx "version=v4.3.0" "$GITHUB_OUTPUT"
+  [[ "$output" != *"resolved floating tag"* ]] || { echo "$output"; false; }
+}
+
+# Ein Float-Tag ohne passendes Release muss laut scheitern statt einen
+# Asset-Namen zu bauen, den es nicht gibt.
+@test "ein Float-Tag ohne passendes Release scheitert mit klarer Meldung" {
+  install_fake_curl
+  stub_releases_api
+  export SK_TEST_RELEASE_DIR="$RELEASE_DIR"
+  export GITHUB_ACTION_REF="v9"
+
+  run bash "$SCRIPT"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"floating tag with no matching release"* ]] || { echo "$output"; false; }
 }
