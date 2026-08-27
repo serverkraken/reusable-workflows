@@ -350,7 +350,7 @@ Expected: exit 0 — die Action nutzt keine fremden Actions, also keine SHA-Pins
 
 - [ ] **Step 3: Add the contracts.md section**
 
-`docs/contracts.md` bekommt eine Sektion `### actions/install-shellcheck` mit den drei Inputs `version`, `shfmt`, `shfmt_version` in der Form der Nachbarsektionen (`### actions/install-kube-linter` als Vorlage; Spaltenkopf `| Type | Name | Kind | Required | Default | Description |`).
+`docs/contracts.md` bekommt eine Sektion `### actions/install-shellcheck` mit den drei Inputs `version`, `shfmt`, `shfmt_version` in der Form der Nachbarsektionen (`### actions/install-kube-linter` als Vorlage; Spaltenkopf `| Kind | Name | Type | Required | Default | Description |`).
 
 - [ ] **Step 4: Run the contracts gate**
 
