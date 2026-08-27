@@ -128,10 +128,23 @@ jobs:
           fi
 
       # Das Atom kann das `on:` des Aufrufers nicht bestimmen — aber es kann
-      # sich weigern. Unter pull_request_target laeuft der Workflow aus dem
-      # BASIS-Branch mit vollen Secrets, waehrend der Checkout den fremden
-      # PR-Code holt: ein Plan-Lauf haette damit die Backend-Credentials.
-      - name: Refuse to run under pull_request_target
+      # sich weigern. Zwei Ereignisse sind hier unbrauchbar, aus zwei ganz
+      # verschiedenen Gruenden:
+      #
+      #   pull_request_target — der Workflow laeuft aus dem BASIS-Branch mit
+      #   vollen Secrets, waehrend der Checkout den fremden PR-Code holt: ein
+      #   Plan-Lauf haette damit die Backend-Credentials.
+      #
+      #   workflow_run — hier ist nicht das Secret das Problem, sondern die
+      #   Revision. `GITHUB_SHA` zeigt unter workflow_run auf den
+      #   DEFAULT-Branch, nicht auf den ausloesenden PR. Das Atom checkte
+      #   also main aus, plante main und haengte das Ergebnis an den PR: ein
+      #   gruener Plan der falschen Revision, was schlimmer ist als gar
+      #   keiner. Ein `ref`-Input, mit dem der Aufrufer das gerade ruecken
+      #   koennte, existiert bewusst nicht — er waere genau der Hebel, mit
+      #   dem sich unter workflow_run beliebiger Code mit den Credentials
+      #   ausfuehren liesse.
+      - name: Refuse to run under pull_request_target or workflow_run
         working-directory: ${{ github.workspace }}
         env:
           EVENT: ${{ github.event_name }}
@@ -140,6 +153,11 @@ jobs:
           if [[ "$EVENT" == "pull_request_target" ]]; then
             echo "::error::tofu-plan darf nicht unter pull_request_target laufen — fremder PR-Code haette Zugriff auf die Backend-Credentials" >&2
             echo "::error::den aufrufenden Workflow auf 'pull_request' umstellen" >&2
+            exit 1
+          fi
+          if [[ "$EVENT" == "workflow_run" ]]; then
+            echo "::error::tofu-plan darf nicht unter workflow_run laufen — GITHUB_SHA zeigt dort auf den Default-Branch, das Atom plante also main statt des PR" >&2
+            echo "::error::das Atom bietet fuer workflow_run keinen sicheren ref-Vertrag an; den aufrufenden Workflow auf 'pull_request' umstellen" >&2
             exit 1
           fi
 
@@ -160,8 +178,18 @@ jobs:
             echo "is_fork=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # persist-credentials: false — der Checkout schriebe sonst einen
+      # `http.https://github.com/.extraheader` mit dem GITHUB_TOKEN in die
+      # lokale Git-Config und liesse ihn dort fuer den REST des Jobs liegen.
+      # `tofu plan` fuehrt Adopter-Konfiguration aus (siehe VERTRAUENSGRENZE
+      # im Kopf), und alles, was dabei ein `git` im Workspace startet, saehe
+      # das Token. Kein Schritt danach braucht es: der Katalog-Checkout bringt
+      # sein eigenes `token:` mit, und tofu holt Module in eigene Temp-Klone,
+      # auf die die Repo-lokale Config ohnehin nicht wirkt.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: steps.fork.outputs.is_fork == 'false'
+        with:
+          persist-credentials: false
       - name: Mint catalog-scoped App token
         if: steps.fork.outputs.is_fork == 'false'
         id: catalog-token
@@ -192,6 +220,11 @@ jobs:
           ref: ${{ steps.catalog-ref.outputs.ref }}
           token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
+          # Der App-Token wird zum Klonen gebraucht, nicht danach. Ohne dies
+          # laege er eine Stunde lang lesbar in .catalog/.git/config — im
+          # selben Workspace, in dem gleich Adopter-Konfiguration ausgefuehrt
+          # wird.
+          persist-credentials: false
 
       - name: Install OpenTofu toolchain
         if: steps.fork.outputs.is_fork == 'false'
