@@ -3,14 +3,37 @@
 
   Rendered ONLY when the repo carries the `sk-prerelease-on-push` topic
   (onboard-render.sh decides; this template assumes it is being rendered).
-  Stack-aware, mirroring prerelease.yml's per-stack build jobs. The trigger
-  branch is baked (`develop`) — GitHub does not evaluate expressions in `on:`.
+  Stack-aware, mirroring prerelease.yml's per-stack build jobs.
+
+  Der Trigger-Branch MUSS beim Rendern feststehen: GitHub wertet in `on:` keine
+  Ausdruecke aus. Er stand deshalb fest auf `develop` — fuer jeden Adopter, der
+  seinen Dev-Branch anders nennt, war dieser Workflow damit tot, ohne dass
+  irgendetwas es gemeldet haette (Audit J-25). Jetzt aus dem Manifest:
+  `release.prerelease_branch`, Vorgabe weiterhin `develop`.
+
+  strings.Quote und nicht "{{ ... }}", aus demselben Grund wie bei
+  default_branch in release.yml.tmpl (Audit J-20): der Wert landet in einer
+  YAML-FLOW-SEQUENZ, und `x,y` waeren dort ZWEI Branches. Der Manifest-Parser
+  weist solche Werte zusaetzlich ab — Quoting repariert den Schaden, die
+  Pruefung benennt ihn.
 */ -}}
 {{- $pin := .pin -}}
+{{- /* index statt .profile.release: fehlt der Schluessel ganz — und das ist
+     der Normalfall, jedes Profil ohne release-Block —, dann ist `.profile.release`
+     ein Renderfehler, `index` dagegen still nil. Verschachtelt statt `and`,
+     weil ich mich auf dessen Kurzschluss nicht verlassen will: `index nil ...`
+     waere sonst ein Fehler. */ -}}
+{{- $prereleaseBranch := "develop" -}}
+{{- $rel := index .profile "release" -}}
+{{- if $rel -}}
+{{- if index $rel "prerelease_branch" -}}
+{{- $prereleaseBranch = index $rel "prerelease_branch" -}}
+{{- end -}}
+{{- end -}}
 name: prerelease-on-push
 on:
   push:
-    branches: [develop]
+    branches: [{{ $prereleaseBranch | strings.Quote }}]
 
 jobs:
 {{- /* Audit J-3/J-4: hier stand `$c := index .profile.components 0` — der
@@ -50,7 +73,7 @@ jobs:
 {{- /* One build+scan pair per Dockerfile, mirroring release.yml.tmpl. The
      multi-image path here used to be a single docker-build-multi call; that
      atom exposes no per-image outputs, so nothing could be scanned and every
-     image this workflow pushed on a `develop` push shipped unscanned. This is
+     image this workflow pushed on such a push shipped unscanned. This is
      the branch adopters push to most often. */ -}}
 {{- range $idx, $df := $c.dockerfiles }}
 {{- $imgSuffix := "" }}

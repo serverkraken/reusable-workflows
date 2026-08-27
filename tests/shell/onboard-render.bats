@@ -925,9 +925,56 @@ render_target_for_profile() {
   }')
   [ -f "$tgt/.github/workflows/prerelease-on-push.yml" ]
   grep -qF "on:" "$tgt/.github/workflows/prerelease-on-push.yml"
-  grep -qF "branches: [develop]" "$tgt/.github/workflows/prerelease-on-push.yml"
+  # Gequotet seit J-25/J-20: der Wert landet in einer YAML-Flow-Sequenz.
+  grep -qF 'branches: ["develop"]' "$tgt/.github/workflows/prerelease-on-push.yml"
   grep -qF "release-flutter-android.yml@v4" "$tgt/.github/workflows/prerelease-on-push.yml"
   jq -e '.files[".github/workflows/prerelease-on-push.yml"]' "$tgt/.github/onboard.lock.json"
+}
+
+@test "prerelease-on-push.yml honours release.prerelease_branch from the manifest" {
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "release": {"dispatch_trigger": false, "prerelease_branch": "next"},
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  grep -qF 'branches: ["next"]' "$tgt/.github/workflows/prerelease-on-push.yml"
+  # Und die alte Vorgabe darf NICHT mehr dastehen — sonst waere der Workflow
+  # doppelt getriggert oder der Wert schlicht ignoriert.
+  ! grep -qF 'develop' "$tgt/.github/workflows/prerelease-on-push.yml"
+}
+
+@test "prerelease-on-push.yml falls back to develop when the profile carries a release block without the field" {
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "release": {"dispatch_trigger": true},
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  grep -qF 'branches: ["develop"]' "$tgt/.github/workflows/prerelease-on-push.yml"
+}
+
+# Der Manifest-Parser weist so einen Wert ab; das Quoting ist die zweite
+# Verteidigungslinie fuer den Fall, dass ein Profil auf anderem Weg entsteht.
+@test "prerelease-on-push.yml quotes a branch name that would split the flow sequence" {
+  tgt=$(render_target_for_profile '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["flutter"], "primary_language": "flutter",
+      "release_please_type": "dart", "role": "mobile-app", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": true}}],
+    "release": {"dispatch_trigger": false, "prerelease_branch": "x,y"},
+    "legacy_ci": [], "topics": ["sk-prerelease-on-push"], "warnings": []
+  }')
+  grep -qF 'branches: ["x,y"]' "$tgt/.github/workflows/prerelease-on-push.yml"
+  # Ungequotet waeren das ZWEI Branches statt eines.
+  ! grep -qF 'branches: [x,y]' "$tgt/.github/workflows/prerelease-on-push.yml"
 }
 
 @test "prerelease-on-push.yml is NOT rendered when topic absent" {

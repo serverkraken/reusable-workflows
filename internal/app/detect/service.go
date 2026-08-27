@@ -224,7 +224,7 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 			profile.Workflows = &domain.WorkflowsSpec{E2E: &domain.E2ESpec{Script: man.Workflows.E2E.Script, Schedule: man.Workflows.E2E.Schedule}}
 		}
 		if man.Release != nil {
-			profile.Release = &domain.ReleaseSpec{DispatchTrigger: man.Release.DispatchTrigger, Badges: man.Release.Badges}
+			profile.Release = &domain.ReleaseSpec{DispatchTrigger: man.Release.DispatchTrigger, Badges: man.Release.Badges, PrereleaseBranch: man.Release.PrereleaseBranch}
 			if cp := man.Release.ChartPins; cp != nil {
 				profile.Release.ChartPins = &domain.ChartPinsSpec{Values: cp.Values, Key: cp.Key}
 			}
