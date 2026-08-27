@@ -219,11 +219,22 @@ jobs:
             done <<< "$PATHS"
             # Erste Zeile lesen, nicht die ganze Datei: bei Binaerdateien waere
             # ein grep ueber den vollen Inhalt teuer und irrefuehrend.
+            #
+            # Explizites if statt `grep ... && echo ... || true` (SC2015):
+            # das `|| true` faengt nicht nur den erwarteten Nicht-Treffer von
+            # grep ab, sondern wuerde auch einen fehlgeschlagenen `echo >>
+            # files.txt` (volle Platte, kein Schreibzugriff) verschlucken —
+            # genau die Klasse stiller Datei-Auslassung, die auf dieser
+            # Branch bereits zweimal gefixt wurde. Mit `if` bleibt `set -e`
+            # fuer den Append-Fehlschlag scharf; nur das erwartete
+            # Nicht-Treffen von grep ist folgenlos.
             while IFS= read -r f; do
               [[ -f "$f" ]] || continue
               [[ "$f" == *.sh ]] && continue
-              head -c 200 "$f" 2>/dev/null | head -1 \
-                | grep -Eq '^#!.*\b(ba|k|z|da)?sh\b' && echo "$f" >> files.txt || true
+              if head -c 200 "$f" 2>/dev/null | head -1 \
+                | grep -Eq '^#!.*\b(ba|k|z|da)?sh\b'; then
+                echo "$f" >> files.txt
+              fi
             done < <(tr '\0' '\n' < shebang.z)
           fi
           # LC_ALL=C: bytewise sortieren, aus demselben Grund, aus dem die
