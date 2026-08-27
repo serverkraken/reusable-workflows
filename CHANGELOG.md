@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.22.1](https://github.com/serverkraken/reusable-workflows/compare/v4.22.0...v4.22.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **ci:** zu enge Rechte am Aufrufer killten den ganzen Lauf ohne jede Meldung ([#397](https://github.com/serverkraken/reusable-workflows/issues/397)) ([c13eab0](https://github.com/serverkraken/reusable-workflows/commit/c13eab0b47c2a16744939fa4e34f83045a7de8e5))
+
 ## [4.22.0](https://github.com/serverkraken/reusable-workflows/compare/v4.21.10...v4.22.0) (2026-08-27)
 
 
