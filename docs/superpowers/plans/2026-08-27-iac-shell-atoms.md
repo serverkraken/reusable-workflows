@@ -1364,13 +1364,15 @@ resource "null_resource" "broken" {
     secrets: inherit
 ```
 
-- [ ] **Step 4: Add the failure-path job**
+- [ ] **Step 4: Add the failure-path pair — to `failure-paths-nightly.yml`, NOT to `self-ci.yml`**
 
-`tofu-validate` hat bewusst kein `fail_on_findings`-Ventil — ein ungültiger Stack MUSS rot werden. Der Failure-Path wird deshalb über `continue-on-error` am aufrufenden Job geprüft:
+`tofu-validate` hat bewusst kein `fail_on_findings`-Ventil: ein ungültiger Stack MUSS rot werden. Genau deshalb gehört dieser Job **nicht** in `self-ci.yml`. Dessen Kopf sagt es selbst — „exercises every code-inspection atom … via happy-path jobs only … Failure-path tests (designed-red + assert-* pairs) moved to failure-paths-nightly.yml (Phase 9.5)" —, `self-ci.yml` läuft `on: pull_request` und kennt kein einziges `continue-on-error`. Ein absichtlich rot werdender Job dort färbt **jeden PR des Katalogs** dauerhaft rot, unabhängig davon, was im `summary`-Graphen steht.
+
+Das Paar kommt deshalb nach `.github/workflows/failure-paths-nightly.yml`, benannt nach der dortigen Konvention `test-tofu-validate-fail` / `assert-tofu-validate-fail`, strukturell nach dem Vorbild von `test-kube-lint-fail` / `assert-kube-lint-fail`, und wird in den dortigen Aggregator `report-regressions` eingehängt. `tofu-validate-happy` bleibt in `self-ci.yml`.
 
 ```yaml
-  # ----- tofu-validate: ungueltiger Stack MUSS fehlschlagen -----
-  tofu-validate-invalid:
+  # in failure-paths-nightly.yml
+  test-tofu-validate-fail:
     uses: ./.github/workflows/tofu-validate.yml
     permissions:
       contents: read
@@ -1381,14 +1383,14 @@ resource "null_resource" "broken" {
       runs_on: '["ubuntu-latest"]'
     secrets: inherit
 
-  assert-tofu-validate-invalid:
-    needs: [tofu-validate-invalid]
+  assert-tofu-validate-fail:
+    needs: [test-tofu-validate-fail]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Das Atom muss den kaputten Stack ablehnen
         env:
-          RESULT: ${{ needs.tofu-validate-invalid.result }}
+          RESULT: ${{ needs.test-tofu-validate-fail.result }}
         run: |
           set -euo pipefail
           if [[ "$RESULT" != "failure" ]]; then
@@ -1399,9 +1401,11 @@ resource "null_resource" "broken" {
           echo "tofu-validate hat den kaputten Stack korrekt abgelehnt"
 ```
 
-- [ ] **Step 5: Wire into the summary aggregator**
+- [ ] **Step 5: Wire both aggregators**
 
-`tofu-validate-happy` und `assert-tofu-validate-invalid` in die `needs:`-Liste des `summary`-Jobs. `tofu-validate-invalid` hängt über die Assertion im Graphen.
+`tofu-validate-happy` in die `needs:`-Liste des `summary`-Jobs in `self-ci.yml`. `assert-tofu-validate-fail` in die `needs:`-Liste von `report-regressions` in `failure-paths-nightly.yml`; `test-tofu-validate-fail` hängt dort über die Assertion im Graphen.
+
+**Gleiche Lücke bei `lint-shell` mitschließen.** `lint-shell-findings` läuft mit `fail_on_findings: false`, ist also grün und beweist nie, dass das Gate auslöst. Die Spec verlangt je Atom einen Happy- *und* einen Failure-Path-Caller. Deshalb in derselben Datei zusätzlich `test-lint-shell-fail` (mit `fail_on_findings: true`, `sarif: false`, `scan_shebangs: true` gegen `tests/fixtures/shell-findings/scripts/*.sh`) und `assert-lint-shell-fail` anlegen und ebenfalls in `report-regressions` einhängen.
 
 - [ ] **Step 6: Verify**
 
