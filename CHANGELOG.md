@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.21.6](https://github.com/serverkraken/reusable-workflows/compare/v4.21.5...v4.21.6) (2026-08-27)
+
+
+### Bug Fixes
+
+* **atome:** Monorepo-Stille, unerreichbarer Daemon als "sauber", SARIF nie hochgeladen ([#383](https://github.com/serverkraken/reusable-workflows/issues/383)) ([f7faf9c](https://github.com/serverkraken/reusable-workflows/commit/f7faf9cc1d2bb792265265691dbd93575462e910))
+
 ## [4.21.5](https://github.com/serverkraken/reusable-workflows/compare/v4.21.4...v4.21.5) (2026-08-27)
 
 
