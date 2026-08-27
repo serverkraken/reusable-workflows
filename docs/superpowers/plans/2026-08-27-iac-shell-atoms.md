@@ -2090,10 +2090,15 @@ Ans Ende der `plan`-Job-Steps in `.github/workflows/tofu-plan.yml`:
             fi
           } >> "$GITHUB_STEP_SUMMARY" || true
 
+      # `always()` an allen drei Kommentar-Schritten: ohne das werden sie bei
+      # einem gescheiterten Plan uebersprungen, und der ALTE Sticky-Kommentar
+      # bleibt mit "✓ keine Aenderungen" stehen, waehrend der Lauf rot ist.
+      # Der Kommentar IST das Review-Artefakt dieses Atoms — ein veralteter
+      # Erfolg beantwortet die Frage "ersetzt dieser Merge meine Nodes?" falsch.
       - name: Find existing plan comment
         id: find-comment
         if: >-
-          steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          always() && steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
           && github.event_name == 'pull_request'
         uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
         with:
@@ -2104,7 +2109,7 @@ Ans Ende der `plan`-Job-Steps in `.github/workflows/tofu-plan.yml`:
       - name: Compose comment body
         id: comment-body
         if: >-
-          steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          always() && steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
           && github.event_name == 'pull_request'
         env:
           DIR: ${{ inputs.working_directory }}
@@ -2148,9 +2153,9 @@ Ans Ende der `plan`-Job-Steps in `.github/workflows/tofu-plan.yml`:
 
       - name: Post or update plan comment
         if: >-
-          steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          always() && steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
           && github.event_name == 'pull_request'
-        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v5
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
