@@ -931,6 +931,60 @@ render_target_for_profile() {
   jq -e '.files[".github/workflows/prerelease-on-push.yml"]' "$tgt/.github/onboard.lock.json"
 }
 
+# === e2e.yml: Quoting als zweite Linie (Audit J-15/J-16) ===
+#
+# Der Manifest-Parser weist solche Werte ab — `script` gegen RelPathPattern,
+# `schedule` gegen validateCron; beides ist in internal/manifest getestet. Er
+# ist zugleich der EINZIGE Erzeuger von workflows.e2e, ein feindlicher Wert
+# kann das Template auf keinem unterstuetzten Weg erreichen.
+#
+# Genau deshalb wird hier ueber `render -profile-json-path` ein synthetisches
+# Profil eingespeist: sonst waere die zweite Verteidigungslinie unpruefbar, und
+# eine spaetere Lockerung der Zeichenklasse fiele erst im Adopter-Repo auf.
+# Handquoting (`script: "{{ ... }}"`) zerbricht an genau dem Zeichen, das es
+# selbst benutzt.
+render_go_profile() {
+  local profile="$1"
+  command -v go       >/dev/null 2>&1 || return 2
+  command -v gomplate >/dev/null 2>&1 || return 2
+  local bin; bin="$(go_bin)" || return 1
+  local target="$BATS_TEST_TMPDIR/render-go-$$"
+  rm -rf "$target"; mkdir -p "$target"
+  printf '%s' "$profile" > "$target/_profile.json"
+  "$bin" render -catalog-path "$REPO_ROOT" -target-path "$target" \
+    -profile-json-path "$target/_profile.json" -pin-version v4 >&2 || return 1
+  echo "$target"
+}
+
+e2e_profile_with() {
+  printf '{
+    "schema_version": 1, "target_repo": "serverkraken/app",
+    "default_branch": "main", "current_version": "0.1.0", "monorepo": false,
+    "components": [{"path": ".", "languages": ["go"], "primary_language": "go",
+      "release_please_type": "go", "role": "service", "dockerfiles": [],
+      "release_signals": {"goreleaser_config": null, "chart_yaml": null, "flutter_android": null}}],
+    "workflows": {"e2e": %s},
+    "legacy_ci": [], "topics": [], "warnings": []
+  }' "$1"
+}
+
+@test "e2e.yml quotes a script value that would break out of the scalar" {
+  tgt=$(render_go_profile "$(e2e_profile_with '{"script": "t/e.sh\" && curl evil"}')") \
+    || skip "go/gomplate nicht verfuegbar"
+  # yq parst nur, wenn das YAML heil ist — bei Handquoting waere es das nicht.
+  run yq -e -r '.jobs.e2e.with.script' "$tgt/.github/workflows/e2e.yml"
+  [ "$status" -eq 0 ]
+  [[ "$output" == 't/e.sh" && curl evil' ]]
+}
+
+@test "e2e.yml quotes a schedule value that would break out of the scalar" {
+  tgt=$(render_go_profile "$(e2e_profile_with '{"script": "t/e.sh", "schedule": "0 3 * * *'"'"' # x"}')") \
+    || skip "go/gomplate nicht verfuegbar"
+  run yq -e -r '.on.schedule[0].cron' "$tgt/.github/workflows/e2e.yml"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "0 3 * * *' # x" ]]
+}
+
 @test "prerelease-on-push.yml honours release.prerelease_branch from the manifest" {
   tgt=$(render_target_for_profile '{
     "schema_version": 1, "target_repo": "serverkraken/app",

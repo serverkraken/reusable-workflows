@@ -1054,3 +1054,83 @@ func TestParseManifestPrereleaseBranchRejectsHostileValues(t *testing.T) {
 		})
 	}
 }
+
+// J-15 meldete, der Skript-Validator lasse YAML-Sondertoken durch. Gemessen
+// tut er das NICHT: `script` laeuft durch cleanRelPath und damit gegen
+// RelPathPattern, und zwar gegen den ROHEN Wert — filepath.Clean darf die
+// Pruefung nicht entschaerfen.
+//
+// Der Fund ist damit durch die RelPath-Haertung (J-22) mitgeschlossen. Was
+// fehlte, war der Nachweis: ohne diesen Test behauptet der Fund weiter etwas,
+// das niemand widerlegen kann, und eine spaetere Lockerung der Zeichenklasse
+// faellt niemandem auf.
+func TestParseManifestE2EScriptRejectsYAMLTokens(t *testing.T) {
+	for name, script := range map[string]string{
+		"anfuehrungszeichen bricht aus dem Skalar aus": `test/e2e.sh" && curl evil`,
+		"doppelpunkt startet ein Mapping":              "test:e2e.sh",
+		"raute startet einen Kommentar":                "test/e2e.sh # x",
+		"actions-expression":                           "test/${{ secrets.GITHUB_TOKEN }}.sh",
+		"flow-klammern":                                "test/{a}.sh",
+		"zeilenumbruch haengt einen Schluessel an":     "test/e2e.sh\nx: y",
+		"absoluter pfad":                               "/etc/passwd",
+		"ausbruch nach oben":                           "../../etc/passwd",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse([]byte("schema: 1\nworkflows:\n  e2e:\n    script: '" + script + "'\n"))
+			if err == nil {
+				t.Fatalf("angenommen, haette abgewiesen werden muessen: %q", script)
+			}
+		})
+	}
+}
+
+// Gegenprobe: die Zeichenklasse darf legitime Skriptpfade nicht abweisen.
+func TestParseManifestE2EScriptAcceptsRealPaths(t *testing.T) {
+	for _, script := range []string{
+		"test/e2e/run.sh",
+		"scripts/e2e.sh",
+		"e2e.sh",
+		"test/e2e/run-suite_2.sh",
+	} {
+		t.Run(script, func(t *testing.T) {
+			m, err := Parse([]byte("schema: 1\nworkflows:\n  e2e:\n    script: '" + script + "'\n"))
+			if err != nil {
+				t.Fatalf("legitimer Pfad abgewiesen: %v", err)
+			}
+			if m.Workflows.E2E.Script != script {
+				t.Fatalf("got %q, want %q", m.Workflows.E2E.Script, script)
+			}
+		})
+	}
+}
+
+// J-16 meldete, der Cron sei gequotet aber nicht semantisch validiert. Das war
+// A-6 und ist behoben; dieser Test haelt es fuer den e2e-PFAD fest, ueber den
+// der Fund berichtet wurde — validateCron hat eigene Tests, aber keiner ging
+// bisher durch Parse() und damit durch die Verdrahtung.
+func TestParseManifestE2EScheduleIsSemanticallyValidated(t *testing.T) {
+	for name, expr := range map[string]string{
+		"minute 61":    "61 25 32 13 8",
+		"stunde 25":    "0 25 * * *",
+		"tag 32":       "0 3 32 * *",
+		"monat 13":     "0 3 * 13 *",
+		"wochentag 8":  "0 3 * * 8",
+		"schritt null": "*/0 3 * * *",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse([]byte("schema: 1\nworkflows:\n  e2e:\n    script: t/e.sh\n    schedule: '" + expr + "'\n"))
+			if err == nil {
+				t.Fatalf("angenommen, haette abgewiesen werden muessen: %q", expr)
+			}
+		})
+	}
+	// Und 0 wie 7 sind beide Sonntag — waere das zu eng, wuerde der Fix
+	// legitime Ausdruecke abweisen.
+	for _, expr := range []string{"0 3 * * 0", "0 3 * * 7", "0 3 * * SUN", "*/15 * * * *"} {
+		t.Run(expr, func(t *testing.T) {
+			if _, err := Parse([]byte("schema: 1\nworkflows:\n  e2e:\n    script: t/e.sh\n    schedule: '" + expr + "'\n")); err != nil {
+				t.Fatalf("legitimer Ausdruck abgewiesen: %v", err)
+			}
+		})
+	}
+}

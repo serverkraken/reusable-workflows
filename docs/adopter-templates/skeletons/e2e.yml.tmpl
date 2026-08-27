@@ -8,9 +8,15 @@
 {{- $e2e := .profile.workflows.e2e -}}
 name: e2e
 on:
+{{- /* strings.Quote statt '...' bzw. "...": beide Werte kommen aus dem
+     Adopter-Manifest. Der Parser weist hostile Werte ab (script gegen
+     RelPathPattern, schedule gegen validateCron), aber Handquoting bricht bei
+     genau dem Zeichen, das es selbst benutzt — und diese Datei haette den
+     Schaden dann still im gerenderten YAML. Zweite Linie, kostenlos, und
+     dieselbe Schreibweise wie in release.yml.tmpl seit J-20 (Audit J-15/J-16). */ -}}
 {{- if index $e2e "schedule" }}
   schedule:
-    - cron: '{{ index $e2e "schedule" }}'
+    - cron: {{ index $e2e "schedule" | strings.Quote }}
 {{- end }}
   workflow_dispatch: {}
   push:
@@ -37,6 +43,6 @@ jobs:
       contents: read
       packages: read
     with:
-      script: "{{ $e2e.script }}"
+      script: {{ $e2e.script | strings.Quote }}
       helm_version: {{`${{ vars.SK_HELM_VERSION || 'v3.16.3' }}`}}
     secrets: inherit
