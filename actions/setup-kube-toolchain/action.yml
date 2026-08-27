@@ -91,4 +91,29 @@ runs:
         curl -fsSL "https://github.com/viaduct-ai/kustomize-sops/releases/download/v${KSOPS_VERSION}/ksops_${KSOPS_VERSION}_Linux_${KA}.tar.gz" -o "$TMP/ksops.tar.gz"
         tar -xzf "$TMP/ksops.tar.gz" -C "$TMP" ksops
         sudo install -m 0755 "$TMP/ksops" /usr/local/bin/ksops
-        ksops --version || true
+        # `ksops --version || true` warf das Ergebnis weg (Audit F-9). Die
+        # Asymmetrie steht im selben Block: `sops --version` zwei Zeilen
+        # darueber hat kein `|| true` und wird damit tatsaechlich geprueft.
+        #
+        # Ist ksops kaputt — falsche Architektur, abgeschnittenes Asset —,
+        # ging der Setup-Schritt gruen durch, und der Fehler tauchte viel
+        # spaeter als unverstaendlicher kustomize-Fehler auf. Der Kommentar
+        # oben sagt selbst, worauf es ankommt: "MUST be on PATH for
+        # --enable-exec".
+        #
+        # Geprueft wird genau diese Zusicherung, und NICHT der Rueckgabewert
+        # von `--version`: ksops ist ein kustomize-exec-Plugin, und ob es
+        # dieses Flag in jeder Version unterstuetzt, ist hier nicht
+        # nachmessbar. Ein Waechter, der auf einer ungeprueften Annahme ueber
+        # eine fremde CLI beruht, waere schlimmer als der Fund.
+        if ! command -v ksops >/dev/null 2>&1; then
+          echo "::error::ksops is not on PATH after install — kustomize --enable-exec will fail later with a confusing error" >&2
+          exit 1
+        fi
+        if [[ ! -x "$(command -v ksops)" ]]; then
+          echo "::error::ksops at $(command -v ksops) is not executable" >&2
+          exit 1
+        fi
+        # Rein informativ: die Version ist schoen zu sehen, ihr Fehlen ist aber
+        # kein Beleg dafuer, dass das Plugin nicht funktioniert.
+        ksops --version || echo "::notice::ksops --version returned non-zero; the binary is installed and executable"

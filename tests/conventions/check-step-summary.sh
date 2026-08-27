@@ -53,7 +53,22 @@ for file in .github/workflows/*.yml .github/workflows/*.yaml; do
   CHECKED=$((CHECKED + 1))
 
   # Check 1: GITHUB_STEP_SUMMARY write present.
-  if ! grep -q 'GITHUB_STEP_SUMMARY' "$file"; then
+  #
+  # Gesucht wird ein SCHREIBVORGANG, nicht die blosse Erwaehnung des Namens
+  # (Audit L-14). Vorher stand hier `grep -q 'GITHUB_STEP_SUMMARY'` ueber die
+  # ganze Datei — ein Kommentar, der die Variable erwaehnt, erfuellte das Gate
+  # also genauso wie ein echtes `>> "$GITHUB_STEP_SUMMARY"`.
+  #
+  # Reichweite ehrlich: gemessen traegt das heute NICHT. Jedes Atom, das den
+  # Namen erwaehnt, schreibt auch tatsaechlich. Der Fund ist latent — aber
+  # genau diese Art Gate hat in diesem Audit schon zweimal danebengegriffen
+  # (J-20: Gate 13 sah `branches: [{{ ... }}]` nicht; L-10: der gh-Stub nahm
+  # den jq-Ausdruck vorweg), und ein Gate, das die eigene Zusicherung nicht
+  # prueft, ist keine.
+  #
+  # `>>` und nicht `>`: die Konvention haengt an, sie ueberschreibt nicht —
+  # ein `>` wuerde die Beitraege frueherer Schritte verwerfen.
+  if ! grep -qE '>>[[:space:]]*"?\$\{?GITHUB_STEP_SUMMARY' "$file"; then
     echo "FAIL: $basename writes no \$GITHUB_STEP_SUMMARY."
     echo "      Required by $CONVENTION_DOC."
     FAILED=1
