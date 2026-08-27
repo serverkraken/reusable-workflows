@@ -38,9 +38,16 @@ fi
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
+# `tr -d '\0'` beim Befuellen, nicht erst beim Zaehlen: `grep` behandelt eine
+# Eingabe mit NUL-Byte als BINAER, meldet nur "binary file matches", gibt KEINE
+# Treffer aus und beendet mit 0. `longest` waere damit 0, der Zaun fiele auf
+# drei Backticks zurueck — und ein Plantext mit NUL UND einer Backtick-Folge
+# braeche wieder aus dem Block aus, also genau das, was die Zaunberechnung
+# verhindern soll. Ein NUL ist in einem Markdown-Kommentar ohnehin nicht
+# darstellbar; er wird entfernt, statt die Zaehlung zu verfaelschen.
 SIZE=$(wc -c < "$FILE" | tr -d ' ')
 if [[ "$SIZE" -le "$LIMIT" ]]; then
-  cat "$FILE" > "$TMP"
+  tr -d '\0' < "$FILE" > "$TMP"
 else
   HALF=$(( LIMIT / 2 ))
   {
@@ -48,7 +55,7 @@ else
     printf '\n\n... [gekuerzt: %s von %s Zeichen entfernt — Volltext in der Step-Summary] ...\n\n' \
       "$(( SIZE - LIMIT ))" "$SIZE"
     tail -c "$HALF" "$FILE"
-  } > "$TMP"
+  } | tr -d '\0' > "$TMP"
 fi
 
 # Laengste Backtick-Folge im (bereits gekuerzten) Inhalt. `|| true`: grep

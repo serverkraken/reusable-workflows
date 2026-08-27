@@ -82,6 +82,22 @@ setup() {
   [ "$(printf '%s\n' "$output" | tail -1)" = '``````' ]
 }
 
+# Ein NUL-Byte machte die Zaunberechnung blind: `grep` behandelt solche
+# Eingaben als binaer, meldet nur "binary file matches" und gibt keine Treffer
+# aus. `longest` war damit 0, der Zaun fiel auf drei Backticks zurueck — und
+# ein Plantext mit NUL UND einer Backtick-Folge brach wieder aus dem Block aus.
+@test "NUL-Byte macht die Zaunberechnung nicht blind" {
+  printf 'vorher\000NUL\n```\n</details>\n[phish](https://example.invalid)\n' > plan.txt
+  run bash "$SCRIPT" plan.txt 10000
+  [ "$status" -eq 0 ]
+  # Trotz NUL muss die ```-Folge im Inhalt gesehen worden sein.
+  [ "$(printf '%s\n' "$output" | head -1)" = '````' ]
+  [ "$(printf '%s\n' "$output" | tail -1)" = '````' ]
+  # Das NUL selbst ist entfernt; der Rest der Zeile bleibt erhalten.
+  [[ "$output" == *"vorherNUL"* ]]
+  [[ "$output" == *"</details>"* ]]
+}
+
 # Nach `tail -c` endet der gekuerzte Inhalt nicht zwingend mit einem
 # Zeilenumbruch. Ohne den stuende der schliessende Zaun am Ende der letzten
 # Inhaltszeile und waere keiner mehr.

@@ -282,6 +282,24 @@ jobs:
           PARSER: ${{ github.workspace }}/.catalog/scripts/tf-vars-env.sh
         run: |
           set -euo pipefail
+          # ZUERST loeschen, BEDINGUNGSLOS — vor jeder Pruefung auf TF_VARS.
+          #
+          # Sonst haengt die Frische der Datei daran, dass der Aufraeumschritt
+          # am Jobende gelaufen IST. Der laeuft unter `always()`, aber `always()`
+          # deckt keinen gekillten Runner-Prozess, keinen abgestuerzten Agenten
+          # und keinen Reboot mitten im Job. Auf dem self-hosted Pool (der
+          # Standard-Runner) ueberlebt $RUNNER_TEMP den Job — die Datei des
+          # VORIGEN Laufs laege dann noch da, und der Plan-Schritt sourct sie
+          # allein danach, ob sie existiert. Ein Lauf fuer ein ANDERES Repo,
+          # das gar kein tf_vars uebergibt, exportierte damit die Klartext-
+          # Secrets des Vorgaengers in `tofu plan` — also in
+          # Adopter-Konfiguration, die laut VERTRAUENSGRENZE im Kopf ihre
+          # gesamte Umgebung lesen kann.
+          #
+          # Die Frische ist deshalb eine Eigenschaft des SCHREIBENS, nicht des
+          # geglueckten Aufraeumens: existiert nach diesem Schritt eine Datei,
+          # hat dieser Job sie geschrieben.
+          rm -f "$RUNNER_TEMP/tf-vars.env"
           if [[ -n "${TF_VARS:-}" ]]; then
             printf '%s\n' "$TF_VARS" | bash "$PARSER" "$RUNNER_TEMP/tf-vars.env"
           fi
