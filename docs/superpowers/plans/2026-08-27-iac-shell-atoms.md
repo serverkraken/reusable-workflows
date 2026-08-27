@@ -2548,6 +2548,15 @@ Expected: alle PASS — insbesondere die bestehenden Detektor-Tests, die belegen
 Run: `bash tests/conventions/check-rendered-goldens.sh`
 Expected: exit 0 — bestehende Goldens byte-identisch. Schlägt es fehl, ist `omitempty` an einem der beiden Profilfelder vergessen worden.
 
+- [ ] **Step 7b: Beide Engines gleichziehen — sonst entscheidet ein Schalter still über das Ergebnis**
+
+Der Katalog trägt **zwei** Detektor-Implementierungen: die Go-CLI und `scripts/onboard-detect.sh`. `onboard.yml` wählt zur Laufzeit über `use_go_cli` zwischen ihnen. Lernt nur eine die neuen Signale, bekäme ein Adopter die Jobs je nach Schalter — und im Diff sieht man davon nichts.
+
+Also dieselben zwei Signale auch in `scripts/onboard-detect.sh` implementieren, mit identischer JSON-Ausgabe (sortiert, dedupliziert, Schlüssel bei Leermenge ganz weggelassen).
+
+Run: `bash tests/conventions/check-engine-parity.sh`
+Expected: exit 0. Das Gate vergleicht beide Engines auf jeder Fixture; sein Kopf nennt vier reale Abweichungen, die früher einzeln von Hand gefunden wurden. **Keine Ausnahme eintragen** — das Gate sagt selbst, eine stumme Ausschlussliste würde genau diese Fälle verstecken.
+
 - [ ] **Step 8: Commit**
 
 ```bash
@@ -2621,10 +2630,15 @@ Expected: exit 0. Schlägt es fehl, muss der betroffene Wert in Anführungszeich
 
 - [ ] **Step 3: Render the new fixture and record its golden**
 
+Achtung: `check-rendered-goldens.sh` **rendert nicht** — es validiert nur bereits committete Goldens. Regeneriert wird über die bats-Suite:
+
 ```bash
-bash tests/conventions/check-rendered-goldens.sh
+UPDATE_GOLDEN=1 bats tests/shell/onboard-render.bats
 ```
-Expected: FAIL beim ersten Lauf — für `iac-shell-repo` existiert noch kein Golden. Das Golden nach dem im Skript beschriebenen Verfahren erzeugen, dann den Inhalt **von Hand lesen**: er muss genau die beiden neuen Jobs plus die Go-Jobs enthalten.
+
+Für Fixtures mit den neuen Signalen ist dabei der Go-Engine-Helfer `golden_check_preview` zu verwenden, nicht `golden_check` (Bash) — solange die Bash-Engine die Signale nicht kennt, prüfte letzterer nichts.
+
+Danach den erzeugten Golden **von Hand lesen**: er muss genau die beiden neuen Jobs plus die Go-Jobs enthalten. Auch bestehende Fixtures mit `.sh`-Dateien (etwa `go-root-multi-image`) gewinnen legitim einen `shellcheck`-Job — jeder Golden-Diff, der etwas anderes zeigt, ist ein Stoppsignal.
 
 - [ ] **Step 4: Verify byte-stability for existing adopters**
 
