@@ -449,6 +449,21 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 
 ---
 
+### `tofu-validate.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `working_directories` | string | no | `tofu` | Newline-separated OpenTofu stack directories. |
+| input | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input | `tflint` | boolean | no | `true` | Also run tflint in each directory. |
+| input | `lockfile_readonly` | boolean | no | `true` | Pass -lockfile=readonly to `tofu init`, so a PR that would silently change .terraform.lock.hcl fails instead of drifting the provider pins unnoticed. |
+| input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `checked_directories` | — | — | — | Number of directories validated. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+
+---
+
 ### `trivy-fs.yml`
 
 | Kind    | Name              | Type    | Required | Default                      | Description |

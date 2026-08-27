@@ -1,0 +1,212 @@
+# .github/workflows/tofu-validate.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  working_directories, tofu_version, tflint, lockfile_readonly, runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key
+#   outputs: checked_directories
+#
+# Dieses Atom ist bewusst CREDENTIAL-FREI: `tofu init -backend=false`
+# ueberspringt die Backend-Initialisierung, laedt aber Module und Provider.
+# Damit laeuft es auf Fork-PRs und in Repos, deren Cloud-Token es noch gar
+# nicht gibt. Der Plan-Teil steht getrennt in tofu-plan.yml.
+name: tofu-validate
+on:
+  workflow_call:
+    inputs:
+      working_directories:
+        description: 'Newline-separated OpenTofu stack directories.'
+        required: false
+        type: string
+        default: 'tofu'
+      tofu_version:
+        description: 'Override OpenTofu version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      tflint:
+        description: 'Also run tflint in each directory.'
+        required: false
+        type: boolean
+        default: true
+      lockfile_readonly:
+        description: >-
+          Pass -lockfile=readonly to `tofu init`, so a PR that would silently
+          change .terraform.lock.hcl fails instead of drifting the provider
+          pins unnoticed.
+        required: false
+        type: boolean
+        default: true
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      checked_directories:
+        description: 'Number of directories validated.'
+        value: ${{ jobs.validate.outputs.checked_directories }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tofu-validate-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directories }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 20
+    outputs:
+      checked_directories: ${{ steps.run.outputs.checked_directories }}
+    steps:
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+
+      - name: Install OpenTofu toolchain
+        uses: ./.catalog/actions/setup-tofu-toolchain
+        with:
+          tofu_version: ${{ inputs.tofu_version }}
+          tflint: ${{ inputs.tflint }}
+
+      - name: Validate each stack
+        id: run
+        env:
+          DIRS: ${{ inputs.working_directories }}
+          TFLINT: ${{ inputs.tflint }}
+          LOCKFILE_READONLY: ${{ inputs.lockfile_readonly }}
+        # Eine Schleife statt einer Matrix: je Stack sind das Sekunden, und
+        # eine Matrix erzeugte N Summary-Bloecke und N Runner-Slots dafuer.
+        # Der Wechsel auf Matrix bliebe additiv, falls je ein Monorepo mit
+        # vielen Stacks auftaucht.
+        #
+        # Es wird NICHT beim ersten Fehler abgebrochen: ein Lauf, der alle
+        # Stacks zeigt, spart die zweite Runde.
+        run: |
+          set -uo pipefail
+          : > tofu-results.tsv
+          COUNT=0
+          FAILED=0
+          LOCK_ARG=""
+          [[ "$LOCKFILE_READONLY" == "true" ]] && LOCK_ARG="-lockfile=readonly"
+          while IFS= read -r dir; do
+            [[ -z "$dir" ]] && continue
+            if [[ ! -d "$dir" ]]; then
+              echo "::error::working directory does not exist: $dir" >&2
+              printf '%s\tmissing\t-\t-\t-\n' "$dir" >> tofu-results.tsv
+              FAILED=1
+              continue
+            fi
+            COUNT=$((COUNT + 1))
+            echo "::group::$dir"
+
+            fmt_st="✓"; tofu fmt -check -recursive -diff "$dir" || { fmt_st="✗"; FAILED=1; }
+
+            init_st="✓"
+            # shellcheck disable=SC2086
+            tofu -chdir="$dir" init -backend=false -input=false $LOCK_ARG \
+              || { init_st="✗"; FAILED=1; }
+
+            val_st="-"
+            if [[ "$init_st" == "✓" ]]; then
+              val_st="✓"; tofu -chdir="$dir" validate || { val_st="✗"; FAILED=1; }
+            fi
+
+            lint_st="-"
+            if [[ "$TFLINT" == "true" && "$init_st" == "✓" ]]; then
+              lint_st="✓"
+              (cd "$dir" && tflint --no-color) || { lint_st="✗"; FAILED=1; }
+            fi
+
+            printf '%s\t%s\t%s\t%s\t%s\n' "$dir" "$fmt_st" "$init_st" "$val_st" "$lint_st" >> tofu-results.tsv
+            echo "::endgroup::"
+          done <<< "$DIRS"
+
+          echo "checked_directories=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
+          if [[ "$COUNT" == "0" ]]; then
+            echo "::error::no working directory was checked — is working_directories set correctly?" >&2
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          TFLINT: ${{ inputs.tflint }}
+          FAILED: ${{ steps.run.outputs.failed }}
+          COUNT: ${{ steps.run.outputs.checked_directories }}
+        run: |
+          tofu_version=$(tofu version 2>/dev/null | head -1 | awk '{print $2}' || echo unknown)
+          if [[ "${FAILED:-1}" == "0" ]]; then
+            result="✓ passed"
+          else
+            result="✗ failed"
+          fi
+          {
+            echo "## tofu-validate"
+            echo ""
+            echo "**Tool:** OpenTofu ${tofu_version}"
+            echo "**Stacks:** ${COUNT:-0}"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Stack | fmt | init | validate | tflint |"
+            echo "|---|---|---|---|---|"
+            if [[ -f tofu-results.tsv ]]; then
+              while IFS=$'\t' read -r d f i v l; do
+                echo "| \`${d}\` | ${f} | ${i} | ${v} | ${l} |"
+              done < tofu-results.tsv
+            fi
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Fail on validation errors
+        if: steps.run.outputs.failed != '0'
+        run: |
+          echo "::error::tofu-validate found problems (details in the step summary)"
+          exit 1
