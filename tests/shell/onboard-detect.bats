@@ -1765,3 +1765,26 @@ _nested_repo() {  # <tiefe: 3|4>
   echo "$output" | jq -e 'has("iac") | not'
   echo "$output" | jq -e 'has("shell") | not'
 }
+
+# Go sortiert bytewise (sort.Strings): "Infra" kommt vor "bootstrap". Ein
+# lokalisiertes `sort -u` ohne LC_ALL=C stuft Grossbuchstaben anders ein und
+# haette hier eine andere Reihenfolge geliefert als die Go-Engine — ein
+# Paritaetsbruch, den check-engine-parity.sh nicht sieht, weil keine der 29
+# Fixtures ein gemischt gross-/kleingeschriebenes oberstes Pfadsegment hat.
+# Verifiziert auf dieser Maschine unter LC_ALL=en_US.UTF-8 (siehe Report):
+#   LC_ALL=en_US.UTF-8 sort  -> bootstrap, Infra
+#   LC_ALL=C           sort  -> Infra, bootstrap  (== Go)
+@test "profile-json: iac.directories and shell.paths sort bytewise, not locale-aware" {
+  local repo="$BATS_TEST_TMPDIR/locale-sort"
+  mkdir -p "$repo/Infra" "$repo/bootstrap"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'resource "null_resource" "a" {}\n' > "$repo/Infra/main.tf"
+  printf 'resource "null_resource" "b" {}\n' > "$repo/bootstrap/main.tf"
+  printf '#!/usr/bin/env bash\necho a\n' > "$repo/Infra/a.sh"
+  printf '#!/usr/bin/env bash\necho b\n' > "$repo/bootstrap/b.sh"
+
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["Infra","bootstrap"]'
+  echo "$output" | jq -e '.shell.paths == ["Infra/**/*.sh","bootstrap/**/*.sh"]'
+}

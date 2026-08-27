@@ -393,7 +393,13 @@ _signal_dirs_with_suffix() {
   if (( ${#dirs[@]} == 0 )); then
     echo '[]'
   else
-    printf '%s\n' "${dirs[@]}" | sort -u | jq -R . | jq -cs .
+    # LC_ALL=C: Go sortiert bytewise (sort.Strings). Eine lokalisierte
+    # Sortierung stuft Grossbuchstaben anders ein ("Infra" vor "bootstrap"
+    # unter C, dahinter unter z.B. en_US.UTF-8) und wuerde bei gemischten
+    # Gross-/Kleinschreibungen im obersten Pfadsegment eine andere
+    # Reihenfolge liefern als die Go-Engine — ein Paritaetsbruch, den
+    # check-engine-parity.sh nicht sieht, solange keine Fixture das ausprobt.
+    printf '%s\n' "${dirs[@]}" | LC_ALL=C sort -u | jq -R . | jq -cs .
   fi
 }
 
@@ -430,7 +436,7 @@ classify_shell_signal() {
   while IFS= read -r t; do
     [[ -n "$t" ]] || continue
     tops+=("$t")
-  done < <(jq -r '.[] | if . == "." then "." else (split("/")[0]) end' <<<"$dirs" | sort -u)
+  done < <(jq -r '.[] | if . == "." then "." else (split("/")[0]) end' <<<"$dirs" | LC_ALL=C sort -u)
   for t in "${tops[@]}"; do
     if [[ "$t" == "." ]]; then
       globs+=("*.sh")
@@ -439,7 +445,7 @@ classify_shell_signal() {
     fi
   done
   local globs_json
-  globs_json="$(printf '%s\n' "${globs[@]}" | sort -u | jq -R . | jq -cs .)"
+  globs_json="$(printf '%s\n' "${globs[@]}" | LC_ALL=C sort -u | jq -R . | jq -cs .)"
   jq -nc --argjson paths "$globs_json" '{paths: $paths}'
 }
 
