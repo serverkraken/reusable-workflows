@@ -673,17 +673,52 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
+    outputs:
+      # Die SHA, auf der die Wegwerf-Branches starten. Die Assertions
+      # vergleichen dagegen — `github.event.pull_request.base.sha` waere FALSCH:
+      # das ist der Stand von main zum Zeitpunkt der PR-Erstellung. Ist main
+      # seither gewandert, waere "der Branch hat sich bewegt" trivial erfuellt,
+      # auch wenn das Atom nichts gepusht hat.
+      base_sha: ${{ steps.branches.outputs.base_sha }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Create one throwaway branch per push atom
+        id: branches
         env:
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          # Von github.sha, damit die Branches die Fixtures DIESES PRs tragen.
+          # Von origin/main, NICHT von github.sha.
+          #
+          # Der erste Anlauf pushte den PR-Stand (`HEAD`). Das scheitert,
+          # sobald ein PR Workflow-Dateien anfasst — und in diesem Repo ist das
+          # der Normalfall. Gemessen an PR #405 (Lauf 33111282628):
+          #
+          #   ! [remote rejected] HEAD -> ci/selftest-badges-33111282628
+          #     (refusing to allow a GitHub App to create or update workflow
+          #      `.github/workflows/failure-paths-nightly.yml`
+          #      without `workflows` permission)
+          #
+          # GITHUB_TOKEN darf keine Workflow-Dateien schreiben, und dafuer gibt
+          # es keinen `permissions:`-Schluessel — die Einschraenkung ist hart.
+          # Ein fremder PR ging dadurch rot, ohne dass sein Autor etwas falsch
+          # gemacht haette.
+          #
+          # origin/main ist bereits Branch-Spitze im Repo: der Push fuehrt
+          # KEINE neuen Commits ein und faellt damit nicht unter die
+          # Beschraenkung. Der anschliessende Commit des Atoms beruehrt nur
+          # Fixture-Dateien, nie Workflows.
+          #
+          # Preis, bewusst: aendert ein PR die Fixtures selbst, testet dieser
+          # Job gegen die Fassung von main. Der Prueffall bleibt gueltig — das
+          # ATOM kommt weiterhin aus dem PR, weil `uses: ./…` am Merge-Ref
+          # aufloest.
+          git fetch origin main --depth=1
+          base=$(git rev-parse FETCH_HEAD)
+          echo "base_sha=${base}" >> "$GITHUB_OUTPUT"
           for b in "ci/selftest-badges-${RUN_ID}" "ci/selftest-bump-${RUN_ID}"; do
-            git push origin "HEAD:refs/heads/${b}"
-            echo "angelegt: ${b}"
+            git push origin "${base}:refs/heads/${b}"
+            echo "angelegt: ${b} auf ${base}"
           done
 
   # HINTEREINANDER, nicht parallel. `version-badges` und `chart-image-bump`
@@ -728,7 +763,7 @@ jobs:
           PREPARE: ${{ needs.prepare-push-selftest.result }}
           ATOM: ${{ needs.test-version-badges-commit.result }}
           BRANCH: ci/selftest-badges-${{ github.run_id }}
-          BASE: ${{ github.sha }}
+          BASE: ${{ needs.prepare-push-selftest.outputs.base_sha }}
         run: |
           set -euo pipefail
           if [[ "$PREPARE" != "success" ]]; then
@@ -737,6 +772,14 @@ jobs:
           fi
           if [[ "$ATOM" != "success" ]]; then
             echo "::error::version-badges failed with commit:true (result=${ATOM})"
+            exit 1
+          fi
+
+          # Leeres BASE waere ein stiller Freifahrtschein: der Vergleich
+          # unten wuerde nie greifen und der Test bestuende, ohne etwas
+          # geprueft zu haben.
+          if [[ -z "$BASE" ]]; then
+            echo "::error::base_sha is empty — the prepare job did not report where the branch started"
             exit 1
           fi
 
@@ -812,7 +855,7 @@ jobs:
           PREPARE: ${{ needs.prepare-push-selftest.result }}
           ATOM: ${{ needs.test-chart-image-bump-commit.result }}
           BRANCH: ci/selftest-bump-${{ github.run_id }}
-          BASE: ${{ github.sha }}
+          BASE: ${{ needs.prepare-push-selftest.outputs.base_sha }}
         run: |
           set -euo pipefail
           if [[ "$PREPARE" != "success" ]]; then
@@ -821,6 +864,14 @@ jobs:
           fi
           if [[ "$ATOM" != "success" ]]; then
             echo "::error::chart-image-bump failed with commit:true (result=${ATOM})"
+            exit 1
+          fi
+
+          # Leeres BASE waere ein stiller Freifahrtschein: der Vergleich
+          # unten wuerde nie greifen und der Test bestuende, ohne etwas
+          # geprueft zu haben.
+          if [[ -z "$BASE" ]]; then
+            echo "::error::base_sha is empty — the prepare job did not report where the branch started"
             exit 1
           fi
 
