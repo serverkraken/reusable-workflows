@@ -231,3 +231,54 @@ EOF
   [[ "$output" == *"changed=false"* ]]
   diff "$WORK/README.md" "$WORK/README.orig"
 }
+
+# Audit I-22. Der Dateiname entsteht aus `sanitize "$label"`, und das Label ist
+# bei der Wurzelkomponente der REPO-Name, sonst der Paket- bzw. Basisname.
+# Heisst eine Komponente wie das Repository, kollidieren beide.
+#
+# Gemessen an einem Repo `demo` mit einer Komponente `services/demo`
+# (package-name: demo) — VOR dem Fix:
+#
+#   badges=2                      gemeldet
+#   docs/badges/demo.svg          EINE Datei, zweimal geschrieben
+#   files=…/demo.svg,…/demo.svg   derselbe Pfad zweimal
+#
+# Der README zeigte danach zwei Bilder auf dieselbe Datei: das erste mit dem
+# Alt-Text "demo: v1.0.0", die Datei aber mit der Version des zweiten Pakets.
+# Die Wurzel-Badge wurde still ueberschrieben, und der Lauf meldete Erfolg.
+@test "zwei Pakete mit gleichem Badge-Dateinamen werden abgewiesen (Audit I-22)" {
+  cat > "$WORK/.release-please-manifest.json" <<'EOF'
+{ ".": "1.0.0", "services/demo": "2.0.0" }
+EOF
+  cat > "$WORK/release-please-config.json" <<'EOF'
+{
+  "packages": {
+    ".": {"release-type": "go", "include-component-in-tag": false},
+    "services/demo": {"release-type": "simple", "package-name": "demo", "include-component-in-tag": true}
+  }
+}
+EOF
+  run bash "$SCRIPT" --manifest "$WORK/.release-please-manifest.json" \
+    --config "$WORK/release-please-config.json" \
+    --readme "$WORK/README.md" --badges-dir "$WORK/docs/badges" \
+    --repo serverkraken/demo
+
+  [ "$status" -ne 0 ]
+  # Die Meldung nennt beide PFADE — die Labels sind im Kollisionsfall per
+  # Definition gleich, geaendert werden muss der package-name eines Pfads.
+  [[ "$output" == *'"."'* && "$output" == *'"services/demo"'* ]] || { echo "$output"; false; }
+  [[ "$output" == *"package-name"* ]] || { echo "$output"; false; }
+
+  # Abgebrochen wird VOR dem Schreiben: kein halber Stand auf der Platte.
+  [ ! -d "$WORK/docs/badges" ] || [ -z "$(ls -A "$WORK/docs/badges")" ]
+}
+
+# Gegenprobe: unterscheidbare Labels laufen weiterhin durch. Ohne diese
+# Zusicherung koennte die Kollisionspruefung stillschweigend zu weit greifen
+# und jeden Mehrpaket-Adopter blockieren.
+@test "unterschiedliche Labels bleiben unbeanstandet" {
+  run_script
+  [ "$status" -eq 0 ]
+  [ -f "$WORK/docs/badges/mailstack.svg" ]
+  [ -f "$WORK/docs/badges/postfix.svg" ]
+}

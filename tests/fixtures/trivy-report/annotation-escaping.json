@@ -1,0 +1,32 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "ghcr.io/serverkraken/demo:1.0.0",
+  "Results": [
+    {
+      "Target": "ghcr.io/serverkraken/demo:1.0.0",
+      "Class": "secret",
+      "Type": "secret",
+      "Secrets": [
+        {
+          "RuleID": "generic-api-key",
+          "Severity": "CRITICAL",
+          "Title": "Ein Titel mit 100% Prozent und, Komma",
+          "StartLine": 7
+        }
+      ]
+    },
+    {
+      "Target": "usr/share/doc/foo,bar/README:notes",
+      "Class": "secret",
+      "Type": "secret",
+      "Secrets": [
+        {
+          "RuleID": "generic-api-key",
+          "Severity": "HIGH",
+          "Title": "Pfad traegt Komma und Doppelpunkt",
+          "StartLine": 3
+        }
+      ]
+    }
+  ]
+}
