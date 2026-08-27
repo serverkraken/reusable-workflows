@@ -12,6 +12,12 @@
 #   - Eine kaputte Zeile bricht ab, statt uebersprungen zu werden: eine
 #     stillschweigend verworfene Variable faellt erst als unverstaendlicher
 #     tofu-Fehler auf.
+#
+# Limitation: Werte koennen keinen Zeilenumbruch enthalten, da der Input
+# zeilenweise gelesen wird. Ein mehrzeiliger Secret wird daher in separate
+# KEY=VALUE-Kandidaten zerlegt und bricht auf der ersten Zeile ohne `=` ab.
+# Genuinely mehrzeilige Werte gehoeren in eine Datei oder sollten base64-kodiert
+# als einzelne Zeile uebergeben werden.
 set -euo pipefail
 
 : "${GITHUB_ENV:?GITHUB_ENV muss gesetzt sein}"

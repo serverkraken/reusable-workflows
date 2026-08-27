@@ -46,6 +46,11 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
+@test "leerer Schluessel bricht ab" {
+  run bash -c "printf '=value\n' | bash '$SCRIPT'"
+  [ "$status" -ne 0 ]
+}
+
 # Eine Zeile ohne `=` ist keine Zuweisung. Sie stillschweigend zu ignorieren
 # hiesse, eine erwartete Variable fehlte spaeter kommentarlos.
 @test "Zeile ohne Gleichheitszeichen bricht ab" {
@@ -53,14 +58,13 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-# GITHUB_ENV ist zeilenbasiert. Ein Wert mit Zeilenumbruch koennte eine
-# zweite, gefaelschte Zuweisung anhaengen.
-@test "Wert mit eingebettetem Zeilenumbruch wird abgelehnt" {
+# GITHUB_ENV ist zeilenbasiert. Der Input wird Zeile fuer Zeile gelesen.
+# Ein mehrzeiliger Secret wird daher in separate Kandidaten zerlegt.
+# Das TF_VAR_-Praefix schuetzt davor, dass eine dieser Zeilen eine bestehende
+# Runner-Variable (wie PATH) ueberschreiben koennte.
+@test "mehrzeiliger Payload wird in getrennte Zuweisungen zerlegt — das TF_VAR_-Praefix schuetzt vor Uebernahme" {
   printf 'a=1\nPATH=/evil\n' > payload.txt
   run bash -c "bash '$SCRIPT' < payload.txt"
-  # Beide Zeilen sind fuer sich gueltige Zuweisungen; PATH ist als Name
-  # zulaessig, wird aber zu TF_VAR_PATH — nicht zu PATH. Genau das ist der
-  # Schutz: das Praefix macht eine Uebernahme fremder Variablen unmoeglich.
   [ "$status" -eq 0 ]
   grep -qx 'TF_VAR_PATH=/evil' "$GITHUB_ENV"
   ! grep -qx 'PATH=/evil' "$GITHUB_ENV"
