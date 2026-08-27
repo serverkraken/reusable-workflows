@@ -186,6 +186,35 @@ jobs:
           fi
           echo "lint-rust-fail: correctly observed failure"
 
+  # ----- lint-shell: fail-path -----
+  # lint-shell-findings in self-ci.yml runs with fail_on_findings: false and
+  # only asserts the findings count — it never proves the gate itself fires.
+  # This pair supplies the missing proof: same findings fixture, gate ON.
+  test-lint-shell-fail:
+    uses: ./.github/workflows/lint-shell.yml
+    secrets: inherit
+    with:
+      paths: |-
+        tests/fixtures/shell-findings/scripts/*.sh
+      scan_shebangs: true
+      sarif: false
+      fail_on_findings: true   # default, but explicit
+
+  assert-lint-shell-fail:
+    needs: test-lint-shell-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-shell-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint-shell to fail on findings fixture, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-shell-fail: correctly observed failure"
+
   # ----- test-go: cov-fail-path -----
   test-test-go-cov-fail:
     uses: ./.github/workflows/test-go.yml
@@ -868,6 +897,34 @@ jobs:
           fi
           echo "kube-lint-fail: correctly observed failure"
 
+  # ----- tofu-validate: fail-path -----
+  # Invalid fixture (mis-indented HCL + reference to an undeclared variable)
+  # breaks both fmt AND validate. tofu-validate has no fail_on_findings
+  # escape hatch — a broken stack MUST turn the job red.
+  test-tofu-validate-fail:
+    uses: ./.github/workflows/tofu-validate.yml
+    secrets: inherit
+    with:
+      working_directories: |-
+        tests/fixtures/tofu-invalid
+      tflint: false
+      runs_on: '["ubuntu-latest"]'
+
+  assert-tofu-validate-fail:
+    needs: test-tofu-validate-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Das Atom muss den kaputten Stack ablehnen
+        env:
+          RESULT: ${{ needs.test-tofu-validate-fail.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::erwartet 'failure' fuer den ungueltigen Stack, bekam '${RESULT}'" >&2
+            exit 1
+          fi
+          echo "tofu-validate hat den kaputten Stack korrekt abgelehnt"
+
   # ----- secret-scan: fail-path -----
   # Planted-secret fixture (AWS access key in a tracked file) → gitleaks
   # detect finds it → findings_count > 0 → with fail_on_findings (default
@@ -984,6 +1041,7 @@ jobs:
       - assert-goreleaser-publish
       - assert-lint-python-fail
       - assert-lint-rust-fail
+      - assert-lint-shell-fail
       - assert-test-go-cov-fail
       - assert-test-python-cov-fail
       - assert-test-rust-cov-fail
@@ -993,6 +1051,7 @@ jobs:
       - assert-helm-publish-fail
       - assert-kube-validate-fail
       - assert-kube-lint-fail
+      - assert-tofu-validate-fail
       - assert-chart-image-bump-fail
       - assert-secret-scan-fail
       - assert-build-flutter-android-fail
