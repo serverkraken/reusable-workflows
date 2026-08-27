@@ -153,6 +153,30 @@ jobs:
       moving_tag: ${{ steps.resolve.outputs.moving_tag }}
       image_name: ${{ steps.resolve.outputs.image_name }}
     steps:
+      # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
+      # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
+      # arbeiten. `fromJSON` oben faengt nur KAPUTTES JSON ab — `[]` ist
+      # gueltiges JSON und kommt hier an.
+      # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
+      - name: Reject an empty runs_on
+        # Fest auf den Workspace: der Waechter laeuft VOR dem Checkout, und ein
+        # Job-Ebene `defaults.run.working-directory` (goreleaser.yml) zeigt auf
+        # ein Verzeichnis, das es dann noch nicht gibt. Ohne diese Zeile
+        # scheitert der Schritt mit "No such file or directory", statt den Wert
+        # zu pruefen — gemessen an Lauf 33062297620.
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on_merge }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+
       # Fork-Guard (Audit D-9). `pull_request_target` ist das EINZIGE Ereignis,
       # bei dem Secrets bereitstehen UND der Aufrufer eine fremde Revision
       # auschecken kann. Genau diese Kombination — bekannt als "pwn request" —
@@ -274,6 +298,30 @@ jobs:
     runs-on: ${{ fromJSON(matrix.runs_on_input == 'runs_on_amd64' && inputs.runs_on_amd64 || inputs.runs_on_arm64) }}
     timeout-minutes: 60
     steps:
+      # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
+      # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
+      # arbeiten. `fromJSON` oben faengt nur KAPUTTES JSON ab — `[]` ist
+      # gueltiges JSON und kommt hier an.
+      # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
+      - name: Reject an empty runs_on
+        # Fest auf den Workspace: der Waechter laeuft VOR dem Checkout, und ein
+        # Job-Ebene `defaults.run.working-directory` (goreleaser.yml) zeigt auf
+        # ein Verzeichnis, das es dann noch nicht gibt. Ohne diese Zeile
+        # scheitert der Schritt mit "No such file or directory", statt den Wert
+        # zu pruefen — gemessen an Lauf 33062297620.
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ matrix.runs_on_input == 'runs_on_amd64' && inputs.runs_on_amd64 || inputs.runs_on_arm64 }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+
       - name: Check platform selected
         id: check
         # Via env:, never `${{ }}` in the run body. Interpolated directly, a
@@ -442,6 +490,30 @@ jobs:
       moving_ref: ${{ steps.compose.outputs.moving_ref }}
       digest: ${{ steps.merge_step.outputs.digest }}
     steps:
+      # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
+      # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
+      # arbeiten. `fromJSON` oben faengt nur KAPUTTES JSON ab — `[]` ist
+      # gueltiges JSON und kommt hier an.
+      # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
+      - name: Reject an empty runs_on
+        # Fest auf den Workspace: der Waechter laeuft VOR dem Checkout, und ein
+        # Job-Ebene `defaults.run.working-directory` (goreleaser.yml) zeigt auf
+        # ein Verzeichnis, das es dann noch nicht gibt. Ohne diese Zeile
+        # scheitert der Schritt mit "No such file or directory", statt den Wert
+        # zu pruefen — gemessen an Lauf 33062297620.
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on_merge }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+
       # Fork-Guard (Audit D-9). `pull_request_target` ist das EINZIGE Ereignis,
       # bei dem Secrets bereitstehen UND der Aufrufer eine fremde Revision
       # auschecken kann. Genau diese Kombination — bekannt als "pwn request" —
@@ -783,6 +855,30 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
+      # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
+      # arbeiten. `fromJSON` oben faengt nur KAPUTTES JSON ab — `[]` ist
+      # gueltiges JSON und kommt hier an.
+      # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
+      - name: Reject an empty runs_on
+        # Fest auf den Workspace: der Waechter laeuft VOR dem Checkout, und ein
+        # Job-Ebene `defaults.run.working-directory` (goreleaser.yml) zeigt auf
+        # ein Verzeichnis, das es dann noch nicht gibt. Ohne diese Zeile
+        # scheitert der Schritt mit "No such file or directory", statt den Wert
+        # zu pruefen — gemessen an Lauf 33062297620.
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on_merge }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+
       - name: Mint catalog-scoped App token
         id: catalog-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3

@@ -55,6 +55,7 @@ Document any new gotcha in `CLAUDE-troubleshooting.md` so the next session benef
 Reusable workflows ("Atoms") follow shared conventions enforced by `.github/workflows/validate.yml`. When adding or modifying an atom, consult:
 
 - [`docs/conventions/step-summary.md`](docs/conventions/step-summary.md) — required Markdown block written to `$GITHUB_STEP_SUMMARY`.
+- [`docs/conventions/runs-on-guard.md`](docs/conventions/runs-on-guard.md) — every job resolving its runner from a `runs_on*` input must reject an empty value as its first step.
 
 New conventions land in `docs/conventions/`. Each must be linked from this section and (where automatable) gated in `validate.yml`.
 
