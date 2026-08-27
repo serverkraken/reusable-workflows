@@ -164,9 +164,13 @@ jobs:
       actions: read
     with:
       paths: |-
-        tests/fixtures/shell-findings/scripts/*.sh
+        tests/fixtures/shell-findings/scripts/**/*.sh
+      # `**` statt `*`: deckt scripts/lib/deep.sh mit ab, damit dieser Job
+      # genau das Szenario nachstellt, das echte Aufrufer-Repos rendern
+      # (`scripts/**/*.sh`) und das ohne `git --glob-pathspecs` im
+      # Collect-files-Schritt Dateien silently auslaesst.
       # AN, damit die Fixture ohne .sh-Endung tatsaechlich geprueft wird.
-      # Der Scan folgt demselben Glob (scripts/*), bleibt also in der Fixture.
+      # Der Scan folgt demselben Glob (scripts/**/*), bleibt also in der Fixture.
       scan_shebangs: true
       sarif: false
       # Das Atom soll die Funde MELDEN, ohne den Self-CI-Lauf rot zu faerben.
@@ -185,11 +189,18 @@ jobs:
           COUNT: ${{ needs.lint-shell-findings.outputs.findings_count }}
         run: |
           set -euo pipefail
-          # >=2: je ein SC2086 aus bad.sh UND aus nosuffix. Ein Wert von 1
-          # hiesse, dass scan_shebangs die Datei ohne Endung nicht erfasst hat.
-          if [[ "${COUNT:-0}" -lt 2 ]]; then
-            echo "::error::erwartet >=2 Funde (bad.sh und nosuffix), bekam '${COUNT}'" >&2
-            echo "::error::genau 1 Fund bedeutet: scan_shebangs hat die Datei ohne .sh-Endung nicht erfasst" >&2
+          # >=3: je ein SC2086 aus bad.sh, aus nosuffix UND aus dem
+          # verschachtelten scripts/lib/deep.sh. Ein Wert von 2 hiesse, dass
+          # die verschachtelte Datei nicht erfasst wurde — der Collect-files-
+          # Schritt braucht dafuer `git ls-files --glob-pathspecs`, weil
+          # `paths: scripts/**/*.sh` sonst unter Gits Default-Pathspec Dateien
+          # je nach Verschachtelungstiefe silently auslaesst. Ein Wert von 1
+          # hiesse zusaetzlich, dass scan_shebangs die Datei ohne Endung
+          # nicht erfasst hat.
+          if [[ "${COUNT:-0}" -lt 3 ]]; then
+            echo "::error::erwartet >=3 Funde (bad.sh, nosuffix, scripts/lib/deep.sh), bekam '${COUNT}'" >&2
+            echo "::error::ein Wert von 2 bedeutet: die verschachtelte Datei scripts/lib/deep.sh wurde nicht erfasst (git ls-files ohne --glob-pathspecs?)" >&2
+            echo "::error::ein Wert von 1 bedeutet zusaetzlich: scan_shebangs hat die Datei ohne Endung nicht erfasst" >&2
             exit 1
           fi
           echo "lint-shell meldete ${COUNT} Fund(e) — Gate-Pfad und scan_shebangs belegt"

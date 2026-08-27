@@ -157,12 +157,19 @@ jobs:
         # `git ls-files` statt `find`: nur getrackte Dateien, und damit
         # automatisch nichts aus .catalog (das ist ein zweiter Checkout, kein
         # Teil des Index) und nichts Ungetracktes aus einem Vorlauf.
+        #
+        # `--glob-pathspecs`: Gits DEFAULT-Pathspec ist kein Shell-Glob.
+        # Ohne das verlangt `**` einen dazwischenliegenden Ordner, und
+        # `scripts/**/*.sh` liesse `scripts/a.sh` (kein Unterordner) leise
+        # aus — genau dann, wenn ein Aufrufer den Pfad einschraenkt. Ein
+        # Gate, das dabei still eine Teilmenge prueft und gruen meldet, ist
+        # schlimmer als gar kein Gate.
         run: |
           set -euo pipefail
           : > files.txt
           while IFS= read -r glob; do
             [[ -z "$glob" ]] && continue
-            git ls-files -z -- "$glob" >> files.z || true
+            git --glob-pathspecs ls-files -z -- "$glob" >> files.z || true
           done <<< "$PATHS"
           if [[ -f files.z ]]; then
             tr '\0' '\n' < files.z >> files.txt
@@ -177,7 +184,7 @@ jobs:
             : > shebang.z
             while IFS= read -r glob; do
               [[ -z "$glob" ]] && continue
-              git ls-files -z -- "${glob%\*.sh}*" >> shebang.z || true
+              git --glob-pathspecs ls-files -z -- "${glob%\*.sh}*" >> shebang.z || true
             done <<< "$PATHS"
             # Erste Zeile lesen, nicht die ganze Datei: bei Binaerdateien waere
             # ein grep ueber den vollen Inhalt teuer und irrefuehrend.
