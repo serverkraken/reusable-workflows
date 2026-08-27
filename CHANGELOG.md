@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.21.5](https://github.com/serverkraken/reusable-workflows/compare/v4.21.4...v4.21.5) (2026-08-27)
+
+
+### Bug Fixes
+
+* **atome:** Pruefungen, die bestehen, ohne etwas geprueft zu haben ([#380](https://github.com/serverkraken/reusable-workflows/issues/380)) ([6113c2c](https://github.com/serverkraken/reusable-workflows/commit/6113c2c977d4ca529d1288fc9a8480611f353005))
+* **go:** halbe Renderdatei, Panic nach den Mutationen und ein Lauf ohne Frist ([#382](https://github.com/serverkraken/reusable-workflows/issues/382)) ([9cadf76](https://github.com/serverkraken/reusable-workflows/commit/9cadf766da5091eff36da5f925564d58edbf4c3b))
+
 ## [4.21.4](https://github.com/serverkraken/reusable-workflows/compare/v4.21.3...v4.21.4) (2026-08-27)
 
 
