@@ -283,3 +283,118 @@ jobs:
           path: plan.json
           if-no-files-found: error
           retention-days: 7
+
+      - name: Summary
+        if: always() && steps.fork.outputs.is_fork == 'false'
+        env:
+          DIR: ${{ inputs.working_directory }}
+          HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
+          SUMMARY_LINE: ${{ steps.plan.outputs.summary_line }}
+          FAILED: ${{ steps.plan.outputs.failed }}
+          RENDER: ${{ github.workspace }}/.catalog/scripts/tofu-plan-render.sh
+        run: |
+          tofu_version=$(tofu version 2>/dev/null | head -1 | awk '{print $2}' || echo unknown)
+          if [[ -z "${HAS_CHANGES:-}" ]]; then
+            # Leer heisst NICHT "keine Aenderungen": der Plan-Schritt ist gar
+            # nicht gelaufen (z.B. weil ein frueherer Schritt wie das
+            # Backend-Init fehlschlug). Ein "✓" waere hier die falsche
+            # Aussage — dieselbe Verwechslung wie in lint-shell.yml, dort
+            # fuer einen leeren findings_count.
+            result="✗ plan lief nicht durch"
+          elif [[ "${FAILED:-}" == "true" ]]; then
+            result="✗ plan failed"
+          elif [[ "$HAS_CHANGES" == "true" ]]; then
+            result="▲ changes pending"
+          else
+            result="✓ no changes"
+          fi
+          {
+            echo "## tofu-plan"
+            echo ""
+            echo "**Tool:** OpenTofu ${tofu_version}"
+            echo "**Working dir:** \`${DIR}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Changes | ${HAS_CHANGES:-unknown} |"
+            echo "| Summary | ${SUMMARY_LINE:-unknown} |"
+            if [[ -f plan.txt ]]; then
+              echo ""
+              echo "<details><summary>Plan</summary>"
+              echo ""
+              echo '```'
+              # 900k statt 1M: der Rest der Summary braucht auch Platz.
+              bash "$RENDER" plan.txt 900000
+              echo '```'
+              echo ""
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Find existing plan comment
+        id: find-comment
+        if: >-
+          steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          && github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '<!-- tofu-plan:${{ inputs.working_directory }} -->'
+
+      - name: Compose comment body
+        id: comment-body
+        if: >-
+          steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          && github.event_name == 'pull_request'
+        env:
+          DIR: ${{ inputs.working_directory }}
+          HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
+          SUMMARY_LINE: ${{ steps.plan.outputs.summary_line }}
+          RENDER: ${{ github.workspace }}/.catalog/scripts/tofu-plan-render.sh
+        run: |
+          set -euo pipefail
+          BODY_FILE=comment.md
+          {
+            echo "<!-- tofu-plan:${DIR} -->"
+            if [[ "$HAS_CHANGES" == "true" ]]; then
+              echo "**OpenTofu plan — \`${DIR}\`: ▲ ${SUMMARY_LINE}**"
+            else
+              echo "**OpenTofu plan — \`${DIR}\`: ✓ keine Aenderungen**"
+            fi
+            echo ""
+            echo "<details><summary>Plan anzeigen</summary>"
+            echo ""
+            echo '```'
+            bash "$RENDER" plan.txt 60000
+            echo '```'
+            echo ""
+            echo "</details>"
+          } > "$BODY_FILE"
+          # Zufaelliger Delimiter je Aufruf: mit einem festen wuerde eine Zeile
+          # im Plan, die exakt der Delimiter ist, den Block vorzeitig schliessen
+          # — und jede Folgezeile wuerde zu einem NEUEN Step-Output. Der
+          # Planinhalt ist nicht unter unserer Kontrolle. Dasselbe Argument wie
+          # in actions/post-prerelease-comment.
+          DELIM="body_$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          if grep -qxF "$DELIM" "$BODY_FILE"; then
+            echo "::error::generated delimiter collides with the comment body" >&2
+            exit 1
+          fi
+          {
+            echo "body<<$DELIM"
+            cat "$BODY_FILE"
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post or update plan comment
+        if: >-
+          steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
+          body: ${{ steps.comment-body.outputs.body }}
