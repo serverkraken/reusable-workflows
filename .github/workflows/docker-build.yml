@@ -128,7 +128,24 @@ concurrency:
   cancel-in-progress: ${{ inputs.prerelease }}
 
 jobs:
+  # `name:` fuer alle drei Jobs (Audit M-7).
+  #
+  # Ohne `name:` heisst der Check so wie die Job-ID. Bei einem Adopter, dessen
+  # Aufrufer mehrere reusable Workflows verwendet, stehen dann mehrere
+  # generische `… / build` und `… / version` nebeneinander, und es ist der
+  # Kette nicht anzusehen, welcher wozu gehoert.
+  #
+  # Vor der Aenderung geprueft, weil ein `name:` den CHECK-NAMEN aendert und
+  # Branch-Protection-Regeln genau diese Namen referenzieren:
+  #
+  #   Katalog main            nur "integration / summary" + "self-ci / summary"
+  #   mailstack, jukebox-go,
+  #   flow                    geschuetzt, aber KEINE required status checks
+  #
+  # Es haengt also nichts an diesen Namen. Waere das anders, gehoerte die
+  # Umbenennung mit den Adoptern abgestimmt und nicht nebenbei erledigt.
   version:
+    name: resolve tag
     runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
     timeout-minutes: 60
     outputs:
@@ -239,6 +256,10 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build:
+    # Die Matrix-Werte gehoeren in den Namen: sonst heissen beide Laeufe
+    # `build (linux/amd64)` bzw. `(linux/arm64)` nur ueber die
+    # Standard-Klammerform, und der Bezug zum Image fehlt ganz.
+    name: build ${{ matrix.arch }}
     needs: version
     strategy:
       fail-fast: false
@@ -412,6 +433,7 @@ jobs:
           retention-days: 1
 
   merge:
+    name: merge manifest list
     needs: [version, build]
     runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
     timeout-minutes: 60

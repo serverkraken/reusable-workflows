@@ -69,6 +69,83 @@ jobs:
       runs_on_arm64: '["ubuntu-24.04-arm"]'
       runs_on_merge: '["ubuntu-latest"]'
 
+  # ----- Einzel-Plattform-Pfad (Audit K-6) -----
+  #
+  # `docker-build.yml` faehrt IMMER eine Matrix mit beiden Architekturen und
+  # ueberspringt die nicht gewaehlte per Schritt ("Check platform selected");
+  # `merge` laedt die Digests danach bedingt
+  # (`if: contains(inputs.platforms, 'linux/amd64')`).
+  #
+  # Kein Aufruf hat je einen Einzel-Plattform-Wert uebergeben. Beide Zweige
+  # liefen also nie: weder das Ueberspringen noch ein merge, dem nur EIN
+  # Digest vorliegt. Die Fixture go-root-multi-image RENDERT zwar
+  # `platforms: linux/amd64` an einer Komponente — ausgefuehrt wurde das nie.
+  #
+  # sign/attest/sbom sind hier aus: geprueft wird der Plattform-Pfad, und die
+  # Signaturkette hat in test-docker-build ihre eigene Abdeckung.
+  test-docker-build-single-platform:
+    uses: ./.github/workflows/docker-build.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/minimal-go
+      dockerfile: tests/fixtures/minimal-go/Dockerfile
+      image_name: ${{ github.repository }}/test-fixture-single
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      platforms: linux/amd64
+      sign: false
+      attest: false
+      sbom: false
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
+
+  assert-docker-build-single-platform:
+    needs: test-docker-build-single-platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: read
+    steps:
+      - name: GHCR login (read-only)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+      - name: Assert the image carries exactly one platform
+        env:
+          IMG_REF: ${{ needs.test-docker-build-single-platform.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$IMG_REF" ]]; then
+            echo "::error::image_ref is empty — the single-platform build produced no reference"
+            exit 1
+          fi
+          raw=$(docker buildx imagetools inspect --raw "$IMG_REF")
+
+          # `.manifests` fehlt bei einem einzelnen Manifest und ist bei einer
+          # Manifest-Liste vorhanden. Beides ist fuer eine Plattform gueltig —
+          # geprueft wird deshalb die MENGE der Plattformen, nicht die Form.
+          # `attestation-manifest` zaehlt nicht mit: buildx legt SBOM- und
+          # Provenance-Anhaenge als zusaetzliche Eintraege mit
+          # platform.architecture == "unknown" ab.
+          platforms=$(jq -r '
+            if .manifests then
+              [ .manifests[]
+                | select((.platform.architecture // "unknown") != "unknown")
+                | "\(.platform.os)/\(.platform.architecture)" ]
+            else
+              ["single-manifest"]
+            end | sort | join(",")' <<<"$raw")
+
+          echo "platforms in manifest: [${platforms}]"
+          if [[ "$platforms" != "linux/amd64" && "$platforms" != "single-manifest" ]]; then
+            echo "::error::expected exactly linux/amd64, got [${platforms}] — the arm64 build was not skipped, or merge referenced a digest it never built"
+            exit 1
+          fi
+          echo "single-platform path intact."
+
   # ----- attestation verification (proves the cosign attest step produced
   # a sigstore-bundled SLSA predicate at the OCI sidecar location) -----
   assert-attestation-verifies:
@@ -826,18 +903,52 @@ jobs:
       version: v0.0.1-fixture-${{ github.run_id }}
       create_release: true
       use_build_runner: false
+      # APK UND AAB (Audit K-10). `build_aab` stand ueberall auf false, der
+      # Bundle-Pfad lief also nie — obwohl er derjenige ist, den der Play
+      # Store verlangt. Signierung ist ohnehin schon eingerichtet: der
+      # APK-Release-Build nutzt dieselben Keystore-Secrets.
       build_apk: true
-      build_aab: false
+      build_aab: true
       prerelease: true
       dart_define_secret_names: "GREETING"
       artefact_name_prefix: catalog-test-flutter-app
+
+  # Audit K-10. `build_aab: false` in jedem Aufruf hiess: der Bundle-Pfad lief
+  # nie. Ein `result == success` allein waere hier zu schwach — der Schritt ist
+  # `if: inputs.build_aab`, also waere er bei einem Fehler in der Bedingung
+  # einfach uebersprungen und der Job trotzdem gruen. Geprueft wird deshalb,
+  # was am Release HAENGT.
+  assert-flutter-release-has-apk-and-aab:
+    needs: test-release-flutter-android
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Assert both artefacts are attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.0.1-fixture-${{ github.run_id }}
+          PREFIX: catalog-test-flutter-app
+        run: |
+          set -euo pipefail
+          names=$(gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '[.assets[].name] | sort | join(" ")')
+          echo "assets: ${names}"
+          for ext in apk aab; do
+            if [[ "$names" != *"${PREFIX}-${TAG}.${ext}"* ]]; then
+              echo "::error::release ${TAG} carries no ${ext} — expected ${PREFIX}-${TAG}.${ext}, got [${names}]"
+              exit 1
+            fi
+          done
+          echo "APK and AAB both attached."
 
   # summary-exempt: Aufraeumjob, kein Test. Er loescht das Fixture-Release
   # und schluckt den Fehler per '|| true', kann also gar nicht rot werden;
   # ihn in needs: zu haengen wuerde dem Required Check eine Zusicherung
   # andichten, die er nicht gibt.
   cleanup-flutter-release:
-    needs: [test-release-flutter-android]
+    # Auch auf die Assertion warten (Audit K-10): sonst kann der Cleanup das
+    # Release loeschen, BEVOR assert-flutter-release-has-apk-and-aab seine
+    # Assets liest — und die Zusicherung waere ein Rennen.
+    needs: [test-release-flutter-android, assert-flutter-release-has-apk-and-aab]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -868,6 +979,8 @@ jobs:
     needs:
       - test-docker-build
       - assert-attestation-verifies
+      - assert-docker-build-single-platform
+      - assert-flutter-release-has-apk-and-aab
       - test-trivy-image-happy
       - assert-trivy-image-clean
       - test-trivy-fs-happy
