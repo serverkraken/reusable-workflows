@@ -826,9 +826,7 @@ rm $files
       # Katalogs schreiben und die echte Basislinie verfaelschen.
       sarif: false
       runs_on: '["ubuntu-latest"]'
-    secrets:
-      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
-      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+    secrets: inherit
 ```
 
 - [ ] **Step 3: Add the failure-path job**
@@ -855,9 +853,7 @@ Das Gate muss **greifen**, der Job also fehlschlagen — geprüft wird per `cont
       # summary-Graph und behauptet nichts Falsches.
       fail_on_findings: false
       runs_on: '["ubuntu-latest"]'
-    secrets:
-      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
-      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+    secrets: inherit
 
   assert-lint-shell-findings:
     needs: [lint-shell-findings]
@@ -1365,9 +1361,7 @@ resource "null_resource" "broken" {
       # Composite Action abgedeckt, nicht hier.
       tflint: false
       runs_on: '["ubuntu-latest"]'
-    secrets:
-      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
-      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+    secrets: inherit
 ```
 
 - [ ] **Step 4: Add the failure-path job**
@@ -1385,9 +1379,7 @@ resource "null_resource" "broken" {
         tests/fixtures/tofu-invalid
       tflint: false
       runs_on: '["ubuntu-latest"]'
-    secrets:
-      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
-      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+    secrets: inherit
 
   assert-tofu-validate-invalid:
     needs: [tofu-validate-invalid]
@@ -2248,9 +2240,7 @@ resource "null_resource" "planned" {
       # wird ueber tofu-plan-render.bats abgedeckt, nicht hier.
       comment_on_pr: false
       runs_on: '["ubuntu-latest"]'
-    secrets:
-      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
-      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+    secrets: inherit
 
   assert-tofu-plan-changes:
     needs: [tofu-plan-changes]
