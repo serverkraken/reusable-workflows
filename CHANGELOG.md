@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.21.3](https://github.com/serverkraken/reusable-workflows/compare/v4.21.2...v4.21.3) (2026-08-27)
+
+
+### Bug Fixes
+
+* **scripts:** Float-Tag-Pin, Seite-1-Kappungen und die eigene Ausgabe als Legacy ([#375](https://github.com/serverkraken/reusable-workflows/issues/375)) ([cfa9a69](https://github.com/serverkraken/reusable-workflows/commit/cfa9a694953196bb5434a8b4f21342277b2da91a))
+
 ## [4.21.2](https://github.com/serverkraken/reusable-workflows/compare/v4.21.1...v4.21.2) (2026-08-26)
 
 
