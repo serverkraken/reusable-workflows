@@ -114,7 +114,14 @@ sourced() {
 @test "Ausgabedatei ist nur fuer den Besitzer lesbar" {
   run bash -c "printf 'a=1\n' | bash '$SCRIPT' '$OUT'"
   [ "$status" -eq 0 ]
-  perms=$(stat -f '%Lp' "$OUT" 2>/dev/null || stat -c '%a' "$OUT")
+  # `stat -f`/`stat -c` per `||`-Fallback zu unterscheiden ist truegerisch:
+  # GNU `stat -f` bedeutet `--file-system` und schreibt bei einem Format-
+  # Platzhalter wie '%Lp' als Dateiargument bereits VOR dem nichtnull Exit
+  # Text nach stdout — der Fallback haengt sein Ergebnis dann nur an, statt
+  # es zu ersetzen, und $perms enthaelt Muell statt "600" (auf Linux
+  # reproduziert, nicht nur vermutet). Perl liest den Modus stattdessen
+  # direkt aus stat(2) und ist auf BSD wie GNU identisch.
+  perms=$(perl -e 'printf "%03o", (stat($ARGV[0]))[2] & 07777' "$OUT")
   [ "$perms" = "600" ]
 }
 
