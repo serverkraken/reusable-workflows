@@ -1788,3 +1788,45 @@ _nested_repo() {  # <tiefe: 3|4>
   echo "$output" | jq -e '.iac.directories == ["Infra","bootstrap"]'
   echo "$output" | jq -e '.shell.paths == ["Infra/**/*.sh","bootstrap/**/*.sh"]'
 }
+
+# Zwilling von TestIaCSkipsChildModules in internal/app/detect/iac_shell_test.go.
+# Ein Kindmodul ist kein Stack: `working_directories` ist als "ein Stack pro
+# Zeile" dokumentiert, und im Modulordner liegt keine .terraform.lock.hcl —
+# `init -lockfile=readonly` koennte dort gar nicht durchlaufen. Ohne den Filter
+# meldeten beide Engines ["tofu","tofu/modules/server"].
+@test "profile-json: iac.directories laesst Kindmodule (modules/) weg" {
+  run "$DETECT" --profile-json "$FIX/iac-nested-module"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu"]'
+}
+
+# Segmentgenau: `mymodules` und `modules-old` sind normale Verzeichnisnamen.
+# Zwilling von TestIsChildModulePath.
+@test "profile-json: der modules/-Filter greift segmentgenau" {
+  local repo="$BATS_TEST_TMPDIR/module-segments"
+  mkdir -p "$repo/tofu/modules/server" "$repo/tofu/mymodules" "$repo/tofu/modules-old"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'resource "null_resource" "a" {}\n' > "$repo/tofu/main.tf"
+  printf 'resource "null_resource" "b" {}\n' > "$repo/tofu/modules/server/main.tf"
+  printf 'resource "null_resource" "c" {}\n' > "$repo/tofu/mymodules/main.tf"
+  printf 'resource "null_resource" "d" {}\n' > "$repo/tofu/modules-old/main.tf"
+
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu","tofu/modules-old","tofu/mymodules"]'
+}
+
+# Zwilling von TestSignalsIgnoreSymlinks. linked-only/ enthaelt AUSSCHLIESSLICH
+# Symlinks — einen gueltigen und einen kaputten je Endung. Zaehlte eine Engine
+# Symlinks mit, erschiene das Verzeichnis als Stack bzw. als Glob. Genau hier
+# liefen die Engines auseinander: Gos WalkDir meldet einen Symlink-auf-Datei
+# als Nicht-Verzeichnis, `find -type f` schliesst ihn aus.
+@test "profile-json: Symlinks zaehlen weder fuer iac noch fuer shell" {
+  run "$DETECT" --profile-json "$FIX/symlinked-signals"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu"]'
+  echo "$output" | jq -e '.shell.paths == ["scripts/**/*.sh"]'
+  # Ein kaputter Symlink ist kein unlesbarer Pfad — geprueft wird der Typ des
+  # Eintrags, nicht sein Ziel. Also auch keine Warnung.
+  echo "$output" | jq -e '[.warnings[] | select(.code == "path_unreadable")] | length == 0'
+}

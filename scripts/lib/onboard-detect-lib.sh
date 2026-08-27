@@ -365,6 +365,18 @@ _gitops_manifests_paths() {
 # is the catalog checkout a workflow run creates, vendor/node_modules are
 # foreign code — findings there would not be the adopter's.
 #
+# SYMLINKS ZAEHLEN NICHT — das `-type f` unten ist Absicht, nicht Zufall.
+# Die Go-Engine wich hier ab: ihr `WalkDir` meldet einen Symlink-auf-Datei als
+# Nicht-Verzeichnis und zaehlte ihn mit, waehrend `-type f` ihn ausschliesst.
+# Ein Repo mit einer verlinkten .tf/.sh lieferte damit je nach Schalter
+# `use_go_cli` ein anderes Profil. Vereinheitlicht wurde auf "ignorieren":
+# zeigt der Link ins Repo, wird der Inhalt ueber seinen ECHTEN Pfad ohnehin
+# gefunden; zeigt er nach draussen, ist er nicht der des Adopters; und ein
+# KAPUTTER Link erzeugte sonst ein Stack-Verzeichnis aus einer Datei, die es
+# nicht gibt. Weil nur der Eintragstyp geprueft wird und nicht sein Ziel,
+# verhaelt sich ein kaputter Link exakt wie ein gueltiger.
+# Fixture: tests/fixtures/onboard/symlinked-signals.
+#
 # Signature: _signal_dirs_with_suffix <repo> <suffix>
 _signal_dirs_with_suffix() {
   local repo suffix
@@ -403,15 +415,32 @@ _signal_dirs_with_suffix() {
   fi
 }
 
-# classify_iac_signal — liefert die Verzeichnisse, die *.tf-Dateien enthalten.
-# "null" (kein Objekt), wenn es keine gibt — der Aufrufer laesst den
-# Profilschluessel dann ganz weg, damit ein Repo ohne .tf byte-identisch
-# bleibt (siehe emit_profile_json).
+# classify_iac_signal — liefert die Verzeichnisse, die *.tf-Dateien enthalten,
+# KINDMODULE AUSGENOMMEN. "null" (kein Objekt), wenn es keine gibt — der
+# Aufrufer laesst den Profilschluessel dann ganz weg, damit ein Repo ohne .tf
+# byte-identisch bleibt (siehe emit_profile_json).
+#
+# Kindmodule werden an einem `modules/`-Pfadsegment erkannt (Zwilling von
+# isChildModulePath in internal/app/detect/service.go). `working_directories`
+# in tofu-validate.yml ist als "ein STACK pro Zeile" dokumentiert, und ein
+# Kindmodul ist kein Stack: die .terraform.lock.hcl liegt nur im Wurzelmodul,
+# also kann `init -lockfile=readonly` in einem Modulordner mit eigenem
+# `required_providers`-Block gar nicht durchlaufen.
+#
+# GRENZE der Heuristik, bewusst in Kauf genommen: erkannt wird nur der
+# Konventionsname `modules/`. Ein Kindmodul in einem anders benannten Ordner
+# (`tofu/internal/server/`) bleibt unentdeckt. Die Alternative braeuchte einen
+# HCL-Parser in BEIDEN Engines und wuerde Stacks mit lokalem State faelschlich
+# aussortieren.
+#
+# Die Klammern um das Segment machen den Vergleich segmentgenau: `mymodules`
+# oder `modules-old` passen nicht.
 #
 # Signature: classify_iac_signal <repo>
 classify_iac_signal() {
   local repo="$1" dirs
   dirs="$(_signal_dirs_with_suffix "$repo" ".tf")"
+  dirs="$(jq -c '[.[] | select((("/" + . + "/") | contains("/modules/")) | not)]' <<<"$dirs")"
   if [[ "$(jq 'length' <<<"$dirs")" == "0" ]]; then
     echo "null"
     return 0

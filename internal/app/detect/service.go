@@ -217,8 +217,8 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		Topics:         topics,
 		Warnings:       []domain.Warning{},
 		GitOps:         gitops,
-		IaC:            classifyIaC(req.RepoPath),
-		Shell:          classifyShell(req.RepoPath),
+		IaC:            classifyIaC(req.RepoPath, fe),
+		Shell:          classifyShell(req.RepoPath, fe),
 	}
 	if hasManifest {
 		profile.ManifestSHA256 = manifestSHA
@@ -1488,11 +1488,43 @@ var signalSkipDirs = map[string]bool{
 	".terraform": true, ".venv": true, ".task": true,
 }
 
-// classifyIaC liefert die Verzeichnisse, die *.tf-Dateien enthalten.
+// isChildModulePath erkennt Kindmodule an einem `modules/`-Pfadsegment.
+//
+// Warum ueberhaupt gefiltert wird: `working_directories` in tofu-validate.yml
+// ist als "ein STACK pro Zeile" dokumentiert, und ein Kindmodul ist kein
+// Stack. Ein Repo mit `tofu/main.tf` + `tofu/modules/server/main.tf` lieferte
+// vorher beide Verzeichnisse, und das Atom lief in beiden. Im Modulordner kann
+// `init -lockfile=readonly` gar nicht durchlaufen: die .terraform.lock.hcl
+// liegt nur im Wurzelmodul, ein Modul mit eigenem `required_providers`-Block
+// scheitert dort also zwangslaeufig.
+//
+// GRENZE der Heuristik, bewusst in Kauf genommen: erkannt wird nur der
+// Konventionsname `modules/`. Ein Kindmodul in einem anders benannten Ordner
+// (`tofu/internal/server/`) bleibt unentdeckt und wird weiter als Stack
+// gemeldet. Die Alternative — jedes Verzeichnis ohne `backend`/`provider`-Block
+// verwerfen — braeuchte einen HCL-Parser in BEIDEN Engines und wuerde Stacks
+// mit lokalem State faelschlich aussortieren. Der Adopter kann
+// `working_directories` im gerenderten ci.yml jederzeit korrigieren.
+//
+// Die Klammern machen den Vergleich segmentgenau: `mymodules` oder
+// `modules-old` passen nicht.
+func isChildModulePath(dir string) bool {
+	return strings.Contains("/"+filepath.ToSlash(dir)+"/", "/modules/")
+}
+
+// classifyIaC liefert die Verzeichnisse, die *.tf-Dateien enthalten —
+// Kindmodule ausgenommen, siehe isChildModulePath.
 // Rueckgabe nil (nicht ein leeres Signal), wenn es keine gibt — der
 // Profilschluessel muss dann ganz fehlen.
-func classifyIaC(repo string) *domain.IaCSignal {
-	dirs := collectDirsWithSuffix(repo, ".tf")
+func classifyIaC(repo string, fe *fsErrors) *domain.IaCSignal {
+	all := collectDirsWithSuffix(repo, ".tf", fe)
+	dirs := make([]string, 0, len(all))
+	for _, d := range all {
+		if isChildModulePath(d) {
+			continue
+		}
+		dirs = append(dirs, d)
+	}
 	if len(dirs) == 0 {
 		return nil
 	}
@@ -1502,8 +1534,8 @@ func classifyIaC(repo string) *domain.IaCSignal {
 // classifyShell liefert Globs statt Dateilisten. Wuerde hier jede einzelne
 // Datei stehen, aenderte jedes neue Skript das Profil und loeste Drift aus,
 // obwohl sich an der CI-Konfiguration nichts geaendert hat.
-func classifyShell(repo string) *domain.ShellSignal {
-	dirs := collectDirsWithSuffix(repo, ".sh")
+func classifyShell(repo string, fe *fsErrors) *domain.ShellSignal {
+	dirs := collectDirsWithSuffix(repo, ".sh", fe)
 	if len(dirs) == 0 {
 		return nil
 	}
@@ -1529,16 +1561,42 @@ func classifyShell(repo string) *domain.ShellSignal {
 
 // collectDirsWithSuffix liefert die repo-relativen Verzeichnisse, die
 // mindestens eine Datei mit der Endung enthalten — sortiert und dedupliziert.
-func collectDirsWithSuffix(repo, suffix string) []string {
+//
+// SYMLINKS ZAEHLEN NICHT, in BEIDEN Engines. Das war eine echte Abweichung:
+// `WalkDir` meldet einen Symlink-auf-Datei als Nicht-Verzeichnis, das
+// `-type f` des Bash-Zwillings schliesst ihn dagegen aus. Ein Repo mit einer
+// verlinkten .tf/.sh lieferte damit je nach Schalter `use_go_cli` ein anderes
+// Profil.
+//
+// Vereinheitlicht wurde auf "ignorieren", nicht auf "mitzaehlen":
+//   - Zeigt der Link ins Repo, wird der Inhalt ueber seinen ECHTEN Pfad
+//     ohnehin gefunden; der Link fuegt nichts hinzu.
+//   - Zeigt er nach draussen, ist der Inhalt nicht der des Adopters — genau
+//     die Begruendung, aus der signalSkipDirs vendor/ und node_modules/
+//     verwirft.
+//   - Ein KAPUTTER Link erzeugte sonst ein Stack-Verzeichnis aus einer Datei,
+//     die es nicht gibt. Weil hier nur der Typ des Eintrags geprueft wird und
+//     nicht sein Ziel, verhaelt sich ein kaputter Link exakt wie ein
+//     gueltiger — in beiden Engines.
+//
+// Fixture: tests/fixtures/onboard/symlinked-signals.
+func collectDirsWithSuffix(repo, suffix string, fe *fsErrors) []string {
 	seen := map[string]bool{}
-	_ = filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
+		// Wie fallbackMarkerPaths: weiterlaufen, aber den unlesbaren Pfad
+		// vermerken. Ein stilles `return nil` liesse ein ganzes Stack- oder
+		// Skriptverzeichnis lautlos aus dem Profil fallen.
 		if err != nil {
+			fe.note(repo, path, err)
 			return nil
 		}
 		if d.IsDir() {
 			if signalSkipDirs[d.Name()] {
 				return fs.SkipDir
 			}
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
 		if !strings.HasSuffix(d.Name(), suffix) {
@@ -1550,7 +1608,9 @@ func collectDirsWithSuffix(repo, suffix string) []string {
 		}
 		seen[rel] = true
 		return nil
-	})
+	}); err != nil {
+		fe.note(repo, repo, err)
+	}
 	out := make([]string, 0, len(seen))
 	for d := range seen {
 		out = append(out, d)
