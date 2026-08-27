@@ -17,6 +17,31 @@
 #      Backend-Credentials. Das Atom weigert sich dort zu laufen.
 #   3. Ein abgebrochener Plan kann einen State-Lock zurueckzulassen, der auch
 #      den Apply am Laptop blockiert. Deshalb cancel-in-progress: false.
+#
+# VERTRAUENSGRENZE — wer dieses Atom aufruft, muss das hier wissen:
+#
+#   Das Atom fuehrt die OpenTofu-Konfiguration des Adopters mit echten
+#   Credentials aus. `tofu plan` ist nicht rein deklarativ: der offizielle
+#   `external`-Provider startet waehrend des Plans ein beliebiges Programm,
+#   und dieser Kindprozess erbt die komplette Umgebung des Schritts — die
+#   Backend-Credentials und die TF_VAR_* eingeschlossen. `data`-Quellen und
+#   Provider-Konfiguration werden beim Plan ebenfalls ausgewertet.
+#
+#   Daraus folgt: JEDER Pull Request, der eine .tf-Datei aendern kann, kann
+#   die an dieses Atom uebergebenen Secrets lesen. Das gilt auch fuer einen
+#   PR aus demselben Repository — der Riegel gegen pull_request_target haelt
+#   fremde Forks fern, nicht Leute mit Branch-Zugriff.
+#
+#   Das Atom kann diese Grenze nicht selbst ziehen: es kennt weder das `on:`
+#   des Aufrufers noch dessen Branch-Schutz, und ein erzwungenes
+#   `environment` waere eine Vertragsaenderung. Ziehen muss sie der Adopter,
+#   auf einem von zwei Wegen:
+#
+#     - den aufrufenden Job an ein geschuetztes `environment` mit
+#       Required Reviewers haengen, sodass ein Mensch den Lauf freigibt,
+#       bevor die Secrets an den Runner gehen; oder
+#     - kurzlebige, NUR LESENDE Credentials uebergeben, deren Diebstahl
+#       nichts wert ist.
 name: tofu-plan
 on:
   workflow_call:

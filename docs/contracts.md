@@ -451,6 +451,24 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 
 ### `tofu-plan.yml`
 
+**Vertrauensgrenze — vor dem Einbau lesen.** Dieses Atom fuehrt die
+OpenTofu-Konfiguration des Adopters mit echten Credentials aus. `tofu plan` ist
+nicht rein deklarativ: der offizielle `external`-Provider startet waehrend des
+Plans ein beliebiges Programm, und dieser Kindprozess erbt die komplette
+Umgebung des Schritts — die Backend-Credentials und die `TF_VAR_*`
+eingeschlossen. Daraus folgt: **jeder Pull Request, der eine `.tf`-Datei aendern
+kann, kann die an dieses Atom uebergebenen Secrets lesen.** Das gilt auch fuer
+einen PR aus demselben Repository; der eingebaute Riegel gegen
+`pull_request_target` und `workflow_run` haelt fremde Forks und die falsche
+Revision fern, nicht Leute mit Branch-Zugriff.
+
+Das Atom kann diese Grenze nicht selbst ziehen — es kennt weder das `on:` des
+Aufrufers noch dessen Branch-Schutz. Ziehen muss sie der Adopter: den
+aufrufenden Job an ein geschuetztes `environment` mit Required Reviewers
+haengen, sodass ein Mensch den Lauf freigibt, bevor die Secrets an den Runner
+gehen — oder kurzlebige, nur lesende Credentials uebergeben, deren Diebstahl
+nichts wert ist.
+
 | Kind   | Name | Type | Required | Default | Description |
 |--------|------|------|----------|---------|-------------|
 | input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
