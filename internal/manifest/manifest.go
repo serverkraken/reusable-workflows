@@ -69,6 +69,11 @@ type Workflows struct {
 type E2E struct{ Script, Schedule string }
 type Release struct {
 	DispatchTrigger, Badges bool
+	// PrereleaseBranch ist der Branch, auf dessen Push prerelease-on-push.yml
+	// baut. Leer = `develop`, der bisher fest im Template stand (Audit J-25).
+	// GitHub wertet in `on:` keine Ausdruecke aus, der Wert muss also beim
+	// Rendern feststehen — deshalb ein Manifest-Feld und kein Repo-Variable.
+	PrereleaseBranch string
 	// ChartPins moves the chart's own image pins after a release built new
 	// images. Nil when the adopter does not ship a chart for its own images.
 	ChartPins *ChartPins
@@ -144,6 +149,30 @@ const RelPathPattern = `^[A-Za-z0-9._/-]+$`
 // direkt daneben.
 const ChartPinKeyPattern = `^[A-Za-z0-9._{}-]+$`
 
+// PrereleaseBranchPattern gilt fuer `release.prerelease_branch`.
+//
+// Der Wert landet in `prerelease-on-push.yml` in einer YAML-FLOW-SEQUENZ:
+//
+//	on:
+//	  push:
+//	    branches: [<wert>]
+//
+// Das ist dieselbe Stelle, an der `default_branch` in release.yml.tmpl schon
+// einmal auffiel (Audit J-20). Git erlaubt dort Zeichen, die YAML anders liest
+// als der Adopter meint:
+//
+//	prerelease_branch: x,y   ->  branches: [x,y]   ZWEI Branches statt einem
+//	prerelease_branch: a]b   ->  branches: [a]b]   zerbricht die Datei
+//
+// Das Template quotet zusaetzlich mit strings.Quote — beides, weil Quoting den
+// Schaden repariert, die Pruefung ihn aber benennt. Ein Adopter, der `x,y`
+// meint, soll das beim Onboarding erfahren und nicht anhand eines Workflows,
+// der still auf zwei Branches lauscht.
+//
+// Bewusst enger als Git: keine Leerzeichen, kein `@`, `:`, `~`, `^`, `?`, `*`,
+// `[`. Das deckt `develop`, `dev`, `release/next` und `feature.x` ab.
+const PrereleaseBranchPattern = `^[A-Za-z0-9._/-]+$`
+
 var (
 	// OCI-Namen sind kleingeschrieben; die Distribution-Spec laesst im
 	// Repository-Namen nur [a-z0-9] plus Trenner zu (Audit A-7). Das Muster
@@ -159,9 +188,10 @@ var (
 	// oder `path` (Audit A-1). cleanRelPath heisst so und meldet "path must
 	// stay inside the repository" - hielt das aber nur gegen `/` am Anfang und
 	// `..`, nicht gegen alles andere, was kein Pfad ist.
-	relPathRe     = regexp.MustCompile(RelPathPattern)
-	chartPinKeyRe = regexp.MustCompile(ChartPinKeyPattern)
-	repoRe        = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+	relPathRe          = regexp.MustCompile(RelPathPattern)
+	chartPinKeyRe      = regexp.MustCompile(ChartPinKeyPattern)
+	prereleaseBranchRe = regexp.MustCompile(PrereleaseBranchPattern)
+	repoRe             = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	// platformsRe mirrors the buildx `--platform` list the docker-build atoms
 	// forward verbatim: os/arch with an optional /vN variant, comma-separated,
 	// no spaces.
@@ -312,7 +342,7 @@ func decode(root *Node) (*Manifest, error) {
 		}
 	}
 	if n, ok := root.Map["release"]; ok {
-		if err := allowKeys(n, "dispatch_trigger", "badges", "chart_pins"); err != nil {
+		if err := allowKeys(n, "dispatch_trigger", "badges", "chart_pins", "prerelease_branch"); err != nil {
 			return nil, err
 		}
 		m.Release = &Release{}
@@ -321,6 +351,24 @@ func decode(root *Node) (*Manifest, error) {
 		}
 		if m.Release.DispatchTrigger, err = optionalBool(n, "dispatch_trigger"); err != nil {
 			return nil, err
+		}
+		if pb, err := optionalString(n, "prerelease_branch"); err != nil {
+			return nil, err
+		} else if pb != "" {
+			line := n.Line
+			if node, ok := n.Map["prerelease_branch"]; ok {
+				line = node.Line
+			}
+			if !prereleaseBranchRe.MatchString(pb) {
+				return nil, fmt.Errorf("line %d: release.prerelease_branch must match %s, got %q", line, PrereleaseBranchPattern, pb)
+			}
+			// Zeichensatz allein reicht nicht: `-x`, `a/`, `/a` und `a..b` sind
+			// alle aus erlaubten Zeichen gebaut und trotzdem keine Branchnamen,
+			// die `git` so annimmt.
+			if strings.HasPrefix(pb, "-") || strings.HasPrefix(pb, "/") || strings.HasSuffix(pb, "/") || strings.Contains(pb, "..") || strings.Contains(pb, "//") {
+				return nil, fmt.Errorf("line %d: release.prerelease_branch is not a usable branch name: %q", line, pb)
+			}
+			m.Release.PrereleaseBranch = pb
 		}
 		if cp, ok := n.Map["chart_pins"]; ok {
 			if err := allowKeys(cp, "values", "key"); err != nil {

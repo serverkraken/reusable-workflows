@@ -635,6 +635,7 @@ workflows:                       # optional
 release:                         # optional
   dispatch_trigger: true         # adds `workflow_dispatch: {}` to release.yml
   badges: true                   # version-badges job after each release (README markers required)
+  prerelease_branch: develop     # optional; branch that triggers prerelease-on-push.yml (default develop)
   chart_pins:                    # optional; pin the repo's own images in its chart
     values: charts/app/values.yaml
     key: images.{name}.tag       # optional; {name} = image basename
@@ -827,6 +828,29 @@ rejects the rest with a line number instead of guessing:
 Quoting changes nothing about a value: `dispatch_trigger: "true"` and
 `dispatch_trigger: true` parse identically, and `"a\nb"` is the four
 characters `a\nb`. Keep the manifest boring.
+
+#### `release.prerelease_branch`
+
+`prerelease-on-push.yml` builds a prerelease on every push to one branch. That
+branch has to be fixed at RENDER time — GitHub does not evaluate expressions in
+`on:` — so it cannot come from a repo variable. It was baked to `develop`, which
+meant the workflow was simply dead for any adopter whose dev branch is called
+something else, without anything saying so.
+
+Default stays `develop`. The value is validated against
+`^[A-Za-z0-9._/-]+$` plus the usual branch-name rules (no leading `-` or `/`,
+no trailing `/`, no `..`, no `//`), because it is rendered into a YAML **flow
+sequence**:
+
+```yaml
+on:
+  push:
+    branches: ["develop"]
+```
+
+`x,y` would otherwise be **two** branches and `a]b` would break the file — the
+same hazard `default_branch` hit in `release.yml`. The template quotes the value
+as well; quoting repairs the damage, the check names it.
 
 ### 11.3 Per-component releases
 

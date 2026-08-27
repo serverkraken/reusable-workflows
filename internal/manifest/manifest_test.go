@@ -975,3 +975,82 @@ func TestManifestScheduleOutOfRangeNamesTheLine(t *testing.T) {
 		t.Errorf("Meldung nennt das Feld nicht: %v", err)
 	}
 }
+
+// release.prerelease_branch ersetzt den fest in prerelease-on-push.yml.tmpl
+// gebackenen Branch `develop` (Audit J-25). GitHub wertet in `on:` keine
+// Ausdruecke aus, der Wert muss also beim Rendern feststehen — fuer jeden
+// Adopter, der seinen Dev-Branch anders nennt, war der Workflow bis hierher
+// tot, ohne dass irgendetwas es gemeldet haette.
+func TestParseManifestPrereleaseBranch(t *testing.T) {
+	m, err := Parse([]byte("schema: 1\nrelease:\n  prerelease_branch: next\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Release == nil || m.Release.PrereleaseBranch != "next" {
+		t.Fatalf("prerelease_branch=%+v", m.Release)
+	}
+}
+
+// Leer bleibt leer: die Vorgabe `develop` setzt das Template. So bleibt im
+// Profil sichtbar, was der Adopter WIRKLICH geschrieben hat.
+func TestParseManifestPrereleaseBranchStaysEmptyWhenAbsent(t *testing.T) {
+	m, err := Parse([]byte("schema: 1\nrelease:\n  dispatch_trigger: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Release.PrereleaseBranch != "" {
+		t.Fatalf("erwartet leer, bekam %q", m.Release.PrereleaseBranch)
+	}
+}
+
+// Gegenprobe zur Zeichenklasse: waere sie zu eng, wuerde sie uebliche
+// Branchnamen abweisen, und der Fix waere schlimmer als der Fund.
+func TestParseManifestPrereleaseBranchAcceptsLegitimateNames(t *testing.T) {
+	for _, br := range []string{
+		"develop",
+		"dev",
+		"next",
+		"release/next",
+		"feature.x",
+		"v2-dev",
+		"team/sub/branch",
+	} {
+		t.Run(br, func(t *testing.T) {
+			m, err := Parse([]byte("schema: 1\nrelease:\n  prerelease_branch: '" + br + "'\n"))
+			if err != nil {
+				t.Fatalf("legitimer Branchname abgewiesen: %v", err)
+			}
+			if m.Release.PrereleaseBranch != br {
+				t.Fatalf("got %q, want %q", m.Release.PrereleaseBranch, br)
+			}
+		})
+	}
+}
+
+// Der Wert landet in einer YAML-FLOW-SEQUENZ (`branches: [<wert>]`) — dieselbe
+// Stelle, an der `default_branch` schon einmal auffiel (J-20). Das Template
+// quotet zusaetzlich; die Pruefung existiert, damit ein Adopter, der `x,y`
+// meint, es beim Onboarding erfaehrt und nicht anhand eines Workflows, der
+// still auf zwei Branches lauscht.
+func TestParseManifestPrereleaseBranchRejectsHostileValues(t *testing.T) {
+	for name, br := range map[string]string{
+		"komma trennt die Sequenz":    "x,y",
+		"klammer zerbricht die Datei": "a]b",
+		"anfuehrungszeichen":          `a"b`,
+		"expression":                  "${{ secrets.GITHUB_TOKEN }}",
+		"leerzeichen":                 "my branch",
+		"doppelpunkt":                 "refs:heads",
+		"fuehrender bindestrich":      "-develop",
+		"fuehrender slash":            "/develop",
+		"abschliessender slash":       "develop/",
+		"doppelter punkt":             "a..b",
+		"doppelter slash":             "a//b",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse([]byte("schema: 1\nrelease:\n  prerelease_branch: '" + br + "'\n"))
+			if err == nil {
+				t.Fatalf("angenommen, haette abgewiesen werden muessen: %q", br)
+			}
+		})
+	}
+}
