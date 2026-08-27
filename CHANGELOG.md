@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.24.0](https://github.com/serverkraken/reusable-workflows/compare/v4.23.0...v4.24.0) (2026-08-27)
+
+
+### Features
+
+* IaC- und Shell-Atome für den Katalog ([#405](https://github.com/serverkraken/reusable-workflows/issues/405)) ([6d7608d](https://github.com/serverkraken/reusable-workflows/commit/6d7608d1a64a95cd0fc2af653887b286d5394bbd))
+
 ## [4.23.0](https://github.com/serverkraken/reusable-workflows/compare/v4.22.1...v4.23.0) (2026-08-27)
 
 
