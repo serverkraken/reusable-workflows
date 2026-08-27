@@ -335,7 +335,7 @@ jobs:
       - name: Find existing plan comment
         id: find-comment
         if: >-
-          steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          always() && steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
           && github.event_name == 'pull_request'
         uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
         with:
@@ -346,31 +346,40 @@ jobs:
       - name: Compose comment body
         id: comment-body
         if: >-
-          steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          always() && steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
           && github.event_name == 'pull_request'
         env:
           DIR: ${{ inputs.working_directory }}
           HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
           SUMMARY_LINE: ${{ steps.plan.outputs.summary_line }}
+          FAILED: ${{ steps.plan.outputs.failed }}
           RENDER: ${{ github.workspace }}/.catalog/scripts/tofu-plan-render.sh
         run: |
           set -euo pipefail
           BODY_FILE=comment.md
           {
             echo "<!-- tofu-plan:${DIR} -->"
-            if [[ "$HAS_CHANGES" == "true" ]]; then
+            if [[ "${FAILED:-}" == "true" || -z "${HAS_CHANGES:-}" ]]; then
+              # Kein stiller Stand: ohne diesen Zweig behielte der Kommentar den
+              # Text des letzten ERFOLGREICHEN Laufs, waehrend die Step-Summary
+              # bereits "plan failed" zeigt — ein Reviewer saehe "keine
+              # Aenderungen" fuer einen Plan, der nie durchgelaufen ist.
+              echo "**OpenTofu plan — \`${DIR}\`: ✗ Plan nicht abgeschlossen — Details in der Step-Summary dieses Laufs**"
+            elif [[ "$HAS_CHANGES" == "true" ]]; then
               echo "**OpenTofu plan — \`${DIR}\`: ▲ ${SUMMARY_LINE}**"
             else
               echo "**OpenTofu plan — \`${DIR}\`: ✓ keine Aenderungen**"
             fi
-            echo ""
-            echo "<details><summary>Plan anzeigen</summary>"
-            echo ""
-            echo '```'
-            bash "$RENDER" plan.txt 60000
-            echo '```'
-            echo ""
-            echo "</details>"
+            if [[ "${FAILED:-}" != "true" && -n "${HAS_CHANGES:-}" && -f plan.txt ]]; then
+              echo ""
+              echo "<details><summary>Plan anzeigen</summary>"
+              echo ""
+              echo '```'
+              bash "$RENDER" plan.txt 60000
+              echo '```'
+              echo ""
+              echo "</details>"
+            fi
           } > "$BODY_FILE"
           # Zufaelliger Delimiter je Aufruf: mit einem festen wuerde eine Zeile
           # im Plan, die exakt der Delimiter ist, den Block vorzeitig schliessen
@@ -390,7 +399,7 @@ jobs:
 
       - name: Post or update plan comment
         if: >-
-          steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          always() && steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
           && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
         with:
