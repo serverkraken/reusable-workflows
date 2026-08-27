@@ -200,3 +200,33 @@ jobs:
     secrets: inherit
 {{- end }}
 {{- end }}
+{{- if index .profile "iac" }}
+
+  tofu-validate:
+    uses: serverkraken/reusable-workflows/.github/workflows/tofu-validate.yml@{{ $pin }}
+    permissions:
+      contents: read
+    with:
+      working_directories: |-
+        {{- range $.profile.iac.directories }}
+        {{ . }}
+        {{- end }}
+      tofu_version: {{`${{ vars.SK_TOFU_VERSION || '' }}`}}
+    secrets: inherit
+{{- end }}
+{{- if index .profile "shell" }}
+
+  shellcheck:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-shell.yml@{{ $pin }}
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      paths: |-
+        {{- range $.profile.shell.paths }}
+        {{ . }}
+        {{- end }}
+      shellcheck_version: {{`${{ vars.SK_SHELLCHECK_VERSION || '' }}`}}
+    secrets: inherit
+{{- end }}

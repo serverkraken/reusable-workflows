@@ -1713,3 +1713,120 @@ _nested_repo() {  # <tiefe: 3|4>
   # Kein absoluter Runner-Pfad — die Meldung landet im Onboarding-PR-Text.
   jq -e '[.warnings[] | select(.message | test("^/|/Users/|/home/|/tmp/"))] | length == 0' <<<"$out" >/dev/null
 }
+
+# ---- iac/shell signal detection (Task 12) ----
+#
+# Bash-Zwilling zu TestIaCAndShellSignals / TestNoIaCOrShellSignalWhenAbsent
+# in internal/app/detect/iac_shell_test.go. Beide Signale sind repo-weit und
+# additiv - anders als gitops oben, das primary_language ueberschreibt. Ein
+# Go-Service mit tofu/ bleibt ein Go-Service und bekommt trotzdem beide
+# Schluessel. check-engine-parity.sh prueft, dass beide Engines hier exakt
+# dasselbe Profil liefern.
+
+@test "profile-json: iac-shell-repo attaches .iac.directories" {
+  run "$DETECT" --profile-json "$FIX/iac-shell-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu"]'
+}
+
+@test "profile-json: iac-shell-repo attaches .shell.paths as globs, not file lists" {
+  run "$DETECT" --profile-json "$FIX/iac-shell-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.shell.paths == [".taskfiles/**/*.sh","scripts/**/*.sh"]'
+}
+
+@test "profile-json: iac-shell-repo stays a go component (signals are additive)" {
+  run "$DETECT" --profile-json "$FIX/iac-shell-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "go"'
+}
+
+@test "profile-json: repo without .tf/.sh has neither .iac nor .shell key" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'has("iac") | not'
+  echo "$output" | jq -e 'has("shell") | not'
+}
+
+@test "profile-json: iac/shell walk skips vendor/, node_modules/, .terraform/, .catalog/, .venv/, .task/" {
+  local repo="$BATS_TEST_TMPDIR/signal-skip-dirs"
+  mkdir -p "$repo/vendor" "$repo/node_modules" "$repo/.terraform" \
+           "$repo/.catalog" "$repo/.venv" "$repo/.task"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'resource "null_resource" "x" {}\n' > "$repo/vendor/skip.tf"
+  printf '#!/usr/bin/env bash\n' > "$repo/node_modules/skip.sh"
+  printf 'resource "null_resource" "x" {}\n' > "$repo/.terraform/skip.tf"
+  printf '#!/usr/bin/env bash\n' > "$repo/.catalog/skip.sh"
+  printf '#!/usr/bin/env bash\n' > "$repo/.venv/skip.sh"
+  printf '#!/usr/bin/env bash\n' > "$repo/.task/skip.sh"
+
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'has("iac") | not'
+  echo "$output" | jq -e 'has("shell") | not'
+}
+
+# Go sortiert bytewise (sort.Strings): "Infra" kommt vor "bootstrap". Ein
+# lokalisiertes `sort -u` ohne LC_ALL=C stuft Grossbuchstaben anders ein und
+# haette hier eine andere Reihenfolge geliefert als die Go-Engine — ein
+# Paritaetsbruch, den check-engine-parity.sh nicht sieht, weil keine der 29
+# Fixtures ein gemischt gross-/kleingeschriebenes oberstes Pfadsegment hat.
+# Verifiziert auf dieser Maschine unter LC_ALL=en_US.UTF-8 (siehe Report):
+#   LC_ALL=en_US.UTF-8 sort  -> bootstrap, Infra
+#   LC_ALL=C           sort  -> Infra, bootstrap  (== Go)
+@test "profile-json: iac.directories and shell.paths sort bytewise, not locale-aware" {
+  local repo="$BATS_TEST_TMPDIR/locale-sort"
+  mkdir -p "$repo/Infra" "$repo/bootstrap"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'resource "null_resource" "a" {}\n' > "$repo/Infra/main.tf"
+  printf 'resource "null_resource" "b" {}\n' > "$repo/bootstrap/main.tf"
+  printf '#!/usr/bin/env bash\necho a\n' > "$repo/Infra/a.sh"
+  printf '#!/usr/bin/env bash\necho b\n' > "$repo/bootstrap/b.sh"
+
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["Infra","bootstrap"]'
+  echo "$output" | jq -e '.shell.paths == ["Infra/**/*.sh","bootstrap/**/*.sh"]'
+}
+
+# Zwilling von TestIaCSkipsChildModules in internal/app/detect/iac_shell_test.go.
+# Ein Kindmodul ist kein Stack: `working_directories` ist als "ein Stack pro
+# Zeile" dokumentiert, und im Modulordner liegt keine .terraform.lock.hcl —
+# `init -lockfile=readonly` koennte dort gar nicht durchlaufen. Ohne den Filter
+# meldeten beide Engines ["tofu","tofu/modules/server"].
+@test "profile-json: iac.directories laesst Kindmodule (modules/) weg" {
+  run "$DETECT" --profile-json "$FIX/iac-nested-module"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu"]'
+}
+
+# Segmentgenau: `mymodules` und `modules-old` sind normale Verzeichnisnamen.
+# Zwilling von TestIsChildModulePath.
+@test "profile-json: der modules/-Filter greift segmentgenau" {
+  local repo="$BATS_TEST_TMPDIR/module-segments"
+  mkdir -p "$repo/tofu/modules/server" "$repo/tofu/mymodules" "$repo/tofu/modules-old"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'resource "null_resource" "a" {}\n' > "$repo/tofu/main.tf"
+  printf 'resource "null_resource" "b" {}\n' > "$repo/tofu/modules/server/main.tf"
+  printf 'resource "null_resource" "c" {}\n' > "$repo/tofu/mymodules/main.tf"
+  printf 'resource "null_resource" "d" {}\n' > "$repo/tofu/modules-old/main.tf"
+
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu","tofu/modules-old","tofu/mymodules"]'
+}
+
+# Zwilling von TestSignalsIgnoreSymlinks. linked-only/ enthaelt AUSSCHLIESSLICH
+# Symlinks — einen gueltigen und einen kaputten je Endung. Zaehlte eine Engine
+# Symlinks mit, erschiene das Verzeichnis als Stack bzw. als Glob. Genau hier
+# liefen die Engines auseinander: Gos WalkDir meldet einen Symlink-auf-Datei
+# als Nicht-Verzeichnis, `find -type f` schliesst ihn aus.
+@test "profile-json: Symlinks zaehlen weder fuer iac noch fuer shell" {
+  run "$DETECT" --profile-json "$FIX/symlinked-signals"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu"]'
+  echo "$output" | jq -e '.shell.paths == ["scripts/**/*.sh"]'
+  # Ein kaputter Symlink ist kein unlesbarer Pfad — geprueft wird der Typ des
+  # Eintrags, nicht sein Ziel. Also auch keine Warnung.
+  echo "$output" | jq -e '[.warnings[] | select(.code == "path_unreadable")] | length == 0'
+}

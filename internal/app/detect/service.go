@@ -217,6 +217,8 @@ func (s Service) Detect(ctx context.Context, req Request) (Result, error) {
 		Topics:         topics,
 		Warnings:       []domain.Warning{},
 		GitOps:         gitops,
+		IaC:            classifyIaC(req.RepoPath, fe),
+		Shell:          classifyShell(req.RepoPath, fe),
 	}
 	if hasManifest {
 		profile.ManifestSHA256 = manifestSHA
@@ -1473,6 +1475,157 @@ func gitOpsManifestPaths(repo string) []string {
 		default:
 			out = append(out, filepath.ToSlash(filepath.Join("kubernetes", e.Name())))
 		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Verzeichnisse, in denen weder IaC noch eigene Skripte des Repos stehen.
+// .catalog ist der Katalog-Checkout aus einem Workflow-Lauf, vendor und
+// node_modules sind Fremdcode — Funde dort waeren nicht die des Adopters.
+var signalSkipDirs = map[string]bool{
+	".git": true, ".catalog": true, "vendor": true, "node_modules": true,
+	".terraform": true, ".venv": true, ".task": true,
+}
+
+// isChildModulePath erkennt Kindmodule an einem `modules/`-Pfadsegment.
+//
+// Warum ueberhaupt gefiltert wird: `working_directories` in tofu-validate.yml
+// ist als "ein STACK pro Zeile" dokumentiert, und ein Kindmodul ist kein
+// Stack. Ein Repo mit `tofu/main.tf` + `tofu/modules/server/main.tf` lieferte
+// vorher beide Verzeichnisse, und das Atom lief in beiden. Im Modulordner kann
+// `init -lockfile=readonly` gar nicht durchlaufen: die .terraform.lock.hcl
+// liegt nur im Wurzelmodul, ein Modul mit eigenem `required_providers`-Block
+// scheitert dort also zwangslaeufig.
+//
+// GRENZE der Heuristik, bewusst in Kauf genommen: erkannt wird nur der
+// Konventionsname `modules/`. Ein Kindmodul in einem anders benannten Ordner
+// (`tofu/internal/server/`) bleibt unentdeckt und wird weiter als Stack
+// gemeldet. Die Alternative — jedes Verzeichnis ohne `backend`/`provider`-Block
+// verwerfen — braeuchte einen HCL-Parser in BEIDEN Engines und wuerde Stacks
+// mit lokalem State faelschlich aussortieren. Der Adopter kann
+// `working_directories` im gerenderten ci.yml jederzeit korrigieren.
+//
+// Die Klammern machen den Vergleich segmentgenau: `mymodules` oder
+// `modules-old` passen nicht.
+func isChildModulePath(dir string) bool {
+	return strings.Contains("/"+filepath.ToSlash(dir)+"/", "/modules/")
+}
+
+// classifyIaC liefert die Verzeichnisse, die *.tf-Dateien enthalten —
+// Kindmodule ausgenommen, siehe isChildModulePath.
+// Rueckgabe nil (nicht ein leeres Signal), wenn es keine gibt — der
+// Profilschluessel muss dann ganz fehlen.
+func classifyIaC(repo string, fe *fsErrors) *domain.IaCSignal {
+	all := collectDirsWithSuffix(repo, ".tf", fe)
+	dirs := make([]string, 0, len(all))
+	for _, d := range all {
+		if isChildModulePath(d) {
+			continue
+		}
+		dirs = append(dirs, d)
+	}
+	if len(dirs) == 0 {
+		return nil
+	}
+	return &domain.IaCSignal{Directories: dirs}
+}
+
+// classifyShell liefert Globs statt Dateilisten. Wuerde hier jede einzelne
+// Datei stehen, aenderte jedes neue Skript das Profil und loeste Drift aus,
+// obwohl sich an der CI-Konfiguration nichts geaendert hat.
+//
+// NUR DIE ENDUNG .sh, KEIN SHEBANG — bewusst, und in der Bash-Zwillingsfunktion
+// classify_shell_signal genauso. Ein Repo, dessen Skripte alle endungslos sind
+// (scripts/deploy, bin/release), bekommt damit kein shell-Signal und folglich
+// keinen gerenderten lint-shell-Job; es muss ihn von Hand in seine ci.yml
+// schreiben. Shebang-Erkennung muesste in Go UND in Bash byte-identisch
+// entscheiden, wann eine Datei gelesen wird und wie mit Binaerdateien,
+// ungueltigen Encodings und Leserechten umzugehen ist —
+// check-engine-parity.sh erzwingt identische Ausgabe. Zurueckgestellt, nicht
+// vergessen; siehe docs/superpowers/specs/2026-08-27-iac-shell-atoms-design.md
+// Abschnitt 8. Das Atom lint-shell selbst kann Shebangs (Input scan_shebangs),
+// die Luecke betrifft nur die Frage, OB der Job gerendert wird.
+func classifyShell(repo string, fe *fsErrors) *domain.ShellSignal {
+	dirs := collectDirsWithSuffix(repo, ".sh", fe)
+	if len(dirs) == 0 {
+		return nil
+	}
+	tops := map[string]bool{}
+	for _, d := range dirs {
+		top := d
+		if i := strings.Index(d, string(filepath.Separator)); i > 0 {
+			top = d[:i]
+		}
+		tops[top] = true
+	}
+	var out []string
+	for t := range tops {
+		if t == "." {
+			out = append(out, "*.sh")
+			continue
+		}
+		out = append(out, t+"/**/*.sh")
+	}
+	sort.Strings(out)
+	return &domain.ShellSignal{Paths: out}
+}
+
+// collectDirsWithSuffix liefert die repo-relativen Verzeichnisse, die
+// mindestens eine Datei mit der Endung enthalten — sortiert und dedupliziert.
+//
+// SYMLINKS ZAEHLEN NICHT, in BEIDEN Engines. Das war eine echte Abweichung:
+// `WalkDir` meldet einen Symlink-auf-Datei als Nicht-Verzeichnis, das
+// `-type f` des Bash-Zwillings schliesst ihn dagegen aus. Ein Repo mit einer
+// verlinkten .tf/.sh lieferte damit je nach Schalter `use_go_cli` ein anderes
+// Profil.
+//
+// Vereinheitlicht wurde auf "ignorieren", nicht auf "mitzaehlen":
+//   - Zeigt der Link ins Repo, wird der Inhalt ueber seinen ECHTEN Pfad
+//     ohnehin gefunden; der Link fuegt nichts hinzu.
+//   - Zeigt er nach draussen, ist der Inhalt nicht der des Adopters — genau
+//     die Begruendung, aus der signalSkipDirs vendor/ und node_modules/
+//     verwirft.
+//   - Ein KAPUTTER Link erzeugte sonst ein Stack-Verzeichnis aus einer Datei,
+//     die es nicht gibt. Weil hier nur der Typ des Eintrags geprueft wird und
+//     nicht sein Ziel, verhaelt sich ein kaputter Link exakt wie ein
+//     gueltiger — in beiden Engines.
+//
+// Fixture: tests/fixtures/onboard/symlinked-signals.
+func collectDirsWithSuffix(repo, suffix string, fe *fsErrors) []string {
+	seen := map[string]bool{}
+	if err := filepath.WalkDir(repo, func(path string, d fs.DirEntry, err error) error {
+		// Wie fallbackMarkerPaths: weiterlaufen, aber den unlesbaren Pfad
+		// vermerken. Ein stilles `return nil` liesse ein ganzes Stack- oder
+		// Skriptverzeichnis lautlos aus dem Profil fallen.
+		if err != nil {
+			fe.note(repo, path, err)
+			return nil
+		}
+		if d.IsDir() {
+			if signalSkipDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), suffix) {
+			return nil
+		}
+		rel, relErr := filepath.Rel(repo, filepath.Dir(path))
+		if relErr != nil {
+			return nil
+		}
+		seen[rel] = true
+		return nil
+	}); err != nil {
+		fe.note(repo, repo, err)
+	}
+	out := make([]string, 0, len(seen))
+	for d := range seen {
+		out = append(out, d)
 	}
 	sort.Strings(out)
 	return out

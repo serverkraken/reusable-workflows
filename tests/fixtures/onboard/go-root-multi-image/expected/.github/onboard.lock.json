@@ -6,7 +6,7 @@
     "manifest_sha256": "sha256:d792ee71c5d7189df62e59cb1b1037b327fa9f09b700ba63e777cb2b01ac6f71"
   },
   "files": {
-    ".github/workflows/ci.yml": "sha256:e01b0529e0273ca16d3428169336de147305926705a10a8b3421edaad28dfed0",
+    ".github/workflows/ci.yml": "sha256:d404b66eabe17b9c29236298d58e98739ec9710aed1a97f9a48387a51cb42c67",
     ".github/workflows/release.yml": "sha256:dfa9123b2f7f2bb20c6bf868ebe69c1550d4effce219191358cca00ee6a995aa",
     ".github/workflows/prerelease.yml": "sha256:4ee7947f207a8d835684b3a43f8a4dcd2f36d1172f175f54b74d27c67a049077",
     ".github/workflows/cleanup.yml": "sha256:b276551c369594569373dec50aa2e51d31edc5d7192cf9365140a740d2871b24",

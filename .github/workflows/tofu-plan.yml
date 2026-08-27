@@ -1,0 +1,570 @@
+# .github/workflows/tofu-plan.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  working_directory, tofu_version, backend_config, comment_on_pr,
+#            plan_json, lock, lock_timeout, runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key,
+#            backend_access_key, backend_secret_key, tf_vars
+#   outputs: has_changes, summary_line, plan_status
+#
+# SICHERHEIT — drei Punkte, die beim Aendern nicht verloren gehen duerfen:
+#
+#   1. `tofu show -json` redigiert `sensitive`-Werte NICHT, die
+#      menschenlesbare Ausgabe schon. Deshalb ist plan_json opt-in und die
+#      binaere tfplan wird NIE als Artefakt hochgeladen.
+#   2. Unter `pull_request_target` liefe fremder PR-Code mit Zugriff auf die
+#      Backend-Credentials. Das Atom weigert sich dort zu laufen.
+#   3. Ein abgebrochener Plan kann einen State-Lock zurueckzulassen, der auch
+#      den Apply am Laptop blockiert. Deshalb cancel-in-progress: false.
+#
+# VERTRAUENSGRENZE — wer dieses Atom aufruft, muss das hier wissen:
+#
+#   Das Atom fuehrt die OpenTofu-Konfiguration des Adopters mit echten
+#   Credentials aus. `tofu plan` ist nicht rein deklarativ: der offizielle
+#   `external`-Provider startet waehrend des Plans ein beliebiges Programm,
+#   und dieser Kindprozess erbt die komplette Umgebung des Schritts — die
+#   Backend-Credentials und die TF_VAR_* eingeschlossen. `data`-Quellen und
+#   Provider-Konfiguration werden beim Plan ebenfalls ausgewertet.
+#
+#   Daraus folgt: JEDER Pull Request, der eine .tf-Datei aendern kann, kann
+#   die an dieses Atom uebergebenen Secrets lesen. Das gilt auch fuer einen
+#   PR aus demselben Repository — der Riegel gegen pull_request_target haelt
+#   fremde Forks fern, nicht Leute mit Branch-Zugriff.
+#
+#   Das Atom kann diese Grenze nicht selbst ziehen: es kennt weder das `on:`
+#   des Aufrufers noch dessen Branch-Schutz, und ein erzwungenes
+#   `environment` waere eine Vertragsaenderung. Ziehen muss sie der Adopter,
+#   auf einem von zwei Wegen:
+#
+#     - den aufrufenden Job an ein geschuetztes `environment` mit
+#       Required Reviewers haengen, sodass ein Mensch den Lauf freigibt,
+#       bevor die Secrets an den Runner gehen; oder
+#     - kurzlebige, NUR LESENDE Credentials uebergeben, deren Diebstahl
+#       nichts wert ist.
+name: tofu-plan
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: 'OpenTofu stack directory.'
+        required: false
+        type: string
+        default: 'tofu'
+      tofu_version:
+        description: 'Override OpenTofu version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      backend_config:
+        description: >-
+          Newline-separated `-backend-config=` arguments (bucket, endpoint,
+          region). Credentials do NOT belong here — use the secrets.
+        required: false
+        type: string
+        default: ''
+      comment_on_pr:
+        description: 'Post the plan as a sticky PR comment.'
+        required: false
+        type: boolean
+        default: true
+      plan_json:
+        description: >-
+          Upload `tofu show -json` as an artifact. OFF by default: unlike the
+          human-readable output, the JSON does NOT redact values marked
+          sensitive, so anyone who can download the artifact reads them in
+          clear text.
+        required: false
+        type: boolean
+        default: false
+      lock:
+        description: 'Take a state lock during plan.'
+        required: false
+        type: boolean
+        default: true
+      lock_timeout:
+        description: 'Value for -lock-timeout.'
+        required: false
+        type: string
+        default: '60s'
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      has_changes:
+        description: >-
+          true when the plan contains changes, false when it does not — und der
+          LEERE String, wenn der Plan nicht durchlief: Fork-PR (das Atom
+          ueberspringt sich) ODER Plan-Fehler. Ein Aufrufer muss `== 'true'`
+          pruefen, nicht `!= 'false'`. Wer "keine Aenderungen" von "nicht
+          gelaufen" unterscheiden will, liest plan_status.
+        value: ${{ jobs.plan.outputs.has_changes }}
+      summary_line:
+        description: 'The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy".'
+        value: ${{ jobs.plan.outputs.summary_line }}
+      plan_status:
+        description: >-
+          `success`, wenn `tofu plan` durchlief (mit oder ohne Aenderungen),
+          `failed` bei einem unerwarteten Exit-Code, und der LEERE String,
+          wenn der Plan-Schritt gar nicht erst startete (Fork-PR, Abbruch im
+          Backend-Init). Fuer Aufrufer mit `always()` oder
+          `continue-on-error` ist das der einzige Weg, einen Fehlschlag von
+          "es gibt nichts zu tun" zu unterscheiden.
+        value: ${{ jobs.plan.outputs.plan_status }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+      backend_access_key:
+        required: false
+        description: 'S3-compatible backend access key → AWS_ACCESS_KEY_ID.'
+      backend_secret_key:
+        required: false
+        description: 'S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY.'
+      tf_vars:
+        required: false
+        description: 'Newline-separated KEY=VALUE pairs, exported as TF_VAR_key.'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  # cancel-in-progress bewusst FALSE, abweichend von den Lint-Atomen: ein
+  # abgebrochener Plan kann einen State-Lock hinterlassen, und der blockiert
+  # den naechsten CI-Lauf UND den Apply am Laptop.
+  group: tofu-plan-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 30
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+      summary_line: ${{ steps.plan.outputs.summary_line }}
+      plan_status: ${{ steps.plan.outputs.plan_status }}
+    steps:
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      # Das Atom kann das `on:` des Aufrufers nicht bestimmen — aber es kann
+      # sich weigern. Zwei Ereignisse sind hier unbrauchbar, aus zwei ganz
+      # verschiedenen Gruenden:
+      #
+      #   pull_request_target — der Workflow laeuft aus dem BASIS-Branch mit
+      #   vollen Secrets, waehrend der Checkout den fremden PR-Code holt: ein
+      #   Plan-Lauf haette damit die Backend-Credentials.
+      #
+      #   workflow_run — hier ist nicht das Secret das Problem, sondern die
+      #   Revision. `GITHUB_SHA` zeigt unter workflow_run auf den
+      #   DEFAULT-Branch, nicht auf den ausloesenden PR. Das Atom checkte
+      #   also main aus, plante main und haengte das Ergebnis an den PR: ein
+      #   gruener Plan der falschen Revision, was schlimmer ist als gar
+      #   keiner. Ein `ref`-Input, mit dem der Aufrufer das gerade ruecken
+      #   koennte, existiert bewusst nicht — er waere genau der Hebel, mit
+      #   dem sich unter workflow_run beliebiger Code mit den Credentials
+      #   ausfuehren liesse.
+      - name: Refuse to run under pull_request_target or workflow_run
+        working-directory: ${{ github.workspace }}
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "pull_request_target" ]]; then
+            echo "::error::tofu-plan darf nicht unter pull_request_target laufen — fremder PR-Code haette Zugriff auf die Backend-Credentials" >&2
+            echo "::error::den aufrufenden Workflow auf 'pull_request' umstellen" >&2
+            exit 1
+          fi
+          if [[ "$EVENT" == "workflow_run" ]]; then
+            echo "::error::tofu-plan darf nicht unter workflow_run laufen — GITHUB_SHA zeigt dort auf den Default-Branch, das Atom plante also main statt des PR" >&2
+            echo "::error::das Atom bietet fuer workflow_run keinen sicheren ref-Vertrag an; den aufrufenden Workflow auf 'pull_request' umstellen" >&2
+            exit 1
+          fi
+
+      # Fork-PRs haben keine Secrets; ohne Backend-Zugang gaebe es nur einen
+      # verwirrenden Fehler tief im init. Sauber ueberspringen statt scheitern.
+      - name: Detect fork PR
+        id: fork
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "pull_request" && "$HEAD_REPO" != "$THIS_REPO" ]]; then
+            echo "is_fork=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Fork-PR: tofu-plan wird uebersprungen (keine Backend-Credentials verfuegbar)"
+          else
+            echo "is_fork=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # persist-credentials: false — der Checkout schriebe sonst einen
+      # `http.https://github.com/.extraheader` mit dem GITHUB_TOKEN in die
+      # lokale Git-Config und liesse ihn dort fuer den REST des Jobs liegen.
+      # `tofu plan` fuehrt Adopter-Konfiguration aus (siehe VERTRAUENSGRENZE
+      # im Kopf), und alles, was dabei ein `git` im Workspace startet, saehe
+      # das Token. Kein Schritt danach braucht es: der Katalog-Checkout bringt
+      # sein eigenes `token:` mit, und tofu holt Module in eigene Temp-Klone,
+      # auf die die Repo-lokale Config ohnehin nicht wirkt.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: steps.fork.outputs.is_fork == 'false'
+        with:
+          persist-credentials: false
+      - name: Mint catalog-scoped App token
+        if: steps.fork.outputs.is_fork == 'false'
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        if: steps.fork.outputs.is_fork == 'false'
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        if: steps.fork.outputs.is_fork == 'false'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+          # Der App-Token wird zum Klonen gebraucht, nicht danach. Ohne dies
+          # laege er eine Stunde lang lesbar in .catalog/.git/config — im
+          # selben Workspace, in dem gleich Adopter-Konfiguration ausgefuehrt
+          # wird.
+          persist-credentials: false
+
+      - name: Install OpenTofu toolchain
+        if: steps.fork.outputs.is_fork == 'false'
+        uses: ./.catalog/actions/setup-tofu-toolchain
+        with:
+          tofu_version: ${{ inputs.tofu_version }}
+
+      # Frueher schrieb dieser Schritt die Werte nach $GITHUB_ENV — und damit
+      # galten sie fuer den GANZEN Job: fuer den Artefakt-Upload, fuer beide
+      # Kommentar-Schritte, fuer jede Action, die danach noch laeuft. Gebraucht
+      # werden sie in genau EINEM Schritt. Der Parser legt sie deshalb in eine
+      # Datei unter $RUNNER_TEMP (nicht im Workspace, damit sie in keinen
+      # Artefakt-Pfad geraten), und `Run tofu plan` sourct sie fuer die Dauer
+      # seiner eigenen Shell. Der letzte Schritt loescht die Datei.
+      - name: Parse the tf_vars secret
+        if: steps.fork.outputs.is_fork == 'false'
+        env:
+          TF_VARS: ${{ secrets.tf_vars }}
+          PARSER: ${{ github.workspace }}/.catalog/scripts/tf-vars-env.sh
+        run: |
+          set -euo pipefail
+          # ZUERST loeschen, BEDINGUNGSLOS — vor jeder Pruefung auf TF_VARS.
+          #
+          # Sonst haengt die Frische der Datei daran, dass der Aufraeumschritt
+          # am Jobende gelaufen IST. Der laeuft unter `always()`, aber `always()`
+          # deckt keinen gekillten Runner-Prozess, keinen abgestuerzten Agenten
+          # und keinen Reboot mitten im Job. Auf dem self-hosted Pool (der
+          # Standard-Runner) ueberlebt $RUNNER_TEMP den Job — die Datei des
+          # VORIGEN Laufs laege dann noch da, und der Plan-Schritt sourct sie
+          # allein danach, ob sie existiert. Ein Lauf fuer ein ANDERES Repo,
+          # das gar kein tf_vars uebergibt, exportierte damit die Klartext-
+          # Secrets des Vorgaengers in `tofu plan` — also in
+          # Adopter-Konfiguration, die laut VERTRAUENSGRENZE im Kopf ihre
+          # gesamte Umgebung lesen kann.
+          #
+          # Die Frische ist deshalb eine Eigenschaft des SCHREIBENS, nicht des
+          # geglueckten Aufraeumens: existiert nach diesem Schritt eine Datei,
+          # hat dieser Job sie geschrieben.
+          rm -f "$RUNNER_TEMP/tf-vars.env"
+          if [[ -n "${TF_VARS:-}" ]]; then
+            printf '%s\n' "$TF_VARS" | bash "$PARSER" "$RUNNER_TEMP/tf-vars.env"
+          fi
+
+      # KEIN TF_VAR_* hier, und das ist kein Versehen: `tofu init` wertet
+      # Input-Variablen nicht aus. Es laedt Provider und Module und richtet das
+      # Backend ein — Variablen sind weder im `backend`-Block noch in
+      # `module.source` erlaubt. Der Schritt braucht die Werte also nicht, und
+      # was er nicht braucht, bekommt er nicht.
+      - name: Initialize backend
+        if: steps.fork.outputs.is_fork == 'false'
+        env:
+          DIR: ${{ inputs.working_directory }}
+          BACKEND_CONFIG: ${{ inputs.backend_config }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.backend_access_key }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.backend_secret_key }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+          while IFS= read -r line; do
+            [[ -z "${line// /}" ]] && continue
+            ARGS+=("-backend-config=$line")
+          done <<< "$BACKEND_CONFIG"
+          tofu -chdir="$DIR" init -input=false "${ARGS[@]+"${ARGS[@]}"}"
+
+      - name: Run tofu plan
+        if: steps.fork.outputs.is_fork == 'false'
+        id: plan
+        env:
+          DIR: ${{ inputs.working_directory }}
+          LOCK: ${{ inputs.lock }}
+          LOCK_TIMEOUT: ${{ inputs.lock_timeout }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.backend_access_key }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.backend_secret_key }}
+        # -detailed-exitcode ist die eingebaute, eindeutige Antwort auf
+        # "gibt es Aenderungen": 0 = keine, 2 = ja, 1 = Fehler. Deshalb KEIN
+        # jq auf `tofu show -json`, dessen Struktur zwischen Versionen wandert.
+        #
+        # `set +e` ist Pflicht, nicht Bequemlichkeit: GitHub startet run-Bloecke
+        # mit `bash -e`, und der ERWARTETE Erfolgsfall "es gibt Aenderungen"
+        # ist rc=2. Ohne +e stirbt der Schritt, bevor rc ausgewertet wird —
+        # dieselbe Falle wie in kube-lint.yml.
+        run: |
+          set -uo pipefail
+          # Die TF_VAR_* leben NUR in dieser Shell — nicht im Job. Der
+          # Parse-Schritt hat sie gequotet und maskiert abgelegt; `set -a`
+          # exportiert, was das Sourcen definiert, an den tofu-Kindprozess.
+          if [[ -f "$RUNNER_TEMP/tf-vars.env" ]]; then
+            set -a
+            # shellcheck disable=SC1091
+            . "$RUNNER_TEMP/tf-vars.env" || {
+              echo "::error::tf-vars.env liess sich nicht laden" >&2
+              exit 1
+            }
+            set +a
+          fi
+          LOCK_ARGS=(-lock-timeout="$LOCK_TIMEOUT")
+          [[ "$LOCK" == "true" ]] || LOCK_ARGS+=(-lock=false)
+          set +e
+          tofu -chdir="$DIR" plan -input=false -no-color -detailed-exitcode \
+            "${LOCK_ARGS[@]}" -out=tfplan > plan.txt 2> plan.err
+          rc=$?
+          set -e
+          cat plan.err >&2 || true
+          case "$rc" in
+            0)
+              echo "has_changes=false" >> "$GITHUB_OUTPUT"
+              echo "plan_status=success" >> "$GITHUB_OUTPUT"
+              ;;
+            2)
+              echo "has_changes=true"  >> "$GITHUB_OUTPUT"
+              echo "plan_status=success" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::tofu plan scheiterte (rc=$rc): $(tr -d '\n' < plan.err)" >&2
+              # has_changes bleibt hier BEWUSST ungesetzt. Frueher stand hier
+              # `has_changes=false` — und ein Aufrufer mit `always()` oder
+              # `continue-on-error` sah damit exakt den Wert, den er auch fuer
+              # "es gibt nichts zu tun" sieht. Das frueher hier gesetzte
+              # `failed` half ihm nicht: es war ein Schritt-Output, kein
+              # Workflow-Output, und ausserhalb des Atoms nicht lesbar.
+              # plan_status ersetzt es und ist oeffentlich.
+              echo "plan_status=failed" >> "$GITHUB_OUTPUT"
+              exit 1
+              ;;
+          esac
+          LINE=$(grep -E '^Plan: |^No changes\.' plan.txt | tail -1 || true)
+          echo "summary_line=${LINE:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Render plan as JSON
+        if: steps.fork.outputs.is_fork == 'false' && inputs.plan_json
+        env:
+          DIR: ${{ inputs.working_directory }}
+        run: |
+          set -euo pipefail
+          tofu -chdir="$DIR" show -json tfplan > plan.json
+
+      - name: Upload plan JSON
+        # Nur auf ausdruecklichen Wunsch. Die binaere tfplan wird NIE
+        # hochgeladen — sie traegt dieselben Klartextwerte.
+        if: steps.fork.outputs.is_fork == 'false' && inputs.plan_json
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tofu-plan-json
+          # `> plan.json` im Schritt davor schreibt ins cwd (Workspace-Root),
+          # NICHT nach $DIR — `tofu -chdir` aendert das Arbeitsverzeichnis von
+          # tofu, nicht das der Shell.
+          path: plan.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Summary
+        if: always() && steps.fork.outputs.is_fork == 'false'
+        env:
+          DIR: ${{ inputs.working_directory }}
+          HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
+          SUMMARY_LINE: ${{ steps.plan.outputs.summary_line }}
+          PLAN_STATUS: ${{ steps.plan.outputs.plan_status }}
+          RENDER: ${{ github.workspace }}/.catalog/scripts/tofu-plan-render.sh
+        run: |
+          tofu_version=$(tofu version 2>/dev/null | head -1 | awk '{print $2}' || echo unknown)
+          # Gefragt wird plan_status, nicht has_changes: seit das Atom bei
+          # einem Plan-Fehler gar kein has_changes mehr setzt, ist "leer"
+          # zweideutig (nicht gestartet ODER gescheitert). plan_status trennt
+          # beides — und der Fehlerfall muss zuerst geprueft werden.
+          if [[ "${PLAN_STATUS:-}" == "failed" ]]; then
+            result="✗ plan failed"
+          elif [[ -z "${PLAN_STATUS:-}" ]]; then
+            # Der Plan-Schritt ist gar nicht gelaufen (z.B. weil ein frueherer
+            # Schritt wie das Backend-Init fehlschlug). Ein "✓" waere hier die
+            # falsche Aussage — dieselbe Verwechslung wie in lint-shell.yml,
+            # dort fuer einen leeren findings_count.
+            result="✗ plan lief nicht durch"
+          elif [[ "${HAS_CHANGES:-}" == "true" ]]; then
+            result="▲ changes pending"
+          else
+            result="✓ no changes"
+          fi
+          {
+            echo "## tofu-plan"
+            echo ""
+            echo "**Tool:** OpenTofu ${tofu_version}"
+            echo "**Working dir:** \`${DIR}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Plan | ${PLAN_STATUS:-nicht gelaufen} |"
+            echo "| Changes | ${HAS_CHANGES:-unknown} |"
+            echo "| Summary | ${SUMMARY_LINE:-unknown} |"
+            if [[ -f plan.txt ]]; then
+              echo ""
+              echo "<details><summary>Plan</summary>"
+              echo ""
+              # Der Renderer setzt die Zaeune selbst — und zwar eine laenger
+              # als die laengste Backtick-Folge im Plan. Ein festes ```
+              # schloesse sich an der ersten solchen Zeile im Plan, und alles
+              # danach rendert als echtes Markdown.
+              # 900k statt 1M: der Rest der Summary braucht auch Platz.
+              bash "$RENDER" plan.txt 900000
+              echo ""
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Find existing plan comment
+        id: find-comment
+        if: >-
+          always() && steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          && github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '<!-- tofu-plan:${{ inputs.working_directory }} -->'
+
+      - name: Compose comment body
+        id: comment-body
+        if: >-
+          always() && steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          && github.event_name == 'pull_request'
+        env:
+          DIR: ${{ inputs.working_directory }}
+          HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
+          SUMMARY_LINE: ${{ steps.plan.outputs.summary_line }}
+          PLAN_STATUS: ${{ steps.plan.outputs.plan_status }}
+          RENDER: ${{ github.workspace }}/.catalog/scripts/tofu-plan-render.sh
+        run: |
+          set -euo pipefail
+          BODY_FILE=comment.md
+          {
+            echo "<!-- tofu-plan:${DIR} -->"
+            if [[ "${PLAN_STATUS:-}" != "success" ]]; then
+              # Kein stiller Stand: ohne diesen Zweig behielte der Kommentar den
+              # Text des letzten ERFOLGREICHEN Laufs, waehrend die Step-Summary
+              # bereits "plan failed" zeigt — ein Reviewer saehe "keine
+              # Aenderungen" fuer einen Plan, der nie durchgelaufen ist.
+              echo "**OpenTofu plan — \`${DIR}\`: ✗ Plan nicht abgeschlossen — Details in der Step-Summary dieses Laufs**"
+            elif [[ "${HAS_CHANGES:-}" == "true" ]]; then
+              echo "**OpenTofu plan — \`${DIR}\`: ▲ ${SUMMARY_LINE}**"
+            else
+              echo "**OpenTofu plan — \`${DIR}\`: ✓ keine Aenderungen**"
+            fi
+            if [[ "${PLAN_STATUS:-}" == "success" && -f plan.txt ]]; then
+              echo ""
+              echo "<details><summary>Plan anzeigen</summary>"
+              echo ""
+              # Zaeune kommen aus dem Renderer, nicht von hier: der Planinhalt
+              # ist Adopter-Text, und ein festes ``` liesse sich mit drei
+              # Backticks im Plan aufbrechen — der Rest stuende dann als
+              # echtes Markdown im Kommentar des Bots, Links eingeschlossen.
+              bash "$RENDER" plan.txt 60000
+              echo ""
+              echo "</details>"
+            fi
+          } > "$BODY_FILE"
+          # Zufaelliger Delimiter je Aufruf: mit einem festen wuerde eine Zeile
+          # im Plan, die exakt der Delimiter ist, den Block vorzeitig schliessen
+          # — und jede Folgezeile wuerde zu einem NEUEN Step-Output. Der
+          # Planinhalt ist nicht unter unserer Kontrolle. Dasselbe Argument wie
+          # in actions/post-prerelease-comment.
+          DELIM="body_$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          if grep -qxF "$DELIM" "$BODY_FILE"; then
+            echo "::error::generated delimiter collides with the comment body" >&2
+            exit 1
+          fi
+          {
+            echo "body<<$DELIM"
+            cat "$BODY_FILE"
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post or update plan comment
+        if: >-
+          always() && steps.fork.outputs.is_fork == 'false' && inputs.comment_on_pr
+          && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
+          body: ${{ steps.comment-body.outputs.body }}
+
+      # LETZTER Schritt, nach Summary UND Kommentar: beide lesen plan.txt, ein
+      # frueheres Aufraeumen naehme ihnen die Grundlage.
+      #
+      # Die binaere tfplan traegt exakt dieselben Klartextwerte wie das
+      # un-redigierte `show -json` — genau der Grund, aus dem plan_json opt-in
+      # ist und die tfplan NIE als Artefakt hochgeladen wird (Kopfkommentar
+      # Punkt 1). Auf dem self-hosted Pool ueberlebt der Workspace den Job
+      # aber bis zum Checkout des NAECHSTEN Laufs, und bis dahin liegt die
+      # Datei dort lesbar herum. Das Argument gegen den Upload gilt fuer die
+      # Platte genauso.
+      #
+      # `always()`: gerade der abgebrochene Lauf laesst die Datei liegen.
+      # `rm -f` plus `|| true`: fehlende Dateien sind der Normalfall (Fork-
+      # Skip, Abbruch vor dem Plan) und duerfen den Job nicht kippen.
+      - name: Remove plan artefacts from the runner
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+        run: |
+          rm -f "$DIR/tfplan" plan.json plan.txt plan.err || true
+          # Die geparsten tf_vars stehen im Klartext in dieser Datei. Sie liegt
+          # zwar in $RUNNER_TEMP und nicht im Workspace, aber auf dem
+          # self-hosted Pool ueberlebt auch das Temp-Verzeichnis den Job.
+          rm -f "$RUNNER_TEMP/tf-vars.env" || true
+          echo "Plan-Artefakte entfernt (tfplan, plan.json, plan.txt, plan.err, tf-vars.env)"

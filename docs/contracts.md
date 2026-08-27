@@ -297,6 +297,27 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 
 ---
 
+### `lint-shell.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `paths` | string | no | `**/*.sh` | Newline-separated globs to check. Matching NOTHING is an ERROR, not a pass: sonst faerbt ein driftender Glob das Gate dauerhaft gruen. |
+| input | `severity` | string | no | `style` | shellcheck minimum severity: error, warning, info or style. |
+| input | `shellcheck_version` | string | no | `''` | Override shellcheck version (empty → composite default). |
+| input | `follow_sources` | boolean | no | `true` | Pass -x so `source lib/common.sh` is checked too. |
+| input | `scan_shebangs` | boolean | no | `true` | Also check tracked files WITHOUT a .sh suffix whose first line is a shell shebang. A linter that silently skips `scripts/deploy` checks half the scripts in many repos. Scoped by the same `paths` globs with the .sh requirement dropped, so it never widens into a whole-repo scan. |
+| input | `shfmt` | boolean | no | `false` | Also run `shfmt -d` (format check). |
+| input | `sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks. |
+| input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when shellcheck reports findings. |
+| input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow. |
+| input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `findings_count` | — | — | — | Number of shellcheck findings — und der LEERE String, wenn shellcheck gar nicht durchlief. Ein Aufrufer muss auf `== '0'` pruefen, nicht auf `!= '0'`. |
+| output | `file_count` | — | — | — | Number of files the paths globs matched, gesetzt BEVOR das Atom bei null Treffern abbricht. Damit laesst sich "am gewollten Check gescheitert" von "vorher abgestuerzt" unterscheiden: leer heisst, der Collect-Schritt lief nicht. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+
+---
+
 ### `release-flutter-android.yml`
 
 Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
@@ -426,6 +447,62 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input | `rust_toolchain`        | string | no       | `''`                              | rustup toolchain. Empty → rustup defaults. |
 | input | `coverage_threshold`    | number | no       | `80`                              | Minimum line coverage percentage (integer 0-100). |
 | input | `cargo_llvm_cov_version`| string | no       | `'0.6.16'`                        | cargo-llvm-cov release version (bare semver — `taiki-e/install-action` rejects a leading `v`). |
+
+---
+
+### `tofu-plan.yml`
+
+**Vertrauensgrenze — vor dem Einbau lesen.** Dieses Atom fuehrt die
+OpenTofu-Konfiguration des Adopters mit echten Credentials aus. `tofu plan` ist
+nicht rein deklarativ: der offizielle `external`-Provider startet waehrend des
+Plans ein beliebiges Programm, und dieser Kindprozess erbt die komplette
+Umgebung des Schritts — die Backend-Credentials und die `TF_VAR_*`
+eingeschlossen. Daraus folgt: **jeder Pull Request, der eine `.tf`-Datei aendern
+kann, kann die an dieses Atom uebergebenen Secrets lesen.** Das gilt auch fuer
+einen PR aus demselben Repository; der eingebaute Riegel gegen
+`pull_request_target` und `workflow_run` haelt fremde Forks und die falsche
+Revision fern, nicht Leute mit Branch-Zugriff.
+
+Das Atom kann diese Grenze nicht selbst ziehen — es kennt weder das `on:` des
+Aufrufers noch dessen Branch-Schutz. Ziehen muss sie der Adopter: den
+aufrufenden Job an ein geschuetztes `environment` mit Required Reviewers
+haengen, sodass ein Mensch den Lauf freigibt, bevor die Secrets an den Runner
+gehen — oder kurzlebige, nur lesende Credentials uebergeben, deren Diebstahl
+nichts wert ist.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments (bucket, endpoint, region). Credentials do NOT belong here — use the secrets. |
+| input  | `comment_on_pr` | boolean | no | `true` | Post the plan as a sticky PR comment. |
+| input  | `plan_json` | boolean | no | `false` | Upload `tofu show -json` as an artifact. OFF by default: unlike the human-readable output, the JSON does NOT redact values marked sensitive, so anyone who can download the artifact reads them in clear text. |
+| input  | `lock` | boolean | no | `true` | Take a state lock during plan. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `has_changes` | — | — | — | true when the plan contains changes, false when it does not — und der LEERE String, wenn der Plan nicht durchlief: Fork-PR (das Atom ueberspringt sich) ODER Plan-Fehler. Ein Aufrufer muss `== 'true'` pruefen, nicht `!= 'false'`. Wer "keine Aenderungen" von "nicht gelaufen" unterscheiden will, liest `plan_status`. |
+| output | `summary_line` | — | — | — | The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy". |
+| output | `plan_status` | — | — | — | `success`, wenn `tofu plan` durchlief (mit oder ohne Aenderungen), `failed` bei einem unerwarteten Exit-Code, und der LEERE String, wenn der Plan-Schritt gar nicht erst startete (Fork-PR, Abbruch im Backend-Init). Fuer Aufrufer mit `always()` oder `continue-on-error` ist das der einzige Weg, einen Fehlschlag von "es gibt nichts zu tun" zu unterscheiden. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
+
+---
+
+### `tofu-validate.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `working_directories` | string | no | `tofu` | Newline-separated OpenTofu stack directories. |
+| input | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input | `tflint` | boolean | no | `true` | Also run tflint in each directory. |
+| input | `lockfile_readonly` | boolean | no | `true` | Pass -lockfile=readonly to `tofu init`, so a PR that would silently change .terraform.lock.hcl fails instead of drifting the provider pins unnoticed. |
+| input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `checked_directories` | — | — | — | Number of directories validated. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
 
 ---
 
@@ -571,6 +648,14 @@ caller. A fork driving its own org has to change that constant.
 |--------|------|------|----------|---------|-------------|
 | input | `version` | string | no | `''` | kube-linter version (with or without leading v). Empty → pinned default. |
 
+### `actions/install-shellcheck`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `version` | string | no | `''` | shellcheck version (no leading v). Empty → pinned default. |
+| input | `shfmt` | string | no | `'false'` | When "true", also install shfmt. |
+| input | `shfmt_version` | string | no | `''` | shfmt version (no leading v). Empty → pinned default. |
+
 ### `actions/setup-sk-workflows`
 
 | Kind   | Name                | Type   | Required | Default                          | Description |
@@ -666,6 +751,14 @@ job-private dir prepended onto PATH.
 | input | `kustomize_version` | string | no | `''` | kustomize version (no leading v). Empty → pinned default. |
 | input | `kubeconform_version` | string | no | `''` | kubeconform version (no leading v). Empty → pinned default. |
 | input | `sops` | string | no | `false` | When "true", also install sops + ksops for SOPS decryption. |
+
+### `actions/setup-tofu-toolchain`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `tofu_version` | string | no | `''` | OpenTofu version (no leading v). Empty → pinned default. |
+| input | `tflint` | string | no | `'false'` | When "true", also install tflint. |
+| input | `tflint_version` | string | no | `''` | tflint version (no leading v). Empty → pinned default. |
 
 ### `actions/setup-python-deps`
 

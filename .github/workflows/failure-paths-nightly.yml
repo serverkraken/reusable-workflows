@@ -186,6 +186,165 @@ jobs:
           fi
           echo "lint-rust-fail: correctly observed failure"
 
+  # ----- lint-shell: fail-path -----
+  # lint-shell-findings in self-ci.yml runs with fail_on_findings: false and
+  # only asserts the findings count — it never proves the gate itself fires.
+  # This pair supplies the missing proof: same findings fixture, gate ON.
+  test-lint-shell-fail:
+    uses: ./.github/workflows/lint-shell.yml
+    secrets: inherit
+    with:
+      paths: |-
+        tests/fixtures/shell-findings/scripts/*.sh
+      scan_shebangs: true
+      sarif: false
+      fail_on_findings: true   # default, but explicit
+
+  assert-lint-shell-fail:
+    needs: test-lint-shell-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert the FINDINGS gate failed, not something else
+        env:
+          RESULT: ${{ needs.test-lint-shell-fail.result }}
+          COUNT: ${{ needs.test-lint-shell-fail.outputs.findings_count }}
+          FILES: ${{ needs.test-lint-shell-fail.outputs.file_count }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint-shell to fail on findings fixture, got: $RESULT"
+            fail=1
+          fi
+          # `result == failure` allein beweist nichts ueber das WARUM: ein
+          # OOM-Kill, ein gescheiterter Tool-Download oder ein Syntaxfehler im
+          # Atom faerben den Job genauso rot, und die Assertion meldete dann,
+          # das Gate habe funktioniert. Beide Outputs werden VOR dem Gate
+          # gesetzt; ein frueher abgestuerzter Job laesst sie leer.
+          if [[ -z "$FILES" || "$FILES" == "0" ]]; then
+            echo "::error::file_count='${FILES}' — der Collect-Schritt lief nicht oder fand nichts, das Findings-Gate ist damit unbewiesen"
+            fail=1
+          fi
+          if [[ -z "$COUNT" ]]; then
+            echo "::error::findings_count ist leer — shellcheck lief nicht durch, der Fehlschlag hat also eine andere Ursache als das Gate"
+            fail=1
+          elif [[ "$COUNT" == "0" ]]; then
+            echo "::error::findings_count=0 — die Fixture traegt keine Funde mehr, das Gate wurde nie ausgeloest"
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "lint-shell-fail: Gate korrekt ausgeloest (${COUNT} Funde in ${FILES} Datei(en))"
+
+  # ----- lint-shell: leerer Glob-Treffer -----
+  # Der realistische Ausloeser ist Glob-Drift: ein Adopter benennt scripts/
+  # um, sein gepinntes ci.yml sagt weiter `scripts/**/*.sh`. Frueher lieferte
+  # das ein synthetisches {"comments":[]}, exit 0 und "✓ no findings" — das
+  # Gate war fuer immer gruen, ohne je eine Zeile geprueft zu haben.
+  # Der Pfad wird bewusst leer gelassen: `scan_shebangs` bleibt AN, damit
+  # bewiesen ist, dass der Abbruch NACH beiden Durchgaengen greift und nicht
+  # nur der Glob-Pass leer war.
+  test-lint-shell-empty:
+    uses: ./.github/workflows/lint-shell.yml
+    secrets: inherit
+    with:
+      paths: |-
+        tests/fixtures/gibt-es-nicht/**/*.sh
+      scan_shebangs: true
+      sarif: false
+
+  assert-lint-shell-empty:
+    needs: test-lint-shell-empty
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed on an empty match
+        env:
+          RESULT: ${{ needs.test-lint-shell-empty.result }}
+          FILES: ${{ needs.test-lint-shell-empty.outputs.file_count }}
+          COUNT: ${{ needs.test-lint-shell-empty.outputs.findings_count }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint-shell to fail when its globs match nothing, got: $RESULT"
+            fail=1
+          fi
+          # Fuer diesen Job war findings_count als Beweis untauglich: das Atom
+          # bricht ab, BEVOR gezaehlt wird, der Wert bleibt also auch dann
+          # leer, wenn der Job schon am Checkout gestorben waere. Der Collect-
+          # Schritt schreibt sein `count` aber, bevor er bei null Treffern
+          # abbricht — genau deshalb gibt das Atom es als `file_count` heraus.
+          # '0' beweist: der Schritt lief, die Globs trafen nichts, und der
+          # Abbruch kam aus der beabsichtigten Pruefung.
+          if [[ "$FILES" != "0" ]]; then
+            echo "::error::file_count='${FILES}' statt '0' — der Lauf ist vor dem Collect-Schritt gescheitert, der leere Glob ist damit unbewiesen"
+            fail=1
+          fi
+          if [[ -n "$COUNT" ]]; then
+            echo "::error::findings_count='${COUNT}' — es wurde doch gezaehlt, der Abbruch bei null Treffern griff also nicht"
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "lint-shell-empty: Abbruch bei null Treffern korrekt ausgeloest"
+
+  # ----- lint-shell: shellcheck bricht fatal ab -----
+  # shellcheck beendet mit rc=2, wenn es eine Datei nicht LESEN kann — und
+  # legt dabei trotzdem einen gueltigen, leeren Bericht auf stdout:
+  #
+  #   $ shellcheck -f json1 -S style gibtsnicht.sh
+  #   rc=2 · stdout {"comments":[]} · stderr "openBinaryFile: does not exist"
+  #
+  # Daran lief die alte Pruefung (`rc != 0 && ! -s shellcheck.json`) vorbei:
+  # Bericht nicht leer → Bedingung greift nicht → gueltiges SARIF → Count 0 →
+  # gruen, ohne eine Zeile geprueft zu haben. Die Fixture traegt einen
+  # getrackten, KAPUTTEN Symlink mit .sh-Endung: `git ls-files` listet ihn,
+  # shellcheck kann ihn nicht oeffnen.
+  test-lint-shell-unreadable:
+    uses: ./.github/workflows/lint-shell.yml
+    secrets: inherit
+    with:
+      paths: |-
+        tests/fixtures/shell-unreadable/scripts/*.sh
+      # AUS: der Shebang-Pass wuerde den kaputten Link per `[[ -f ]]`
+      # aussortieren. Geprueft werden soll der Glob-Pass, der ihn weitergibt.
+      scan_shebangs: false
+      sarif: false
+
+  assert-lint-shell-unreadable:
+    needs: test-lint-shell-unreadable
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ein fataler shellcheck-Lauf darf nicht als Nullbefund durchgehen
+        env:
+          RESULT: ${{ needs.test-lint-shell-unreadable.result }}
+          FILES: ${{ needs.test-lint-shell-unreadable.outputs.file_count }}
+          COUNT: ${{ needs.test-lint-shell-unreadable.outputs.findings_count }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::erwartet 'failure' fuer eine unlesbare Datei, bekam '${RESULT}' — der fatale Lauf gilt wieder als Nullbefund" >&2
+            fail=1
+          fi
+          # `result == failure` allein bewiese nur, dass IRGENDWAS rot war.
+          # file_count == 1 zeigt, dass der Collect-Schritt lief und den Link
+          # weitergab; der Fehlschlag kam also aus dem shellcheck-Schritt und
+          # nicht aus Checkout, Token oder Toolchain.
+          if [[ "$FILES" != "1" ]]; then
+            echo "::error::file_count='${FILES}' statt '1' — der Lauf ist vor dem shellcheck-Schritt gescheitert, das Gate ist damit unbewiesen" >&2
+            fail=1
+          fi
+          # findings_count MUSS leer sein: liefe der Count-Schritt, dann haette
+          # der Lint-Schritt den fatalen rc durchgewinkt — genau der Fehler.
+          if [[ -n "$COUNT" ]]; then
+            echo "::error::findings_count='${COUNT}' — der Count-Schritt lief, der fatale rc wurde also akzeptiert" >&2
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "lint-shell-unreadable: fataler shellcheck-Lauf korrekt abgelehnt"
+
   # ----- test-go: cov-fail-path -----
   test-test-go-cov-fail:
     uses: ./.github/workflows/test-go.yml
@@ -903,6 +1062,48 @@ jobs:
           fi
           echo "kube-lint-fail: correctly observed failure"
 
+  # ----- tofu-validate: fail-path -----
+  # Invalid fixture (mis-indented HCL + reference to an undeclared variable)
+  # breaks both fmt AND validate. tofu-validate has no fail_on_findings
+  # escape hatch — a broken stack MUST turn the job red.
+  test-tofu-validate-fail:
+    uses: ./.github/workflows/tofu-validate.yml
+    secrets: inherit
+    with:
+      working_directories: |-
+        tests/fixtures/tofu-invalid
+      tflint: false
+      runs_on: '["ubuntu-latest"]'
+
+  assert-tofu-validate-fail:
+    needs: test-tofu-validate-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Das Atom muss den kaputten Stack ablehnen
+        env:
+          RESULT: ${{ needs.test-tofu-validate-fail.result }}
+          CHECKED: ${{ needs.test-tofu-validate-fail.outputs.checked_directories }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::erwartet 'failure' fuer den ungueltigen Stack, bekam '${RESULT}'" >&2
+            fail=1
+          fi
+          # `result == failure` allein wuerde auch einen OOM-Kill, einen
+          # gescheiterten Toolchain-Download oder einen Syntaxfehler im Atom
+          # als "das Gate greift" melden. checked_directories wird gesetzt,
+          # NACHDEM die Schleife den Stack tatsaechlich durchlaufen hat, und
+          # bevor der Fail-Schritt zuschlaegt: '1' beweist, dass fmt/init/
+          # validate an der Fixture gelaufen sind.
+          if [[ "$CHECKED" != "1" ]]; then
+            echo "::error::checked_directories='${CHECKED}' statt '1' — der Lauf ist vor der Validierung gescheitert, die Ablehnung ist damit unbewiesen" >&2
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "tofu-validate hat den kaputten Stack korrekt abgelehnt (1 Stack geprueft)"
+
   # ----- secret-scan: fail-path -----
   # Planted-secret fixture (AWS access key in a tracked file) → gitleaks
   # detect finds it → findings_count > 0 → with fail_on_findings (default
@@ -1020,6 +1221,9 @@ jobs:
       - assert-lint-flutter-no-codegen
       - assert-lint-python-fail
       - assert-lint-rust-fail
+      - assert-lint-shell-fail
+      - assert-lint-shell-empty
+      - assert-lint-shell-unreadable
       - assert-test-go-cov-fail
       - assert-test-python-cov-fail
       - assert-test-rust-cov-fail
@@ -1029,6 +1233,7 @@ jobs:
       - assert-helm-publish-fail
       - assert-kube-validate-fail
       - assert-kube-lint-fail
+      - assert-tofu-validate-fail
       - assert-chart-image-bump-fail
       - assert-secret-scan-fail
       - assert-build-flutter-android-fail

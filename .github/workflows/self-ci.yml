@@ -139,6 +139,140 @@ jobs:
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/rust-happy
 
+  # ----- lint-shell: happy path -----
+  lint-shell-happy:
+    uses: ./.github/workflows/lint-shell.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      paths: |-
+        tests/fixtures/shell-clean/scripts/*.sh
+      # Der Upload wuerde die Fixture-Funde in den Code-Scanning-Tab des
+      # Katalogs schreiben und die echte Basislinie verfaelschen.
+      sarif: false
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  # ----- lint-shell: Gate greift bei Funden -----
+  lint-shell-findings:
+    uses: ./.github/workflows/lint-shell.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      paths: |-
+        tests/fixtures/shell-findings/scripts/**/*.sh
+      # `**` statt `*`: deckt scripts/lib/deep.sh mit ab, damit dieser Job
+      # genau das Szenario nachstellt, das echte Aufrufer-Repos rendern
+      # (`scripts/**/*.sh`) und das ohne `git --glob-pathspecs` im
+      # Collect-files-Schritt Dateien silently auslaesst.
+      # AN, damit die Fixture ohne .sh-Endung tatsaechlich geprueft wird.
+      # Der Scan folgt demselben Glob (scripts/**/*), bleibt also in der Fixture.
+      scan_shebangs: true
+      sarif: false
+      # Das Atom soll die Funde MELDEN, ohne den Self-CI-Lauf rot zu faerben.
+      # Geprueft wird der Zaehler, nicht der Exit-Code — so bleibt der Job im
+      # summary-Graph und behauptet nichts Falsches.
+      fail_on_findings: false
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  assert-lint-shell-findings:
+    needs: [lint-shell-findings]
+    runs-on: ubuntu-latest
+    steps:
+      - name: shellcheck muss die gepflanzten Funde sehen
+        env:
+          COUNT: ${{ needs.lint-shell-findings.outputs.findings_count }}
+        run: |
+          set -euo pipefail
+          # >=3: je ein SC2086 aus bad.sh, aus nosuffix UND aus dem
+          # verschachtelten scripts/lib/deep.sh. Ein Wert von 2 hiesse, dass
+          # die verschachtelte Datei nicht erfasst wurde — der Collect-files-
+          # Schritt braucht dafuer `git ls-files --glob-pathspecs`, weil
+          # `paths: scripts/**/*.sh` sonst unter Gits Default-Pathspec Dateien
+          # je nach Verschachtelungstiefe silently auslaesst. Ein Wert von 1
+          # hiesse zusaetzlich, dass scan_shebangs die Datei ohne Endung
+          # nicht erfasst hat.
+          if [[ "${COUNT:-0}" -lt 3 ]]; then
+            echo "::error::erwartet >=3 Funde (bad.sh, nosuffix, scripts/lib/deep.sh), bekam '${COUNT}'" >&2
+            echo "::error::ein Wert von 2 bedeutet: die verschachtelte Datei scripts/lib/deep.sh wurde nicht erfasst (git ls-files ohne --glob-pathspecs?)" >&2
+            echo "::error::ein Wert von 1 bedeutet zusaetzlich: scan_shebangs hat die Datei ohne Endung nicht erfasst" >&2
+            exit 1
+          fi
+          echo "lint-shell meldete ${COUNT} Fund(e) — Gate-Pfad und scan_shebangs belegt"
+
+  # ----- tofu-validate: happy path -----
+  tofu-validate-happy:
+    uses: ./.github/workflows/tofu-validate.yml
+    permissions:
+      contents: read
+    with:
+      working_directories: |-
+        tests/fixtures/tofu-valid
+      # tflint: true ist der DEFAULT des Atoms und damit das, was ein Adopter
+      # aus dem gerenderten ci.yml bekommt. Stuende hier `false`, liefe weder
+      # der tflint-Schritt der Composite Action noch der tflint-Zweig des Atoms
+      # jemals — der Pfad, den fast jeder Aufrufer nimmt, waere ungetestet.
+      #
+      # Das kostet KEIN Rate-Limit: das Atom ruft `tflint --no-color` ohne
+      # `--init`, es wird also kein Plugin aus der Registry geholt. Es laeuft
+      # nur das mitgelieferte ruleset.terraform, und das ist auf der Fixture
+      # befundfrei (lokal gegen tflint 0.61 geprueft, rc=0).
+      tflint: true
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  # ----- tofu-plan: lokaler State, null-Provider, keine Credentials -----
+  tofu-plan-changes:
+    uses: ./.github/workflows/tofu-plan.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      working_directory: tests/fixtures/tofu-plan-local
+      # Kein Remote-Backend in der Fixture, also auch kein Lock.
+      lock: false
+      # Der Katalog hat keine eigenen PRs zu kommentieren; der Kommentarpfad
+      # wird ueber tofu-plan-render.bats abgedeckt, nicht hier.
+      comment_on_pr: false
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  assert-tofu-plan-changes:
+    needs: [tofu-plan-changes]
+    runs-on: ubuntu-latest
+    steps:
+      - name: has_changes muss true sein
+        env:
+          HAS_CHANGES: ${{ needs.tofu-plan-changes.outputs.has_changes }}
+          SUMMARY_LINE: ${{ needs.tofu-plan-changes.outputs.summary_line }}
+          PLAN_STATUS: ${{ needs.tofu-plan-changes.outputs.plan_status }}
+        run: |
+          set -euo pipefail
+          # plan_status ist der oeffentliche Beweis, dass der Plan-Schritt
+          # ueberhaupt gelaufen ist. Ohne ihn liesse sich ein Fehlschlag im
+          # Backend-Init von einem echten Ergebnis nicht unterscheiden.
+          if [[ "$PLAN_STATUS" != "success" ]]; then
+            echo "::error::erwartet plan_status=success, bekam '${PLAN_STATUS}'" >&2
+            exit 1
+          fi
+          # Ohne State ist die Ressource immer neu. Ein 'false' hiesse, dass
+          # -detailed-exitcode falsch ausgewertet wird — genau der Fall, den
+          # `set +e` im Plan-Schritt abfaengt.
+          if [[ "$HAS_CHANGES" != "true" ]]; then
+            echo "::error::erwartet has_changes=true fuer einen Stack ohne State, bekam '${HAS_CHANGES}'" >&2
+            exit 1
+          fi
+          if [[ "$SUMMARY_LINE" != *"to add"* ]]; then
+            echo "::error::summary_line sollte 'to add' enthalten, war: '${SUMMARY_LINE}'" >&2
+            exit 1
+          fi
+          echo "tofu-plan meldete: ${SUMMARY_LINE}"
+
   # ----- test-go: happy -----
   test-go-happy:
     uses: ./.github/workflows/test-go.yml
@@ -685,6 +819,10 @@ jobs:
       - lint-python-uv-happy
       - lint-python-pip-happy
       - lint-rust-happy
+      - lint-shell-happy
+      - assert-lint-shell-findings
+      - tofu-validate-happy
+      - assert-tofu-plan-changes
       - test-go-happy
       - test-python-poetry-happy
       - test-python-uv-happy
