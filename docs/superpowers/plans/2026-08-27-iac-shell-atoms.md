@@ -1505,9 +1505,11 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-# GITHUB_ENV ist zeilenbasiert. Ein Wert mit Zeilenumbruch koennte eine
-# zweite, gefaelschte Zuweisung anhaengen.
-@test "Wert mit eingebettetem Zeilenumbruch wird abgelehnt" {
+# Ein Wert KANN keinen Zeilenumbruch enthalten: die Eingabe wird zeilenweise
+# gelesen, ein mehrzeiliger Payload zerfaellt also in mehrere unabhaengige
+# Kandidaten. Der Test belegt, dass das UNGEFAEHRLICH ist — nicht, dass es
+# abgelehnt wird.
+@test "mehrzeiliger Payload wird in getrennte Zuweisungen zerlegt — das TF_VAR_-Praefix schuetzt vor Uebernahme" {
   printf 'a=1\nPATH=/evil\n' > payload.txt
   run bash -c "bash '$SCRIPT' < payload.txt"
   # Beide Zeilen sind fuer sich gueltige Zuweisungen; PATH ist als Name
