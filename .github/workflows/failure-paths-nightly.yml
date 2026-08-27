@@ -275,6 +275,16 @@ jobs:
   # ----- cleanup-images: fail-path -----
   # Empty runs_on array forces atom-level input-validation failure (matrix
   # evaluation requires non-empty input).
+  # Dieser Fehlerpfad war seit 2026-08-25 rot (Issue #246) und niemand wusste
+  # warum. Gemessen am Lauf 33050121217: ein leeres Label-Array laesst den Job
+  # NICHT mehr scheitern — er wurde auf einem echten self-hosted Runner
+  # eingeplant (serverkraken-runner-arm64-...) und lief mit `packages: write`
+  # durch.
+  #
+  # Der Test hat also nicht das Atom geprueft, sondern ein Verhalten von
+  # GitHub, das sich geaendert hat. Das Atom weist ein leeres runs_on jetzt
+  # ausdruecklich ab — der Fehlschlag hier ist damit wieder eine Zusicherung
+  # des Katalogs statt eines Zufalls.
   test-cleanup-images-fail:
     uses: ./.github/workflows/cleanup-images.yml
     secrets: inherit
