@@ -545,9 +545,17 @@ jobs:
         run: |
           set -euo pipefail
           : > files.txt
+          # --glob-pathspecs ist Pflicht, nicht Geschmack: Gits DEFAULT-Pathspec
+          # ist KEIN Shell-Glob. Ohne das Flag verlangt `**` mindestens ein
+          # Zwischenverzeichnis, `scripts/**/*.sh` findet also die Skripte
+          # DIREKT in scripts/ nicht — und genau diesen Glob rendert das
+          # ci.yml-Template aus dem shell-Signal. Umgekehrt wuerde `*.sh` ohne
+          # das Flag ueber alle Tiefen matchen statt nur im Wurzelverzeichnis.
+          # Ein Lint-Gate, das still einen Teil ueberspringt und gruen meldet,
+          # ist schlimmer als keines.
           while IFS= read -r glob; do
             [[ -z "$glob" ]] && continue
-            git ls-files -z -- "$glob" >> files.z || true
+            git ls-files --glob-pathspecs -z -- "$glob" >> files.z || true
           done <<< "$PATHS"
           if [[ -f files.z ]]; then
             tr '\0' '\n' < files.z >> files.txt
@@ -562,7 +570,7 @@ jobs:
             : > shebang.z
             while IFS= read -r glob; do
               [[ -z "$glob" ]] && continue
-              git ls-files -z -- "${glob%\*.sh}*" >> shebang.z || true
+              git ls-files --glob-pathspecs -z -- "${glob%\*.sh}*" >> shebang.z || true
             done <<< "$PATHS"
             # Erste Zeile lesen, nicht die ganze Datei: bei Binaerdateien waere
             # ein grep ueber den vollen Inhalt teuer und irrefuehrend.
