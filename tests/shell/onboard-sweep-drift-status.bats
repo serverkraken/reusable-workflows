@@ -111,3 +111,54 @@ EOF
   # base64 von "x-access-token:s3cr3t-token-wert"
   [[ "$output" == *"AUTHORIZATION: basic "* ]]
 }
+
+# --- der Klon-Pfad bis zum VERDIKT (Audit L-15) -----------------------------
+#
+# Die Faelle oben decken den Klon-Pfad nur bis "Token fehlt" ab, und die beiden
+# Hygiene-Tests pruefen argv und Umgebung — aber keiner prueft, was NACH einem
+# erfolgreichen Klon herauskommt. Der Stub legt bisher ein LEERES Verzeichnis
+# an; die Verdiktberechnung lief also nie gegen einen echten Baum.
+#
+# Damit waere eine falsche Verdrahtung zwischen Klon und Drift-Berechnung
+# unbemerkt geblieben: ein falscher Pfad, ein falscher Pin, ein vertauschtes
+# Argument. Alles Dinge, die im Sweep ueber jedes Adopter-Repo entscheiden.
+
+# Wie _git_stub, aber der "Klon" fuellt das Zielverzeichnis mit einer echten
+# Fixture — der Pfad laeuft damit bis zum Verdikt durch.
+_git_stub_with_fixture() {
+  local fixture="$1"
+  STUBDIR="$BATS_TEST_TMPDIR/stub-fx"
+  mkdir -p "$STUBDIR"
+  cat > "$STUBDIR/git" <<EOF
+#!/usr/bin/env bash
+# Nur beim clone das Ziel befuellen; jeder andere git-Aufruf bleibt still.
+if [[ "\$1" == "clone" ]]; then
+  dest="\${@: -1}"
+  mkdir -p "\$dest"
+  cp -R "$fixture/." "\$dest/"
+fi
+exit 0
+EOF
+  chmod +x "$STUBDIR/git"
+}
+
+@test "drift-status: nach echtem Klon-Pfad wird das Verdikt berechnet (Audit L-15)" {
+  _git_stub_with_fixture "$FIX/drift-clean"
+  PATH="$STUBDIR:$PATH" GH_TOKEN="dummy" run "$SCRIPT" serverkraken/dummy v3
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [ "$output" = "clean" ] || { echo "Verdikt: $output"; false; }
+}
+
+# Gegenprobe: derselbe Weg, aber ein manipulierter Baum. Ohne sie koennte der
+# Test oben auch gruen bleiben, wenn das Verdikt gar nicht mehr berechnet wird
+# und "clean" nur noch die Vorgabe ist.
+@test "drift-status: nach echtem Klon-Pfad faellt ein manipulierter Baum auf (Audit L-15)" {
+  tampered="$BATS_TEST_TMPDIR/tampered"
+  cp -R "$FIX/drift-clean" "$tampered"
+  echo "# von Hand geaendert" >> "$tampered/.github/workflows/ci.yml"
+
+  _git_stub_with_fixture "$tampered"
+  PATH="$STUBDIR:$PATH" GH_TOKEN="dummy" run "$SCRIPT" serverkraken/dummy v3
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [ "$output" = "modified" ] || { echo "Verdikt: $output"; false; }
+}
