@@ -301,7 +301,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 
 | Kind   | Name | Type | Required | Default | Description |
 |--------|------|------|----------|---------|-------------|
-| input | `paths` | string | no | `**/*.sh` | Newline-separated globs to check. |
+| input | `paths` | string | no | `**/*.sh` | Newline-separated globs to check. Matching NOTHING is an ERROR, not a pass: sonst faerbt ein driftender Glob das Gate dauerhaft gruen. |
 | input | `severity` | string | no | `style` | shellcheck minimum severity: error, warning, info or style. |
 | input | `shellcheck_version` | string | no | `''` | Override shellcheck version (empty → composite default). |
 | input | `follow_sources` | boolean | no | `true` | Pass -x so `source lib/common.sh` is checked too. |

@@ -215,6 +215,38 @@ jobs:
           fi
           echo "lint-shell-fail: correctly observed failure"
 
+  # ----- lint-shell: leerer Glob-Treffer -----
+  # Der realistische Ausloeser ist Glob-Drift: ein Adopter benennt scripts/
+  # um, sein gepinntes ci.yml sagt weiter `scripts/**/*.sh`. Frueher lieferte
+  # das ein synthetisches {"comments":[]}, exit 0 und "✓ no findings" — das
+  # Gate war fuer immer gruen, ohne je eine Zeile geprueft zu haben.
+  # Der Pfad wird bewusst leer gelassen: `scan_shebangs` bleibt AN, damit
+  # bewiesen ist, dass der Abbruch NACH beiden Durchgaengen greift und nicht
+  # nur der Glob-Pass leer war.
+  test-lint-shell-empty:
+    uses: ./.github/workflows/lint-shell.yml
+    secrets: inherit
+    with:
+      paths: |-
+        tests/fixtures/gibt-es-nicht/**/*.sh
+      scan_shebangs: true
+      sarif: false
+
+  assert-lint-shell-empty:
+    needs: test-lint-shell-empty
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed on an empty match
+        env:
+          RESULT: ${{ needs.test-lint-shell-empty.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint-shell to fail when its globs match nothing, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-shell-empty: correctly observed failure"
+
   # ----- test-go: cov-fail-path -----
   test-test-go-cov-fail:
     uses: ./.github/workflows/test-go.yml
@@ -1042,6 +1074,7 @@ jobs:
       - assert-lint-python-fail
       - assert-lint-rust-fail
       - assert-lint-shell-fail
+      - assert-lint-shell-empty
       - assert-test-go-cov-fail
       - assert-test-python-cov-fail
       - assert-test-rust-cov-fail

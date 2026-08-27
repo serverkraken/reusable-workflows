@@ -11,7 +11,9 @@ on:
   workflow_call:
     inputs:
       paths:
-        description: 'Newline-separated globs to check.'
+        description: >-
+          Newline-separated globs to check. Matching NOTHING is an ERROR, not
+          a pass: sonst faerbt ein driftender Glob das Gate dauerhaft gruen.
         required: false
         type: string
         default: '**/*.sh'
@@ -167,6 +169,11 @@ jobs:
         run: |
           set -euo pipefail
           : > files.txt
+          # files.z genauso truncaten wie shebang.z weiter unten. Ohne das
+          # waechst die Datei ueber mehrere Laeufe im selben Workspace an —
+          # auf dem self-hosted Pool ueberlebt der Workspace bis zum naechsten
+          # Checkout.
+          : > files.z
           while IFS= read -r glob; do
             [[ -z "$glob" ]] && continue
             git --glob-pathspecs ls-files -z -- "$glob" >> files.z || true
@@ -195,29 +202,51 @@ jobs:
                 | grep -Eq '^#!.*\b(ba|k|z|da)?sh\b' && echo "$f" >> files.txt || true
             done < <(tr '\0' '\n' < shebang.z)
           fi
-          sort -u files.txt -o files.txt
+          # LC_ALL=C: bytewise sortieren, aus demselben Grund, aus dem die
+          # Sortierungen im Detektor auf dieser Branch nachgezogen wurden —
+          # eine lokalisierte Sortierung ordnet Gross-/Kleinschreibung anders
+          # ein und macht die Dateiliste (und damit jede Ausgabe daraus) vom
+          # Locale des Runners abhaengig.
+          LC_ALL=C sort -u files.txt -o files.txt
           COUNT=$(wc -l < files.txt | tr -d ' ')
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "Zu pruefende Dateien: $COUNT"
           cat files.txt
+          # Null Dateien ist ein FEHLER, kein gruener Lauf.
+          #
+          # Vorher lieferte der Fall ein synthetisches {"comments":[]}, exit 0
+          # und eine Summary mit "✓ no findings". Der realistische Ausloeser
+          # ist Glob-Drift: ein Adopter benennt scripts/ um, sein gepinntes
+          # ci.yml sagt weiter `scripts/**/*.sh` — und das Gate ist fuer immer
+          # gruen, ohne je eine Zeile geprueft zu haben.
+          #
+          # Die Geschwister-Atome machen es laengst so: tofu-validate.yml
+          # bricht mit "no working directory was checked" ab, kube-lint.yml
+          # unterscheidet "nicht geprueft" von "keine Funde".
+          #
+          # Geprueft wird NACH beiden Durchgaengen (Globs und Shebangs), damit
+          # `paths` ohne .sh-Treffer, aber mit Shebang-Treffern, gruen bleibt.
+          if [[ "$COUNT" == "0" ]]; then
+            echo "::error::no file was checked — is the paths input set correctly?" >&2
+            echo "::error::paths was: $(printf '%s' "$PATHS" | tr '\n' ' ')" >&2
+            exit 1
+          fi
 
       - name: Run shellcheck (json1)
         id: run
         env:
           SEVERITY: ${{ inputs.severity }}
           FOLLOW: ${{ inputs.follow_sources }}
-          FILE_COUNT: ${{ steps.files.outputs.count }}
         # shellcheck beendet bei FUNDEN mit rc=1, der Schritt darf daran nicht
         # sterben — der SARIF-Upload und das Gate kommen danach. `|| true`
         # waere aber falsch: es wuerfe auch einen Absturz weg, und der saehe
         # dann aus wie "null Funde" (dieselbe Fehlerklasse wie Audit F-3 in
         # kube-lint.yml). Deshalb rc einfangen und die Ausgabe pruefen.
         run: |
-          if [[ "$FILE_COUNT" == "0" ]]; then
-            echo '{"comments":[]}' > shellcheck.json
-            echo "::notice::keine passenden Dateien gefunden"
-            exit 0
-          fi
+          # Kein FILE_COUNT==0-Zweig mehr: der Collect-Schritt bricht in dem
+          # Fall bereits ab, dieser Schritt laeuft dann gar nicht. Der frueher
+          # hier erzeugte Ersatzbericht {"comments":[]} war genau die stille
+          # Gruenfaerbung, die der Abbruch verhindert.
           ARGS=(-f json1 -S "$SEVERITY")
           [[ "$FOLLOW" == "true" ]] && ARGS+=(-x)
           set +e
@@ -255,7 +284,10 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          xargs -a files.txt -d '\n' shfmt -d
+          # -r (--no-run-if-empty): ohne das ruft xargs `shfmt -d` bei leerer
+          # Liste EINMAL ohne Argumente auf, und shfmt liest dann stdin —
+          # der Schritt haengt, bis das Job-Timeout ihn abraeumt.
+          xargs -r -a files.txt -d '\n' shfmt -d
 
       - name: Derive report slug
         id: slug
@@ -293,7 +325,13 @@ jobs:
           SHFMT_OUTCOME: ${{ steps.fmt.outcome }}
         run: |
           sc_version=$(shellcheck --version 2>/dev/null | awk '/^version:/ {print $2}' || echo unknown)
-          if [[ -z "${COUNT:-}" ]]; then
+          if [[ "${FILE_COUNT:-}" == "0" ]]; then
+            # "nicht geprueft" ist etwas anderes als "keine Funde" — dieselbe
+            # Unterscheidung, die kube-lint.yml trifft. Ohne sie liest sich
+            # ein driftender Glob in der Summary wie ein sauberes Repo.
+            result="✗ keine passende Datei gefunden — paths pruefen"
+            sc_row="✗"
+          elif [[ -z "${COUNT:-}" ]]; then
             # Leer heisst NICHT null Funde: der Count-Schritt lief gar nicht,
             # weil shellcheck vorher abgebrochen ist. Ein "✓" waere hier genau
             # die Verwechslung, die der Schritt davor verhindert.
