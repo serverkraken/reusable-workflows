@@ -68,6 +68,24 @@ func (Store) UpdateLockDefaultsMarker(targetPath, marker string) error {
 	if err := json.Unmarshal(content, &lock); err != nil {
 		return err
 	}
+	// `null` ist gueltiges JSON und laesst die Map NIL zurueck — der
+	// Schreibzugriff darunter paniked dann mit "assignment to entry in nil
+	// map" (Audit C-11). Gemessen an vier Inhalten:
+	//
+	//	null      PANIC
+	//	{}        ok
+	//	[]        sauberer Fehler
+	//	"text"    sauberer Fehler
+	//
+	// Nur `null` faellt aus der Reihe: Unmarshal MELDET keinen Fehler.
+	//
+	// Das wiegt hier schwerer als ein Absturz an anderer Stelle: dieser
+	// Schritt laeuft NACH den GitHub-Mutationen. Ein Panic hinterlaesst die
+	// Repo-Defaults gesetzt, den Lock aber unmarkiert — beim naechsten Lauf
+	// sieht es aus, als waere nie etwas passiert.
+	if lock == nil {
+		return fmt.Errorf("%s contains JSON null, not an object — the lock is corrupt; restore it or delete it and re-onboard", path)
+	}
 	lock["schema_version"] = 2
 	lock["defaults_applied_at"] = marker
 	next, err := json.MarshalIndent(lock, "", "  ")
