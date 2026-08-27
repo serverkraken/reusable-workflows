@@ -1,0 +1,285 @@
+# .github/workflows/tofu-plan.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  working_directory, tofu_version, backend_config, comment_on_pr,
+#            plan_json, lock, lock_timeout, runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key,
+#            backend_access_key, backend_secret_key, tf_vars
+#   outputs: has_changes, summary_line
+#
+# SICHERHEIT — drei Punkte, die beim Aendern nicht verloren gehen duerfen:
+#
+#   1. `tofu show -json` redigiert `sensitive`-Werte NICHT, die
+#      menschenlesbare Ausgabe schon. Deshalb ist plan_json opt-in und die
+#      binaere tfplan wird NIE als Artefakt hochgeladen.
+#   2. Unter `pull_request_target` liefe fremder PR-Code mit Zugriff auf die
+#      Backend-Credentials. Das Atom weigert sich dort zu laufen.
+#   3. Ein abgebrochener Plan kann einen State-Lock zurueckzulassen, der auch
+#      den Apply am Laptop blockiert. Deshalb cancel-in-progress: false.
+name: tofu-plan
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: 'OpenTofu stack directory.'
+        required: false
+        type: string
+        default: 'tofu'
+      tofu_version:
+        description: 'Override OpenTofu version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      backend_config:
+        description: >-
+          Newline-separated `-backend-config=` arguments (bucket, endpoint,
+          region). Credentials do NOT belong here — use the secrets.
+        required: false
+        type: string
+        default: ''
+      comment_on_pr:
+        description: 'Post the plan as a sticky PR comment.'
+        required: false
+        type: boolean
+        default: true
+      plan_json:
+        description: >-
+          Upload `tofu show -json` as an artifact. OFF by default: unlike the
+          human-readable output, the JSON does NOT redact values marked
+          sensitive, so anyone who can download the artifact reads them in
+          clear text.
+        required: false
+        type: boolean
+        default: false
+      lock:
+        description: 'Take a state lock during plan.'
+        required: false
+        type: boolean
+        default: true
+      lock_timeout:
+        description: 'Value for -lock-timeout.'
+        required: false
+        type: string
+        default: '60s'
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      has_changes:
+        description: 'true when the plan contains changes.'
+        value: ${{ jobs.plan.outputs.has_changes }}
+      summary_line:
+        description: 'The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy".'
+        value: ${{ jobs.plan.outputs.summary_line }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+      backend_access_key:
+        required: false
+        description: 'S3-compatible backend access key → AWS_ACCESS_KEY_ID.'
+      backend_secret_key:
+        required: false
+        description: 'S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY.'
+      tf_vars:
+        required: false
+        description: 'Newline-separated KEY=VALUE pairs, exported as TF_VAR_key.'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  # cancel-in-progress bewusst FALSE, abweichend von den Lint-Atomen: ein
+  # abgebrochener Plan kann einen State-Lock hinterlassen, und der blockiert
+  # den naechsten CI-Lauf UND den Apply am Laptop.
+  group: tofu-plan-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 30
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+      summary_line: ${{ steps.plan.outputs.summary_line }}
+    steps:
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      # Das Atom kann das `on:` des Aufrufers nicht bestimmen — aber es kann
+      # sich weigern. Unter pull_request_target laeuft der Workflow aus dem
+      # BASIS-Branch mit vollen Secrets, waehrend der Checkout den fremden
+      # PR-Code holt: ein Plan-Lauf haette damit die Backend-Credentials.
+      - name: Refuse to run under pull_request_target
+        working-directory: ${{ github.workspace }}
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "pull_request_target" ]]; then
+            echo "::error::tofu-plan darf nicht unter pull_request_target laufen — fremder PR-Code haette Zugriff auf die Backend-Credentials" >&2
+            echo "::error::den aufrufenden Workflow auf 'pull_request' umstellen" >&2
+            exit 1
+          fi
+
+      # Fork-PRs haben keine Secrets; ohne Backend-Zugang gaebe es nur einen
+      # verwirrenden Fehler tief im init. Sauber ueberspringen statt scheitern.
+      - name: Detect fork PR
+        id: fork
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "pull_request" && "$HEAD_REPO" != "$THIS_REPO" ]]; then
+            echo "is_fork=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Fork-PR: tofu-plan wird uebersprungen (keine Backend-Credentials verfuegbar)"
+          else
+            echo "is_fork=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        if: steps.fork.outputs.is_fork == 'false'
+      - name: Mint catalog-scoped App token
+        if: steps.fork.outputs.is_fork == 'false'
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        if: steps.fork.outputs.is_fork == 'false'
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        if: steps.fork.outputs.is_fork == 'false'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+
+      - name: Install OpenTofu toolchain
+        if: steps.fork.outputs.is_fork == 'false'
+        uses: ./.catalog/actions/setup-tofu-toolchain
+        with:
+          tofu_version: ${{ inputs.tofu_version }}
+
+      - name: Export TF_VAR_* from the tf_vars secret
+        if: steps.fork.outputs.is_fork == 'false'
+        env:
+          TF_VARS: ${{ secrets.tf_vars }}
+          PARSER: ${{ github.workspace }}/.catalog/scripts/tf-vars-env.sh
+        run: |
+          set -euo pipefail
+          if [[ -n "${TF_VARS:-}" ]]; then
+            printf '%s\n' "$TF_VARS" | bash "$PARSER"
+          fi
+
+      - name: Initialize backend
+        if: steps.fork.outputs.is_fork == 'false'
+        env:
+          DIR: ${{ inputs.working_directory }}
+          BACKEND_CONFIG: ${{ inputs.backend_config }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.backend_access_key }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.backend_secret_key }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+          while IFS= read -r line; do
+            [[ -z "${line// /}" ]] && continue
+            ARGS+=("-backend-config=$line")
+          done <<< "$BACKEND_CONFIG"
+          tofu -chdir="$DIR" init -input=false "${ARGS[@]+"${ARGS[@]}"}"
+
+      - name: Run tofu plan
+        if: steps.fork.outputs.is_fork == 'false'
+        id: plan
+        env:
+          DIR: ${{ inputs.working_directory }}
+          LOCK: ${{ inputs.lock }}
+          LOCK_TIMEOUT: ${{ inputs.lock_timeout }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.backend_access_key }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.backend_secret_key }}
+        # -detailed-exitcode ist die eingebaute, eindeutige Antwort auf
+        # "gibt es Aenderungen": 0 = keine, 2 = ja, 1 = Fehler. Deshalb KEIN
+        # jq auf `tofu show -json`, dessen Struktur zwischen Versionen wandert.
+        #
+        # `set +e` ist Pflicht, nicht Bequemlichkeit: GitHub startet run-Bloecke
+        # mit `bash -e`, und der ERWARTETE Erfolgsfall "es gibt Aenderungen"
+        # ist rc=2. Ohne +e stirbt der Schritt, bevor rc ausgewertet wird —
+        # dieselbe Falle wie in kube-lint.yml.
+        run: |
+          set -uo pipefail
+          LOCK_ARGS=(-lock-timeout="$LOCK_TIMEOUT")
+          [[ "$LOCK" == "true" ]] || LOCK_ARGS+=(-lock=false)
+          set +e
+          tofu -chdir="$DIR" plan -input=false -no-color -detailed-exitcode \
+            "${LOCK_ARGS[@]}" -out=tfplan > plan.txt 2> plan.err
+          rc=$?
+          set -e
+          cat plan.err >&2 || true
+          case "$rc" in
+            0) echo "has_changes=false" >> "$GITHUB_OUTPUT" ;;
+            2) echo "has_changes=true"  >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::tofu plan scheiterte (rc=$rc): $(tr -d '\n' < plan.err)" >&2
+              echo "has_changes=false" >> "$GITHUB_OUTPUT"
+              echo "failed=true" >> "$GITHUB_OUTPUT"
+              exit 1
+              ;;
+          esac
+          LINE=$(grep -E '^Plan: |^No changes\.' plan.txt | tail -1 || true)
+          echo "summary_line=${LINE:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Render plan as JSON
+        if: steps.fork.outputs.is_fork == 'false' && inputs.plan_json
+        env:
+          DIR: ${{ inputs.working_directory }}
+        run: |
+          set -euo pipefail
+          tofu -chdir="$DIR" show -json tfplan > plan.json
+
+      - name: Upload plan JSON
+        # Nur auf ausdruecklichen Wunsch. Die binaere tfplan wird NIE
+        # hochgeladen — sie traegt dieselben Klartextwerte.
+        if: steps.fork.outputs.is_fork == 'false' && inputs.plan_json
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tofu-plan-json
+          # `> plan.json` im Schritt davor schreibt ins cwd (Workspace-Root),
+          # NICHT nach $DIR — `tofu -chdir` aendert das Arbeitsverzeichnis von
+          # tofu, nicht das der Shell.
+          path: plan.json
+          if-no-files-found: error
+          retention-days: 7
