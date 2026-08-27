@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.21.8](https://github.com/serverkraken/reusable-workflows/compare/v4.21.7...v4.21.8) (2026-08-27)
+
+
+### Bug Fixes
+
+* **onboard:** die beiden Engines liefen nebeneinander, ohne je verglichen zu werden ([#388](https://github.com/serverkraken/reusable-workflows/issues/388)) ([ecd703e](https://github.com/serverkraken/reusable-workflows/commit/ecd703e18343312b8c3a1829ed3c23439a7a6ab2))
+
 ## [4.21.7](https://github.com/serverkraken/reusable-workflows/compare/v4.21.6...v4.21.7) (2026-08-27)
 
 
