@@ -11,11 +11,11 @@
 ![license](docs/badges/license.svg)
 
 <!-- version-badges:start -->
-![reusable-workflows: v4.21.9](docs/badges/reusable-workflows.svg)
+![reusable-workflows: v4.21.10](docs/badges/reusable-workflows.svg)
 
 | Component | Version | Tag |
 |---|---|---|
-| reusable-workflows | 4.21.9 | [v4.21.9](https://github.com/serverkraken/reusable-workflows/releases/tag/v4.21.9) |
+| reusable-workflows | 4.21.10 | [v4.21.10](https://github.com/serverkraken/reusable-workflows/releases/tag/v4.21.10) |
 <!-- version-badges:end -->
 
 Versionierter, getesteter Katalog wiederverwendbarer GitHub-Actions-Workflows für die `serverkraken`-Organisation. Statt CI-Workflows zwischen Repos zu kopieren, referenziert jedes Repo den Katalog mit einer einzigen `uses:`-Zeile — und bekommt Updates über semantische Versionen.
