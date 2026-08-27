@@ -205,15 +205,36 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Assert lint job failed
+      - name: Assert the FINDINGS gate failed, not something else
         env:
           RESULT: ${{ needs.test-lint-shell-fail.result }}
+          COUNT: ${{ needs.test-lint-shell-fail.outputs.findings_count }}
+          FILES: ${{ needs.test-lint-shell-fail.outputs.file_count }}
         run: |
+          set -euo pipefail
+          fail=0
           if [[ "$RESULT" != "failure" ]]; then
             echo "::error::expected lint-shell to fail on findings fixture, got: $RESULT"
-            exit 1
+            fail=1
           fi
-          echo "lint-shell-fail: correctly observed failure"
+          # `result == failure` allein beweist nichts ueber das WARUM: ein
+          # OOM-Kill, ein gescheiterter Tool-Download oder ein Syntaxfehler im
+          # Atom faerben den Job genauso rot, und die Assertion meldete dann,
+          # das Gate habe funktioniert. Beide Outputs werden VOR dem Gate
+          # gesetzt; ein frueher abgestuerzter Job laesst sie leer.
+          if [[ -z "$FILES" || "$FILES" == "0" ]]; then
+            echo "::error::file_count='${FILES}' — der Collect-Schritt lief nicht oder fand nichts, das Findings-Gate ist damit unbewiesen"
+            fail=1
+          fi
+          if [[ -z "$COUNT" ]]; then
+            echo "::error::findings_count ist leer — shellcheck lief nicht durch, der Fehlschlag hat also eine andere Ursache als das Gate"
+            fail=1
+          elif [[ "$COUNT" == "0" ]]; then
+            echo "::error::findings_count=0 — die Fixture traegt keine Funde mehr, das Gate wurde nie ausgeloest"
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "lint-shell-fail: Gate korrekt ausgeloest (${COUNT} Funde in ${FILES} Datei(en))"
 
   # ----- lint-shell: leerer Glob-Treffer -----
   # Der realistische Ausloeser ist Glob-Drift: ein Adopter benennt scripts/
@@ -240,12 +261,32 @@ jobs:
       - name: Assert lint job failed on an empty match
         env:
           RESULT: ${{ needs.test-lint-shell-empty.result }}
+          FILES: ${{ needs.test-lint-shell-empty.outputs.file_count }}
+          COUNT: ${{ needs.test-lint-shell-empty.outputs.findings_count }}
         run: |
+          set -euo pipefail
+          fail=0
           if [[ "$RESULT" != "failure" ]]; then
             echo "::error::expected lint-shell to fail when its globs match nothing, got: $RESULT"
-            exit 1
+            fail=1
           fi
-          echo "lint-shell-empty: correctly observed failure"
+          # Fuer diesen Job war findings_count als Beweis untauglich: das Atom
+          # bricht ab, BEVOR gezaehlt wird, der Wert bleibt also auch dann
+          # leer, wenn der Job schon am Checkout gestorben waere. Der Collect-
+          # Schritt schreibt sein `count` aber, bevor er bei null Treffern
+          # abbricht — genau deshalb gibt das Atom es als `file_count` heraus.
+          # '0' beweist: der Schritt lief, die Globs trafen nichts, und der
+          # Abbruch kam aus der beabsichtigten Pruefung.
+          if [[ "$FILES" != "0" ]]; then
+            echo "::error::file_count='${FILES}' statt '0' — der Lauf ist vor dem Collect-Schritt gescheitert, der leere Glob ist damit unbewiesen"
+            fail=1
+          fi
+          if [[ -n "$COUNT" ]]; then
+            echo "::error::findings_count='${COUNT}' — es wurde doch gezaehlt, der Abbruch bei null Treffern griff also nicht"
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "lint-shell-empty: Abbruch bei null Treffern korrekt ausgeloest"
 
   # ----- lint-shell: shellcheck bricht fatal ab -----
   # shellcheck beendet mit rc=2, wenn es eine Datei nicht LESEN kann — und
@@ -1007,12 +1048,26 @@ jobs:
       - name: Das Atom muss den kaputten Stack ablehnen
         env:
           RESULT: ${{ needs.test-tofu-validate-fail.result }}
+          CHECKED: ${{ needs.test-tofu-validate-fail.outputs.checked_directories }}
         run: |
+          set -euo pipefail
+          fail=0
           if [[ "$RESULT" != "failure" ]]; then
             echo "::error::erwartet 'failure' fuer den ungueltigen Stack, bekam '${RESULT}'" >&2
-            exit 1
+            fail=1
           fi
-          echo "tofu-validate hat den kaputten Stack korrekt abgelehnt"
+          # `result == failure` allein wuerde auch einen OOM-Kill, einen
+          # gescheiterten Toolchain-Download oder einen Syntaxfehler im Atom
+          # als "das Gate greift" melden. checked_directories wird gesetzt,
+          # NACHDEM die Schleife den Stack tatsaechlich durchlaufen hat, und
+          # bevor der Fail-Schritt zuschlaegt: '1' beweist, dass fmt/init/
+          # validate an der Fixture gelaufen sind.
+          if [[ "$CHECKED" != "1" ]]; then
+            echo "::error::checked_directories='${CHECKED}' statt '1' — der Lauf ist vor der Validierung gescheitert, die Ablehnung ist damit unbewiesen" >&2
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "tofu-validate hat den kaputten Stack korrekt abgelehnt (1 Stack geprueft)"
 
   # ----- secret-scan: fail-path -----
   # Planted-secret fixture (AWS access key in a tracked file) → gitleaks
