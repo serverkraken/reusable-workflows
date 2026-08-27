@@ -56,6 +56,7 @@ Reusable workflows ("Atoms") follow shared conventions enforced by `.github/work
 
 - [`docs/conventions/step-summary.md`](docs/conventions/step-summary.md) — required Markdown block written to `$GITHUB_STEP_SUMMARY`.
 - [`docs/conventions/runs-on-guard.md`](docs/conventions/runs-on-guard.md) — every job resolving its runner from a `runs_on*` input must reject an empty value as its first step.
+- [`docs/conventions/reusable-permissions.md`](docs/conventions/reusable-permissions.md) — a caller granting `permissions:` to a reusable-workflow job must cover what that workflow declares, or the whole run aborts at startup.
 
 New conventions land in `docs/conventions/`. Each must be linked from this section and (where automatable) gated in `validate.yml`.
 

@@ -348,8 +348,14 @@ jobs:
     needs: prepare-goreleaser-publish
     uses: ./.github/workflows/goreleaser.yml
     secrets: inherit
+    # BEIDE Rechte, weil goreleaser.yml beide deklariert. Gewaehrt ein
+    # Aufrufer weniger, weist GitHub den GESAMTEN Lauf beim Start ab —
+    # `startup_failure`, ohne Annotation, ohne Job, ohne Log. Gemessen an den
+    # Laeufen 33074131069 und 33074876898; das Gate
+    # tests/conventions/check-reusable-permissions.py haelt das jetzt fest.
     permissions:
       contents: write
+      packages: write
     with:
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/cli-go-with-goreleaser

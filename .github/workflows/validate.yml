@@ -68,6 +68,8 @@ jobs:
         run: python3 tests/conventions/check-template-scalar-quoting.py
       - name: Check every runner-selecting job rejects an empty runs_on
         run: python3 tests/conventions/check-runs-on-guard.py
+      - name: Check reusable-workflow callers grant enough permissions
+        run: python3 tests/conventions/check-reusable-permissions.py
 
   renovate-config-check:
     runs-on: ubuntu-latest
