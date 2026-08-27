@@ -297,6 +297,26 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 
 ---
 
+### `lint-shell.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `paths` | string | no | `**/*.sh` | Newline-separated globs to check. |
+| input | `severity` | string | no | `style` | shellcheck minimum severity: error, warning, info or style. |
+| input | `shellcheck_version` | string | no | `''` | Override shellcheck version (empty → composite default). |
+| input | `follow_sources` | boolean | no | `true` | Pass -x so `source lib/common.sh` is checked too. |
+| input | `scan_shebangs` | boolean | no | `true` | Also check tracked files WITHOUT a .sh suffix whose first line is a shell shebang. A linter that silently skips `scripts/deploy` checks half the scripts in many repos. Scoped by the same `paths` globs with the .sh requirement dropped, so it never widens into a whole-repo scan. |
+| input | `shfmt` | boolean | no | `false` | Also run `shfmt -d` (format check). |
+| input | `sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks. |
+| input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when shellcheck reports findings. |
+| input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow. |
+| input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `findings_count` | — | — | — | Number of shellcheck findings. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+
+---
+
 ### `release-flutter-android.yml`
 
 Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.

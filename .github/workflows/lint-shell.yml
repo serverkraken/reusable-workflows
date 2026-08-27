@@ -1,0 +1,331 @@
+# .github/workflows/lint-shell.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  paths, severity, shellcheck_version, follow_sources,
+#            scan_shebangs, shfmt, sarif, fail_on_findings, report_slug, runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key
+#   outputs: findings_count
+name: lint-shell
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: 'Newline-separated globs to check.'
+        required: false
+        type: string
+        default: '**/*.sh'
+      severity:
+        description: 'shellcheck minimum severity: error, warning, info or style.'
+        required: false
+        type: string
+        default: 'style'
+      shellcheck_version:
+        description: 'Override shellcheck version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      follow_sources:
+        description: 'Pass -x so `source lib/common.sh` is checked too.'
+        required: false
+        type: boolean
+        default: true
+      scan_shebangs:
+        description: >-
+          Also check tracked files WITHOUT a .sh suffix whose first line is a
+          shell shebang. A linter that silently skips `scripts/deploy` checks
+          half the scripts in many repos. Scoped by the same `paths` globs
+          with the .sh requirement dropped, so it never widens into a
+          whole-repo scan.
+        required: false
+        type: boolean
+        default: true
+      shfmt:
+        description: 'Also run `shfmt -d` (format check).'
+        required: false
+        type: boolean
+        default: false
+      sarif:
+        description: 'Upload SARIF to GitHub code-scanning. Auto-skipped on forks.'
+        required: false
+        type: boolean
+        default: true
+      fail_on_findings:
+        description: 'Exit non-zero when shellcheck reports findings.'
+        required: false
+        type: boolean
+        default: true
+      report_slug:
+        description: >-
+          Suffix that makes this call's SARIF category and artifact name
+          unique. Required when a repo calls this atom more than once in the
+          same workflow.
+        required: false
+        type: string
+        default: ''
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      findings_count:
+        description: 'Number of shellcheck findings.'
+        value: ${{ jobs.lint.outputs.findings_count }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: lint-shell-${{ github.workflow }}-${{ github.ref }}-${{ inputs.paths }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 15
+    outputs:
+      findings_count: ${{ steps.count.outputs.findings_count }}
+    steps:
+      # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
+      # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
+      # arbeiten. `fromJSON` oben faengt nur KAPUTTES JSON ab — `[]` ist
+      # gueltiges JSON und kommt hier an.
+      # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+
+      - name: Install shellcheck
+        uses: ./.catalog/actions/install-shellcheck
+        with:
+          version: ${{ inputs.shellcheck_version }}
+          shfmt: ${{ inputs.shfmt }}
+
+      - name: Collect files
+        id: files
+        env:
+          PATHS: ${{ inputs.paths }}
+          SCAN_SHEBANGS: ${{ inputs.scan_shebangs }}
+        # `git ls-files` statt `find`: nur getrackte Dateien, und damit
+        # automatisch nichts aus .catalog (das ist ein zweiter Checkout, kein
+        # Teil des Index) und nichts Ungetracktes aus einem Vorlauf.
+        run: |
+          set -euo pipefail
+          : > files.txt
+          while IFS= read -r glob; do
+            [[ -z "$glob" ]] && continue
+            git ls-files -z -- "$glob" >> files.z || true
+          done <<< "$PATHS"
+          if [[ -f files.z ]]; then
+            tr '\0' '\n' < files.z >> files.txt
+          fi
+          if [[ "$SCAN_SHEBANGS" == "true" ]]; then
+            # Der Shebang-Scan folgt DENSELBEN Globs wie oben, nur ohne die
+            # .sh-Bedingung: aus `scripts/**/*.sh` wird `scripts/**/*`.
+            # Ohne diese Ableitung durchsuchte er das ganze Repo und ignorierte
+            # damit die Angabe des Aufrufers — wer `paths: scripts/**/*.sh`
+            # setzt, erwartet eine Begrenzung auf scripts/, nicht einen Scan
+            # ueber jede getrackte Datei.
+            : > shebang.z
+            while IFS= read -r glob; do
+              [[ -z "$glob" ]] && continue
+              git ls-files -z -- "${glob%\*.sh}*" >> shebang.z || true
+            done <<< "$PATHS"
+            # Erste Zeile lesen, nicht die ganze Datei: bei Binaerdateien waere
+            # ein grep ueber den vollen Inhalt teuer und irrefuehrend.
+            while IFS= read -r f; do
+              [[ -f "$f" ]] || continue
+              [[ "$f" == *.sh ]] && continue
+              head -c 200 "$f" 2>/dev/null | head -1 \
+                | grep -Eq '^#!.*\b(ba|k|z|da)?sh\b' && echo "$f" >> files.txt || true
+            done < <(tr '\0' '\n' < shebang.z)
+          fi
+          sort -u files.txt -o files.txt
+          COUNT=$(wc -l < files.txt | tr -d ' ')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Zu pruefende Dateien: $COUNT"
+          cat files.txt
+
+      - name: Run shellcheck (json1)
+        id: run
+        env:
+          SEVERITY: ${{ inputs.severity }}
+          FOLLOW: ${{ inputs.follow_sources }}
+          FILE_COUNT: ${{ steps.files.outputs.count }}
+        # shellcheck beendet bei FUNDEN mit rc=1, der Schritt darf daran nicht
+        # sterben — der SARIF-Upload und das Gate kommen danach. `|| true`
+        # waere aber falsch: es wuerfe auch einen Absturz weg, und der saehe
+        # dann aus wie "null Funde" (dieselbe Fehlerklasse wie Audit F-3 in
+        # kube-lint.yml). Deshalb rc einfangen und die Ausgabe pruefen.
+        run: |
+          if [[ "$FILE_COUNT" == "0" ]]; then
+            echo '{"comments":[]}' > shellcheck.json
+            echo "::notice::keine passenden Dateien gefunden"
+            exit 0
+          fi
+          ARGS=(-f json1 -S "$SEVERITY")
+          [[ "$FOLLOW" == "true" ]] && ARGS+=(-x)
+          set +e
+          xargs -a files.txt shellcheck "${ARGS[@]}" > shellcheck.json 2> shellcheck.err
+          rc=$?
+          set -e
+          cat shellcheck.err >&2 || true
+          if [[ "$rc" -ne 0 && ! -s shellcheck.json ]]; then
+            echo "::error::shellcheck exited $rc without producing a report — it did not check anything: $(tr -d '\n' < shellcheck.err)" >&2
+            exit 1
+          fi
+
+      - name: Convert to SARIF
+        env:
+          CONVERTER: ${{ github.workspace }}/.catalog/scripts/shellcheck-to-sarif.py
+        run: |
+          set -euo pipefail
+          VER=$(shellcheck --version | awk '/^version:/ {print $2}')
+          python3 "$CONVERTER" --tool-version "${VER:-unknown}" \
+            < shellcheck.json > shellcheck.sarif
+
+      - name: Count findings
+        id: count
+        run: |
+          set -euo pipefail
+          COUNT=$(jq '[.runs[].results[]] | length' shellcheck.sarif)
+          echo "findings_count=${COUNT:-0}" >> "$GITHUB_OUTPUT"
+          echo "shellcheck findings: ${COUNT:-0}"
+
+      - name: Run shfmt
+        id: fmt
+        if: inputs.shfmt
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          xargs -a files.txt shfmt -d
+
+      - name: Derive report slug
+        id: slug
+        env:
+          RAW: ${{ inputs.report_slug }}
+        run: |
+          set -euo pipefail
+          slug="$(printf '%s' "${RAW:-}" | tr '/' '-' | tr -cd 'A-Za-z0-9._-')"
+          if [ -n "$slug" ]; then
+            echo "category=:$slug" >> "$GITHUB_OUTPUT"
+            echo "artifact=-$slug" >> "$GITHUB_OUTPUT"
+          else
+            echo "category=" >> "$GITHUB_OUTPUT"
+            echo "artifact=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload SARIF to code-scanning
+        # Fork-PR guard only: on push/schedule there is no pull_request
+        # context, and the upload on the default branch is the one that forms
+        # the code-scanning baseline.
+        if: inputs.sarif && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
+        with:
+          sarif_file: shellcheck.sarif
+          category: lint-shell${{ steps.slug.outputs.category }}
+
+      - name: Summary
+        if: always()
+        env:
+          COUNT: ${{ steps.count.outputs.findings_count }}
+          FILE_COUNT: ${{ steps.files.outputs.count }}
+          SEVERITY: ${{ inputs.severity }}
+          FAIL_ON_FINDINGS: ${{ inputs.fail_on_findings }}
+          SHFMT_ENABLED: ${{ inputs.shfmt }}
+          SHFMT_OUTCOME: ${{ steps.fmt.outcome }}
+        run: |
+          sc_version=$(shellcheck --version 2>/dev/null | awk '/^version:/ {print $2}' || echo unknown)
+          if [[ "${COUNT:-0}" == "0" ]]; then
+            result="✓ no findings"
+            sc_row="✓"
+          elif [[ "$FAIL_ON_FINDINGS" == "true" ]]; then
+            result="✗ ${COUNT} findings"
+            sc_row="✗"
+          else
+            result="▲ ${COUNT} findings (gate disabled)"
+            sc_row="▲"
+          fi
+          {
+            echo "## lint-shell"
+            echo ""
+            echo "**Tool:** shellcheck ${sc_version}"
+            echo "**Files:** ${FILE_COUNT}"
+            echo "**Severity:** \`${SEVERITY}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|---|---|"
+            echo "| shellcheck | ${sc_row} |"
+            if [[ "$SHFMT_ENABLED" == "true" ]]; then
+              if [[ "$SHFMT_OUTCOME" == "success" ]]; then
+                echo "| shfmt | ✓ |"
+              else
+                echo "| shfmt | ✗ |"
+              fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Fail on findings
+        if: inputs.fail_on_findings && steps.count.outputs.findings_count != '0'
+        env:
+          COUNT: ${{ steps.count.outputs.findings_count }}
+        run: |
+          jq -r '.runs[0].results[] | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine)::\(.ruleId) \(.message.text)"' \
+            shellcheck.sarif | head -10 || true
+          echo "::error::shellcheck found $COUNT issue(s)"
+          exit 1
+
+      - name: Fail on shfmt diff
+        if: inputs.shfmt && inputs.fail_on_findings && steps.fmt.outcome == 'failure'
+        run: |
+          echo "::error::shfmt reported formatting differences"
+          exit 1
