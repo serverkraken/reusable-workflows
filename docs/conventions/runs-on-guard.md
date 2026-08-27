@@ -48,6 +48,18 @@ Der Vertrag in [`docs/contracts.md`](../contracts.md) nennt durchgehend
 „JSON-encoded array of runner labels" — der Wächter setzt genau das durch,
 statt es zu erweitern.
 
+## Warum der Wächter den Workspace festnagelt
+
+```yaml
+working-directory: ${{ github.workspace }}
+```
+
+Diese Zeile sieht nach Rauschen aus und ist keins. Der Wächter läuft **vor dem
+Checkout**. Ein Job-Ebene-`defaults.run.working-directory` — `goreleaser.yml`
+hat eins — zeigt dann auf ein Verzeichnis, das es noch nicht gibt, und der
+Schritt stirbt mit `No such file or directory`, statt irgendetwas zu prüfen.
+Gemessen am Lauf `33062297620`. Das Gate erzwingt die Zeile deshalb.
+
 ## Warum reines Bash und kein `jq`
 
 14 der 25 Atome benutzen `jq` überhaupt nicht. Eine `jq`-Abhängigkeit wäre eine

@@ -79,6 +79,12 @@ jobs:
       # gueltiges JSON und kommt hier an.
       # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
       - name: Reject an empty runs_on
+        # Fest auf den Workspace: der Waechter laeuft VOR dem Checkout, und ein
+        # Job-Ebene `defaults.run.working-directory` (goreleaser.yml) zeigt auf
+        # ein Verzeichnis, das es dann noch nicht gibt. Ohne diese Zeile
+        # scheitert der Schritt mit "No such file or directory", statt den Wert
+        # zu pruefen — gemessen an Lauf 33062297620.
+        working-directory: ${{ github.workspace }}
         env:
           RUNS_ON: ${{ inputs.runs_on }}
         run: |

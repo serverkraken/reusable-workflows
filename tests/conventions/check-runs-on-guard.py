@@ -42,6 +42,12 @@ For every job whose `runs-on:` is `${{ fromJSON(<expr>) }}` with `runs_on` in
 
   1. the first step is `- name: Reject an empty runs_on`
   2. its `env:` binds `RUNS_ON` to `${{ <the very same expr> }}`
+  3. it pins `working-directory: ${{ github.workspace }}`
+
+Rule 3 looks like noise and is not. The guard runs BEFORE the checkout, so a
+job-level `defaults.run.working-directory` — `goreleaser.yml` has one — points
+at a directory that does not exist yet, and the step dies with "No such file or
+directory" instead of checking anything. Measured on run 33062297620.
 
 Rule 2 is the one with teeth. `docker-build`'s matrix job picks its runner with
 a ternary over two inputs; a guard that checked `inputs.runs_on_amd64` there
@@ -59,6 +65,7 @@ JOB_RE = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 RUNSON_RE = re.compile(r"^    runs-on:\s*\$\{\{\s*fromJSON\((.+)\)\s*\}\}\s*$")
 STEP_RE = re.compile(r"^      - name:\s*(.+?)\s*$")
 ENV_RE = re.compile(r"^          RUNS_ON:\s*(.+?)\s*$")
+WORKDIR = "        working-directory: ${{ github.workspace }}"
 
 GUARD_NAME = "Reject an empty runs_on"
 
@@ -119,6 +126,14 @@ def main() -> int:
                 failures.append(
                     f"{where}: guard validates `{bound}` but the job runs on "
                     f"`{want}` — it would pass while the real value is empty")
+
+            # 3. the guard must not inherit a working directory that the
+            #    checkout has not created yet
+            if WORKDIR not in "\n".join(lines[steps_at:e]):
+                failures.append(
+                    f"{where}: guard does not pin "
+                    f"`working-directory: ${{{{ github.workspace }}}}` — it runs "
+                    f"before the checkout and would die on a job-level default")
 
     if failures:
         print("runs_on guard missing or mis-bound:\n", file=sys.stderr)

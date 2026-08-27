@@ -34,6 +34,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     steps:
       - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
         env:
           RUNS_ON: ${{ inputs.runs_on }}
         run: |
@@ -104,6 +105,7 @@ jobs:
     runs-on: ${{ fromJSON(matrix.runs_on_input == 'runs_on_amd64' && inputs.runs_on_amd64 || inputs.runs_on_arm64) }}
     steps:
       - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
         env:
           RUNS_ON: ${{ inputs.runs_on_amd64 }}
         run: exit 1
@@ -111,6 +113,30 @@ YAML
   run python3 "$SCRIPT"
   [ "$status" -ne 0 ]
   [[ "$output" == *"would pass while the real value is empty"* ]]
+}
+
+# The guard runs before the checkout, so a job-level working-directory default
+# points at a directory that does not exist yet. Measured on run 33062297620,
+# where goreleaser died with "No such file or directory" instead of checking.
+@test "flags a guard that does not pin the workspace as its working directory" {
+  cat > .github/workflows/atom.yml <<'YAML'
+on:
+  workflow_call:
+jobs:
+  release:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - name: Reject an empty runs_on
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: exit 1
+YAML
+  run python3 "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"before the checkout"* ]]
 }
 
 @test "ignores a forwarder job that has no runs-on of its own" {
