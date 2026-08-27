@@ -256,6 +256,14 @@ golden_check_preview() {
   golden_check_preview "single-non-root"
 }
 
+# EINE Chart-Komponente an der Wurzel mit app_version: true. Bis Audit A-5
+# bildete KEINE Fixture diesen Fall ab — deshalb blieb unbemerkt, dass das
+# Einzel-Template den extra-files-Zweig gar nicht kannte, waehrend die
+# Monorepo-Variante ihn laengst ausgab. Ohne den Eintrag friert appVersion ein.
+@test "golden: single-chart-app-version (Audit A-5)" {
+  golden_check_preview "single-chart-app-version"
+}
+
 @test "golden: gitops-bootstrap-only"  { golden_check "gitops-bootstrap-only"; }
 @test "golden: go-repo"                { golden_check "go-repo"; }
 @test "golden: go-cgo"                 { golden_check "go-cgo"; }

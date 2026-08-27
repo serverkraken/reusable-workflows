@@ -905,3 +905,73 @@ func TestManifestAcceptsOrdinaryContexts(t *testing.T) {
 		}
 	}
 }
+
+// Audit A-6. cronRe prueft nur Zeichensatz und Feldzahl; `61 25 32 13 8`
+// erfuellt beides und lief bis ins gerenderte e2e.yml des Adopters durch. Dort
+// faengt es actionlint ("end of range (61) above maximum (59)") — aber eben
+// erst dort, ein Repo weiter, mit einer Meldung ueber die Workflow-Datei statt
+// ueber die Manifest-Zeile.
+//
+// Die Liste der GUELTIGEN Ausdruecke ist der wichtigere Teil: ein zu strenger
+// Validator waere schlimmer als der Fund, weil er Adopter blockiert, deren
+// Zeitplan in Ordnung ist. Deshalb ausdruecklich Namen (MON-FRI, JAN,JUL),
+// Listen, Spannen, Schritte und die Sonderrolle von 0 UND 7 als Sonntag.
+func TestValidateCron(t *testing.T) {
+	good := []string{
+		"0 3 * * 0",          // die Vorgabe der e2e-Fixture
+		"*/15 * * * *",       // Schritt
+		"0 0 1 * *",          // Monatserster
+		"30 2 * * MON-FRI",   // Namensspanne
+		"0 6 * JAN,JUL *",    // Namensliste
+		"0 0 * * 7",          // 7 = Sonntag
+		"0 0 * * 0",          // 0 = Sonntag
+		"5,20,35,50 * * * *", // Zahlenliste
+		"0 9-17 * * 1-5",     // Zahlenspanne
+		"0 */6 1-15 * *",     // Spanne plus Schritt
+	}
+	for _, expr := range good {
+		if err := validateCron(expr); err != nil {
+			t.Errorf("gueltiger Ausdruck abgewiesen %q: %v", expr, err)
+		}
+	}
+
+	bad := map[string]string{
+		"61 25 32 13 8":   "minute",       // der Fund selbst
+		"60 * * * *":      "minute",       // Grenze +1
+		"* 24 * * *":      "hour",         // Stunden sind 0-23, nicht 1-24
+		"* * 0 * *":       "day-of-month", // Tage beginnen bei 1
+		"* * 32 * *":      "day-of-month",
+		"* * * 13 *":      "month",
+		"* * * * 8":       "day-of-week", // 7 ist Sonntag, 8 gibt es nicht
+		"* * * FOO *":     "month",
+		"*/0 * * * *":     "step",
+		"30-10 * * * *":   "starts above its end",
+		"0 3 * * MON-XYZ": "day-of-week",
+	}
+	for expr, want := range bad {
+		err := validateCron(expr)
+		if err == nil {
+			t.Errorf("ungueltiger Ausdruck akzeptiert: %q", expr)
+			continue
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q -> %v, erwartet einen Hinweis auf %q", expr, err, want)
+		}
+	}
+}
+
+// Die Meldung muss die Manifest-ZEILE nennen, nicht nur den Grund — sonst
+// sucht der Adopter in der falschen Datei.
+func TestManifestScheduleOutOfRangeNamesTheLine(t *testing.T) {
+	src := "schema: 1\ncomponents:\n  - path: .\nworkflows:\n  e2e:\n    script: test/e2e/run.sh\n    schedule: \"61 25 32 13 8\"\n"
+	_, err := Parse([]byte(src))
+	if err == nil {
+		t.Fatal("erwartet einen Fehler")
+	}
+	if !strings.Contains(err.Error(), "line 7") {
+		t.Errorf("Meldung nennt die Zeile nicht: %v", err)
+	}
+	if !strings.Contains(err.Error(), "minute") {
+		t.Errorf("Meldung nennt das Feld nicht: %v", err)
+	}
+}

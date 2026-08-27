@@ -121,16 +121,41 @@ func ClassifyDefaultTier(field string) string {
 	}
 }
 
+// ComputeTopicsUnion bildet die Vereinigung aus den vorhandenen und den
+// zusaetzlichen Topics, in dieser Reihenfolge und OHNE Duplikate.
+//
+// Vorher wurde die Menge nur aus `current` gebildet und beim Anhaengen nicht
+// mitgefuehrt. Ein Duplikat innerhalb von `additive` landete damit zweimal
+// (Audit A-11):
+//
+//	current=[x] additive=[a a]   -> [x a a]
+//	current=[x] additive=[a b a] -> [x a b a]
+//
+// Der Schaden steckt in der Aufrufstelle: applyTopics ueberspringt den Schreib-
+// vorgang nur bei reflect.DeepEqual(current, next). Mit einem Duplikat in
+// `additive` unterscheidet sich `next` nach JEDEM Lauf erneut von dem, was
+// GitHub gespeichert hat (GitHub dedupliziert beim PUT), und der Defaults-Job
+// schreibt endlos, ohne je zu konvergieren.
+//
+// `current` wird ebenfalls dedupliziert: eine Vereinigung enthaelt keine
+// Duplikate. GitHub liefert zwar keine, aber ein Sonderfall, der stillschweigend
+// durchgereicht wird, ist genau die Sorte Annahme, die dieser Audit reihenweise
+// widerlegt hat.
 func ComputeTopicsUnion(current, additive []string) []string {
-	next := append([]string(nil), current...)
-	currentSet := make(map[string]struct{}, len(current))
-	for _, topic := range current {
-		currentSet[topic] = struct{}{}
-	}
-	for _, topic := range additive {
-		if _, ok := currentSet[topic]; !ok {
-			next = append(next, topic)
+	seen := make(map[string]struct{}, len(current)+len(additive))
+	// `var next []string` und NICHT make(..., 0, ...): bei leerer Eingabe muss
+	// nil herauskommen, so wie vorher. applyTopics vergleicht per
+	// reflect.DeepEqual(current, next), und DeepEqual(nil, []string{}) ist
+	// FALSE — ein Repo ganz ohne Topics haette sonst bei jedem Lauf einen PUT
+	// mit leerer Liste bekommen. Genau die Sorte Regression, die der Fix
+	// verhindern soll.
+	var next []string
+	for _, topic := range append(append([]string(nil), current...), additive...) {
+		if _, ok := seen[topic]; ok {
+			continue
 		}
+		seen[topic] = struct{}{}
+		next = append(next, topic)
 	}
 	return next
 }

@@ -37,6 +37,27 @@ func TestComputeTopicsUnion(t *testing.T) {
 		{name: "append missing", current: []string{"go", "backend"}, additive: []string{"serverkraken-onboarded"}, want: []string{"go", "backend", "serverkraken-onboarded"}},
 		{name: "already present", current: []string{"serverkraken-onboarded", "go"}, additive: []string{"serverkraken-onboarded"}, want: []string{"serverkraken-onboarded", "go"}},
 		{name: "some present", current: []string{"a", "b"}, additive: []string{"b", "c"}, want: []string{"a", "b", "c"}},
+
+		// Audit A-11. Die Menge wurde nur aus `current` gebildet und beim
+		// Anhaengen nicht mitgefuehrt — ein Duplikat INNERHALB von `additive`
+		// landete deshalb zweimal. Der Schaden steckt in applyTopics: dort
+		// entscheidet reflect.DeepEqual(current, next) ueber den Schreibvorgang.
+		// GitHub dedupliziert beim PUT, also unterscheidet sich `next` nach
+		// jedem Lauf erneut — der Defaults-Job schreibt endlos, ohne je zu
+		// konvergieren.
+		{name: "duplikat in additive", current: []string{"x"}, additive: []string{"a", "a"}, want: []string{"x", "a"}},
+		{name: "duplikat verstreut", current: []string{"x"}, additive: []string{"a", "b", "a"}, want: []string{"x", "a", "b"}},
+		{name: "duplikat in current", current: []string{"x", "x"}, additive: []string{"a"}, want: []string{"x", "a"}},
+
+		// nil bleibt nil: applyTopics vergleicht per DeepEqual, und
+		// DeepEqual(nil, []string{}) ist false. Ein Repo ganz ohne Topics
+		// bekaeme sonst bei jedem Lauf einen PUT mit leerer Liste.
+		{name: "beides leer bleibt nil", current: nil, additive: nil, want: nil},
+
+		// Die Reihenfolge ist Teil des Vertrags: erst die vorhandenen Topics in
+		// ihrer Reihenfolge, dann die neuen. Wird hier sortiert, meldet
+		// DeepEqual bei jedem Lauf eine Aenderung.
+		{name: "reihenfolge bleibt", current: []string{"b", "a"}, additive: []string{"c"}, want: []string{"b", "a", "c"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

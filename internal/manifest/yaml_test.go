@@ -175,3 +175,99 @@ key4: value#notcomment
 		t.Fatalf("key4 should preserve #, got %q", root.Map["key4"].Scalar)
 	}
 }
+
+// Audit A-10. Windows-Editoren und einige Generatoren schreiben einen UTF-8-BOM
+// an den Dateianfang. Er klebte am ersten Schluessel, und der Adopter bekam
+// eine Meldung, die niemand deuten kann:
+//
+//	line 1: unknown key "\ufeffschema" (allowed: schema, components, …)
+func TestParseYAMLStripsLeadingBOM(t *testing.T) {
+	const bom = "\ufeff"
+	node, err := parseYAML(bom + "schema: 1\ncomponents:\n  - path: .\n")
+	if err != nil {
+		t.Fatalf("BOM sollte entfernt werden: %v", err)
+	}
+	if _, ok := node.Map["schema"]; !ok {
+		keys := make([]string, 0, len(node.Map))
+		for k := range node.Map {
+			keys = append(keys, k)
+		}
+		t.Fatalf("schema fehlt, Schluessel: %q", keys)
+	}
+
+	// Gegenprobe: NUR am Dateianfang. Mitten im Dokument ist U+FEFF ein
+	// regulaeres Zeichen und darf nicht verschwinden — sonst wuerde der Parser
+	// still Daten veraendern.
+	node, err = parseYAML("schema: 1\nname: a" + bom + "b\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := node.Map["name"].Scalar; got != "a"+bom+"b" {
+		t.Fatalf("BOM mitten im Wert wurde veraendert: %q", got)
+	}
+}
+
+// Audit A-9. In einfachen Anfuehrungszeichen ist ” das einzige Escape, das
+// YAML kennt, und es steht fuer ein einzelnes '. Vorher blieb der Wert
+// woertlich.
+//
+// Reichweite ehrlich: ueber KEIN Manifest-Feld erreichbar — jedes String-Feld
+// laeuft gegen ein Muster, und keines laesst ein ' zu (derselbe Grund, aus dem
+// J-7 und J-21 widerlegt wurden). Deshalb wird hier der Dekoder direkt
+// geprueft und nicht ueber Parse().
+func TestScalarDecodesDoubledSingleQuotes(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{`'bob''s-api'`, `bob's-api`},
+		{`''''`, `'`},
+		{`'a''''b'`, `a''b`},
+		{`'ohne'`, `ohne`},
+	} {
+		n, err := scalar(tc.in, 1)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.in, err)
+		}
+		if n.Scalar != tc.want {
+			t.Errorf("scalar(%s) = %q, want %q", tc.in, n.Scalar, tc.want)
+		}
+	}
+
+	// Doppelte Anfuehrungszeichen bleiben BEWUSST uninterpretiert: dort kennt
+	// YAML Backslash-Escapes, und die halb zu unterstuetzen waere schlechter
+	// als gar nicht.
+	n, err := scalar(`"a''b"`, 1)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if n.Scalar != `a''b` {
+		t.Errorf(`scalar("a''b") = %q, want unveraendert`, n.Scalar)
+	}
+}
+
+// Audit A-8. Der Fall `{...}` auf oberster Ebene hatte laengst eine klare
+// Meldung; INNERHALB einer Flow-Sequenz fehlte sie. `[{path: .}]` lief durch
+// scalar(), `{path: .` wurde ein STRING, und der Fehler tauchte erst eine
+// Schicht spaeter als "expected a mapping" auf — eine Meldung ueber die
+// Struktur, die nicht verraet, dass dieser Parser Flow-Mappings gar nicht
+// kennt.
+func TestParseYAMLFlowSequenceWithMappingItemFailsClearly(t *testing.T) {
+	_, err := parseYAML("components: [{path: ., language: go}]\n")
+	if err == nil {
+		t.Fatal("erwartet einen Fehler")
+	}
+	if !strings.Contains(err.Error(), "flow mappings are not supported") {
+		t.Errorf("Meldung nennt die Ursache nicht: %v", err)
+	}
+	if !strings.Contains(err.Error(), "block sequence") {
+		t.Errorf("Meldung nennt den Ausweg nicht: %v", err)
+	}
+
+	// Gegenprobe: eine Flow-Sequenz aus SKALAREN bleibt unterstuetzt — der
+	// Kopf dieser Datei sichert genau das zu.
+	node, err := parseYAML("scope: [a/**, b/**]\n")
+	if err != nil {
+		t.Fatalf("Skalar-Flow-Sequenz muss weiter gehen: %v", err)
+	}
+	if len(node.Map["scope"].Seq) != 2 {
+		t.Fatalf("scope=%+v", node.Map["scope"])
+	}
+}

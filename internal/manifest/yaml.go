@@ -37,6 +37,18 @@ type line struct {
 }
 
 func parseYAML(src string) (*Node, error) {
+	// UTF-8-BOM entfernen (Audit A-10).
+	//
+	// Windows-Editoren und einige Generatoren schreiben ihn ohne Nachfrage an
+	// den Dateianfang. Er klebte dann am ersten Schluessel, und der Adopter
+	// bekam eine Meldung, die niemand deuten kann:
+	//
+	//	line 1: unknown key "\ufeffschema" (allowed: schema, components, …)
+	//
+	// Nur am Dateianfang: mitten im Dokument ist U+FEFF ein regulaeres Zeichen
+	// und hat dort nichts mit Byte-Order zu tun.
+	src = strings.TrimPrefix(src, "\ufeff")
+
 	lines, err := tokenize(src)
 	if err != nil {
 		return nil, err
@@ -245,7 +257,24 @@ func scalarOrFlow(text string, no int) (*Node, error) {
 			return node, nil
 		}
 		for _, part := range splitFlow(inner) {
-			item, err := scalar(strings.TrimSpace(part), no)
+			trimmed := strings.TrimSpace(part)
+			// Ein Mapping INNERHALB einer Flow-Sequenz (Audit A-8).
+			//
+			// Der Fall `{...}` auf oberster Ebene hat weiter unten laengst eine
+			// klare Meldung. Hier fehlte sie: `components: [{path: ., language: go}]`
+			// lief durch scalar(), und `{path: .` wurde zu einem STRING. Der
+			// Fehler tauchte erst eine Schicht spaeter als "expected a mapping"
+			// auf — eine Meldung ueber die Struktur, die nicht verraet, dass
+			// dieser Parser Flow-Mappings gar nicht kennt.
+			//
+			// Der Kopf dieser Datei sagt es ausdruecklich: unterstuetzt sind
+			// "flow sequences of scalars". Das ist also kein stiller Datenverlust,
+			// sondern eine Fehlermeldung, die den Adopter in die falsche Richtung
+			// schickt.
+			if strings.HasPrefix(trimmed, "{") {
+				return nil, fmt.Errorf("line %d: flow mappings are not supported (use a block sequence: `- key: value` on its own line)", no)
+			}
+			item, err := scalar(trimmed, no)
 			if err != nil {
 				return nil, err
 			}
@@ -286,7 +315,27 @@ func scalar(text string, no int) (*Node, error) {
 		if len(text) < 2 || text[len(text)-1] != q {
 			return nil, fmt.Errorf("line %d: unterminated quoted string", no)
 		}
-		return &Node{Kind: KindScalar, Line: no, Scalar: text[1 : len(text)-1], Quoted: true}, nil
+		body := text[1 : len(text)-1]
+		if q == '\'' {
+			// In einfachen Anfuehrungszeichen ist '' das einzige Escape, das
+			// YAML kennt, und es steht fuer ein einzelnes ' (Audit A-9).
+			// Vorher blieb `'bob''s-api'` woertlich `bob''s-api`.
+			//
+			// Reichweite, ehrlich: ueber KEIN Manifest-Feld erreichbar. Jedes
+			// String-Feld laeuft gegen ein Muster (RelPathPattern,
+			// ImagePattern, ChartPinKeyPattern, platformsRe, cronRe oder eine
+			// Aufzaehlung), und keines davon laesst ein ' zu. Derselbe Grund,
+			// aus dem J-7 und J-21 widerlegt wurden.
+			//
+			// Trotzdem behoben: ein kuenftiges Feld ohne Muster wuerde den
+			// Fehler erben, und die Korrektur ist eine Zeile.
+			body = strings.ReplaceAll(body, "''", "'")
+		}
+		// Doppelte Anfuehrungszeichen bleiben BEWUSST uninterpretiert: dort
+		// kennt YAML Backslash-Escapes (\n, \", \uXXXX), und die halb zu
+		// unterstuetzen waere schlechter als gar nicht. Die Muster oben lassen
+		// ohnehin keinen Backslash zu.
+		return &Node{Kind: KindScalar, Line: no, Scalar: body, Quoted: true}, nil
 	}
 	return &Node{Kind: KindScalar, Line: no, Scalar: text}, nil
 }

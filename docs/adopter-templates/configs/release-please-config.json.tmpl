@@ -21,6 +21,31 @@
       "bump-minor-pre-major": true,
       "draft": false,
       "prerelease": false,
+{{- /* Manifest `app_version: true` — hier hat der Zweig GEFEHLT (Audit A-5).
+
+     Die Monorepo-Variante gibt den extra-files-Eintrag laengst aus, dieses
+     Template nicht. Eine einzelne Chart-Komponente mit `app_version: true`
+     bekam also NICHTS, und zwar still: release-pleases helm-Strategie
+     schreibt nur `version:` um, `appVersion` friert ein. Genau der Fall, fuer
+     den die Option gebaut wurde — mailstacks Chart stand bei 1.10.0, waehrend
+     appVersion auf v1.6.5 haengen blieb, und dieser Wert steht in jedem
+     app.kubernetes.io/version-Label und in den Install-Notes.
+
+     Gemessen an einem Wurzel-Chart mit `type: helm` und `app_version: true`:
+     die gerenderte release-please-config.json enthielt kein extra-files. Eine
+     Warnung gab es auch nicht — die aus J-8 greift nur bei NICHT-Helm.
+
+     Pfad paketrelativ, nicht repo-relativ, dieselbe Begruendung wie im
+     Monorepo-Template: vom Wurzelverzeichnis aus geschrieben suchte
+     release-please charts/x/charts/x/Chart.yaml, meldete "did not exist" und
+     machte weiter. Bei einer einzelnen Wurzelkomponente ist der Pfad gleich;
+     ausserhalb der Wurzel (Audit A-2) macht es den Unterschied. */}}
+{{- $c := index .profile.components 0 }}
+{{- if (index $c "app_version") }}
+{{- $chartRel := "Chart.yaml" }}
+{{- if $c.release_signals.chart_yaml }}{{ $chartRel = strings.TrimPrefix (printf "%s/" $c.path) $c.release_signals.chart_yaml }}{{ end }}
+      "extra-files": [{ "type": "generic", "path": "{{ $chartRel }}" }],
+{{- end }}
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },
