@@ -465,7 +465,17 @@ jobs:
   #       which is what turned krakenchores' weekly cron red from its
   #       onboarding until its first release. The job passing IS the
   #       assertion; the name is deliberately one that can never exist. -----
+  # NACH test-cleanup-images, nicht daneben. cleanup-images gruppiert auf
+  # `cleanup-<repo>` — repo-weit, ohne Workflow- oder Ref-Anteil. Vier
+  # Aufrufer teilen sie sich (zwei hier, zwei in der Nightly), und GitHub
+  # haelt je Gruppe nur EINEN wartenden Lauf; jeder weitere wird abgebrochen.
+  #
+  # Gemessen am Lauf 33075913493: dieser Job endete auf `cancelled`, waehrend
+  # gleichzeitig eine Nightly lief. Die Kette senkt den Beitrag dieses
+  # Workflows auf ein Mitglied und macht den Lauf damit unabhaengig davon, was
+  # sonst gerade im Repo laeuft.
   test-cleanup-images-missing-package:
+    needs: test-cleanup-images
     uses: ./.github/workflows/cleanup-images.yml
     with:
       package_name: ${{ github.event.repository.name }}/never-published-fixture
