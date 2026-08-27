@@ -127,6 +127,53 @@ jobs:
       dry_run: ${{ inputs.dry_run }}
       runs_on: ${{ inputs.runs_on_release }}
 
+  # Dieser Orchestrator ist per Bauart EIN Paket: er nimmt genau einen
+  # image_name, ein dockerfile, einen context. Ein Monorepo kann er gar nicht
+  # bedienen (Audit F-6).
+  #
+  # Das Problem war nicht, dass er es nicht kann — sondern dass er dabei
+  # SCHWIEG. release-please setzt die unpraefixierten Ausgaben
+  # (release_created, tag_name) nur fuer das Wurzelpaket "."; jedes andere
+  # bekommt `<pfad>--release_created`. Das steht im semantic-release-Atom
+  # nicht nur als Kommentar, sondern im jq: `pick` faellt ausschliesslich bei
+  # `$p == "."` auf die nackten Namen zurueck.
+  #
+  # Ein Monorepo-Aufrufer bekam damit: Tags und GitHub-Releases entstehen,
+  # docker-build und trivy-image haengen an `release_created == 'true'` und
+  # entfallen kommentarlos. Gebaut und gescannt wird nichts, und der Lauf ist
+  # gruen.
+  #
+  # Derselbe Widerspruch wie J-6, nur eine Ebene hoeher: dort stand im
+  # gerenderten Adopter-Workflow der falsche Diskriminator, hier fehlt die
+  # Feststellung, dass dieser Weg fuer Monorepos nicht gedacht ist.
+  #
+  # Nicht im Trockenlauf: dort setzt release-please planmaessig gar nichts,
+  # paths_released ist "[]", und dass Build und Scan entfallen, ist genau der
+  # Zweck (Audit K-16).
+  assert-single-package:
+    needs: semantic-release
+    if: always() && inputs.dry_run == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reject a monorepo release on the single-package orchestrator
+        env:
+          PATHS: ${{ needs.semantic-release.outputs.paths_released }}
+          CREATED: ${{ needs.semantic-release.outputs.release_created }}
+        run: |
+          set -euo pipefail
+          # "[]" heisst: release-please hat nichts released. Das ist ein
+          # regulaerer Lauf ohne Release, kein Fehler.
+          paths="${PATHS:-[]}"
+          nonroot="$(jq -r '[.[] | select(. != ".")] | join(", ")' <<<"$paths")"
+          if [[ -z "$nonroot" ]]; then
+            exit 0
+          fi
+          echo "::error::release.yml is a SINGLE-PACKAGE pipeline (one image_name/dockerfile/context), but release-please released non-root packages: ${nonroot}"
+          echo "::error::their outputs are named '<path>--release_created', so docker-build and trivy-image would be skipped silently — tags published, nothing built"
+          echo "::error::use the rendered per-component release.yml from the catalog templates, or wire the atoms directly against paths_released/releases"
+          exit 1
+
   docker-build:
     needs: semantic-release
     if: needs.semantic-release.outputs.release_created == 'true' && inputs.build_image

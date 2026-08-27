@@ -255,9 +255,35 @@ jobs:
           for c in $(kind get clusters 2>/dev/null); do
             delete_cluster "$c"
           done
-          leftover=$(kind get clusters 2>/dev/null || true)
-          containers=$(docker ps -a --filter "label=io.x-k8s.kind.cluster" -q 2>/dev/null || true)
-          if [[ -n "$leftover" || -n "$containers" ]]; then
+          # Beide Abfragen verschluckten Fehler UND Exit-Code: `2>/dev/null || true`
+          # macht aus einem unerreichbaren Docker-Daemon eine LEERE Liste, und
+          # die Pruefung darunter las das als "nichts uebrig geblieben"
+          # (Audit F-7). Ein Ausfall sah damit aus wie ein sauberer Cleanup —
+          # dieselbe Klasse wie D-12 und K-3: ein Fehlschlag wird zum leeren
+          # Ergebnis, und das zaehlt als Erfolg.
+          #
+          # stdout und stderr werden getrennt gehalten, NICHT per 2>&1
+          # zusammengelegt: auf stdout stehen die Daten (Clusternamen,
+          # Container-IDs), auf stderr die Diagnose — `kind get clusters`
+          # meldet "No kind clusters found." genau dort. Zusammengelegt wuerde
+          # jede Diagnosezeile zu einem vermeintlich uebrig gebliebenen
+          # Cluster, und aus dem Fund entstuende ein Fehlalarm.
+          #
+          # Ueber Erreichbarkeit entscheidet damit allein der EXIT-CODE, ueber
+          # "uebrig geblieben" allein stdout.
+          cleanup_err=$(mktemp)
+          if ! leftover=$(kind get clusters 2>"$cleanup_err"); then
+            echo "::error::could not list kind clusters — cleanup state is UNKNOWN, not clean: $(tr -d '\n' < "$cleanup_err")"
+            rm -f "$cleanup_err"
+            exit 1
+          fi
+          if ! containers=$(docker ps -a --filter "label=io.x-k8s.kind.cluster" -q 2>"$cleanup_err"); then
+            echo "::error::could not query docker for leftover kind containers — cleanup state is UNKNOWN, not clean: $(tr -d '\n' < "$cleanup_err")"
+            rm -f "$cleanup_err"
+            exit 1
+          fi
+          rm -f "$cleanup_err"
+          if [[ -n "${leftover//[[:space:]]/}" || -n "${containers//[[:space:]]/}" ]]; then
             echo "::error::kind state leaked past cleanup: clusters=[${leftover:-}] containers=[${containers:-}]"
             exit 1
           fi

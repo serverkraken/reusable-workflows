@@ -194,7 +194,14 @@ jobs:
           echo "Report slug: ${slug:-<none>}"
 
       - name: Upload SARIF to code-scanning
-        if: inputs.upload_sarif && github.event.pull_request.head.repo.full_name == github.repository
+        # `github.event.pull_request` ist bei einem push-Event NULL, der Vergleich
+        # also falsch — der Upload unterblieb damit auf `main` IMMER (Audit F-8).
+        # Gemeint war "keine Fork-PRs" (dort fehlt security-events: write).
+        # secret-scan.yml, trivy-fs.yml und trivy-image.yml tragen laengst die
+        # richtige Form; kube-lint war das einzige Atom ohne die
+        # event_name-Klausel. Gerade auf dem Default-Branch ist der Upload aber
+        # der, auf den es ankommt: er bildet die Basislinie im code-scanning.
+        if: inputs.upload_sarif && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
           sarif_file: kube-linter.sarif
