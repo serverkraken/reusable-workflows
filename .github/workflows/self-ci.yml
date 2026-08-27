@@ -213,10 +213,16 @@ jobs:
     with:
       working_directories: |-
         tests/fixtures/tofu-valid
-      # tflint braucht `tflint --init`, das Plugins aus GitHub zieht und im
-      # Self-CI unnoetig Rate-Limit kostet. Der tflint-Pfad wird ueber die
-      # Composite Action abgedeckt, nicht hier.
-      tflint: false
+      # tflint: true ist der DEFAULT des Atoms und damit das, was ein Adopter
+      # aus dem gerenderten ci.yml bekommt. Stuende hier `false`, liefe weder
+      # der tflint-Schritt der Composite Action noch der tflint-Zweig des Atoms
+      # jemals — der Pfad, den fast jeder Aufrufer nimmt, waere ungetestet.
+      #
+      # Das kostet KEIN Rate-Limit: das Atom ruft `tflint --no-color` ohne
+      # `--init`, es wird also kein Plugin aus der Registry geholt. Es laeuft
+      # nur das mitgelieferte ruleset.terraform, und das ist auf der Fixture
+      # befundfrei (lokal gegen tflint 0.61 geprueft, rc=0).
+      tflint: true
       runs_on: '["ubuntu-latest"]'
     secrets: inherit
 
