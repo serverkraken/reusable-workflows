@@ -115,6 +115,7 @@ jobs:
       # enforced by a Renovate packageRule: 1.1.0 switched plugin.yaml to
       # `platformHooks`, which Helm v3's plugin loader rejects outright.
       - name: Install helm-unittest
+        id: helm_unittest_install
         if: inputs.unittest && success()
         env:
           HELM_PLUGINS: ${{ runner.temp }}/helm-plugins
@@ -136,13 +137,42 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
+
+          # `unittest: true` ist ein OPT-IN: der Adopter erklaert damit, dass
+          # sein Chart Helm-Tests hat. Ein Chart ohne Testdateien lief bisher
+          # trotzdem gruen durch (Audit G-4). Gemessen mit helm-unittest 1.1.2
+          # an einem Chart mit Chart.yaml und templates/, aber ohne tests/:
+          #
+          #   Test Suites: 0 passed, 0 total
+          #   Tests:       0 passed, 0 total
+          #   rc=0
+          #
+          # Der Job war gruen, geprueft wurde nichts, und der Adopter hatte
+          # erklaert, dass hier etwas zu pruefen ist. Dieselbe Klasse wie A-3,
+          # A-4, B-4 und J-8: hier deklariert, dort passiert nichts.
+          #
+          # Geprueft wird die AUSGABE und nicht das Vorhandensein von
+          # tests/*_test.yaml: das Suchmuster von helm-unittest ist
+          # konfigurierbar, die Zusammenfassungszeile dagegen sagt, was
+          # tatsaechlich gelaufen ist.
+          run_unittest() {
+            local chart="$1" out rc=0
+            out="$(helm unittest "$chart" 2>&1)" || rc=$?
+            printf '%s\n' "$out"
+            (( rc == 0 )) || return "$rc"
+            if grep -qE '^Test Suites:[[:space:]]+0 passed, 0 total' <<<"$out"; then
+              echo "::error::unittest is enabled but $chart has no test suites — helm-unittest reported '0 passed, 0 total' and exited 0; add tests under the chart or set unittest: false"
+              return 1
+            fi
+          }
+
           if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
-            helm unittest "$CHARTS_DIR"
+            run_unittest "$CHARTS_DIR"
           else
             found=0
             for d in "$CHARTS_DIR"/*/; do
               if [[ -f "${d%/}/Chart.yaml" ]]; then
-                helm unittest "${d%/}"
+                run_unittest "${d%/}"
                 found=1
               fi
             done
@@ -160,6 +190,8 @@ jobs:
           HELM_LINT_OUTCOME: ${{ steps.helm_lint.outcome }}
           CT_LINT_OUTCOME: ${{ steps.ct_lint.outcome }}
           HELM_UNITTEST_OUTCOME: ${{ steps.helm_unittest.outcome }}
+          UNITTEST_INSTALL_OUTCOME: ${{ steps.helm_unittest_install.outcome }}
+          UNITTEST_REQUESTED: ${{ inputs.unittest }}
         run: |
           glyph() {
             case "$1" in
@@ -169,7 +201,27 @@ jobs:
               *)       echo "?" ;;
             esac
           }
-          if [[ "$HELM_LINT_OUTCOME" == "success" && "$CT_LINT_OUTCOME" == "success" && ( "$HELM_UNITTEST_OUTCOME" == "success" || "$HELM_UNITTEST_OUTCOME" == "skipped" ) ]]; then
+          # `skipped` galt hier pauschal als in Ordnung — auch dann, wenn
+          # unittest ANGEFORDERT war und der Schritt nur uebersprungen wurde,
+          # weil ein frueherer scheiterte (Audit G-7).
+          #
+          # Der Fall war real und unsichtbar: `Install helm-unittest` hatte
+          # keine id und tauchte in dieser Bilanz gar nicht auf. Scheitert die
+          # Plugin-Installation, wird `helm unittest` wegen `success()`
+          # uebersprungen, helm_lint und ct_lint stehen auf success — und die
+          # Zusammenfassung meldete "✓ passed" auf einem ROTEN Job.
+          #
+          # Jetzt zaehlen die beiden unittest-Schritte nur, wenn unittest
+          # angefordert wurde; dann aber muessen sie BEIDE bestanden haben.
+          # Bei `unittest: false` bleiben sie `−` und zaehlen nicht mit.
+          ok=1
+          [[ "$HELM_LINT_OUTCOME" == "success" ]] || ok=0
+          [[ "$CT_LINT_OUTCOME" == "success" ]] || ok=0
+          if [[ "$UNITTEST_REQUESTED" == "true" ]]; then
+            [[ "$UNITTEST_INSTALL_OUTCOME" == "success" ]] || ok=0
+            [[ "$HELM_UNITTEST_OUTCOME" == "success" ]] || ok=0
+          fi
+          if (( ok == 1 )); then
             result="✓ passed"
           else
             result="✗ failed"
@@ -186,5 +238,6 @@ jobs:
             echo "|---|---|"
             echo "| helm lint | $(glyph "$HELM_LINT_OUTCOME") |"
             echo "| ct lint | $(glyph "$CT_LINT_OUTCOME") |"
+            echo "| helm-unittest install | $(glyph "$UNITTEST_INSTALL_OUTCOME") |"
             echo "| helm unittest | $(glyph "$HELM_UNITTEST_OUTCOME") |"
           } >> "$GITHUB_STEP_SUMMARY" || true

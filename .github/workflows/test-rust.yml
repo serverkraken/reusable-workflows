@@ -46,6 +46,44 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      - name: Validate coverage_threshold
+        env:
+          THRESHOLD: ${{ inputs.coverage_threshold }}
+        run: |
+          set -euo pipefail
+          # Der Eingang ist als "0-100" dokumentiert, erzwungen hat das NICHTS
+          # (Audit G-3).
+          #
+          # Das Gate weiter unten rechnet mit `thr + 0`. awk macht daraus bei
+          # einem leeren oder nicht numerischen Wert eine 0 — und damit besteht
+          # das Gate IMMER. Gemessen bei 12,5 % Abdeckung:
+          #
+          #   thr=80    gescheitert      richtig
+          #   thr=''    BESTANDEN        Gate still abgeschaltet
+          #   thr=abc   BESTANDEN        Gate still abgeschaltet
+          #   thr=-1    BESTANDEN        Gate still abgeschaltet
+          #   thr=150   gescheitert      unerfuellbar, aber wenigstens laut
+          #
+          # Ueber die gerenderten Adopter-Workflows ist das weitgehend
+          # abgefangen: dort steht `fromJSON(vars.SK_COVERAGE_THRESHOLD || '80')`,
+          # eine nicht gesetzte Variable faellt also auf 80 zurueck. Die Atome
+          # sind aber auch fuer handgeschriebene Aufrufer da — die README
+          # fuehrt sie als Vertrag —, und ein Vertrag, den nichts prueft, ist
+          # keiner.
+          #
+          # Dezimalwerte sind ausdruecklich ERLAUBT, obwohl die Beschreibung
+          # von einem Integer spricht: pytest nimmt `--cov-fail-under=87.5`
+          # anstandslos, und ein Waechter, der legitime Aufrufer abweist, waere
+          # schlimmer als der Fund. Geprueft wird, was wirklich schadet: leer,
+          # nicht numerisch, negativ, ueber 100.
+          #
+          # Frueh im Job und nicht erst im Gate: sonst laeuft erst die ganze
+          # Testsuite, nur um die Konfiguration danach abzulehnen.
+          if ! awk -v t="$THRESHOLD" 'BEGIN { exit (t ~ /^[0-9]+(\.[0-9]+)?$/ && t + 0 <= 100) ? 0 : 1 }'; then
+            echo "::error::coverage_threshold must be a number between 0 and 100, got \"${THRESHOLD}\" — an empty or non-numeric value makes the coverage gate pass silently" >&2
+            exit 1
+          fi
+
       - name: Install Rust toolchain (explicit)
         if: inputs.rust_toolchain != ''
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
