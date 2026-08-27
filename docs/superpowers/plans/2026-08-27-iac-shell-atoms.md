@@ -599,7 +599,10 @@ jobs:
           ARGS=(-f json1 -S "$SEVERITY")
           [[ "$FOLLOW" == "true" ]] && ARGS+=(-x)
           set +e
-          xargs -a files.txt shellcheck "${ARGS[@]}" > shellcheck.json 2> shellcheck.err
+          # -d '\n': die Liste ist zeilenbasiert und NUL-sicher erzeugt. Ohne
+          # das benutzt xargs seine Default-Zerlegung nach Whitespace samt
+          # Quote-Deutung und macht aus `scripts/deploy prod.sh` zwei Argumente.
+          xargs -a files.txt -d '\n' shellcheck "${ARGS[@]}" > shellcheck.json 2> shellcheck.err
           rc=$?
           set -e
           cat shellcheck.err >&2 || true
@@ -631,7 +634,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          xargs -a files.txt shfmt -d
+          xargs -a files.txt -d '\n' shfmt -d
 
       - name: Derive report slug
         id: slug
@@ -669,7 +672,14 @@ jobs:
           SHFMT_OUTCOME: ${{ steps.fmt.outcome }}
         run: |
           sc_version=$(shellcheck --version 2>/dev/null | awk '/^version:/ {print $2}' || echo unknown)
-          if [[ "${COUNT:-0}" == "0" ]]; then
+          if [[ -z "${COUNT:-}" ]]; then
+            # Leer heisst NICHT null Funde: der Count-Schritt lief gar nicht,
+            # weil shellcheck vorher abgebrochen ist. Ein "✓" waere hier genau
+            # die Verwechslung, die der Schritt davor verhindert — und der
+            # Grund, warum kube-lint.yml an dieser Stelle kein `:-0` hat.
+            result="✗ shellcheck lief nicht durch"
+            sc_row="✗"
+          elif [[ "$COUNT" == "0" ]]; then
             result="✓ no findings"
             sc_row="✓"
           elif [[ "$FAIL_ON_FINDINGS" == "true" ]]; then
