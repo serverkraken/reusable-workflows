@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.21.7](https://github.com/serverkraken/reusable-workflows/compare/v4.21.6...v4.21.7) (2026-08-27)
+
+
+### Bug Fixes
+
+* **sweep:** gescheiterter PR-Check galt als "kein PR", zwei Workflows pushten gegeneinander, und der Klon-Pfad war ungeprueft ([#385](https://github.com/serverkraken/reusable-workflows/issues/385)) ([d8518c3](https://github.com/serverkraken/reusable-workflows/commit/d8518c3a22538250a80f3ddb154d9feaca12997f))
+
 ## [4.21.6](https://github.com/serverkraken/reusable-workflows/compare/v4.21.5...v4.21.6) (2026-08-27)
 
 
