@@ -887,6 +887,57 @@ jobs:
       use_go_cli: true
     secrets: inherit
 
+  # ----- Audit K-14: die beiden Trockenlaeufe oben fahren denselben
+  #       Onboarding-Pfad gegen dasselbe Repo — einmal ueber die Bash-Engine,
+  #       einmal ueber die Go-CLI — und NICHTS verglich ihre Ergebnisse. Beide
+  #       mussten nur gruen sein. Haetten sie unterschiedlich gerendert, waere
+  #       das unbemerkt geblieben, obwohl `use_go_cli` im Betrieb darueber
+  #       entscheidet, welches Ergebnis ein Adopter bekommt.
+  #
+  #       Das Paritaets-Gate (check-engine-parity.sh) vergleicht Detect und
+  #       Render ueber 28 Fixtures — aber ohne Composite-Actions, ohne echte
+  #       GitHub-Metadaten und ohne diesen Schalter. Genau die Schicht fehlte.
+  #
+  #       Verglichen werden die GERENDERTEN Dateien, die beide Laeufe als
+  #       Trockenlauf-Diagnose hochladen; `rendered_at` ist dabei schon
+  #       entfernt, weil ein Zeitstempel zwischen zwei Laeufen zwangslaeufig
+  #       abweicht. -----
+  assert-onboard-engines-agree:
+    needs: [test-onboard-dry-run, test-onboard-dry-run-go]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download Bash-rendered output
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: onboard-rendered-serverkraken-reusable-workflows-bash
+          path: rendered-bash
+      - name: Download Go-rendered output
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: onboard-rendered-serverkraken-reusable-workflows-go
+          path: rendered-go
+      - name: Both engines must render byte-identical output
+        run: |
+          set -euo pipefail
+          # Gegenprobe gegen einen Vergleich, der nichts vergleicht: sind beide
+          # Seiten leer, ist "kein Unterschied" bedeutungslos. Genau dieses
+          # Muster hat der Audit reihenweise gefunden.
+          n_bash=$(find rendered-bash -type f | wc -l)
+          n_go=$(find rendered-go -type f | wc -l)
+          echo "bash: ${n_bash} file(s), go: ${n_go} file(s)"
+          if (( n_bash == 0 || n_go == 0 )); then
+            echo "::error::one side has no files (bash=${n_bash}, go=${n_go}) — the comparison would be vacuous"
+            exit 1
+          fi
+
+          if ! diff -ru rendered-bash rendered-go; then
+            echo "::error::the Bash and Go onboarding engines rendered DIFFERENT output for the same repo"
+            echo "::error::use_go_cli then decides what an adopter gets, and the diff shows nothing of it"
+            exit 1
+          fi
+          echo "Both engines rendered identical output (${n_bash} files)."
+
   # ----- release-flutter-android: happy. Exercises the create_release=true
   #       (manual/ad-hoc) path: the atom itself creates the throwaway prerelease
   #       at the fixture tag, builds+signs the fixture APK, attaches it, then
@@ -981,6 +1032,7 @@ jobs:
       - assert-attestation-verifies
       - assert-docker-build-single-platform
       - assert-flutter-release-has-apk-and-aab
+      - assert-onboard-engines-agree
       - test-trivy-image-happy
       - assert-trivy-image-clean
       - test-trivy-fs-happy

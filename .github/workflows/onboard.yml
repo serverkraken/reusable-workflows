@@ -398,6 +398,61 @@ jobs:
           rendered_against: ${{ inputs.rendered_against }}
           use_go_cli: ${{ inputs.use_go_cli }}
 
+      # ----- Trockenlauf-Diagnose: die GERENDERTEN Dateien als Artefakt.
+      #
+      # Ohne das war der End-to-End-Pfad nicht vergleichbar (Audit K-14).
+      # integration.yml faehrt denselben Trockenlauf zweimal — einmal mit
+      # use_go_cli:false, einmal mit true — und NICHTS verglich die Ergebnisse.
+      # Beide mussten nur gruen sein; haetten die Engines unterschiedlich
+      # gerendert, waere das unbemerkt geblieben.
+      #
+      # Das Paritaets-Gate (check-engine-parity.sh) vergleicht Detect und
+      # Render ueber 28 Fixtures — aber ohne Composite-Actions, ohne echte
+      # GitHub-Metadaten, ohne den Schalter, der im Betrieb entscheidet.
+      # Genau diese Schicht fehlte.
+      #
+      # Hochgeladen wird NUR, was der Lock als gerendert ausweist, nicht
+      # `target/`: das ist ein vollstaendiger Checkout des Adopters, und sein
+      # Quellcode gehoert in kein Artefakt.
+      - name: Collect rendered files (dry-run diagnostic)
+        if: ${{ inputs.dry_run }}
+        id: collect_rendered
+        env:
+          ENGINE: ${{ inputs.use_go_cli && 'go' || 'bash' }}
+        run: |
+          set -euo pipefail
+          lock="target/.github/onboard.lock.json"
+          if [[ ! -f "$lock" ]]; then
+            echo "::warning::no lock at $lock — nothing to collect"
+            echo "collected=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          out="$RUNNER_TEMP/rendered-$ENGINE"
+          rm -rf "$out"; mkdir -p "$out"
+          # `rendered_at` ist ein Zeitstempel und unterscheidet sich zwischen
+          # zwei Laeufen zwangslaeufig. Er wird hier entfernt, damit ein Diff
+          # den INHALT vergleicht und nicht die Uhr.
+          jq 'del(.rendered_at)' "$lock" > "$out/onboard.lock.json"
+          while IFS= read -r f; do
+            [[ -n "$f" ]] || continue
+            if [[ -f "target/$f" ]]; then
+              mkdir -p "$out/$(dirname "$f")"
+              cp "target/$f" "$out/$f"
+            else
+              echo "::warning::lock names $f but it does not exist in the target"
+            fi
+          done < <(jq -r '.files | if type=="object" then keys[] else .[] end' "$lock")
+          echo "collected=true" >> "$GITHUB_OUTPUT"
+          echo "Collected $(find "$out" -type f | wc -l) file(s) for engine=$ENGINE"
+
+      - name: Upload rendered files (dry-run diagnostic)
+        if: ${{ inputs.dry_run && steps.collect_rendered.outputs.collected == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: onboard-rendered-${{ matrix.target.owner }}-${{ matrix.target.name }}-${{ inputs.use_go_cli && 'go' || 'bash' }}
+          path: ${{ runner.temp }}/rendered-${{ inputs.use_go_cli && 'go' || 'bash' }}/
+          retention-days: 7
+
       - name: Apply repo defaults
         uses: ./.catalog/actions/onboard-apply-defaults
         with:
@@ -836,7 +891,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: onboard-result-${{ matrix.target.owner }}-${{ matrix.target.name }}
+          # Engine im Namen (Audit K-14, Nebenbefund): integration.yml faehrt
+          # denselben Trockenlauf zweimal, einmal je Engine. Beide luden das
+          # Ergebnis unter DEMSELBEN Namen hoch — gemessen an Lauf 33044607489
+          # liegt dort genau EIN `onboard-result-…` (324 B), obwohl zwei Jobs
+          # es schreiben. Einer ging also verloren, und der Diagnose war nicht
+          # anzusehen, von welcher Engine sie stammt.
+          name: onboard-result-${{ matrix.target.owner }}-${{ matrix.target.name }}-${{ inputs.use_go_cli && 'go' || 'bash' }}
           path: result/
           retention-days: 7
 
