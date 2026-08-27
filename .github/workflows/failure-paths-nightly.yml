@@ -306,6 +306,116 @@ jobs:
           fi
           echo "cleanup-images correctly failed for empty runs_on"
 
+  # ----- cleanup-images DESTRUKTIV (Audit K-8) -----
+  #
+  # Der einzige positive Cleanup-Test war nicht-destruktiv: er lief gegen ein
+  # Paket, das es nicht gibt, und pruefte damit nur den 404-Zweig
+  # ("nichts zu putzen", seit D-12 ein legitimer Erfolg). Der Zweig, der
+  # tatsaechlich LOESCHT, lief nie — bei einem Atom, dessen einzige Aufgabe
+  # das Loeschen ist.
+  #
+  # Der Lauf legt sich sein Opfer selbst an und raeumt es weg: eigenes
+  # GHCR-Paket je run_id, danach ist es fort. Kein Sandbox-Repo noetig, keine
+  # fremden Images in Gefahr.
+  #
+  # Ueber den STABLE-Prune und nicht ueber den Prerelease-Prune, weil der
+  # deterministisch ist: `.[$keep:]` mit keep=0 trifft die gesamte Liste. Der
+  # Prerelease-Zweig haengt dagegen an `updated_at < CUTOFF`, und ein gerade
+  # gepushtes Image liegt genau auf der Grenze — ein Test, der von der
+  # Sekunde abhaengt, waere schlimmer als keiner.
+  #
+  # Deshalb auch der Tag `v0.0.1` ohne Zusatz: der Stable-Prune erkennt nur
+  # `^v[0-9]+\.[0-9]+\.[0-9]+$`. Die Eindeutigkeit je Lauf steckt im
+  # PAKETNAMEN, nicht im Tag.
+  test-docker-build-for-cleanup:
+    uses: ./.github/workflows/docker-build.yml
+    secrets: inherit
+    with:
+      tag: v0.0.1
+      prerelease: false
+      context: tests/fixtures/minimal-go
+      dockerfile: tests/fixtures/minimal-go/Dockerfile
+      image_name: ${{ github.repository }}/nightly-cleanup-fixture-${{ github.run_id }}
+      platforms: linux/amd64
+      sign: false
+      attest: false
+      sbom: false
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
+
+  test-cleanup-images-destructive:
+    needs: test-docker-build-for-cleanup
+    uses: ./.github/workflows/cleanup-images.yml
+    secrets: inherit
+    with:
+      package_name: reusable-workflows/nightly-cleanup-fixture-${{ github.run_id }}
+      # 0 = nichts behalten. Das ist der Punkt: der Prune soll wirklich
+      # loeschen, nicht nur zaehlen.
+      keep_stable_versions: 0
+      runs_on: '["ubuntu-latest"]'
+
+  assert-cleanup-images-destructive:
+    needs: [test-docker-build-for-cleanup, test-cleanup-images-destructive]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - name: Assert the version is really gone
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PKG: reusable-workflows/nightly-cleanup-fixture-${{ github.run_id }}
+          BUILD_RESULT: ${{ needs.test-docker-build-for-cleanup.result }}
+          CLEANUP_RESULT: ${{ needs.test-cleanup-images-destructive.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$BUILD_RESULT" != "success" ]]; then
+            echo "::error::the fixture image was never built (result=${BUILD_RESULT}) — nothing to clean, the test proves nothing"
+            exit 1
+          fi
+          if [[ "$CLEANUP_RESULT" != "success" ]]; then
+            echo "::error::cleanup-images failed (result=${CLEANUP_RESULT})"
+            exit 1
+          fi
+
+          enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$PKG")
+
+          # Zwei gueltige Endzustaende: das Paket ist ganz weg (GitHub raeumt
+          # ein Paket ohne Versionen ab) ODER es existiert noch, traegt aber
+          # kein v0.0.1 mehr. Beides heisst: geloescht wurde wirklich.
+          err=$(mktemp)
+          if ! body=$(gh api "/orgs/serverkraken/packages/container/${enc}/versions" 2>"$err"); then
+            if grep -q '(HTTP 404)' "$err"; then
+              echo "package is gone entirely — deletion happened."
+              exit 0
+            fi
+            echo "::error::could not list versions: $(tr -d '\n' < "$err")"
+            exit 1
+          fi
+
+          remaining=$(jq -r '[.[] | .metadata.container.tags // [] | .[]] | join(",")' <<<"$body")
+          echo "remaining tags: [${remaining}]"
+          if [[ "$remaining" == *"v0.0.1"* ]]; then
+            echo "::error::v0.0.1 still present after cleanup with keep_stable_versions:0 — the destructive path did NOT run"
+            exit 1
+          fi
+          echo "v0.0.1 deleted — destructive path intact."
+
+      - name: Remove the fixture package if anything survived
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PKG: reusable-workflows/nightly-cleanup-fixture-${{ github.run_id }}
+        run: |
+          # Aufraeumen auch dann, wenn oben etwas schiefging: sonst sammeln
+          # sich Fixture-Pakete je fehlgeschlagenem Lauf an.
+          enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$PKG")
+          gh api -X DELETE "/orgs/serverkraken/packages/container/${enc}" >/dev/null 2>&1 \
+            && echo "fixture package removed" \
+            || echo "fixture package already gone"
+
   # ----- trivy: das GATE, nicht die Erkennung (Audit K-5) -----
   #
   # integration.yml prueft laengst, dass trivy FINDET: test-trivy-fs-failure
@@ -704,6 +814,7 @@ jobs:
       - assert-lint-helm-unittest-empty
       - assert-trivy-fs-gate-fail
       - assert-trivy-image-gate-fail
+      - assert-cleanup-images-destructive
       - assert-lint-python-fail
       - assert-lint-rust-fail
       - assert-test-go-cov-fail
