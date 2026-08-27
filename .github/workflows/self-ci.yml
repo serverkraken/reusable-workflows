@@ -139,6 +139,65 @@ jobs:
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/rust-happy
 
+  # ----- lint-shell: happy path -----
+  lint-shell-happy:
+    uses: ./.github/workflows/lint-shell.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      paths: |-
+        tests/fixtures/shell-clean/scripts/*.sh
+      # Der Upload wuerde die Fixture-Funde in den Code-Scanning-Tab des
+      # Katalogs schreiben und die echte Basislinie verfaelschen.
+      sarif: false
+      runs_on: '["ubuntu-latest"]'
+    secrets:
+      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+  # ----- lint-shell: Gate greift bei Funden -----
+  lint-shell-findings:
+    uses: ./.github/workflows/lint-shell.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      paths: |-
+        tests/fixtures/shell-findings/scripts/*.sh
+      # AN, damit die Fixture ohne .sh-Endung tatsaechlich geprueft wird.
+      # Der Scan folgt demselben Glob (scripts/*), bleibt also in der Fixture.
+      scan_shebangs: true
+      sarif: false
+      # Das Atom soll die Funde MELDEN, ohne den Self-CI-Lauf rot zu faerben.
+      # Geprueft wird der Zaehler, nicht der Exit-Code — so bleibt der Job im
+      # summary-Graph und behauptet nichts Falsches.
+      fail_on_findings: false
+      runs_on: '["ubuntu-latest"]'
+    secrets:
+      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+  assert-lint-shell-findings:
+    needs: [lint-shell-findings]
+    runs-on: ubuntu-latest
+    steps:
+      - name: shellcheck muss die gepflanzten Funde sehen
+        env:
+          COUNT: ${{ needs.lint-shell-findings.outputs.findings_count }}
+        run: |
+          set -euo pipefail
+          # >=2: je ein SC2086 aus bad.sh UND aus nosuffix. Ein Wert von 1
+          # hiesse, dass scan_shebangs die Datei ohne Endung nicht erfasst hat.
+          if [[ "${COUNT:-0}" -lt 2 ]]; then
+            echo "::error::erwartet >=2 Funde (bad.sh und nosuffix), bekam '${COUNT}'" >&2
+            echo "::error::genau 1 Fund bedeutet: scan_shebangs hat die Datei ohne .sh-Endung nicht erfasst" >&2
+            exit 1
+          fi
+          echo "lint-shell meldete ${COUNT} Fund(e) — Gate-Pfad und scan_shebangs belegt"
+
   # ----- test-go: happy -----
   test-go-happy:
     uses: ./.github/workflows/test-go.yml
@@ -661,6 +720,8 @@ jobs:
       - lint-python-uv-happy
       - lint-python-pip-happy
       - lint-rust-happy
+      - lint-shell-happy
+      - assert-lint-shell-findings
       - test-go-happy
       - test-python-poetry-happy
       - test-python-uv-happy
