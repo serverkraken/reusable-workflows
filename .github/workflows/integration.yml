@@ -567,6 +567,287 @@ jobs:
           fi
           echo "chart-image-bump meldete changed=true"
 
+  # ----- K-12a: helm-publish OHNE dry_run -----
+  #
+  # Jeder Aufruf uebergab `dry_run: true` — geprueft war damit `helm lint` und
+  # `helm package`, nie das Anmelden an der Registry und der Push. Bei einem
+  # Atom, dessen Zweck der Push ist.
+  #
+  # Der Registry-Pfad traegt die run_id, ist also je Lauf ein EIGENES Paket:
+  # zwei gleichzeitige PR-Laeufe koennen sich nicht ins Gehege kommen, und das
+  # Aufraeumen loescht das ganze Paket statt einzelner Versionen — GitHub
+  # verweigert das Loeschen der letzten getaggten Version (gemessen bei K-8).
+  # NACH dem Dry-Run, nicht daneben. helm-publish gruppiert auf
+  # `helm-publish-<repo>-<chart_path>-<ref>`, und beide Aufrufer benutzen
+  # dieselbe Fixture auf demselben Ref — also dieselbe Gruppe. Der Dry-Run
+  # laeuft mit `cancel-in-progress: true` und bricht den scharfen Lauf ab;
+  # gemessen am Lauf 33072655784 (`conclusion=cancelled`, 0s).
+  #
+  # In der Praxis kollidiert das nicht: ein echter Publish laeuft auf einem
+  # Tag-Ref, ein Dry-Run auf einem Branch-Ref. Erst dieser Test legt beide auf
+  # denselben Ref, deshalb wird hier verkettet und nicht das Atom geaendert.
+  test-helm-publish-real:
+    needs: test-helm-publish
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+    with:
+      runs_on: '["ubuntu-latest"]'
+      chart_path: tests/fixtures/helm-only
+      oci_registry: ghcr.io/serverkraken/selftest-${{ github.run_id }}
+      dry_run: false
+
+  assert-helm-publish-real:
+    needs: test-helm-publish-real
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - name: Assert the chart really landed in the registry
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ATOM: ${{ needs.test-helm-publish-real.result }}
+          PKG: selftest-${{ github.run_id }}/fixture
+        run: |
+          set -euo pipefail
+          if [[ "$ATOM" != "success" ]]; then
+            echo "::error::helm-publish failed with dry_run:false (result=${ATOM})"
+            exit 1
+          fi
+
+          enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$PKG")
+          body=$(gh api "/orgs/serverkraken/packages/container/${enc}/versions")
+          tags=$(jq -r '[.[] | .metadata.container.tags // [] | .[]] | join(",")' <<<"$body")
+          echo "published tags: [${tags}]"
+
+          # Die Fixture steht auf 0.1.0. Ein Paket ohne genau diesen Tag hiesse:
+          # gepusht wurde etwas anderes als das, was gepackt wurde.
+          if [[ "$tags" != *"0.1.0"* ]]; then
+            echo "::error::expected the chart version 0.1.0 in the registry, got [${tags}]"
+            exit 1
+          fi
+          echo "helm-publish logged in and pushed — the publish path works."
+
+      - name: Remove the fixture package
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PKG: selftest-${{ github.run_id }}/fixture
+        run: |
+          enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$PKG")
+          gh api -X DELETE "/orgs/serverkraken/packages/container/${enc}" >/dev/null 2>&1 \
+            && echo "fixture package removed" \
+            || echo "fixture package already gone"
+
+  # ----- K-11: der PUSH-Pfad der beiden schreibenden Atome -----
+  #
+  # `version-badges` und `chart-image-bump` haben beide einen `commit`-Eingang,
+  # der auf `true` steht — und JEDER Aufrufer im Katalog uebergab `false`. Die
+  # VORGABE war damit der ungetestete Pfad, bei zwei Atomen, deren einzige
+  # Wirkung ein Commit ist.
+  #
+  # Erreichbar war er aus der PR-CI auch gar nicht: beide Atome checkten den
+  # Ref des Aufrufers aus, und auf einem `pull_request` ist das ein DETACHED
+  # Merge-Commit — `git push` scheitert dort grundsaetzlich. Deshalb haben
+  # beide Atome jetzt einen additiven `ref`-Eingang.
+  #
+  # Der Lauf legt sich seine Opfer selbst an und raeumt sie weg: ein
+  # Wegwerf-Branch je Atom und Lauf, danach sind sie fort. Kein Sandbox-Repo,
+  # kein fremdes Repo in Gefahr, und `main` wird nie beruehrt.
+  prepare-push-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Create one throwaway branch per push atom
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Von github.sha, damit die Branches die Fixtures DIESES PRs tragen.
+          for b in "ci/selftest-badges-${RUN_ID}" "ci/selftest-bump-${RUN_ID}"; do
+            git push origin "HEAD:refs/heads/${b}"
+            echo "angelegt: ${b}"
+          done
+
+  # HINTEREINANDER, nicht parallel. `version-badges` und `chart-image-bump`
+  # teilen sich seit D-10 die Concurrency-Gruppe `repo-push-<repo>` — sie
+  # serialisiert Pushes in dieses Repo. GitHub haelt je Gruppe genau EINEN
+  # laufenden und EINEN wartenden Lauf; jeder weitere bricht den wartenden ab.
+  #
+  # Gemessen am Lauf 33070088661: mit den neuen Aufrufen waren vier Mitglieder
+  # in der Gruppe (self-ci laeuft gleichzeitig), und zwei Jobs endeten auf
+  # `cancelled` — darunter der BESTEHENDE Dry-Run-Test. Die Kette haelt die
+  # Gruppe auf einem Mitglied je Workflow-Lauf.
+  test-version-badges-commit:
+    needs: [prepare-push-selftest, assert-chart-image-bump]
+    if: always() && needs.prepare-push-selftest.result == 'success'
+    uses: ./.github/workflows/version-badges.yml
+    secrets: inherit
+    permissions:
+      contents: write
+    with:
+      runs_on: '["ubuntu-latest"]'
+      ref: ci/selftest-badges-${{ github.run_id }}
+      manifest_path: tests/fixtures/version-badges/.release-please-manifest.json
+      config_path: tests/fixtures/version-badges/release-please-config.json
+      readme_path: tests/fixtures/version-badges/README.md
+      badges_dir: tests/fixtures/version-badges/badges
+      # Der Punkt der Sache.
+      commit: true
+
+  assert-version-badges-commit:
+    needs: [prepare-push-selftest, test-version-badges-commit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+      - name: Assert the atom really committed and pushed
+        env:
+          PREPARE: ${{ needs.prepare-push-selftest.result }}
+          ATOM: ${{ needs.test-version-badges-commit.result }}
+          BRANCH: ci/selftest-badges-${{ github.run_id }}
+          BASE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$PREPARE" != "success" ]]; then
+            echo "::error::the throwaway branch was never created (result=${PREPARE}) — the test proves nothing"
+            exit 1
+          fi
+          if [[ "$ATOM" != "success" ]]; then
+            echo "::error::version-badges failed with commit:true (result=${ATOM})"
+            exit 1
+          fi
+
+          git fetch origin "$BRANCH"
+          head=$(git rev-parse "origin/${BRANCH}")
+
+          # Der Branch MUSS sich bewegt haben. Stuende er noch auf BASE, waere
+          # der Commit-Schritt uebersprungen worden — und `result: success`
+          # allein haette das nicht verraten.
+          if [[ "$head" == "$BASE" ]]; then
+            echo "::error::${BRANCH} still points at ${BASE} — the atom pushed nothing"
+            exit 1
+          fi
+
+          author=$(git log -1 --format='%an' "$head")
+          if [[ "$author" != "serverkraken-release-bot[bot]" ]]; then
+            echo "::error::commit author is '${author}', expected serverkraken-release-bot[bot]"
+            exit 1
+          fi
+
+          files=$(git diff --name-only "${BASE}..${head}")
+          echo "committed files:"
+          while IFS= read -r f; do echo "  $f"; done <<<"$files"
+          # Beide Haelften pruefen: die README-Ersetzung UND die erzeugten SVGs.
+          # Nur eine davon waere auch dann erfuellt, wenn die andere still
+          # ausfaellt.
+          echo "$files" | grep -qx 'tests/fixtures/version-badges/README.md' || {
+            echo "::error::the README is not in the commit"; exit 1; }
+          echo "$files" | grep -q '^tests/fixtures/version-badges/badges/.*\.svg$' || {
+            echo "::error::no badge SVG is in the commit"; exit 1; }
+
+          echo "version-badges committed as the bot and pushed — the write path works."
+
+      - name: Remove the throwaway branch
+        if: always()
+        env:
+          BRANCH: ci/selftest-badges-${{ github.run_id }}
+        run: |
+          git push origin --delete "$BRANCH" >/dev/null 2>&1 \
+            && echo "branch removed" || echo "branch already gone"
+
+  test-chart-image-bump-commit:
+    needs: [prepare-push-selftest, assert-version-badges-commit]
+    if: always() && needs.prepare-push-selftest.result == 'success'
+    uses: ./.github/workflows/chart-image-bump.yml
+    secrets: inherit
+    permissions:
+      contents: write
+    with:
+      runs_on: '["ubuntu-latest"]'
+      ref: ci/selftest-bump-${{ github.run_id }}
+      values_file: tests/fixtures/chart-image-bump/values.yaml
+      key_template: 'images.{name}.tag'
+      releases: '{"images/api": {"version": "9.9.9"}}'
+      images: >-
+        {"images/api": ["serverkraken/reusable-workflows/api"],
+         "images/worker": ["serverkraken/reusable-workflows/worker"]}
+      commit: true
+
+  assert-chart-image-bump-commit:
+    needs: [prepare-push-selftest, test-chart-image-bump-commit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+      - name: Assert the atom really committed and pushed
+        env:
+          PREPARE: ${{ needs.prepare-push-selftest.result }}
+          ATOM: ${{ needs.test-chart-image-bump-commit.result }}
+          BRANCH: ci/selftest-bump-${{ github.run_id }}
+          BASE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$PREPARE" != "success" ]]; then
+            echo "::error::the throwaway branch was never created (result=${PREPARE}) — the test proves nothing"
+            exit 1
+          fi
+          if [[ "$ATOM" != "success" ]]; then
+            echo "::error::chart-image-bump failed with commit:true (result=${ATOM})"
+            exit 1
+          fi
+
+          git fetch origin "$BRANCH"
+          head=$(git rev-parse "origin/${BRANCH}")
+          if [[ "$head" == "$BASE" ]]; then
+            echo "::error::${BRANCH} still points at ${BASE} — the atom pushed nothing"
+            exit 1
+          fi
+
+          author=$(git log -1 --format='%an' "$head")
+          if [[ "$author" != "serverkraken-release-bot[bot]" ]]; then
+            echo "::error::commit author is '${author}', expected serverkraken-release-bot[bot]"
+            exit 1
+          fi
+
+          files=$(git diff --name-only "${BASE}..${head}")
+          echo "committed files:"
+          while IFS= read -r f; do echo "  $f"; done <<<"$files"
+          echo "$files" | grep -qx 'tests/fixtures/chart-image-bump/values.yaml' || {
+            echo "::error::the values file is not in the commit"; exit 1; }
+
+          # Und der Pin muss wirklich auf 9.9.9 stehen. Ein Commit, der die
+          # Datei anfasst aber den falschen Wert schreibt, waere sonst gruen.
+          git show "${head}:tests/fixtures/chart-image-bump/values.yaml" | grep -q '9\.9\.9' || {
+            echo "::error::the committed values.yaml does not carry the 9.9.9 pin"; exit 1; }
+
+          echo "chart-image-bump committed the pin as the bot and pushed."
+
+      - name: Remove the throwaway branch
+        if: always()
+        env:
+          BRANCH: ci/selftest-bump-${{ github.run_id }}
+        run: |
+          git push origin --delete "$BRANCH" >/dev/null 2>&1 \
+            && echo "branch removed" || echo "branch already gone"
+
   test-kube-validate-happy:
     uses: ./.github/workflows/kube-validate.yml
     secrets: inherit
@@ -1120,6 +1401,9 @@ jobs:
       - assert-flutter-release-has-apk-and-aab
       - assert-onboard-engines-agree
       - assert-secret-scan-git-mode
+      - assert-version-badges-commit
+      - assert-chart-image-bump-commit
+      - assert-helm-publish-real
       - test-trivy-image-happy
       - assert-trivy-image-clean
       - test-trivy-fs-happy

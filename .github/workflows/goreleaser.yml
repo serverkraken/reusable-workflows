@@ -32,6 +32,16 @@ on:
         required: false
         type: boolean
         default: false
+      ref:
+        description: >-
+          Git ref (meist der frisch erzeugte Tag) zum Auschecken. Leer = der
+          Ref des Aufrufers. goreleaser braucht im Nicht-Snapshot-Modus einen
+          Tag AM ausgecheckten Commit; wer den Tag im selben Lauf erzeugt, muss
+          ihn hier uebergeben. Macht zugleich den Publish-Pfad testbar
+          (Audit K-12).
+        required: false
+        type: string
+        default: ''
       runs_on:
         required: false
         type: string
@@ -83,8 +93,27 @@ jobs:
           fi
 
 
+      # Der Ref kommt vom Aufrufer und landet in `actions/checkout`. Auf
+      # `pull_request_target` haette der Job die Repo-Secrets, waehrend der Ref
+      # auf einen Fork zeigen kann — und dieser Job VEROEFFENTLICHT.
+      - name: Refuse a caller-supplied ref on pull_request_target
+        if: github.event_name == 'pull_request_target' && inputs.ref != ''
+        working-directory: ${{ github.workspace }}
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          {
+            echo "::error::refusing to check out '$REF' on pull_request_target."
+            echo "On this event the workflow holds repository secrets while the"
+            echo "ref may point at a fork. This job publishes a release — that"
+            echo "is not something you can take back."
+            echo "Use pull_request (no secrets) for untrusted contributions."
+          } >&2
+          exit 1
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6

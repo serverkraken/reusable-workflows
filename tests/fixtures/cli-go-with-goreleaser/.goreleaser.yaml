@@ -27,3 +27,14 @@ snapshot:
 
 changelog:
   disable: true
+
+# Draft-Release fuer den Publish-Test (Audit K-12).
+#
+# Der Snapshot-Pfad beruehrt das nicht — `--snapshot` veroeffentlicht nie. Fuer
+# den Nicht-Snapshot-Lauf in der Nightly ist es der Unterschied zwischen einem
+# sichtbaren Release im Katalog und einem Entwurf: ein Draft taucht nicht in
+# der Release-Liste auf, wird nie "latest", und release-please sieht ihn nicht.
+# Der Publish-Pfad (Token, Anlegen des Releases, Hochladen der Archive) laeuft
+# trotzdem vollstaendig.
+release:
+  draft: true
