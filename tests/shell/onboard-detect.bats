@@ -1713,3 +1713,55 @@ _nested_repo() {  # <tiefe: 3|4>
   # Kein absoluter Runner-Pfad — die Meldung landet im Onboarding-PR-Text.
   jq -e '[.warnings[] | select(.message | test("^/|/Users/|/home/|/tmp/"))] | length == 0' <<<"$out" >/dev/null
 }
+
+# ---- iac/shell signal detection (Task 12) ----
+#
+# Bash-Zwilling zu TestIaCAndShellSignals / TestNoIaCOrShellSignalWhenAbsent
+# in internal/app/detect/iac_shell_test.go. Beide Signale sind repo-weit und
+# additiv - anders als gitops oben, das primary_language ueberschreibt. Ein
+# Go-Service mit tofu/ bleibt ein Go-Service und bekommt trotzdem beide
+# Schluessel. check-engine-parity.sh prueft, dass beide Engines hier exakt
+# dasselbe Profil liefern.
+
+@test "profile-json: iac-shell-repo attaches .iac.directories" {
+  run "$DETECT" --profile-json "$FIX/iac-shell-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu"]'
+}
+
+@test "profile-json: iac-shell-repo attaches .shell.paths as globs, not file lists" {
+  run "$DETECT" --profile-json "$FIX/iac-shell-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.shell.paths == [".taskfiles/**/*.sh","scripts/**/*.sh"]'
+}
+
+@test "profile-json: iac-shell-repo stays a go component (signals are additive)" {
+  run "$DETECT" --profile-json "$FIX/iac-shell-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "go"'
+}
+
+@test "profile-json: repo without .tf/.sh has neither .iac nor .shell key" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'has("iac") | not'
+  echo "$output" | jq -e 'has("shell") | not'
+}
+
+@test "profile-json: iac/shell walk skips vendor/, node_modules/, .terraform/, .catalog/, .venv/, .task/" {
+  local repo="$BATS_TEST_TMPDIR/signal-skip-dirs"
+  mkdir -p "$repo/vendor" "$repo/node_modules" "$repo/.terraform" \
+           "$repo/.catalog" "$repo/.venv" "$repo/.task"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'resource "null_resource" "x" {}\n' > "$repo/vendor/skip.tf"
+  printf '#!/usr/bin/env bash\n' > "$repo/node_modules/skip.sh"
+  printf 'resource "null_resource" "x" {}\n' > "$repo/.terraform/skip.tf"
+  printf '#!/usr/bin/env bash\n' > "$repo/.catalog/skip.sh"
+  printf '#!/usr/bin/env bash\n' > "$repo/.venv/skip.sh"
+  printf '#!/usr/bin/env bash\n' > "$repo/.task/skip.sh"
+
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'has("iac") | not'
+  echo "$output" | jq -e 'has("shell") | not'
+}

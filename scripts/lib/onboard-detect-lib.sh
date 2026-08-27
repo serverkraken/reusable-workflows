@@ -10,6 +10,8 @@
 #   detect_components       — enumerate sub-components for monorepos, else single root
 #   detect_gitops_kubernetes — true when the repo matches the Talos/cluster-template fingerprint
 #   _gitops_manifests_paths — enumerate kubernetes/<workload> roots (excludes bootstrap/components/flux-system)
+#   classify_iac_signal     — repo-wide *.tf directories (Bash twin of classifyIaC)
+#   classify_shell_signal   — repo-wide *.sh globs (Bash twin of classifyShell)
 #   detect_languages        — per-component language marker inventory
 #   inventory_dockerfiles   — per-component Dockerfile inventory + image-name override
 #   read_image_override     — read `# onboard:image=<name>` from a Dockerfile
@@ -352,6 +354,95 @@ _gitops_manifests_paths() {
   fi
 }
 
+# iac/shell signal detection — Bash twin of classifyIaC/classifyShell in
+# internal/app/detect/service.go. Both signals are repo-wide and ADDITIVE,
+# unlike gitops above which overwrites primary_language: a Go service with a
+# tofu/ directory stays a Go service and still gets the tofu-validate job.
+#
+# _signal_dirs_with_suffix — repo-relative directories containing at least one
+# file with the given suffix, sorted and deduplicated. Bash twin of
+# collectDirsWithSuffix. Prunes the same names the Go walker skips: .catalog
+# is the catalog checkout a workflow run creates, vendor/node_modules are
+# foreign code — findings there would not be the adopter's.
+#
+# Signature: _signal_dirs_with_suffix <repo> <suffix>
+_signal_dirs_with_suffix() {
+  local repo suffix
+  repo="$(_norm_repo "$1")"
+  suffix="$2"
+  # Ueber eine Datei statt `< <(…)`: eine Prozesssubstitution ist eine
+  # Subshell, in der _find_sorted seinen Vermerk verlieren wuerde (Audit
+  # I-14, Muster aus I-7).
+  local _list; _list="$(mktemp)"
+  _FIND_REPO="$repo"
+  _find_sorted "$repo" \
+    \( -type d \( -name .git -o -name .catalog -o -name vendor -o -name node_modules \
+       -o -name .terraform -o -name .venv -o -name .task \) -prune \) \
+    -o -type f -name "*${suffix}" -print > "$_list"
+  local dirs=() f d rel
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    d="$(dirname "$f")"
+    rel="$(_repo_rel "$repo" "$d")"
+    # Wurzel == Repo: _repo_rel gibt den Pfad unveraendert zurueck (siehe
+    # _find_sorted oben). Go schreibt an dieser Stelle ".".
+    [[ -n "$rel" && "$rel" != "$repo" ]] || rel="."
+    dirs+=("$rel")
+  done < "$_list"
+  rm -f "$_list"
+  if (( ${#dirs[@]} == 0 )); then
+    echo '[]'
+  else
+    printf '%s\n' "${dirs[@]}" | sort -u | jq -R . | jq -cs .
+  fi
+}
+
+# classify_iac_signal — liefert die Verzeichnisse, die *.tf-Dateien enthalten.
+# "null" (kein Objekt), wenn es keine gibt — der Aufrufer laesst den
+# Profilschluessel dann ganz weg, damit ein Repo ohne .tf byte-identisch
+# bleibt (siehe emit_profile_json).
+#
+# Signature: classify_iac_signal <repo>
+classify_iac_signal() {
+  local repo="$1" dirs
+  dirs="$(_signal_dirs_with_suffix "$repo" ".tf")"
+  if [[ "$(jq 'length' <<<"$dirs")" == "0" ]]; then
+    echo "null"
+    return 0
+  fi
+  jq -nc --argjson directories "$dirs" '{directories: $directories}'
+}
+
+# classify_shell_signal — liefert Globs statt Dateilisten. Wuerde hier jede
+# einzelne Datei stehen, aenderte jedes neue Skript das Profil und loeste
+# Drift aus, obwohl sich an der CI-Konfiguration nichts geaendert hat. "null",
+# wenn es keine .sh-Datei gibt.
+#
+# Signature: classify_shell_signal <repo>
+classify_shell_signal() {
+  local repo="$1" dirs
+  dirs="$(_signal_dirs_with_suffix "$repo" ".sh")"
+  if [[ "$(jq 'length' <<<"$dirs")" == "0" ]]; then
+    echo "null"
+    return 0
+  fi
+  local tops=() t globs=()
+  while IFS= read -r t; do
+    [[ -n "$t" ]] || continue
+    tops+=("$t")
+  done < <(jq -r '.[] | if . == "." then "." else (split("/")[0]) end' <<<"$dirs" | sort -u)
+  for t in "${tops[@]}"; do
+    if [[ "$t" == "." ]]; then
+      globs+=("*.sh")
+    else
+      globs+=("$t/**/*.sh")
+    fi
+  done
+  local globs_json
+  globs_json="$(printf '%s\n' "${globs[@]}" | sort -u | jq -R . | jq -cs .)"
+  jq -nc --argjson paths "$globs_json" '{paths: $paths}'
+}
+
 emit_profile_json() {
   # Je Lauf zuruecksetzen: die Bibliothek wird einmal gesourct, aber mehrfach
   # aufgerufen (Tests, Sweep ueber mehrere Repos). Ohne das wuerde ein
@@ -523,6 +614,13 @@ emit_profile_json() {
     fi
   fi
 
+  # iac/shell: repo-wide and additive, computed independently of the gitops
+  # post-process above and of primary_language — a Go service with a tofu/
+  # directory stays a Go service and still gets both signals.
+  local iac_obj shell_obj
+  iac_obj=$(classify_iac_signal "$repo")
+  shell_obj=$(classify_shell_signal "$repo")
+
   local profile
   profile=$(jq -n \
     --argjson schema_version 1 \
@@ -548,6 +646,12 @@ emit_profile_json() {
 
   if [[ "$gitops_obj" != "null" ]]; then
     profile=$(echo "$profile" | jq --argjson g "$gitops_obj" '. + {gitops: $g}')
+  fi
+  if [[ "$iac_obj" != "null" ]]; then
+    profile=$(echo "$profile" | jq --argjson v "$iac_obj" '. + {iac: $v}')
+  fi
+  if [[ "$shell_obj" != "null" ]]; then
+    profile=$(echo "$profile" | jq --argjson v "$shell_obj" '. + {shell: $v}')
   fi
 
   profile=$(emit_unsupported_language_warnings "$profile")
