@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.21.10](https://github.com/serverkraken/reusable-workflows/compare/v4.21.9...v4.21.10) (2026-08-27)
+
+
+### Bug Fixes
+
+* **atoms:** leeres runs_on liess 25 Atome auf einem beliebigen Runner arbeiten ([#393](https://github.com/serverkraken/reusable-workflows/issues/393)) ([fc84692](https://github.com/serverkraken/reusable-workflows/commit/fc84692cc26e298e79b6db3062fc2222a6bf12e3))
+
 ## [4.21.9](https://github.com/serverkraken/reusable-workflows/compare/v4.21.8...v4.21.9) (2026-08-27)
 
 
