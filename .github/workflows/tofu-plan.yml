@@ -69,7 +69,11 @@ on:
         default: '["self-hosted","Linux"]'
     outputs:
       has_changes:
-        description: 'true when the plan contains changes.'
+        description: >-
+          true when the plan contains changes, false when it does not — und der
+          LEERE String, wenn der Plan gar nicht lief (Fork-PR: das Atom
+          ueberspringt sich). Ein Aufrufer muss `== 'true'` pruefen, nicht
+          `!= 'false'`.
         value: ${{ jobs.plan.outputs.has_changes }}
       summary_line:
         description: 'The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy".'
@@ -407,3 +411,25 @@ jobs:
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           edit-mode: replace
           body: ${{ steps.comment-body.outputs.body }}
+
+      # LETZTER Schritt, nach Summary UND Kommentar: beide lesen plan.txt, ein
+      # frueheres Aufraeumen naehme ihnen die Grundlage.
+      #
+      # Die binaere tfplan traegt exakt dieselben Klartextwerte wie das
+      # un-redigierte `show -json` — genau der Grund, aus dem plan_json opt-in
+      # ist und die tfplan NIE als Artefakt hochgeladen wird (Kopfkommentar
+      # Punkt 1). Auf dem self-hosted Pool ueberlebt der Workspace den Job
+      # aber bis zum Checkout des NAECHSTEN Laufs, und bis dahin liegt die
+      # Datei dort lesbar herum. Das Argument gegen den Upload gilt fuer die
+      # Platte genauso.
+      #
+      # `always()`: gerade der abgebrochene Lauf laesst die Datei liegen.
+      # `rm -f` plus `|| true`: fehlende Dateien sind der Normalfall (Fork-
+      # Skip, Abbruch vor dem Plan) und duerfen den Job nicht kippen.
+      - name: Remove plan artefacts from the runner
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+        run: |
+          rm -f "$DIR/tfplan" plan.json plan.txt plan.err || true
+          echo "Plan-Artefakte entfernt (tfplan, plan.json, plan.txt, plan.err)"

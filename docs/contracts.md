@@ -461,7 +461,7 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input  | `lock` | boolean | no | `true` | Take a state lock during plan. |
 | input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. |
 | input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
-| output | `has_changes` | — | — | — | true when the plan contains changes. |
+| output | `has_changes` | — | — | — | true when the plan contains changes, false when it does not — und der LEERE String, wenn der Plan gar nicht lief (Fork-PR: das Atom ueberspringt sich). Ein Aufrufer muss `== 'true'` pruefen, nicht `!= 'false'`. |
 | output | `summary_line` | — | — | — | The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy". |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
