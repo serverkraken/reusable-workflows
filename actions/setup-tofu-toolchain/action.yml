@@ -1,0 +1,70 @@
+# actions/setup-tofu-toolchain/action.yml
+name: setup-tofu-toolchain
+description: |
+  Install OpenTofu (and optionally tflint) as pinned, Renovate-managed
+  binaries. Mirrors the setup-kube-toolchain pattern — direct binary installs,
+  never a third-party setup action.
+
+  OpenTofu, not Terraform: the binary is `tofu`, the registry is
+  registry.opentofu.org. No serverkraken repo uses Terraform, so there is
+  deliberately no `terraform` alias.
+
+inputs:
+  tofu_version:
+    description: 'OpenTofu version (no leading v). Empty → pinned default.'
+    required: false
+    default: ''
+  tflint:
+    description: 'When "true", also install tflint.'
+    required: false
+    default: 'false'
+  tflint_version:
+    description: 'tflint version (no leading v). Empty → pinned default.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install OpenTofu
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=opentofu/opentofu
+        TOFU_VERSION: '1.10.6'
+        REQUESTED: ${{ inputs.tofu_version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$TOFU_VERSION}"
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=amd64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "::error::Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT; cd "$TMP"
+        curl -fsSL "https://github.com/opentofu/opentofu/releases/download/v${VERSION}/tofu_${VERSION}_linux_${A}.zip" -o tofu.zip
+        unzip -q tofu.zip tofu
+        sudo install -m 0755 tofu /usr/local/bin/tofu
+        tofu version
+
+    - name: Install tflint
+      if: ${{ inputs.tflint == 'true' }}
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=terraform-linters/tflint
+        TFLINT_VERSION: '0.54.0'
+        REQUESTED: ${{ inputs.tflint_version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$TFLINT_VERSION}"
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=amd64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "::error::Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT; cd "$TMP"
+        curl -fsSL "https://github.com/terraform-linters/tflint/releases/download/v${VERSION}/tflint_linux_${A}.zip" -o tflint.zip
+        unzip -q tflint.zip tflint
+        sudo install -m 0755 tflint /usr/local/bin/tflint
+        tflint --version

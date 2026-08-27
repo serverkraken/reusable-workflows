@@ -695,6 +695,14 @@ job-private dir prepended onto PATH.
 | input | `kubeconform_version` | string | no | `''` | kubeconform version (no leading v). Empty → pinned default. |
 | input | `sops` | string | no | `false` | When "true", also install sops + ksops for SOPS decryption. |
 
+### `actions/setup-tofu-toolchain`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `tofu_version` | string | no | `''` | OpenTofu version (no leading v). Empty → pinned default. |
+| input | `tflint` | string | no | `'false'` | When "true", also install tflint. |
+| input | `tflint_version` | string | no | `''` | tflint version (no leading v). Empty → pinned default. |
+
 ### `actions/setup-python-deps`
 
 | Kind   | Name | Type | Required | Default | Description |
