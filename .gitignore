@@ -12,6 +12,11 @@ REVIEW-*.md
 .act/
 .gocache/
 
+# Provider-Cache aus `tofu init` in den tofu-Fixtures. Die .terraform.lock.hcl
+# daneben ist dagegen GETRACKT — sie ist der Grund, warum
+# `init -lockfile=readonly` in der self-CI durchlaeuft.
+.terraform/
+
 # Coverage
 coverage/
 *.bashcov
