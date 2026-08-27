@@ -30,22 +30,15 @@ jobs:
       coverage_threshold: ${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}
       cgo_enabled: ${{ fromJSON(vars.SK_CGO_ENABLED || 'false') }}
     secrets: inherit
-  lint-helm-charts-demo:
-    uses: serverkraken/reusable-workflows/.github/workflows/lint-helm.yml@v4
-    with:
-      working_directory: .
-      charts_dir: "charts/demo"
-      unittest: true
-    secrets: inherit
-  helm-publish-dryrun-charts-demo:
-    uses: serverkraken/reusable-workflows/.github/workflows/helm-publish.yml@v4
+
+  tofu-validate:
+    uses: serverkraken/reusable-workflows/.github/workflows/tofu-validate.yml@v4
     permissions:
       contents: read
-      packages: write
     with:
-      chart_path: "charts/demo"
-      oci_registry: ghcr.io/go-root-multi-image/charts
-      dry_run: true
+      working_directories: |-
+        tofu
+      tofu_version: ${{ vars.SK_TOFU_VERSION || '' }}
     secrets: inherit
 
   shellcheck:
@@ -56,7 +49,7 @@ jobs:
       actions: read
     with:
       paths: |-
-        images/**/*.sh
-        test/**/*.sh
+        .taskfiles/**/*.sh
+        scripts/**/*.sh
       shellcheck_version: ${{ vars.SK_SHELLCHECK_VERSION || '' }}
     secrets: inherit
