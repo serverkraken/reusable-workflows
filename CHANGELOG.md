@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.21.9](https://github.com/serverkraken/reusable-workflows/compare/v4.21.8...v4.21.9) (2026-08-27)
+
+
+### Bug Fixes
+
+* **cleanup-images:** der Prune scheiterte an GitHubs letzter getaggter Version ([#391](https://github.com/serverkraken/reusable-workflows/issues/391)) ([61d0f46](https://github.com/serverkraken/reusable-workflows/commit/61d0f4670ecd648316fa35fbb54366b180678a83))
+
 ## [4.21.8](https://github.com/serverkraken/reusable-workflows/compare/v4.21.7...v4.21.8) (2026-08-27)
 
 
