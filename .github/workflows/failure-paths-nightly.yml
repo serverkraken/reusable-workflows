@@ -100,6 +100,33 @@ jobs:
       charts_dir: helm-unittest-fail
       unittest: true
 
+  # Audit G-4: unittest ist ein OPT-IN. Ein Chart OHNE Testdateien meldete
+  # "Test Suites: 0 passed, 0 total" und beendete sich mit rc=0 — der Job war
+  # gruen, geprueft wurde nichts. Nicht zu verwechseln mit
+  # helm-unittest-fail: dort existieren Tests und schlagen fehl.
+  test-lint-helm-unittest-empty:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures/lint-test
+      charts_dir: helm-unittest-empty
+      unittest: true
+
+  assert-lint-helm-unittest-empty:
+    needs: test-lint-helm-unittest-empty
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-helm-unittest-empty.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail on a chart without test suites, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-helm-unittest-empty: correctly observed failure"
+
   assert-lint-helm-unittest-fail:
     needs: test-lint-helm-unittest-fail
     if: always()
@@ -567,6 +594,7 @@ jobs:
       - assert-lint-go-fail
       - assert-lint-helm-fail
       - assert-lint-helm-unittest-fail
+      - assert-lint-helm-unittest-empty
       - assert-lint-python-fail
       - assert-lint-rust-fail
       - assert-test-go-cov-fail

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: helm-unittest-empty
+description: Chart mit unittest-Opt-in, aber OHNE Testdateien (Audit G-4).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

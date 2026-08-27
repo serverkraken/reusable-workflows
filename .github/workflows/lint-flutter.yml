@@ -126,10 +126,31 @@ jobs:
             [[ -d "$d" ]] && dirs+=("$d")
           done
           # Guard: with zero positional paths `dart format` defaults to `.`,
-          # which at an adopter root would sweep the `.catalog/` checkout. A
-          # project with none of the standard dirs has nothing to check.
+          # which at an adopter root would sweep the `.catalog/` checkout.
+          #
+          # "Keine Standardverzeichnisse" hiess bisher pauschal "nichts zu
+          # pruefen" — Warnung, exit 0, gruen (Audit G-5). Die Formatpruefung
+          # bestand damit, ohne eine einzige Datei angesehen zu haben, und
+          # niemand konnte den beiden Faellen ansehen, welcher vorlag:
+          #
+          #   a) das Paket hat wirklich keinen Dart-Code    -> gruen ist richtig
+          #   b) der Code liegt woanders                    -> nicht geprueft,
+          #      und zwar unbemerkt
+          #
+          # Der Unterschied wird jetzt gemessen statt angenommen. `git
+          # ls-files` und nicht `find`: es listet nur VERSIONIERTE Dateien und
+          # laesst den `.catalog/`-Checkout damit von selbst aussen vor —
+          # derselbe Grund, aus dem die Verzeichnisliste oben ueberhaupt
+          # existiert.
           if [[ ${#dirs[@]} -eq 0 ]]; then
-            echo "::warning::no standard Flutter source dirs (lib/test/bin/integration_test/tool) under '$PWD'; skipping dart format check"
+            mapfile -t stray < <(git ls-files -- '*.dart' 2>/dev/null | head -n 20)
+            if (( ${#stray[@]} > 0 )); then
+              echo "::error::no standard Flutter source dirs under '$PWD', but the repository tracks Dart files — dart format checked NOTHING"
+              echo "::error::move the sources into lib/test/bin/integration_test/tool, or point working_directory at the package root"
+              printf '::error::untracked by the format check: %s\n' "${stray[@]}"
+              exit 1
+            fi
+            echo "::notice::no Dart sources under '$PWD' — nothing for dart format to check"
             exit 0
           fi
           dart format --output=none --set-exit-if-changed "${dirs[@]}"
