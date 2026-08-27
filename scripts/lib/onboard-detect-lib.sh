@@ -453,6 +453,18 @@ classify_iac_signal() {
 # Drift aus, obwohl sich an der CI-Konfiguration nichts geaendert hat. "null",
 # wenn es keine .sh-Datei gibt.
 #
+# NUR DIE ENDUNG .sh, KEIN SHEBANG — bewusst, und in der Go-Zwillingsfunktion
+# classifyShell genauso. Ein Repo, dessen Skripte alle endungslos sind
+# (scripts/deploy, bin/release), bekommt damit kein shell-Signal und folglich
+# keinen gerenderten lint-shell-Job; es muss ihn von Hand in seine ci.yml
+# schreiben. Shebang-Erkennung muesste in Bash UND in Go byte-identisch
+# entscheiden, wann eine Datei gelesen wird und wie mit Binaerdateien,
+# ungueltigen Encodings und Leserechten umzugehen ist —
+# check-engine-parity.sh erzwingt identische Ausgabe. Zurueckgestellt, nicht
+# vergessen; siehe docs/superpowers/specs/2026-08-27-iac-shell-atoms-design.md
+# Abschnitt 8. Das Atom lint-shell selbst kann Shebangs (Input scan_shebangs),
+# die Luecke betrifft nur die Frage, OB der Job gerendert wird.
+#
 # Signature: classify_shell_signal <repo>
 classify_shell_signal() {
   local repo="$1" dirs

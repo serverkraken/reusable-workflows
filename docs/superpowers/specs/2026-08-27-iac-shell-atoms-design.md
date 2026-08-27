@@ -249,7 +249,21 @@ Im Detektor (`internal/app/detect/service.go`) zwei neue Signale, analog zu
 `classifyGitOps`:
 
 - `iac` — Verzeichnisse, die `*.tf` enthalten
-- `shell` — getrackte Shell-Dateien (Endung `.sh` oder Shell-Shebang)
+- `shell` — getrackte Shell-Dateien mit der Endung `.sh`
+
+**Bewusste Einschränkung beim `shell`-Signal:** Erkannt wird ausschließlich die
+Endung `.sh`, nicht der Shebang. Ein Repo, dessen Skripte alle endungslos sind
+(`scripts/deploy`, `bin/release`), bekommt daher **kein `shell`-Signal und
+folglich auch keinen gerenderten `lint-shell`-Job** — es muss den Job von Hand
+in seine `ci.yml` schreiben. Shebang-Erkennung wäre für den Detektor ein echtes
+Paritätsrisiko: sie müsste in Go *und* in Bash byte-identisch entscheiden, wann
+eine Datei gelesen wird, wie mit Binärdateien, ungültigen Encodings und
+Leseberechtigungen umgegangen wird — und `check-engine-parity.sh` erzwingt
+identische Ausgabe. Sie ist deshalb zurückgestellt, nicht vergessen.
+
+Das Atom `lint-shell` selbst kennt den Shebang-Scan sehr wohl (Input
+`scan_shebangs`, Standard `true`) — die Lücke ist auf den Detektor beschränkt:
+er entscheidet nur, *ob* der Job gerendert wird.
 
 Beide `omitempty`: Repos ohne diese Signale rendern **byte-identisch** wie heute. Das ist
 keine Stilfrage, sondern das, was `check-rendered-goldens.sh` erzwingt.

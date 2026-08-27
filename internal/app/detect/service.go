@@ -1534,6 +1534,18 @@ func classifyIaC(repo string, fe *fsErrors) *domain.IaCSignal {
 // classifyShell liefert Globs statt Dateilisten. Wuerde hier jede einzelne
 // Datei stehen, aenderte jedes neue Skript das Profil und loeste Drift aus,
 // obwohl sich an der CI-Konfiguration nichts geaendert hat.
+//
+// NUR DIE ENDUNG .sh, KEIN SHEBANG — bewusst, und in der Bash-Zwillingsfunktion
+// classify_shell_signal genauso. Ein Repo, dessen Skripte alle endungslos sind
+// (scripts/deploy, bin/release), bekommt damit kein shell-Signal und folglich
+// keinen gerenderten lint-shell-Job; es muss ihn von Hand in seine ci.yml
+// schreiben. Shebang-Erkennung muesste in Go UND in Bash byte-identisch
+// entscheiden, wann eine Datei gelesen wird und wie mit Binaerdateien,
+// ungueltigen Encodings und Leserechten umzugehen ist —
+// check-engine-parity.sh erzwingt identische Ausgabe. Zurueckgestellt, nicht
+// vergessen; siehe docs/superpowers/specs/2026-08-27-iac-shell-atoms-design.md
+// Abschnitt 8. Das Atom lint-shell selbst kann Shebangs (Input scan_shebangs),
+// die Luecke betrifft nur die Frage, OB der Job gerendert wird.
 func classifyShell(repo string, fe *fsErrors) *domain.ShellSignal {
 	dirs := collectDirsWithSuffix(repo, ".sh", fe)
 	if len(dirs) == 0 {
