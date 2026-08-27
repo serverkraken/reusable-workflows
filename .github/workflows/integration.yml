@@ -920,16 +920,31 @@ jobs:
       - name: Both engines must render byte-identical output
         run: |
           set -euo pipefail
-          # Gegenprobe gegen einen Vergleich, der nichts vergleicht: sind beide
-          # Seiten leer, ist "kein Unterschied" bedeutungslos. Genau dieses
-          # Muster hat der Audit reihenweise gefunden.
+          # Gegen den LOCK zaehlen, nicht nur gegen null.
+          #
+          # Die erste Fassung prueft nur `n > 0`. Das reichte NICHT: der Upload
+          # schloss versteckte Dateien aus, es kamen 2 von 7 an, und der
+          # Vergleich meldete zufrieden "identisch" — ueber zwei Dateien, die
+          # zufaellig nicht mit einem Punkt beginnen. Ein Vergleich, der zwei
+          # Siebtel prueft und Erfolg meldet, ist genau die Sorte gruen, die
+          # dieser Audit ueberall gefunden hat.
+          #
+          # Der Lock nennt die erwartete Menge selbst. Damit kann die
+          # Abdeckung nicht mehr still schrumpfen: faellt kuenftig wieder
+          # etwas aus dem Artefakt, faellt der Job.
+          expected=$(( $(jq '.files | length' rendered-bash/onboard.lock.json) + 1 ))
           n_bash=$(find rendered-bash -type f | wc -l)
           n_go=$(find rendered-go -type f | wc -l)
+          echo "expected ${expected} file(s) per side (lock + $((expected - 1)) rendered)"
           echo "bash: ${n_bash} file(s), go: ${n_go} file(s)"
-          if (( n_bash == 0 || n_go == 0 )); then
-            echo "::error::one side has no files (bash=${n_bash}, go=${n_go}) — the comparison would be vacuous"
-            exit 1
-          fi
+          for side in bash go; do
+            n=$([[ "$side" == bash ]] && echo "$n_bash" || echo "$n_go")
+            if (( n != expected )); then
+              echo "::error::${side} side carries ${n} file(s), expected ${expected} — the artifact lost files, and comparing what is left proves nothing"
+              find "rendered-${side}" -type f | sed "s|^|  ${side}: |"
+              exit 1
+            fi
+          done
 
           if ! diff -ru rendered-bash rendered-go; then
             echo "::error::the Bash and Go onboarding engines rendered DIFFERENT output for the same repo"

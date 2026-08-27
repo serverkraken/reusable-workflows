@@ -451,6 +451,15 @@ jobs:
         with:
           name: onboard-rendered-${{ matrix.target.owner }}-${{ matrix.target.name }}-${{ inputs.use_go_cli && 'go' || 'bash' }}
           path: ${{ runner.temp }}/rendered-${{ inputs.use_go_cli && 'go' || 'bash' }}/
+          # PFLICHT hier: actions/upload-artifact schliesst versteckte Dateien
+          # per Vorgabe aus, und fast alles Gerenderte liegt unter `.github/`
+          # oder heisst `.release-please-manifest.json`.
+          #
+          # Ohne das lud der Schritt 2 von 7 Dateien hoch, waehrend er
+          # "Collected 7 file(s)" meldete — und der Vergleich darunter war
+          # gruen, weil er nur die zwei sichtbaren sah. Also genau das Muster,
+          # das dieser Fix schliessen soll, von mir selbst eingebaut.
+          include-hidden-files: true
           retention-days: 7
 
       - name: Apply repo defaults
