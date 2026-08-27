@@ -274,7 +274,17 @@ jobs:
       paths_ignore: |
         tests/fixtures/lint-test/helm-lint-fail
         tests/fixtures/gitops-planted-secret
-      upload_sarif: false
+      # Echter Upload (Audit K-13). `upload_sarif` stand in JEDEM Aufruf auf
+      # false — der Pfad, ueber den ein Adopter seine Funde ins code-scanning
+      # bekommt, lief also nie. Genau hier ist er sinnvoll: dieser Aufruf
+      # findet nachweislich etwas (die Assertion unten zaehlt > 0), also
+      # transportiert der Upload auch wirklich Inhalt statt eines leeren
+      # Berichts.
+      #
+      # Folge, bewusst: die Fixture-Funde erscheinen im Security-Tab des
+      # Katalogs. Sie sind ueber `report_slug: findings` eindeutig
+      # kategorisiert und damit als das erkennbar, was sie sind.
+      upload_sarif: true
       fail_on_findings: false   # don't fail the job; we assert on findings_count below
 
   assert-trivy-fs-finds-secrets:
@@ -619,6 +629,67 @@ jobs:
             exit 1
           fi
           echo "kube-lint correctly detected $COUNT finding(s)"
+
+  # ----- secret-scan im GIT-Modus (Audit K-9) -----
+  #
+  # Jeder bisherige Aufruf uebergibt `no_git: true` — also den Modus, den der
+  # Atom-Kopf ausdruecklich als "used for fixture tests and ad-hoc scans"
+  # bezeichnet. Der VORGABE-Modus, den Adopter bekommen, lief nie:
+  #
+  #     no_git:false + pull_request  ->  --log-opts="--no-merges BASE..HEAD"
+  #     no_git:false + push          ->  --log-opts="--no-merges -1 HEAD"
+  #     no_git:false + sonst         ->  volle Historie
+  #
+  # Drei Zweige, keiner je ausgefuehrt. Bricht die Bereichsberechnung, scannt
+  # gitleaks einen leeren Bereich, meldet 0 Funde und der Job ist gruen — also
+  # "keine Secrets", obwohl nichts angesehen wurde.
+  #
+  # Was dieser Job beweist: der Bereich ist AUFLOESBAR. Ein kaputter
+  # `--log-opts`-Bereich laesst git innerhalb von gitleaks scheitern, und
+  # `--exit-code 0` unterdrueckt nur den Fund-Exitcode, nicht den Fehler. Ein
+  # gruener Lauf heisst also: BASE..HEAD wurde wirklich aufgeloest.
+  #
+  # Was er NICHT beweist: dass ein im PR eingefuegtes Secret gefunden wuerde.
+  # Dafuer muesste der Katalog-PR selbst ein Secret tragen. Der push- und der
+  # Vollhistorie-Zweig bleiben ebenfalls offen — ein Vollhistorie-Scan wuerde
+  # heute an den absichtlich gepflanzten Fixtures haengenbleiben, solange der
+  # Katalog keine eigene .gitleaks.toml hat.
+  #
+  # `fail_on_findings: false`: beruehrt ein PR eine der Secret-Fixturen, sind
+  # Funde erwartbar und duerfen den Lauf nicht rot machen.
+  test-secret-scan-git-mode:
+    uses: ./.github/workflows/secret-scan.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      report_slug: gitmode
+      no_git: false
+      fail_on_findings: false
+      upload_sarif: false
+
+  assert-secret-scan-git-mode:
+    needs: test-secret-scan-git-mode
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert the git-mode scan resolved its range
+        env:
+          COUNT: ${{ needs.test-secret-scan-git-mode.outputs.findings_count }}
+        run: |
+          set -euo pipefail
+          # Leer heisst: der Zaehlschritt lief nicht oder gitleaks lieferte
+          # keinen Report. Der Atom-Kommentar haelt ausdruecklich fest, dass
+          # eine leere Ausgabe zu "0" gemuenzt wird — kommt hier trotzdem
+          # nichts an, ist die Verdrahtung kaputt.
+          if [[ -z "${COUNT}" ]]; then
+            echo "::error::findings_count is empty — the git-mode scan produced no count at all"
+            exit 1
+          fi
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "::error::findings_count is not a number: '${COUNT}'"
+            exit 1
+          fi
+          echo "git-mode scan resolved its commit range and reported ${COUNT} finding(s)."
 
   # ----- secret-scan happy path: clean fixture, no-git mode → 0 -----
   test-secret-scan-happy:
@@ -1048,6 +1119,7 @@ jobs:
       - assert-docker-build-single-platform
       - assert-flutter-release-has-apk-and-aab
       - assert-onboard-engines-agree
+      - assert-secret-scan-git-mode
       - test-trivy-image-happy
       - assert-trivy-image-clean
       - test-trivy-fs-happy

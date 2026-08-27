@@ -38,6 +38,36 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 15
     steps:
+      # Leeres runs_on faellt NICHT mehr von selbst auf.
+      #
+      # Der Fehlerpfad-Test im Nightly (`runs_on: '[]'`) erwartete, dass ein
+      # leeres Label-Array den Job scheitern laesst. Das tut es nicht mehr:
+      # gemessen am Lauf 33050121217 wurde der Job auf
+      # `serverkraken-runner-arm64-5qq4z-l8h98` eingeplant — einem echten
+      # self-hosted Runner — mit LEERER Label-Liste, und lief durch.
+      #
+      # Ein leeres Array heisst also "irgendein Runner der Default-Gruppe".
+      # Fuer einen Adopter mit vertipptem oder leerem `runs_on` bedeutet das:
+      # kein Fehler, sondern ein Job mit `packages: write`, der Images
+      # loescht, auf einer beliebigen Maschine seines Pools.
+      #
+      # Der Job ist an dieser Stelle bereits eingeplant — das laesst sich in
+      # einem workflow_call nicht mehr verhindern, ohne allen Adoptern einen
+      # zusaetzlichen Job aufzudraengen. Was sich verhindern laesst, ist dass
+      # er ARBEITET: laut scheitern statt still loeschen.
+      #
+      # Deshalb der ERSTE Schritt: davor passiert nichts Wirksames.
+      - name: Reject an empty runs_on
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          if ! jq -e 'type == "array" and length > 0' >/dev/null 2>&1 <<<"$RUNS_ON"; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group, and this job holds packages: write" >&2
+            exit 1
+          fi
+
       - name: Resolve package name
         id: pkg
         env:
