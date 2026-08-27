@@ -577,7 +577,17 @@ jobs:
   # zwei gleichzeitige PR-Laeufe koennen sich nicht ins Gehege kommen, und das
   # Aufraeumen loescht das ganze Paket statt einzelner Versionen — GitHub
   # verweigert das Loeschen der letzten getaggten Version (gemessen bei K-8).
+  # NACH dem Dry-Run, nicht daneben. helm-publish gruppiert auf
+  # `helm-publish-<repo>-<chart_path>-<ref>`, und beide Aufrufer benutzen
+  # dieselbe Fixture auf demselben Ref — also dieselbe Gruppe. Der Dry-Run
+  # laeuft mit `cancel-in-progress: true` und bricht den scharfen Lauf ab;
+  # gemessen am Lauf 33072655784 (`conclusion=cancelled`, 0s).
+  #
+  # In der Praxis kollidiert das nicht: ein echter Publish laeuft auf einem
+  # Tag-Ref, ein Dry-Run auf einem Branch-Ref. Erst dieser Test legt beide auf
+  # denselben Ref, deshalb wird hier verkettet und nicht das Atom geaendert.
   test-helm-publish-real:
+    needs: test-helm-publish
     uses: ./.github/workflows/helm-publish.yml
     secrets: inherit
     permissions:
