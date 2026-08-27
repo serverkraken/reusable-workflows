@@ -61,10 +61,22 @@ BRANCH="chore/onboard-reusable-workflows"
 # Step 1: does an open bot PR exist on the onboard branch?
 PR_ERR=$(mktemp)
 trap 'rm -f "$PR_ERR" "${LOCK_ERR:-}"' EXIT
-exists=$(gh api -X GET "/repos/$TARGET/pulls" -f state=open \
-  -q "[.[] | select(.user.login == \"serverkraken-release-bot[bot]\")
-            | select(.head.ref == \"$BRANCH\")
-      ] | length" 2>"$PR_ERR" || echo 0)
+# --paginate (Audit H-20). Ohne das liefert `gh api` NUR DIE ERSTE SEITE, per
+# Vorgabe 30 Eintraege. Hat ein Adopter mehr offene PRs, liegt der Bot-PR
+# womoeglich dahinter, `exists` wird 0, das Skript meldet "no-pr" — und der
+# Sweep legt einen ZWEITEN Onboarding-PR an, obwohl schon einer offen ist.
+#
+# Statt `| length` je Seite eine Zeile pro Treffer und danach zaehlen:
+# mit --paginate wendet gh den -q-Ausdruck PRO SEITE an, `length` haette also
+# eine Zahl je Seite ausgegeben ("0\n1") und die Vergleiche unten zerbrochen.
+#
+# Das fail-open-Verhalten bleibt: ein Fehlschlag liefert eine leere Liste,
+# also 0, und _note_api_failure meldet alles ausser 404.
+pr_matches=$(gh api --paginate -X GET "/repos/$TARGET/pulls" -f state=open -f per_page=100 \
+  -q ".[] | select(.user.login == \"serverkraken-release-bot[bot]\")
+          | select(.head.ref == \"$BRANCH\")
+          | .number" 2>"$PR_ERR" || true)
+exists=$(printf '%s\n' "$pr_matches" | sed '/^$/d' | wc -l | tr -d ' ')
 _note_api_failure "PR listing" "$PR_ERR"
 
 if [[ "$exists" -eq 0 ]]; then

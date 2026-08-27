@@ -37,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --input) input_payload="$(cat "$2")"; shift 2 ;;
     --jq) jq_filter="$2"; flags+=("--jq=$2"); shift 2 ;;
     -q)   jq_filter="$2"; flags+=("--jq=$2"); shift 2 ;;
+    --paginate) paginate=1; flags+=("--paginate"); shift ;;
     -*) shift ;;
     *) endpoint="$1"; shift ;;
   esac
@@ -47,6 +48,7 @@ key="${endpoint#/}"
 key="${key//\//__}"
 verb_lc=$(echo "$verb" | tr '[:upper:]' '[:lower:]')
 fixture=""
+paginate="${paginate:-0}"
 for try_key in "${verb_lc}.${key}" "${key}"; do
   for ext in json 404.json 403.json 500.json; do
     if [[ -f "$FIX_DIR/${try_key}.${ext}" ]]; then
@@ -87,11 +89,29 @@ fi
 # auch hier. Fehlerfaelle (404/403/500) bleiben ungefiltert: das echte gh
 # schreibt dort den Fehlerkoerper nach stdout, ohne ihn durch den Filter zu
 # schicken.
+# Ohne --paginate liefert echtes `gh api` NUR DIE ERSTE SEITE (30 Eintraege
+# per Vorgabe). Der Stub gab bisher immer die vollstaendige Fixture aus und
+# konnte eine Kappung damit gar nicht nachstellen — ein Test gegen
+# "vergessenes --paginate" waere in BEIDEN Fassungen gruen gewesen und damit
+# wertlos (Audit H-20; dieselbe Klasse wie L-10, wo der Mock den jq-Ausdruck
+# vorweggenommen hat).
+#
+# Greift nur bei JSON-ARRAYS: die contents-API antwortet mit einem Objekt, und
+# das darf nicht angeschnitten werden.
+GH_STUB_PAGE_SIZE="${GH_STUB_PAGE_SIZE:-30}"
+
 emit() {
+  local src="$1"
+  if [[ "$paginate" -eq 0 ]] && jq -e 'type == "array"' < "$src" >/dev/null 2>&1; then
+    local page
+    page="$(mktemp)"
+    jq -c ".[:${GH_STUB_PAGE_SIZE}]" < "$src" > "$page"
+    src="$page"
+  fi
   if [[ -n "$jq_filter" ]]; then
-    jq -r "$jq_filter" < "$1"
+    jq -r "$jq_filter" < "$src"
   else
-    cat "$1"
+    cat "$src"
   fi
 }
 

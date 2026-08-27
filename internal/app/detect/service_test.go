@@ -1018,3 +1018,43 @@ func TestHelmOnlyKeysOnNonHelmComponentWarn(t *testing.T) {
 		}
 	})
 }
+
+// Audit H-24. Die OWNED-Liste kannte ci-android.yml nicht, obwohl der Renderer
+// sie ausgibt. Gemessen: ein Flutter-Profil rendern, dasselbe Repo wieder
+// erkennen lassen - und die EIGENE Ausgabe stand als "unrecognized legacy
+// workflow; manual review needed" in legacy_ci. PR B haette ihre Loeschung
+// vorgeschlagen, das naechste Onboarding sie wieder angelegt.
+//
+// Bewusst ein Go-Repo ohne Flutter: der Name gehoert dem Renderer unabhaengig
+// davon, ob DIESER Adopter die Datei gerade bekommt - genau wie beim ebenfalls
+// opt-in gerenderten prerelease-on-push.yml.
+//
+// Die Gegenprobe steht im selben Test: eine Datei, die dem Renderer NICHT
+// gehoert, muss weiterhin als legacy auftauchen. Ohne sie wuerde der Test auch
+// gruen bleiben, wenn detectLegacyCI gar nichts mehr faende.
+func TestLegacyCISkipsCIAndroid(t *testing.T) {
+	tmp := t.TempDir()
+	mustWrite(t, filepath.Join(tmp, "go.mod"), "module example.com/x\n\ngo 1.22\n")
+	mustMkdir(t, filepath.Join(tmp, ".github", "workflows"))
+	mustWrite(t, filepath.Join(tmp, ".github", "workflows", "ci-android.yml"),
+		"name: ci-android\non: [push]\njobs:\n  build:\n    uses: serverkraken/reusable-workflows/.github/workflows/build-flutter-android.yml@v4\n")
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: tmp})
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	if len(res.Profile.LegacyCI) != 0 {
+		t.Fatalf("ci-android.yml gehoert dem Renderer, darf nicht legacy sein: %+v", res.Profile.LegacyCI)
+	}
+
+	// Gegenprobe: eine fremde Datei wird weiterhin erkannt.
+	mustWrite(t, filepath.Join(tmp, ".github", "workflows", "hausgemacht.yml"),
+		"name: hausgemacht\non: [push]\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n")
+	res, err = (Service{}).Detect(context.Background(), Request{RepoPath: tmp})
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	if len(res.Profile.LegacyCI) != 1 || res.Profile.LegacyCI[0].Path != ".github/workflows/hausgemacht.yml" {
+		t.Fatalf("fremde Datei muss legacy bleiben: %+v", res.Profile.LegacyCI)
+	}
+}

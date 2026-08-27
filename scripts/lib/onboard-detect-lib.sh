@@ -1281,7 +1281,15 @@ detect_legacy_ci() {
   fi
 
   # Filenames OWNED by the catalog renderer — skip classification.
-  local OWNED=(ci.yml release.yml prerelease.yml prerelease-on-push.yml cleanup.yml)
+  #
+  # ci-android.yml gehoert dazu, seit der Renderer sie ausgibt (Audit H-24).
+  # Ohne den Eintrag stufte der Katalog seine EIGENE Ausgabe als
+  # "unrecognized legacy workflow" ein; PR B haette ihre Loeschung
+  # vorgeschlagen, das naechste Onboarding sie wieder angelegt.
+  #
+  # Unbedingt, nicht nur wenn Android gerendert wurde — genauso wie
+  # prerelease-on-push.yml, das ebenfalls opt-in ist.
+  local OWNED=(ci.yml ci-android.yml release.yml prerelease.yml prerelease-on-push.yml cleanup.yml)
 
   local entries=()
   local f

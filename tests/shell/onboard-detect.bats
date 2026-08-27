@@ -324,6 +324,32 @@ EOF
   rm -rf "$tmpdir"
 }
 
+# Audit H-24. Die OWNED-Liste kannte ci-android.yml nicht, obwohl der Renderer
+# sie ausgibt. Gemessen: ein Flutter-Profil rendern, dasselbe Repo wieder
+# erkennen lassen — und die EIGENE Ausgabe stand als
+# "unrecognized legacy workflow; manual review needed" in legacy_ci. PR B haette
+# ihre Loeschung vorgeschlagen, das naechste Onboarding sie wieder angelegt.
+#
+# Der Test nimmt bewusst ein Go-Repo ohne Flutter: der Name gehoert dem
+# Renderer unabhaengig davon, ob DIESER Adopter die Datei gerade bekommt —
+# genau wie beim ebenfalls opt-in gerenderten prerelease-on-push.yml.
+@test "profile-json: legacy_ci skips ci-android.yml (Audit H-24)" {
+  tmpdir=$(mktemp -d)
+  printf 'module example.com/x\ngo 1.22\n' > "$tmpdir/go.mod"
+  mkdir -p "$tmpdir/.github/workflows"
+  cat > "$tmpdir/.github/workflows/ci-android.yml" <<'YAML'
+name: ci-android
+on: [push]
+jobs:
+  build:
+    uses: serverkraken/reusable-workflows/.github/workflows/build-flutter-android.yml@v4
+YAML
+  run "$DETECT" --profile-json "$tmpdir"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.legacy_ci | length == 0'
+  rm -rf "$tmpdir"
+}
+
 @test "profile-json: legacy_ci default-classifies unrecognized workflows" {
   tmpdir=$(mktemp -d)
   echo "module example.com/x" > "$tmpdir/go.mod"
@@ -1616,4 +1642,74 @@ _nested_repo() {  # <tiefe: 3|4>
   [ "$(_find_err_unquote "$(printf '‘/repo/services/geheim’')")" = "/repo/services/geheim" ]
   # Ein Pfad, der selbst ein Apostroph enthaelt, darf nicht verstuemmelt werden.
   [ "$(_find_err_unquote "/repo/it's/da")" = "/repo/it's/da" ]
+}
+
+
+# Audit H-21 — GEMESSEN WIDERLEGT, und diese beiden Tests halten fest, warum.
+#
+# Der Fund sagt, zwei Aufrufe verschluckten den find-Fehler weiter roh mit
+# `2>/dev/null`, waehrend I-14 nur die AUFZAEHL-Pfade auf _find_sorted
+# umgestellt hat:
+#
+#   role()            -> Rolle cli/library
+#   release_signals() -> chart_yaml (steuert den helm-publish-Job)
+#
+# Der Aufruf ist tatsaechlich roh. Die Wirkung ist es nicht: die
+# Aufzaehlung laeuft dieselben Verzeichnisse ab und meldet sie mit dem
+# KONKRETEN Pfad. Gemessen an einem Verzeichnis mit Modus 000:
+#
+#   cmd/ unlesbar      -> warnings[].path == ["cmd"]
+#   charts/ unlesbar   -> warnings[].path == ["charts"]
+#
+# Ein Versuch, beide Stellen zusaetzlich ueber _find_sorted zu fuehren, wurde
+# wieder zurueckgenommen: er aenderte am charts-Fall nichts und machte den
+# cmd-Fall SCHLECHTER — [".","cmd"] statt ["cmd"], also eine zweite Warnung,
+# die faelschlich die Repo-Wurzel als unlesbar ausweist.
+#
+# Was hier fehlte, war kein Fix, sondern der Test. Beide Faelle waren von
+# keiner Zusicherung gedeckt; die Werte degradieren still (role faellt auf
+# `library`, chart_yaml auf null), und nur die Warnung verraet den Grund.
+# Genau das pinnen diese beiden Tests.
+@test "unlesbares cmd/ kippt die Rolle, aber die Warnung nennt cmd" {
+  [ "$(id -u)" -ne 0 ] || skip "als root ist kein Verzeichnis unlesbar"
+
+  local repo="$BATS_TEST_TMPDIR/h21cmd"
+  mkdir -p "$repo/cmd/tool"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'package main\nfunc main(){}\n' > "$repo/cmd/tool/main.go"
+  chmod 000 "$repo/cmd"
+
+  run "$DETECT" --profile-json "$repo"
+  local rc="$status" out="$output"
+  chmod 755 "$repo/cmd"
+  [ "$rc" -eq 0 ] || { echo "$out"; false; }
+
+  local paths
+  paths="$(jq -r '[.warnings[] | select(.code=="path_unreadable") | .path] | join(",")' <<<"$out")"
+  [[ "$paths" == *"cmd"* ]] || { echo "warnings nannten: $paths"; false; }
+}
+
+# Der schwerere der beiden: chart_yaml steuert den helm-publish-Job. Wurde das
+# Unterverzeichnis unlesbar, entfiel der Job — das Chart wurde nie
+# veroeffentlicht.
+@test "unlesbares charts/ kostet chart_yaml, aber die Warnung nennt charts" {
+  [ "$(id -u)" -ne 0 ] || skip "als root ist kein Verzeichnis unlesbar"
+
+  local repo="$BATS_TEST_TMPDIR/h21chart"
+  mkdir -p "$repo/charts/svc"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'apiVersion: v2\nname: svc\nversion: 0.1.0\n' > "$repo/charts/svc/Chart.yaml"
+  chmod 000 "$repo/charts"
+
+  run "$DETECT" --profile-json "$repo"
+  local rc="$status" out="$output"
+  chmod 755 "$repo/charts"
+  [ "$rc" -eq 0 ] || { echo "$out"; false; }
+
+  local paths
+  paths="$(jq -r '[.warnings[] | select(.code=="path_unreadable") | .path] | join(",")' <<<"$out")"
+  [[ "$paths" == *"charts"* ]] || { echo "warnings nannten: $paths"; false; }
+
+  # Kein absoluter Runner-Pfad — die Meldung landet im Onboarding-PR-Text.
+  jq -e '[.warnings[] | select(.message | test("^/|/Users/|/home/|/tmp/"))] | length == 0' <<<"$out" >/dev/null
 }

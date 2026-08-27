@@ -68,6 +68,78 @@ if [[ -z "$version" ]]; then
   exit 1
 fi
 
+# Float-Tag zu einer konkreten Release-Version aufloesen (Audit H-19).
+#
+# Die Action sichert zu: "Empty uses the action ref when it is a v* tag", und
+# der ganze Katalog ist auf `@v4` als Pin ausgelegt. Genau dieser Fall ging
+# nicht:
+#
+#   version=v4  ->  gh release download v4        ->  "release not found"
+#               ->  sk-workflows_v4_linux_amd64.tar.gz  gibt es nicht
+#
+# Gemessen: `v4` und `v4.21` sind TAGS, keine Releases; Assets tragen immer die
+# volle Version (sk-workflows_v4.21.2_linux_amd64.tar.gz).
+#
+# Warum das niemandem auffiel: die Self-CI nutzt `./actions/setup-sk-workflows`
+# ueber den lokalen Pfad (GITHUB_ACTION_REF leer, build_from_source), und der
+# Release-Smoke-Test uebergibt `version: ${{ needs.release.outputs.tag_name }}`,
+# also die konkrete Version. Der Float-Tag-Zweig wurde nirgends ausgefuehrt.
+#
+# Stabilitaetsregel: ein Tag mit `-` ist ein Prerelease. Dieselbe Regel wendet
+# semantic-release.yml an, wenn es die Float-Tags verschiebt
+# (`!contains(steps.release.outputs.tag_name, '-')`) - der Float-Tag zeigt also
+# per Konstruktion nie auf ein Prerelease, und die Aufloesung hier folgt dem.
+resolve_float_tag() {
+  local float="$1" prefix tags
+  prefix="${float}."
+  if [[ -n "$INPUT_GITHUB_TOKEN" ]] && command -v gh >/dev/null 2>&1; then
+    tags="$(GH_TOKEN="$INPUT_GITHUB_TOKEN" gh release list \
+      --repo "$INPUT_REPOSITORY" --limit 100 \
+      --json tagName,isDraft,isPrerelease \
+      --jq '.[] | select(.isDraft | not) | select(.isPrerelease | not) | .tagName')" || return 1
+  else
+    # Ohne gh: die API direkt. Kein jq - das Skript kommt sonst mit awk aus,
+    # und eine neue Abhaengigkeit nur hierfuer waere unverhaeltnismaessig.
+    local api="https://api.github.com/repos/${INPUT_REPOSITORY}/releases?per_page=100"
+    local args=(-fsSL) cfg=""
+    if [[ -n "$INPUT_GITHUB_TOKEN" ]]; then
+      args+=(--config -)
+      cfg="header = \"Authorization: Bearer $INPUT_GITHUB_TOKEN\""
+    fi
+    tags="$(curl "${args[@]}" "$api" <<< "$cfg" \
+      | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+      | sed 's/.*"\([^"]*\)"$/\1/')" || return 1
+  fi
+
+  # `-` = Prerelease, siehe oben. sort -V ordnet nach Version, nicht
+  # lexikalisch: sonst stuende v4.9.0 hinter v4.10.0.
+  #
+  # `|| true`, weil KEIN TREFFER kein Fehler ist. Ohne das liefert grep bei
+  # einem Float-Tag ohne passendes Release Exit 1, `pipefail` reicht ihn
+  # durch, und der Aufrufer meldete "could not list releases" — also einen
+  # Netzwerk-/Auth-Fehler, obwohl die Auflistung einwandfrei geklappt hat und
+  # schlicht nichts passte. Die beiden Faelle brauchen verschiedene
+  # Meldungen: der eine ist ein Ausfall, der andere eine Fehlkonfiguration.
+  printf '%s\n' "$tags" \
+    | { grep -E "^${prefix//./\\.}[0-9]" || true; } \
+    | { grep -v -- '-' || true; } \
+    | sort -V \
+    | tail -n 1
+}
+
+if [[ "$version" =~ ^v[0-9]+$ || "$version" =~ ^v[0-9]+\.[0-9]+$ ]]; then
+  resolved="$(resolve_float_tag "$version")" || {
+    echo "::error::could not list releases of $INPUT_REPOSITORY to resolve the float tag $version" >&2
+    exit 1
+  }
+  if [[ -z "$resolved" ]]; then
+    echo "::error::$version is a floating tag with no matching release in $INPUT_REPOSITORY; pass an explicit version" >&2
+    exit 1
+  fi
+  echo "resolved floating tag $version to $resolved"
+  version="$resolved"
+fi
+
 os_name="${SK_WORKFLOWS_OS:-$(uname -s | tr '[:upper:]' '[:lower:]')}"
 arch_name="${SK_WORKFLOWS_ARCH:-$(uname -m)}"
 case "$os_name" in
