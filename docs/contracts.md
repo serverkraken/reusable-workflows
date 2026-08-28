@@ -483,6 +483,7 @@ Architektur nicht.
 | input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst NICHT: ein lesender Plan darf auf die Sperre verzichten, ein schreibender Lauf nie. |
 | input  | `outputs_allowlist` | string | no | `''` | Newline-separated Namen der Outputs, die als outputs_json exportiert werden. Leer → keine. Es wird NICHT allein auf das sensitive-Flag vertraut: ein Provider oder ein Adopter kann es falsch setzen. |
 | input  | `backup_retention_days` | number | no | `7` | Retention des State-Backups in Tagen. |
+| input  | `backend_type` | string | no | `s3` | `s3` \| `pg` \| `other`. Steuert NUR, worauf die Warnung zum Wiederherstellungspunkt schaut. Bei `pg` sichert das Atom bewusst nichts selbst — der Wiederherstellungspfad ist das Backup der Datenbank. |
 | input  | `state_bucket` | string | no | `''` | Bucket des State-Objekts. Leer → kein Backup, mit sichtbarer Warnung in der Summary. |
 | input  | `state_key` | string | no | `''` | Key des State-Objekts im Bucket. |
 | input  | `state_workspace_key_prefix` | string | no | `env:` | Praefix fuer Nicht-Default-Workspaces. Der echte Objektpfad lautet dann `<prefix>/<workspace>/<key>`. |
@@ -496,6 +497,7 @@ Architektur nicht.
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
 | secret | `tf_encryption_passphrase` | — | yes | — | Passphrase fuer OpenTofus native Plan- und State-Verschluesselung. Muss dieselbe sein wie im Plan-Lauf. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
 | secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 | secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. Provider-Credentials aus Umgebungsvariablen frieren NICHT im Plan ein und muessen dem Apply erneut uebergeben werden. |
@@ -529,6 +531,7 @@ exakten Text in ihrer Summary.
 | input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst NICHT. |
 | input  | `plan_retention_days` | number | no | `3` | Retention des Destroy-Plan-Artefakts in Tagen. |
 | input  | `backup_retention_days` | number | no | `7` | Retention des State-Backups in Tagen. |
+| input  | `backend_type` | string | no | `s3` | `s3` \| `pg` \| `other`. Steuert NUR, worauf die Warnung zum Wiederherstellungspunkt schaut. Bei `pg` sichert das Atom bewusst nichts selbst — der Wiederherstellungspfad ist das Backup der Datenbank. |
 | input  | `state_bucket` | string | no | `''` | Bucket des State-Objekts. Leer → kein Backup, mit Warnung. |
 | input  | `state_key` | string | no | `''` | Key des State-Objekts im Bucket. |
 | input  | `state_workspace_key_prefix` | string | no | `env:` | Praefix fuer Nicht-Default-Workspaces (`<prefix>/<workspace>/<key>`). |
@@ -541,6 +544,7 @@ exakten Text in ihrer Summary.
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
 | secret | `tf_encryption_passphrase` | — | yes | — | Passphrase fuer die native Plan- und State-Verschluesselung. In beiden Stufen dieselbe. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
 | secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 | secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
@@ -570,6 +574,7 @@ Lock-ID auch in der Bestaetigung, und das Atom laeuft in derselben
 | output | `unlocked` | string | — | — | `true`, wenn der Lock geloest wurde. LEER bei jedem Abbruch. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
 | secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 
@@ -610,6 +615,7 @@ Schluessel; ihn nachtraeglich zu aendern erzeugt ein ZWEITES Issue.
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
 | secret | `tf_encryption_passphrase` | — | no | — | Faktisch Pflicht, sobald der Adopter seinen State verschluesselt. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
 | secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 | secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
@@ -663,6 +669,7 @@ keines ist.
 | output | `plan_status` | — | — | — | `success`, wenn `tofu plan` durchlief (mit oder ohne Aenderungen), `failed` bei einem unerwarteten Exit-Code, und der LEERE String, wenn der Plan-Schritt gar nicht erst startete (Fork-PR, Abbruch im Backend-Init). Fuer Aufrufer mit `always()` oder `continue-on-error` ist das der einzige Weg, einen Fehlschlag von "es gibt nichts zu tun" zu unterscheiden. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
 | secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 | secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
@@ -953,6 +960,7 @@ job-private dir prepended onto PATH.
 | input | `tf_vars` | string | no | `''` | Newline-separated KEY=VALUE, wird zu TF_VAR_key. |
 | input | `encryption_passphrase` | string | no | `''` | Passphrase fuer die native Plan- und State-Verschluesselung. |
 | input | `allow_unencrypted_fallback` | string | no | `'false'` | Einmalige Migration; danach abschalten. |
+| input | `backend_conn_str` | string | no | `''` | Verbindungsstring fuer den `pg`-Backend, wird als PG_CONN_STR gesetzt. |
 | input | `backend_access_key` | string | no | `''` | S3-kompatibler Access Key. |
 | input | `backend_secret_key` | string | no | `''` | S3-kompatibler Secret Key. |
 | output | `has_changes` | string | — | — | true\|false bei plan/plan-destroy, sonst leer. |
