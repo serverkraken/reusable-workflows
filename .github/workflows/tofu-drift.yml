@@ -1,0 +1,347 @@
+# .github/workflows/tofu-drift.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  working_directory, concurrency_key, tofu_version, backend_config,
+#            lock_timeout, issue_label, issue_title_prefix, fail_on_drift,
+#            runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key,
+#            tf_encryption_passphrase, backend_access_key, backend_secret_key,
+#            tf_vars
+#   outputs: has_changes, summary_line, issue_number
+#
+# WAS DIESES ATOM FINDET, das ein PR-Plan nicht findet: Aenderungen, die
+# niemand ueber den Code gemacht hat. Ein Server, der von Hand in der
+# Hetzner-Konsole vergroessert wurde; eine Firewall-Regel, die jemand
+# "kurz mal" angepasst hat; eine Ressource, die ein anderer Stack
+# mitverwaltet. Ohne geplanten Lauf faellt das erst im naechsten PR auf — als
+# Ueberraschung mitten in einem unbeteiligten Review.
+#
+# NICHT ZU VERWECHSELN mit drift-check.yml im Katalog: das prueft, ob ADOPTER
+# auf einer veralteten Katalogversion stehen. Dieses Atom prueft die
+# Infrastruktur eines Adopters gegen seinen eigenen Code.
+#
+# KEIN EIGENES `schedule:`. Ein Cron in dieser Datei liefe im KATALOG-Repo,
+# nicht beim Adopter — der Zeitplan gehoert in den aufrufenden Workflow:
+#
+#   on:
+#     schedule:
+#       - cron: '0 5 * * *'
+#     workflow_dispatch:
+#
+# WARUM `plan` UND NICHT NUR `refresh`: ein Plan sieht beides — Abweichungen
+# im State (Refresh) und Abweichungen zwischen State und Code. Beides ist
+# Drift, und beides gehoert in denselben Bericht.
+name: tofu-drift
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: 'OpenTofu stack directory.'
+        required: false
+        type: string
+        default: 'tofu'
+      concurrency_key:
+        description: >-
+          Identitaet des States. Leer → working_directory. Geht auch in den
+          Issue-Titel, damit mehrere Stacks getrennte Issues bekommen.
+        required: false
+        type: string
+        default: ''
+      tofu_version:
+        description: 'Override OpenTofu version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      backend_config:
+        description: >-
+          Newline-separated `-backend-config=` arguments. Credentials do NOT
+          belong here — use the secrets.
+        required: false
+        type: string
+        default: ''
+      lock_timeout:
+        description: >-
+          Value for -lock-timeout. Der Drift-Lauf nimmt den Lock: er soll nicht
+          mitten in einen Apply hineinlesen und ein Zwischenbild melden.
+        required: false
+        type: string
+        default: '60s'
+      issue_label:
+        description: 'Label des rollenden Issues.'
+        required: false
+        type: string
+        default: 'tofu-drift'
+      issue_title_prefix:
+        description: >-
+          Titelpraefix des rollenden Issues. Der Titel wird als
+          `<prefix>: <concurrency_key>` gebildet und dient als Schluessel —
+          ihn nachtraeglich zu aendern erzeugt ein ZWEITES Issue, statt das
+          bestehende zu aktualisieren.
+        required: false
+        type: string
+        default: 'OpenTofu-Drift'
+      fail_on_drift:
+        description: >-
+          Den Job rot faerben, wenn Drift besteht. Default aus: ein
+          Drift-Bericht ist eine Meldung, kein kaputter Build — und ein
+          nightly, das dauerhaft rot steht, liest niemand mehr.
+        required: false
+        type: boolean
+        default: false
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      has_changes:
+        description: >-
+          `true` bei Drift, `false` ohne. LEER, wenn der Plan nicht durchlief —
+          `== 'true'` pruefen, nicht `!= 'false'`.
+        value: ${{ jobs.drift.outputs.has_changes }}
+      summary_line:
+        description: 'Die Plan-Zusammenfassung, z. B. "1 to change".'
+        value: ${{ jobs.drift.outputs.summary_line }}
+      issue_number:
+        description: >-
+          Nummer des offenen Drift-Issues. LEER, wenn kein Drift besteht (ein
+          zuvor offenes Issue wurde dann geschlossen).
+        value: ${{ jobs.drift.outputs.issue_number }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+      tf_encryption_passphrase:
+        required: false
+        description: >-
+          Passphrase fuer die State-Verschluesselung. Faktisch Pflicht, sobald
+          der Adopter seinen State verschluesselt — ohne sie kann der Plan den
+          State nicht lesen.
+      backend_access_key:
+        required: false
+        description: 'S3-compatible backend access key → AWS_ACCESS_KEY_ID.'
+      backend_secret_key:
+        required: false
+        description: 'S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY.'
+      tf_vars:
+        required: false
+        description: 'Newline-separated KEY=VALUE pairs, exported as TF_VAR_key.'
+
+permissions:
+  contents: read
+  # Fuer das rollende Issue. KEIN pull-requests: write — dieses Atom laeuft
+  # nie auf PRs.
+  issues: write
+
+concurrency:
+  # `observe`, gemeinsam mit tofu-plan: ein lesender Lauf soll nicht hinter
+  # einem schreibenden warten. Den echten Schutz gegen ein Zwischenbild
+  # waehrend eines Applys leistet der State-Lock, nicht diese Gruppe.
+  group: tofu-observe-${{ github.repository }}-${{ inputs.concurrency_key || inputs.working_directory }}
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 30
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+      summary_line: ${{ steps.plan.outputs.summary_line }}
+      issue_number: ${{ steps.issue.outputs.issue_number }}
+    steps:
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      # Kein Fork-Guard und kein pull_request_target-Riegel wie in
+      # tofu-plan.yml: dieses Atom gehoert an einen schedule oder einen
+      # Dispatch im eigenen Repo. Unter pull_request waere es sinnlos, aber
+      # nicht gefaehrlicher als tofu-plan — es schreibt nichts.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+          persist-credentials: false
+
+      - name: Install OpenTofu toolchain
+        uses: ./.catalog/actions/setup-tofu-toolchain
+        with:
+          tofu_version: ${{ inputs.tofu_version }}
+
+      - name: Plan against the live infrastructure
+        id: plan
+        uses: ./.catalog/actions/tofu-stack-exec
+        with:
+          command: plan
+          working_directory: ${{ inputs.working_directory }}
+          backend_config: ${{ inputs.backend_config }}
+          lock_timeout: ${{ inputs.lock_timeout }}
+          tf_vars: ${{ secrets.tf_vars }}
+          encryption_passphrase: ${{ secrets.tf_encryption_passphrase }}
+          backend_access_key: ${{ secrets.backend_access_key }}
+          backend_secret_key: ${{ secrets.backend_secret_key }}
+
+      - name: Compose the issue body
+        if: steps.plan.outputs.has_changes == 'true'
+        env:
+          DIR: ${{ inputs.working_directory }}
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+          LINE: ${{ steps.plan.outputs.summary_line }}
+          RENDER: ${{ github.workspace }}/.catalog/scripts/tofu-plan-render.sh
+        run: |
+          set -euo pipefail
+          {
+            echo "Die Infrastruktur weicht von \`${DIR}\` ab."
+            echo ""
+            echo "| Feld | Wert |"
+            echo "|---|---|"
+            echo "| Stack | \`${DIR}\` |"
+            echo "| State | \`${KEY}\` |"
+            echo "| Abweichung | ${LINE} |"
+            echo "| Letzter Lauf | [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |"
+            echo ""
+            echo "Das heisst in aller Regel: jemand hat etwas ausserhalb des Codes"
+            echo "geaendert. Entweder die Aenderung in den Code uebernehmen, oder sie"
+            echo "per Apply zurueckdrehen."
+            echo ""
+            echo "<details><summary>Plan</summary>"
+            echo ""
+            # Der Renderer setzt die Zaeune selbst und kuerzt auf das Limit.
+            # Ein festes ``` schloesse sich an der ersten Backtick-Folge im
+            # Plan, und der Rest stuende als echtes Markdown im Issue.
+            bash "$RENDER" plan.txt 60000
+            echo ""
+            echo "</details>"
+          } > drift-body.md
+
+      - name: Upsert or close the rolling drift issue
+        id: issue
+        if: always() && steps.plan.outputs.exec_status == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
+          LABEL: ${{ inputs.issue_label }}
+          PREFIX: ${{ inputs.issue_title_prefix }}
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+        run: |
+          set -euo pipefail
+          title="${PREFIX}: ${KEY}"
+          # Liste statt Such-API: die Suche haengt nach, und bei einem Titel
+          # mit wenig Verkehr ist list+filter deterministisch. Dasselbe
+          # Argument steht in drift-check.yml.
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
+            --json number,title --jq ".[] | select(.title == \"${title}\") | .number" | head -1)
+
+          if [[ "$HAS_CHANGES" == "true" ]]; then
+            if [[ -n "$existing" ]]; then
+              gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body-file drift-body.md
+              echo "Issue #${existing} aktualisiert"
+              echo "issue_number=${existing}" >> "$GITHUB_OUTPUT"
+            else
+              url=$(gh issue create --repo "$GITHUB_REPOSITORY" \
+                --title "$title" --label "$LABEL" --body-file drift-body.md)
+              num="${url##*/}"
+              echo "Issue #${num} angelegt"
+              echo "issue_number=${num}" >> "$GITHUB_OUTPUT"
+            fi
+          elif [[ -n "$existing" ]]; then
+            # Der Rueckweg, den drift-check.yml schon hat und der hier sonst
+            # fehlte: ohne ihn bliebe ein Issue offen, dessen Drift laengst
+            # behoben ist. Ein Issue, das immer offen steht, liest irgendwann
+            # niemand mehr — und dann faellt auch der naechste echte Drift
+            # nicht mehr auf.
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+              --body "Drift ist verschwunden (Lauf ${GITHUB_RUN_ID}). Automatisch geschlossen."
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY"
+            echo "Issue #${existing} geschlossen — kein Drift mehr"
+          else
+            echo "Kein Drift, kein offenes Issue — nichts zu tun"
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+          STATUS: ${{ steps.plan.outputs.exec_status }}
+          HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
+          LINE: ${{ steps.plan.outputs.summary_line }}
+          ISSUE: ${{ steps.issue.outputs.issue_number }}
+        run: |
+          tofu_version=$(tofu version 2>/dev/null | head -1 | awk '{print $2}' || echo unknown)
+          if [[ "${STATUS:-}" != "success" ]]; then
+            result="✗ Drift-Lauf nicht abgeschlossen"
+          elif [[ "${HAS_CHANGES:-}" == "true" ]]; then
+            result="▲ Drift gefunden"
+          else
+            result="✓ kein Drift"
+          fi
+          {
+            echo "## tofu-drift"
+            echo ""
+            echo "**Tool:** OpenTofu ${tofu_version}"
+            echo "**Working dir:** \`${DIR}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Plan | ${STATUS:-nicht gelaufen} |"
+            echo "| Drift | ${HAS_CHANGES:-unknown} |"
+            echo "| Issue | ${ISSUE:-—} |"
+            echo "| Summary | ${LINE:-unknown} |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Fail on drift
+        if: inputs.fail_on_drift && steps.plan.outputs.has_changes == 'true'
+        run: |
+          echo "::error::Drift gefunden und fail_on_drift ist an (Details im Issue und in der Step-Summary)"
+          exit 1
+
+      - name: Clean up
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+        run: |
+          # Auch der Drift-Plan traegt Klartextwerte, obwohl er nie hochgeladen
+          # wird — auf dem self-hosted Pool ueberlebt der Workspace den Job.
+          rm -f "$DIR/tfplan" plan.txt plan.err drift-body.md || true
+          rm -f "$RUNNER_TEMP/tf-vars.env" "$RUNNER_TEMP/tofu-encryption.hcl" || true
+          echo "Aufgeraeumt"

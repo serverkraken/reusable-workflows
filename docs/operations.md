@@ -1089,3 +1089,91 @@ follows the same order — the annotation applies over the file-name
 convention, and a manifest `release:` value overrides both. Deprecating the
 annotations in favor of the manifest is a separate, future major-version
 step; it is not part of this feature.
+
+## 10. OpenTofu: Apply, Destroy, Zwischenfälle
+
+Die Atome `tofu-apply.yml`, `tofu-destroy.yml` und `tofu-unlock.yml` verweisen
+im Fehlerfall auf diesen Abschnitt.
+
+### Der Riegel vor dem Apply
+
+Es gibt **kein** GitHub-Environment mit Required Reviewer. Die Protection Rule
+ist auf dem Team-Plan in privaten Repos nicht verfügbar — die API antwortet mit
+`HTTP 422` und legt das Environment trotzdem an, mit leerer
+`protection_rules`-Liste. Ein Tippfehler im Namen erzeugte damit ein Gate, das
+keines ist.
+
+Stattdessen ist die **Dispatch-Aktion** der Riegel:
+
+1. Der PR läuft mit `tofu-plan` und `emit_plan: true`. Der Plan steht als
+   Sticky-Kommentar am PR.
+2. Ein Mensch liest ihn und entscheidet.
+3. `tofu-apply` wird von Hand ausgelöst, mit der **Run-ID genau dieses Plans**.
+   Das Atom prüft vier Dinge, bevor `tofu` startet — Stack, State-Identität,
+   Katalog-Revision und Planalter — und OpenTofu prüft die fünfte selbst
+   (`Saved plan is stale`, sobald sich der State bewegt hat).
+
+### `errored.tfstate` liegt vor
+
+**Was passiert ist:** Der Apply hat Ressourcen bereits verändert, konnte den
+neuen State aber nicht ins Backend zurückschreiben. OpenTofu legt ihn als
+letzte Rettung lokal ab. Die Datei wird vom Atom **nicht** gelöscht — sie kann
+die einzige aktuelle State-Kopie sein.
+
+**Nicht tun:** erneut applien. Der Backend-State beschreibt jetzt eine Realität,
+die es nicht mehr gibt; ein zweiter Apply würde auf dieser falschen Grundlage
+planen.
+
+**Reihenfolge:**
+
+1. Die Runner-Datei sichern, bevor irgendetwas anderes läuft.
+2. Das State-Backup-Artefakt des Laufs herunterladen (`tofu-state-backup-<run-id>`).
+   Es ist Chiffrat und mit `TF_ENCRYPTION` lesbar.
+3. Entscheiden, welcher der beiden Stände aktueller ist — `errored.tfstate`
+   trägt in aller Regel die höhere `serial`.
+4. Den richtigen Stand gezielt ins Backend zurückspielen.
+5. Erst danach neu planen und den Plan lesen, bevor wieder appliet wird.
+
+### State-Lock gelöst
+
+**Vor** jedem `tofu-unlock`:
+
+1. Die Lock-Meldung nennt den Halter — Lauf, Zeitpunkt, Operation. Diesen Lauf
+   in der Actions-Oberfläche aufsuchen.
+2. Prüfen, ob er wirklich tot ist. Ein laufender Job, der gerade appliet, ist
+   der Fall, gegen den das Locking existiert.
+3. Erst dann `tofu-unlock` auslösen, mit der Lock-ID aus der Meldung — sie
+   gehört auch in die Bestätigung, damit niemand blind einen fremden Lock löst.
+
+Wurde versehentlich ein aktiver Lock gelöst, schreiben womöglich zwei Prozesse
+denselben State. Dann gilt der Ablauf aus dem vorigen Abschnitt: nichts
+weiterlaufen lassen, Backup ziehen, Stände vergleichen.
+
+### Migration eines unverschlüsselten States
+
+Die Atome erzwingen die Verschlüsselung (`enforced = true`). Trifft das auf
+einen bestehenden Klartext-State, lautet der Fehler wörtlich:
+
+```
+failed to write backup file: encountered unencrypted payload
+without unencrypted method configured
+```
+
+Dafür — und nur dafür — gibt es `allow_unencrypted_fallback: 'true'` in
+`actions/tofu-stack-exec`. **Genau einen Lauf lang.** Danach abschalten: der
+Schalter hebt den Schutz auf, ohne dass irgendetwas rot wird. Der Lauf mit
+Fallback schreibt den State verschlüsselt zurück; ab dem nächsten Lauf greift
+`enforced` wieder.
+
+### Backend-Voraussetzungen
+
+- **Locking.** Auf S3-kompatiblen Backends ohne DynamoDB braucht es
+  `use_lockfile = true` (OpenTofu ≥ 1.10), das auf Conditional Writes beruht.
+  Ob das Backend sie unterstützt, gehört **vor** der Adoption mit zwei
+  konkurrierenden Prozessen getestet.
+- **Versionierung.** Ohne sie ist das Artefakt-Backup des Atoms der einzige
+  Wiederherstellungspunkt. `state_bucket` und `state_key` deshalb setzen.
+- **Garage ist für diesen Ablauf ungeeignet** — es kann weder Locking noch
+  Bucket-Versionierung. Zwei Schreiber (CI und Laptop) ohne Sperre auf einem
+  State ohne Wiederherstellungspunkt ist genau die Konstellation, die State-
+  Dateien frisst.

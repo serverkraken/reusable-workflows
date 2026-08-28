@@ -41,6 +41,26 @@ jobs:
       tofu_version: ${{ vars.SK_TOFU_VERSION || '' }}
     secrets: inherit
 
+  # tofu-plan: einkommentieren, sobald ein Remote-Backend konfiguriert ist.
+  #
+  # OHNE Backend scheitert dieser Job NICHT — er plant gegen einen leeren
+  # lokalen State und meldet gruen, ohne irgendetwas zu pruefen. Das ist
+  # schlimmer als kein Check, deshalb steht er hier auskommentiert.
+  #
+  # emit_plan: true legt den (verschluesselten) Plan als Artefakt ab; danach
+  # kann tofu-apply.yml ihn per workflow_dispatch mit dieser Run-ID anwenden.
+  # Dafuer wird das Secret TF_ENCRYPTION_PASSPHRASE gebraucht.
+  #
+  # tofu-plan:
+  #   uses: serverkraken/reusable-workflows/.github/workflows/tofu-plan.yml@v4
+  #   permissions:
+  #     contents: read
+  #     pull-requests: write
+  #   with:
+  #     working_directory: tofu
+  #     emit_plan: true
+  #   secrets: inherit
+
   shellcheck:
     uses: serverkraken/reusable-workflows/.github/workflows/lint-shell.yml@v4
     permissions:

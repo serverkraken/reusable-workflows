@@ -1,0 +1,309 @@
+# actions/tofu-stack-exec/action.yml
+name: tofu-stack-exec
+description: |
+  Fuehrt genau EINEN OpenTofu-Befehl gegen einen Stack aus: tf_vars-Aufbereitung,
+  Verschluesselungskonfiguration, Backend-Init, Aufruf.
+
+  Warum eine Composite: dieselbe gehaertete Logik brauchen tofu-plan, tofu-apply,
+  tofu-destroy und tofu-drift. Vierfach kopiert waere der naechste
+  Sicherheitsfix vierfach zu machen -- und drei davon vergisst man.
+
+  KEINE `secrets:` -- Composite Actions koennen keine deklarieren. Geheimes
+  kommt per `with:` herein und wird vom aufrufenden Atom als Secret deklariert.
+
+inputs:
+  command:
+    description: 'plan | plan-destroy | apply | unlock'
+    required: true
+  working_directory:
+    description: 'OpenTofu stack directory.'
+    required: true
+  backend_config:
+    description: 'Newline-separated -backend-config= arguments.'
+    required: false
+    default: ''
+  plan_file:
+    description: 'Pfad der tfplan (Ausgabe bei plan, Eingabe bei apply).'
+    required: false
+    default: 'tfplan'
+  lock:
+    description: 'State-Lock nehmen.'
+    required: false
+    default: 'true'
+  lock_timeout:
+    description: 'Wert fuer -lock-timeout.'
+    required: false
+    default: '60s'
+  lock_id:
+    description: 'Lock-ID fuer command=unlock.'
+    required: false
+    default: ''
+  tf_vars:
+    description: 'Newline-separated KEY=VALUE, wird zu TF_VAR_key.'
+    required: false
+    default: ''
+  encryption_passphrase:
+    description: >-
+      Passphrase fuer die native Plan- und State-Verschluesselung. Pflicht,
+      sobald ein Plan gespeichert oder ein State geschrieben wird.
+    required: false
+    default: ''
+  allow_unencrypted_fallback:
+    description: >-
+      Einmalige Migration: erlaubt zusaetzlich das Lesen unverschluesselter
+      Zustaende. NIEMALS dauerhaft an -- danach faellt der Schutz weg, ohne
+      dass irgendetwas rot wird.
+    required: false
+    default: 'false'
+  backend_access_key:
+    description: 'S3-kompatibler Access Key.'
+    required: false
+    default: ''
+  backend_secret_key:
+    description: 'S3-kompatibler Secret Key.'
+    required: false
+    default: ''
+
+outputs:
+  has_changes:
+    description: 'true|false bei plan/plan-destroy, sonst leer.'
+    value: ${{ steps.run.outputs.has_changes }}
+  summary_line:
+    description: 'Die Zusammenfassungszeile des Laufs.'
+    value: ${{ steps.run.outputs.summary_line }}
+  exec_status:
+    description: 'success|failed, leer wenn der Schritt nicht startete.'
+    value: ${{ steps.run.outputs.exec_status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Parse the tf_vars input
+      shell: bash
+      env:
+        TF_VARS: ${{ inputs.tf_vars }}
+      run: |
+        set -euo pipefail
+        # ZUERST loeschen, BEDINGUNGSLOS -- vor jeder Pruefung auf TF_VARS.
+        #
+        # Auf dem self-hosted Pool ueberlebt $RUNNER_TEMP den Job. Ohne dieses
+        # rm laege die Datei des VORIGEN Laufs noch da, und der Run-Schritt
+        # sourct sie allein danach, ob sie existiert. Ein Lauf fuer ein
+        # ANDERES Repo exportierte damit die Klartext-Secrets des Vorgaengers
+        # in tofu -- also in Adopter-Konfiguration, die ihre gesamte Umgebung
+        # lesen kann. Die Frische ist eine Eigenschaft des SCHREIBENS, nicht
+        # des geglueckten Aufraeumens.
+        rm -f "$RUNNER_TEMP/tf-vars.env"
+        if [[ -n "${TF_VARS:-}" ]]; then
+          printf '%s\n' "$TF_VARS" \
+            | bash "$GITHUB_ACTION_PATH/../../scripts/tf-vars-env.sh" "$RUNNER_TEMP/tf-vars.env"
+        fi
+
+    - name: Build the encryption configuration
+      shell: bash
+      env:
+        PASSPHRASE: ${{ inputs.encryption_passphrase }}
+        FALLBACK: ${{ inputs.allow_unencrypted_fallback }}
+        COMMAND: ${{ inputs.command }}
+      run: |
+        set -euo pipefail
+        # Dieselbe Begruendung wie oben: bedingungslos zuerst loeschen.
+        rm -f "$RUNNER_TEMP/tofu-encryption.hcl"
+
+        if [[ -z "${PASSPHRASE:-}" ]]; then
+          case "$COMMAND" in
+            plan)
+              echo "::notice::ohne encryption_passphrase: der Plan wird NICHT verschluesselt gespeichert"
+              exit 0
+              ;;
+            unlock)
+              # force-unlock liest weder Plan noch State-Inhalt.
+              exit 0
+              ;;
+            *)
+              echo "::error::command=${COMMAND} liest einen gespeicherten Plan oder schreibt State und verlangt eine encryption_passphrase" >&2
+              exit 1
+              ;;
+          esac
+        fi
+
+        # Eine REINE HCL-Datei, keine sourcebare Zuweisung: der Aufrufer laedt
+        # sie mit TF_ENCRYPTION="$(cat ...)". Eine Zeile der Form
+        # `TF_ENCRYPTION<<EOF` waere nur in $GITHUB_ENV gueltig -- in einer
+        # gesourcten Shell-Datei ist sie eine Umleitung und damit ein
+        # Syntaxfehler.
+        #
+        # 077 BEVOR die Datei entsteht: sie traegt die Passphrase im Klartext,
+        # und auf dem self-hosted Pool ist der Runner-Benutzer nicht allein
+        # auf der Maschine.
+        umask 077
+        : > "$RUNNER_TEMP/tofu-encryption.hcl"
+
+        # `enforced = true` ist der eigentliche Nachweis: OpenTofu lehnt danach
+        # jeden unverschluesselten Zustand selbst ab. Ein Byte-Praefix-Test auf
+        # {"meta":{"key_provider taeugt -- encrypted_metadata_alias kann den
+        # Metadaten-Schluessel umbenennen, und ein Klartext-JSON kann den
+        # Praefix trivial faelschen.
+        {
+          printf 'key_provider "pbkdf2" "catalog" {\n'
+          # jq -R -s baut einen korrekt escapten HCL/JSON-String, auch wenn die
+          # Passphrase Anfuehrungszeichen oder Backslashes enthaelt.
+          printf '  passphrase = %s\n' "$(printf '%s' "$PASSPHRASE" | jq -R -s .)"
+          printf '}\n'
+          printf 'method "aes_gcm" "catalog" {\n'
+          printf '  keys = key_provider.pbkdf2.catalog\n'
+          printf '}\n'
+        } >> "$RUNNER_TEMP/tofu-encryption.hcl"
+
+        if [[ "$FALLBACK" == "true" ]]; then
+          echo "::warning::allow_unencrypted_fallback ist AN — nur fuer die einmalige Migration eines Klartext-States, danach abschalten"
+          {
+            printf 'method "unencrypted" "legacy" {}\n'
+            printf 'state {\n  method = method.aes_gcm.catalog\n  fallback { method = method.unencrypted.legacy }\n}\n'
+            printf 'plan {\n  method = method.aes_gcm.catalog\n  fallback { method = method.unencrypted.legacy }\n}\n'
+          } >> "$RUNNER_TEMP/tofu-encryption.hcl"
+        else
+          {
+            printf 'state {\n  method   = method.aes_gcm.catalog\n  enforced = true\n}\n'
+            printf 'plan {\n  method   = method.aes_gcm.catalog\n  enforced = true\n}\n'
+          } >> "$RUNNER_TEMP/tofu-encryption.hcl"
+        fi
+
+    - name: Initialize backend
+      shell: bash
+      env:
+        DIR: ${{ inputs.working_directory }}
+        BACKEND_CONFIG: ${{ inputs.backend_config }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.backend_access_key }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.backend_secret_key }}
+      run: |
+        set -euo pipefail
+        # KEIN TF_VAR_* hier, und das ist kein Versehen: `tofu init` wertet
+        # Input-Variablen nicht aus. Es laedt Provider und Module und richtet
+        # das Backend ein -- Variablen sind weder im `backend`-Block noch in
+        # `module.source` erlaubt. Was der Schritt nicht braucht, bekommt er
+        # nicht.
+        if [[ -f "$RUNNER_TEMP/tofu-encryption.hcl" ]]; then
+          TF_ENCRYPTION="$(cat "$RUNNER_TEMP/tofu-encryption.hcl")"
+          export TF_ENCRYPTION
+        fi
+        ARGS=()
+        while IFS= read -r line; do
+          [[ -z "${line// /}" ]] && continue
+          ARGS+=("-backend-config=$line")
+        done <<< "$BACKEND_CONFIG"
+        tofu -chdir="$DIR" init -input=false "${ARGS[@]+"${ARGS[@]}"}"
+
+    - name: Run tofu
+      id: run
+      shell: bash
+      env:
+        DIR: ${{ inputs.working_directory }}
+        COMMAND: ${{ inputs.command }}
+        PLAN_FILE: ${{ inputs.plan_file }}
+        LOCK: ${{ inputs.lock }}
+        LOCK_TIMEOUT: ${{ inputs.lock_timeout }}
+        LOCK_ID: ${{ inputs.lock_id }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.backend_access_key }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.backend_secret_key }}
+      run: |
+        set -uo pipefail
+        # TF_VAR_* und TF_ENCRYPTION leben NUR in dieser Shell, nicht im Job.
+        # Frueher lagen sie in $GITHUB_ENV und galten damit fuer jeden weiteren
+        # Schritt -- Artefakt-Upload und Kommentarschritte eingeschlossen, die
+        # mit den Werten nichts zu tun haben.
+        if [[ -f "$RUNNER_TEMP/tf-vars.env" ]]; then
+          set -a
+          # shellcheck disable=SC1091
+          . "$RUNNER_TEMP/tf-vars.env" || {
+            echo "::error::tf-vars.env liess sich nicht laden" >&2
+            exit 1
+          }
+          set +a
+        fi
+        if [[ -f "$RUNNER_TEMP/tofu-encryption.hcl" ]]; then
+          TF_ENCRYPTION="$(cat "$RUNNER_TEMP/tofu-encryption.hcl")"
+          export TF_ENCRYPTION
+        fi
+
+        LOCK_ARGS=(-lock-timeout="$LOCK_TIMEOUT")
+        [[ "$LOCK" == "true" ]] || LOCK_ARGS+=(-lock=false)
+
+        case "$COMMAND" in
+          plan|plan-destroy)
+            EXTRA=()
+            [[ "$COMMAND" == "plan-destroy" ]] && EXTRA+=(-destroy)
+            set +e
+            # -detailed-exitcode ist die eingebaute, eindeutige Antwort auf
+            # "gibt es Aenderungen": 0 = keine, 2 = ja, 1 = Fehler. Deshalb
+            # KEIN jq auf `tofu show -json`, dessen Struktur zwischen
+            # Versionen wandert.
+            #
+            # `set +e` ist Pflicht, nicht Bequemlichkeit: GitHub startet
+            # run-Bloecke mit `bash -e`, und der ERWARTETE Erfolgsfall "es
+            # gibt Aenderungen" ist rc=2.
+            tofu -chdir="$DIR" plan -input=false -no-color -detailed-exitcode \
+              "${LOCK_ARGS[@]}" "${EXTRA[@]+"${EXTRA[@]}"}" -out="$PLAN_FILE" \
+              > plan.txt 2> plan.err
+            rc=$?
+            set -e
+            cat plan.err >&2 || true
+            case "$rc" in
+              0)
+                echo "has_changes=false" >> "$GITHUB_OUTPUT"
+                echo "exec_status=success" >> "$GITHUB_OUTPUT"
+                ;;
+              2)
+                echo "has_changes=true" >> "$GITHUB_OUTPUT"
+                echo "exec_status=success" >> "$GITHUB_OUTPUT"
+                ;;
+              *)
+                echo "::error::tofu ${COMMAND} scheiterte (rc=$rc): $(tr -d '\n' < plan.err)" >&2
+                # has_changes bleibt BEWUSST ungesetzt: ein Aufrufer mit
+                # always() saehe sonst denselben Wert wie fuer "nichts zu tun".
+                echo "exec_status=failed" >> "$GITHUB_OUTPUT"
+                exit 1
+                ;;
+            esac
+            LINE=$(grep -E '^Plan: |^No changes\.' plan.txt | tail -1 || true)
+            echo "summary_line=${LINE:-unknown}" >> "$GITHUB_OUTPUT"
+            ;;
+          apply)
+            set +e
+            tofu -chdir="$DIR" apply -input=false -no-color "${LOCK_ARGS[@]}" "$PLAN_FILE" \
+              > apply.txt 2> apply.err
+            rc=$?
+            set -e
+            cat apply.err >&2 || true
+            if [[ "$rc" -ne 0 ]]; then
+              echo "::error::tofu apply scheiterte (rc=$rc): $(tr -d '\n' < apply.err)" >&2
+              echo "exec_status=failed" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            echo "exec_status=success" >> "$GITHUB_OUTPUT"
+            LINE=$(grep -E '^Apply complete!' apply.txt | tail -1 || true)
+            echo "summary_line=${LINE:-unknown}" >> "$GITHUB_OUTPUT"
+            ;;
+          unlock)
+            if [[ -z "${LOCK_ID:-}" ]]; then
+              echo "::error::command=unlock verlangt lock_id" >&2
+              exit 1
+            fi
+            set +e
+            tofu -chdir="$DIR" force-unlock -force "$LOCK_ID" > unlock.txt 2> unlock.err
+            rc=$?
+            set -e
+            cat unlock.err >&2 || true
+            if [[ "$rc" -ne 0 ]]; then
+              echo "::error::force-unlock scheiterte (rc=$rc)" >&2
+              echo "exec_status=failed" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            echo "exec_status=success" >> "$GITHUB_OUTPUT"
+            echo "summary_line=Lock ${LOCK_ID} geloest" >> "$GITHUB_OUTPUT"
+            ;;
+          *)
+            echo "::error::unbekanntes command: ${COMMAND}" >&2
+            exit 1
+            ;;
+        esac

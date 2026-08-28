@@ -13,6 +13,12 @@ name: self-ci
 
 on:
   pull_request:
+  # Fuer die Atome, die sich unter allem ausser workflow_dispatch weigern:
+  # tofu-apply (und in Plan 3 tofu-destroy/-unlock) sind dispatch-only, weil
+  # die bewusste Handlung eines Menschen ihr Riegel IST. Unter pull_request
+  # schlaegt dieser Riegel zuerst zu — ihr Happy Path ist dort also nicht
+  # pruefbar. Ein manueller Lauf dieses Workflows erledigt das.
+  workflow_dispatch:
 
 # All atoms here are code-inspection only. No write permissions needed.
 permissions:
@@ -272,6 +278,125 @@ jobs:
             exit 1
           fi
           echo "tofu-plan meldete: ${SUMMARY_LINE}"
+
+  # ----- tofu-plan mit Artefakt -> tofu-apply: der komplette Uebergabeweg -----
+  #
+  # NUR bei einem manuellen Lauf dieses Workflows. Grund: tofu-apply weigert
+  # sich unter allem ausser workflow_dispatch, denn die bewusste Handlung eines
+  # Menschen IST sein Riegel. Unter pull_request schluege dieser Riegel zuerst
+  # zu, und der Test koennte nie gruen werden.
+  #
+  # Plan und Apply stecken im SELBEN Lauf. Das deckt den Artefakt-Transport,
+  # die Entschluesselung und alle vier Vorpruefungen ab -- NICHT den Zeitverzug
+  # und nicht, dass ein Mensch den Dispatch ausloest.
+  # summary-exempt: dispatch-only (tofu-apply weigert sich unter pull_request); laeuft nur bei manuellem Self-CI-Lauf
+  tofu-plan-emit:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/tofu-plan.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      working_directory: tests/fixtures/tofu-apply-local
+      # Kein Remote-Backend in der Fixture, also auch kein Lock.
+      lock: false
+      comment_on_pr: false
+      emit_plan: true
+      concurrency_key: selfci-apply
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  # summary-exempt: dispatch-only (tofu-apply weigert sich unter pull_request); laeuft nur bei manuellem Self-CI-Lauf
+  tofu-apply-happy:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [tofu-plan-emit]
+    uses: ./.github/workflows/tofu-apply.yml
+    permissions:
+      contents: read
+      actions: read
+    with:
+      working_directory: tests/fixtures/tofu-apply-local
+      concurrency_key: selfci-apply
+      # Derselbe Lauf: das Artefakt von tofu-plan-emit haengt an github.run_id.
+      plan_run_id: ${{ github.run_id }}
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  # summary-exempt: dispatch-only (tofu-apply weigert sich unter pull_request); laeuft nur bei manuellem Self-CI-Lauf
+  assert-tofu-apply:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [tofu-apply-happy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: apply_status muss success sein
+        env:
+          STATUS: ${{ needs.tofu-apply-happy.outputs.apply_status }}
+          APPLIED: ${{ needs.tofu-apply-happy.outputs.applied }}
+          LINE: ${{ needs.tofu-apply-happy.outputs.summary_line }}
+        run: |
+          set -euo pipefail
+          if [[ "$STATUS" != "success" ]]; then
+            echo "::error::erwartet apply_status=success, bekam '${STATUS}'" >&2
+            exit 1
+          fi
+          # `applied` ist der Wert, den ein Aufrufer prueft. Leer hiesse, der
+          # Apply-Schritt lief gar nicht -- ein Fehler, den apply_status allein
+          # nicht von einem Fehlschlag unterscheidet.
+          if [[ "$APPLIED" != "true" ]]; then
+            echo "::error::erwartet applied=true, bekam '${APPLIED}'" >&2
+            exit 1
+          fi
+          if [[ "$LINE" != *"Apply complete"* ]]; then
+            echo "::error::summary_line sollte 'Apply complete' enthalten, war: '${LINE}'" >&2
+            exit 1
+          fi
+          echo "tofu-apply meldete: ${LINE}"
+
+  # ----- tofu-drift: der Ruhezustand -----
+  #
+  # Bewusst gegen einen Stack OHNE Ressourcen: ein Lauf MIT Drift wuerde hier
+  # ein echtes Issue im Katalog-Repo anlegen und offen stehen lassen. Der
+  # Issue-Pfad gehoert ins Nightly, wo er hinterher aufgeraeumt werden kann.
+  # Hier wird geprueft, dass ohne Abweichung has_changes=false herauskommt und
+  # KEIN Issue angefasst wird.
+  tofu-drift-clean:
+    uses: ./.github/workflows/tofu-drift.yml
+    permissions:
+      contents: read
+      issues: write
+    with:
+      working_directory: tests/fixtures/tofu-nodrift-local
+      concurrency_key: selfci-nodrift
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  assert-tofu-drift-clean:
+    needs: [tofu-drift-clean]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ohne Abweichung darf kein Issue entstehen
+        env:
+          HAS_CHANGES: ${{ needs.tofu-drift-clean.outputs.has_changes }}
+          ISSUE: ${{ needs.tofu-drift-clean.outputs.issue_number }}
+          LINE: ${{ needs.tofu-drift-clean.outputs.summary_line }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAS_CHANGES" != "false" ]]; then
+            echo "::error::erwartet has_changes=false fuer einen Stack ohne Ressourcen, bekam '${HAS_CHANGES}'" >&2
+            exit 1
+          fi
+          if [[ -n "$ISSUE" ]]; then
+            echo "::error::issue_number='${ISSUE}' — ohne Drift darf kein Issue entstehen" >&2
+            exit 1
+          fi
+          # Beweist, dass der Plan wirklich gelaufen ist: ein leeres
+          # summary_line hiesse, das Atom ist vorher ausgestiegen und
+          # has_changes=false waere zufaellig richtig.
+          if [[ "$LINE" != *"No changes"* ]]; then
+            echo "::error::summary_line sollte 'No changes' enthalten, war: '${LINE}'" >&2
+            exit 1
+          fi
+          echo "tofu-drift meldete Ruhe: ${LINE}"
 
   # ----- test-go: happy -----
   test-go-happy:
@@ -823,6 +948,7 @@ jobs:
       - assert-lint-shell-findings
       - tofu-validate-happy
       - assert-tofu-plan-changes
+      - assert-tofu-drift-clean
       - test-go-happy
       - test-python-poetry-happy
       - test-python-uv-happy

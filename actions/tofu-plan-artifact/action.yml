@@ -1,0 +1,123 @@
+# actions/tofu-plan-artifact/action.yml
+name: tofu-plan-artifact
+description: |
+  Legt einen gespeicherten OpenTofu-Plan als Artefakt ab, damit ein spaeterer
+  Dispatch ihn anwenden kann -- mit dem Riegel, dass er verschluesselt sein
+  MUSS, und mit den Metadaten, die der Apply prueft.
+
+  Zwei Atome brauchen das identisch: tofu-plan (emit_plan) und tofu-destroy
+  (erste Stufe). Als Kopie waere der naechste Fix am Riegel zweimal zu machen.
+
+inputs:
+  working_directory:
+    description: 'Stack-Verzeichnis; dort liegt die tfplan.'
+    required: true
+  concurrency_key:
+    description: 'State-Identitaet; geht in Artefaktnamen und Metadaten.'
+    required: true
+  catalog_ref:
+    description: 'Ausgecheckte Katalog-Revision; der Apply vergleicht sie.'
+    required: true
+  artifact_prefix:
+    description: 'Praefix des Artefaktnamens (tofu-plan | tofu-destroy).'
+    required: false
+    default: 'tofu-plan'
+  retention_days:
+    description: 'Retention des Artefakts in Tagen.'
+    required: false
+    default: '3'
+  encryption_passphrase:
+    description: >-
+      Muss gesetzt sein. Ohne Verschluesselung traegt die tfplan
+      sensitive-Werte im Klartext, und ein Artefakt ist fuer jeden mit
+      Leserecht herunterladbar.
+    required: true
+
+outputs:
+  artifact_name:
+    description: 'Name des hochgeladenen Artefakts.'
+    value: ${{ steps.name.outputs.artifact_name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Verify the plan is encrypted
+      shell: bash
+      env:
+        DIR: ${{ inputs.working_directory }}
+        PASSPHRASE: ${{ inputs.encryption_passphrase }}
+      run: |
+        set -euo pipefail
+        if [[ -z "${PASSPHRASE:-}" ]]; then
+          echo "::error::ein Plan-Artefakt verlangt eine Verschluesselungs-Passphrase — ohne sie traegt die tfplan sensitive-Werte im Klartext" >&2
+          exit 1
+        fi
+        # Der Nachweis ist, dass ein Lesen OHNE Schluessel scheitert. Ein Test
+        # auf den Metadaten-Praefix waere faelschbar: encrypted_metadata_alias
+        # benennt ihn um, und ein Klartext-JSON kann ihn nachbauen.
+        #
+        # `show tfplan`, NICHT `show "$DIR/tfplan"`: -chdir aendert das
+        # Arbeitsverzeichnis von tofu, der Pfad ist also schon relativ dazu.
+        # Mit $DIR davor suchte tofu in $DIR/$DIR — der Aufruf schluege am
+        # PFAD fehl, und dieser Riegel schlosse daraus faelschlich
+        # "verschluesselt". Ein Fail-open im Sicherheitscheck selbst.
+        if env -u TF_ENCRYPTION tofu -chdir="$DIR" show tfplan >/dev/null 2>&1; then
+          echo "::error::die tfplan liess sich OHNE Schluessel lesen — sie ist nicht verschluesselt, Upload verweigert" >&2
+          exit 1
+        fi
+        echo "Plan ist verschluesselt (Lesen ohne Schluessel schlaegt fehl)"
+
+    - name: Compute the artifact name
+      id: name
+      shell: bash
+      env:
+        KEY: ${{ inputs.concurrency_key }}
+        PREFIX: ${{ inputs.artifact_prefix }}
+      run: |
+        set -euo pipefail
+        # Artefaktnamen duerfen weder `/` noch `\ : < > | * ? "` enthalten;
+        # ein Stack-Pfad traegt aber im Normalfall einen Schraegstrich. Die
+        # Regel muss auf der Apply-Seite identisch sein, sonst wird das
+        # Artefakt nicht gefunden.
+        safe=$(printf '%s' "$KEY" | tr -c 'A-Za-z0-9._-' '-')
+        echo "artifact_name=${PREFIX}-${safe}" >> "$GITHUB_OUTPUT"
+        echo "Artefakt: ${PREFIX}-${safe}"
+
+    - name: Write plan metadata
+      shell: bash
+      env:
+        DIR: ${{ inputs.working_directory }}
+        KEY: ${{ inputs.concurrency_key }}
+        CATALOG_REF: ${{ inputs.catalog_ref }}
+      run: |
+        set -euo pipefail
+        # Der Vertrag zwischen Plan- und Apply-Lauf.
+        # scripts/tofu-apply-preflight.sh prueft jedes Feld, bevor tofu
+        # ueberhaupt startet.
+        tofu_version=$(tofu version | head -1 | awk '{print $2}')
+        created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        jq -n \
+          --arg wd "$DIR" \
+          --arg key "$KEY" \
+          --arg ref "$CATALOG_REF" \
+          --arg ver "$tofu_version" \
+          --arg sha "$GITHUB_SHA" \
+          --arg created "$created_at" \
+          --arg run "$GITHUB_RUN_ID" \
+          '{working_directory:$wd, concurrency_key:$key, catalog_ref:$ref,
+            tofu_version:$ver, adopter_sha:$sha, created_at:$created, run_id:$run}' \
+          > plan-meta.json
+        cat plan-meta.json
+
+    - name: Upload the encrypted plan
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: ${{ steps.name.outputs.artifact_name }}
+        # Workspace-relativ, nicht tofu-relativ: `-chdir` aendert nur das
+        # Arbeitsverzeichnis von tofu. Die tfplan liegt unter $DIR,
+        # plan-meta.json im Wurzelverzeichnis.
+        path: |
+          ${{ inputs.working_directory }}/tfplan
+          plan-meta.json
+        if-no-files-found: error
+        retention-days: ${{ inputs.retention_days }}

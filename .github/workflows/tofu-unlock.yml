@@ -1,0 +1,253 @@
+# .github/workflows/tofu-unlock.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  lock_id, confirm, allowed_refs, working_directory,
+#            concurrency_key, tofu_version, backend_config, runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key,
+#            backend_access_key, backend_secret_key
+#   outputs: unlocked
+#
+# WOFUER DIESES ATOM EXISTIERT: ein gekillter Runner-Prozess, ein Reboot oder
+# ein abgebrochener Lauf laesst den State-Lock im Backend liegen. Danach steht
+# nicht nur die CI, sondern auch der Apply am Laptop — beide warten auf eine
+# Sperre, die niemand mehr haelt.
+#
+# WARUM DAS GEFAEHRLICH IST: `force-unlock` fragt nicht nach, ob der Halter
+# wirklich tot ist. Die Lock-ID ist ein Nonce, kein Lebenszeichen. Wird sie
+# waehrend eines LAUFENDEN Applys geloest, schreiben zwei Prozesse gleichzeitig
+# denselben State — und das ist der Fall, gegen den das Locking ueberhaupt
+# gebaut wurde.
+#
+# Deshalb steht die Lock-ID nicht nur in einem Input, sondern auch in der
+# Bestaetigung: sie ist der einzige Beleg, dass jemand nachgesehen hat, WELCHEN
+# Lock er loest. Vor dem Dispatch gehoert das Runbook gelesen
+# (docs/operations.md, „State-Lock geloest").
+name: tofu-unlock
+on:
+  workflow_call:
+    inputs:
+      lock_id:
+        description: >-
+          Die Lock-ID aus der Fehlermeldung des blockierten Laufs. OpenTofu
+          nennt sie woertlich ("Lock Info: ID: ...").
+        required: true
+        type: string
+      confirm:
+        description: >-
+          Muss woertlich `UNLOCK <owner/repo> <concurrency_key> <lock_id>`
+          lauten.
+        required: true
+        type: string
+      allowed_refs:
+        description: 'Newline-separated Liste erlaubter `github.ref`-Werte.'
+        required: false
+        type: string
+        default: 'refs/heads/main'
+      working_directory:
+        description: 'OpenTofu stack directory.'
+        required: false
+        type: string
+        default: 'tofu'
+      concurrency_key:
+        description: 'Identitaet des States. Leer → working_directory.'
+        required: false
+        type: string
+        default: ''
+      tofu_version:
+        description: 'Override OpenTofu version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      backend_config:
+        description: >-
+          Newline-separated `-backend-config=` arguments. Credentials do NOT
+          belong here — use the secrets.
+        required: false
+        type: string
+        default: ''
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      unlocked:
+        description: '`true`, wenn der Lock geloest wurde. LEER bei jedem Abbruch.'
+        value: ${{ jobs.unlock.outputs.unlocked }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+      backend_access_key:
+        required: false
+        description: 'S3-compatible backend access key → AWS_ACCESS_KEY_ID.'
+      backend_secret_key:
+        required: false
+        description: 'S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY.'
+
+permissions:
+  contents: read
+
+concurrency:
+  # `mutate`, gemeinsam mit apply und destroy. Das ist kein Formalismus: haelt
+  # dieses Atom die Gruppe, kann waehrenddessen kein Apply starten, den der
+  # Unlock gerade unter den Fuessen wegzoege.
+  group: tofu-mutate-${{ github.repository }}-${{ inputs.concurrency_key || inputs.working_directory }}
+  cancel-in-progress: false
+
+jobs:
+  unlock:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 15
+    outputs:
+      unlocked: ${{ steps.unlock.outputs.exec_status == 'success' && 'true' || '' }}
+    steps:
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      - name: Refuse to run outside a manual dispatch
+        working-directory: ${{ github.workspace }}
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" != "workflow_dispatch" ]]; then
+            echo "::error::tofu-unlock darf nur aus einem manuellen workflow_dispatch laufen, nicht unter '${EVENT}'" >&2
+            exit 1
+          fi
+
+      - name: Refuse to run from a ref outside the allowlist
+        working-directory: ${{ github.workspace }}
+        env:
+          ALLOWED: ${{ inputs.allowed_refs }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          ok=0
+          while IFS= read -r allowed; do
+            allowed="${allowed%$'\r'}"
+            [[ -z "${allowed// /}" ]] && continue
+            [[ "$REF" == "$allowed" ]] && ok=1
+          done <<< "$ALLOWED"
+          if [[ "$ok" != "1" ]]; then
+            echo "::error::tofu-unlock laeuft nur von den erlaubten Refs, dieser Lauf kommt von '${REF}'" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+          persist-credentials: false
+
+      # Die Lock-ID gehoert in die Bestaetigung, nicht nur in einen Input: sie
+      # ist der einzige Beleg, dass jemand nachgesehen hat, WELCHEN Lock er
+      # loest. Die Logik liegt in scripts/, weil dieses Atom nur unter
+      # workflow_dispatch laeuft und ueber einen Workflow deshalb nicht
+      # pruefbar waere — tests/shell/tofu-confirm.bats deckt sie ab.
+      - name: Verify the typed confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+          LOCK_ID: ${{ inputs.lock_id }}
+          REPO: ${{ github.repository }}
+          CHECK: ${{ github.workspace }}/.catalog/scripts/tofu-confirm.sh
+        run: |
+          set -euo pipefail
+          bash "$CHECK" UNLOCK "$REPO" "$KEY" "$LOCK_ID" -- "$CONFIRM"
+
+      - name: Install OpenTofu toolchain
+        uses: ./.catalog/actions/setup-tofu-toolchain
+        with:
+          tofu_version: ${{ inputs.tofu_version }}
+
+      # Keine encryption_passphrase: force-unlock loescht einen Sperrsatz und
+      # liest weder Plan- noch State-INHALT.
+      - name: Force-unlock the state
+        id: unlock
+        uses: ./.catalog/actions/tofu-stack-exec
+        with:
+          command: unlock
+          working_directory: ${{ inputs.working_directory }}
+          backend_config: ${{ inputs.backend_config }}
+          lock_id: ${{ inputs.lock_id }}
+          backend_access_key: ${{ secrets.backend_access_key }}
+          backend_secret_key: ${{ secrets.backend_secret_key }}
+
+      - name: Summary
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+          STATUS: ${{ steps.unlock.outputs.exec_status }}
+          LOCK_ID: ${{ inputs.lock_id }}
+        run: |
+          tofu_version=$(tofu version 2>/dev/null | head -1 | awk '{print $2}' || echo unknown)
+          if [[ "${STATUS:-}" == "success" ]]; then
+            result="✓ Lock geloest"
+          elif [[ -z "${STATUS:-}" ]]; then
+            result="✗ Unlock lief nicht durch"
+          else
+            result="✗ Unlock fehlgeschlagen"
+          fi
+          {
+            echo "## tofu-unlock"
+            echo ""
+            echo "**Tool:** OpenTofu ${tofu_version}"
+            echo "**Working dir:** \`${DIR}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Lock-ID | \`${LOCK_ID}\` |"
+            echo "| Status | ${STATUS:-nicht gelaufen} |"
+            echo ""
+            echo "Falls der Lock von einem noch LAUFENDEN Vorgang stammte, schreiben jetzt"
+            echo "womoeglich zwei Prozesse denselben State. Runbook: \`docs/operations.md\`,"
+            echo "Abschnitt „State-Lock geloest\"."
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/tf-vars.env" "$RUNNER_TEMP/tofu-encryption.hcl" || true
+          rm -f unlock.txt unlock.err || true
