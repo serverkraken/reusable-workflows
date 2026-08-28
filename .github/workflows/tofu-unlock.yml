@@ -5,7 +5,7 @@
 #   inputs:  lock_id, confirm, allowed_refs, working_directory,
 #            concurrency_key, tofu_version, backend_config, runs_on
 #   secrets: release_please_app_client_id, release_please_app_private_key,
-#            backend_access_key, backend_secret_key
+#            backend_access_key, backend_secret_key, backend_conn_str
 #   outputs: unlocked
 #
 # WOFUER DIESES ATOM EXISTIERT: ein gekillter Runner-Prozess, ein Reboot oder
@@ -82,6 +82,12 @@ on:
       release_please_app_private_key:
         required: true
         description: 'PEM private key for the GitHub App.'
+      backend_conn_str:
+        required: false
+        description: >-
+          Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in
+          backend_config — der ist ein Input und stuende im Klartext in der
+          Workflow-Datei; ein conn_str enthaelt das Passwort.
       backend_access_key:
         required: false
         description: 'S3-compatible backend access key → AWS_ACCESS_KEY_ID.'
@@ -211,6 +217,7 @@ jobs:
           working_directory: ${{ inputs.working_directory }}
           backend_config: ${{ inputs.backend_config }}
           lock_id: ${{ inputs.lock_id }}
+          backend_conn_str: ${{ secrets.backend_conn_str }}
           backend_access_key: ${{ secrets.backend_access_key }}
           backend_secret_key: ${{ secrets.backend_secret_key }}
 

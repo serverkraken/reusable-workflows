@@ -1165,15 +1165,45 @@ Schalter hebt den Schutz auf, ohne dass irgendetwas rot wird. Der Lauf mit
 Fallback schreibt den State verschlüsselt zurück; ab dem nächsten Lauf greift
 `enforced` wieder.
 
-### Backend-Voraussetzungen
+### Backend-Wahl
 
-- **Locking.** Auf S3-kompatiblen Backends ohne DynamoDB braucht es
-  `use_lockfile = true` (OpenTofu ≥ 1.10), das auf Conditional Writes beruht.
-  Ob das Backend sie unterstützt, gehört **vor** der Adoption mit zwei
-  konkurrierenden Prozessen getestet.
+Zwei Fragen entscheiden: **sperrt es**, und **gibt es einen
+Wiederherstellungspunkt**. Ein Backend, das beides nicht kann, frisst früher
+oder später eine State-Datei — zwei Schreiber (CI und Laptop) ohne Sperre,
+ohne Weg zurück.
+
+| Backend | Locking | Wiederherstellung | Urteil |
+|---|---|---|---|
+| **`pg`** (CloudNativePG) | Advisory Locks, nativ | `barmanObjectStore`: WAL-Archiving + PITR | **erste Wahl** |
+| Hetzner Object Storage | `use_lockfile` — ungeprüft | Bucket-Versionierung dokumentiert | brauchbar, Lock-Frage offen |
+| Garage | **nein** | **nein** | ungeeignet |
+
+#### `pg` — was der Adopter mitbringen muss
+
+- Der `conn_str` kommt als **Secret** `backend_conn_str` (→ `PG_CONN_STR`),
+  **niemals** über `backend_config`: das ist ein Input und stünde im Klartext
+  in der Workflow-Datei. Ein `conn_str` enthält das Passwort.
+- In der `versions.tf` genügt `backend "pg" {}` — die Verbindung kommt aus der
+  Umgebung.
+- `backend_type: pg` an `tofu-apply`/`tofu-destroy` setzen. Sonst warnen sie
+  über einen fehlenden `state_bucket`, was hier grundlos wäre.
+- **Das Atom sichert bei `pg` nichts selbst.** Der Wiederherstellungspfad ist
+  das Backup der Datenbank. Bei CNPG heißt das `barmanObjectStore` mit
+  Retention — kontinuierlich und mit Point-in-Time-Recovery, also einem
+  Artefakt pro Lauf überlegen. Ohne dieses Backup gibt es keinen Weg zurück.
+- **Die Datenbank muss vom Runner erreichbar sein.** Läuft sie im selben
+  Cluster wie die self-hosted Runner, fallen bei dessen Ausfall Runner und
+  State-Zugriff gemeinsam aus — wiederherstellbar aus dem Backup, aber eine
+  Abhängigkeit, die man kennen sollte.
+- **Nicht in den Cluster legen, den der State beschreibt.** Das ist die
+  Zirkularität aus Decision 0002: geht der Cluster kaputt, braucht man den
+  State, um ihn wiederherzustellen — und kommt nicht an ihn heran.
+
+#### S3-kompatibel
+
+- **Locking.** Ohne DynamoDB braucht es `use_lockfile = true`
+  (OpenTofu ≥ 1.10), das auf Conditional Writes beruht. Ob das Backend sie
+  unterstützt, gehört **vor** der Adoption mit zwei konkurrierenden Prozessen
+  getestet.
 - **Versionierung.** Ohne sie ist das Artefakt-Backup des Atoms der einzige
   Wiederherstellungspunkt. `state_bucket` und `state_key` deshalb setzen.
-- **Garage ist für diesen Ablauf ungeeignet** — es kann weder Locking noch
-  Bucket-Versionierung. Zwei Schreiber (CI und Laptop) ohne Sperre auf einem
-  State ohne Wiederherstellungspunkt ist genau die Konstellation, die State-
-  Dateien frisst.

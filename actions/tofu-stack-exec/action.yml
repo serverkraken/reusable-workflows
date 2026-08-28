@@ -11,6 +11,11 @@ description: |
   KEINE `secrets:` -- Composite Actions koennen keine deklarieren. Geheimes
   kommt per `with:` herein und wird vom aufrufenden Atom als Secret deklariert.
 
+  BACKEND-AGNOSTISCH: fuer S3-kompatible Backends kommen access/secret key,
+  fuer den `pg`-Backend der Verbindungsstring. Beide gehen ueber Secrets und
+  NIE ueber backend_config -- der ist ein Input und stuende im Klartext in der
+  Workflow-Datei des Adopters.
+
 inputs:
   command:
     description: 'plan | plan-destroy | apply | unlock'
@@ -55,6 +60,14 @@ inputs:
       dass irgendetwas rot wird.
     required: false
     default: 'false'
+  backend_conn_str:
+    description: >-
+      Verbindungsstring fuer den `pg`-Backend, wird als PG_CONN_STR gesetzt.
+      GEHOERT NIE IN backend_config: der ist ein Input und stuende damit im
+      Klartext in der Workflow-Datei des Adopters -- ein conn_str enthaelt das
+      Passwort.
+    required: false
+    default: ''
   backend_access_key:
     description: 'S3-kompatibler Access Key.'
     required: false
@@ -176,6 +189,7 @@ runs:
         BACKEND_CONFIG: ${{ inputs.backend_config }}
         AWS_ACCESS_KEY_ID: ${{ inputs.backend_access_key }}
         AWS_SECRET_ACCESS_KEY: ${{ inputs.backend_secret_key }}
+        PG_CONN_STR: ${{ inputs.backend_conn_str }}
       run: |
         set -euo pipefail
         # KEIN TF_VAR_* hier, und das ist kein Versehen: `tofu init` wertet
@@ -206,6 +220,7 @@ runs:
         LOCK_ID: ${{ inputs.lock_id }}
         AWS_ACCESS_KEY_ID: ${{ inputs.backend_access_key }}
         AWS_SECRET_ACCESS_KEY: ${{ inputs.backend_secret_key }}
+        PG_CONN_STR: ${{ inputs.backend_conn_str }}
       run: |
         set -uo pipefail
         # TF_VAR_* und TF_ENCRYPTION leben NUR in dieser Shell, nicht im Job.
