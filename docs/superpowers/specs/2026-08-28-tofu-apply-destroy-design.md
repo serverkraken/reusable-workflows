@@ -303,7 +303,26 @@ scheitert nicht, aber es behauptet auch nichts.
 Dafür kommt ein gepinnter S3-Client in `setup-tofu-toolchain`. Damit wird der
 Backup-Pfad S3-spezifisch; das Atom bleibt es im Übrigen nicht.
 
-### 7.3 Locking und die Konsequenz für Garage
+### 7.3 Locking und die Wahl des Backends
+
+**Nachtrag (nach der Umsetzung).** Der `pg`-Backend löst die Locking-Frage,
+statt sie zu umgehen: Postgres-Advisory-Locks sind echtes Locking, ohne
+Conditional Writes und ohne offene Frage nach der S3-Implementierung. Läuft die
+Datenbank unter CloudNativePG mit `barmanObjectStore`, ist auch die
+Wiederherstellung gelöst — WAL-Archiving mit Point-in-Time-Recovery ist einem
+Artefakt pro Lauf überlegen. Deshalb sichert das Atom bei `backend_type: pg`
+bewusst nichts selbst.
+
+Der `conn_str` kommt als Secret `backend_conn_str` (→ `PG_CONN_STR`), niemals
+über `backend_config`: der ist ein Input und stünde im Klartext in der
+Workflow-Datei des Adopters.
+
+Es bleibt eine Bedingung aus dem ursprünglichen Argument bestehen: die
+Datenbank darf **nicht** in dem Cluster liegen, den der State beschreibt.
+
+Der Rest dieses Abschnitts gilt unverändert für S3-kompatible Backends.
+
+
 
 **Verifiziert: Garage kann weder Locking noch Bucket-Versionierung.** Damit ist Garage
 als State-Backend für diesen Ablauf disqualifiziert — zwei Schreiber (CI und Laptop)
