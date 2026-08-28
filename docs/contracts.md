@@ -464,11 +464,22 @@ einen PR aus demselben Repository; der eingebaute Riegel gegen
 Revision fern, nicht Leute mit Branch-Zugriff.
 
 Das Atom kann diese Grenze nicht selbst ziehen — es kennt weder das `on:` des
-Aufrufers noch dessen Branch-Schutz. Ziehen muss sie der Adopter: den
-aufrufenden Job an ein geschuetztes `environment` mit Required Reviewers
-haengen, sodass ein Mensch den Lauf freigibt, bevor die Secrets an den Runner
-gehen — oder kurzlebige, nur lesende Credentials uebergeben, deren Diebstahl
-nichts wert ist.
+Aufrufers noch dessen Branch-Schutz. Ziehen muss sie der Adopter: dem Plan nur
+**lesende** Backend-Credentials geben und das Schreiben `tofu-apply.yml`
+ueberlassen, das per `workflow_dispatch` laeuft — dort ist die bewusste
+Dispatch-Aktion eines Menschen der Riegel. Alternativ kurzlebige, nur lesende
+Credentials uebergeben, deren Diebstahl nichts wert ist.
+
+**Nicht moeglich** ist der Weg, der hier frueher stand — den aufrufenden Job an
+ein geschuetztes `environment` mit Required Reviewers zu haengen. Ein Job, der
+per `jobs.<id>.uses:` einen reusable workflow aufruft, darf kein `environment:`
+tragen; erlaubt sind dort nur `uses`, `with`, `secrets`, `needs`, `if`,
+`permissions`, `concurrency` und `strategy`. Und Required Reviewers stehen auf
+dem Team-Plan in **privaten** Repos ohnehin nicht zur Verfuegung: die API
+antwortet mit `HTTP 422` ("Please ensure the billing plan supports the required
+reviewers protection rule") — und legt das Environment trotzdem an, mit leerer
+`protection_rules`-Liste. Ein Tippfehler im Namen erzeugt so ein Gate, das
+keines ist.
 
 | Kind   | Name | Type | Required | Default | Description |
 |--------|------|------|----------|---------|-------------|
@@ -479,6 +490,9 @@ nichts wert ist.
 | input  | `plan_json` | boolean | no | `false` | Upload `tofu show -json` as an artifact. OFF by default: unlike the human-readable output, the JSON does NOT redact values marked sensitive, so anyone who can download the artifact reads them in clear text. |
 | input  | `lock` | boolean | no | `true` | Take a state lock during plan. |
 | input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. |
+| input  | `emit_plan` | boolean | no | `false` | Den gespeicherten Plan als Artefakt hinterlegen, damit tofu-apply ihn spaeter anwenden kann. Verlangt das Secret tf_encryption_passphrase — ohne Verschluesselung wird der Upload VERWEIGERT, weil die tfplan dieselben sensitive-Werte im Klartext traegt wie das JSON. |
+| input  | `plan_retention_days` | number | no | `3` | Retention des Plan-Artefakts in Tagen. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States fuers Scheduling. Leer → working_directory. Ein Pfad ist aber keine belastbare State-Identitaet: ihn umzubenennen aendert die Gruppe, obwohl derselbe State weiterbenutzt wird, und zwei Verzeichnisse koennen denselben Backend-Key ansprechen. |
 | input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
 | output | `has_changes` | — | — | — | true when the plan contains changes, false when it does not — und der LEERE String, wenn der Plan nicht durchlief: Fork-PR (das Atom ueberspringt sich) ODER Plan-Fehler. Ein Aufrufer muss `== 'true'` pruefen, nicht `!= 'false'`. Wer "keine Aenderungen" von "nicht gelaufen" unterscheiden will, liest `plan_status`. |
 | output | `summary_line` | — | — | — | The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy". |
@@ -488,6 +502,7 @@ nichts wert ist.
 | secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 | secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
+| secret | `tf_encryption_passphrase` | — | no | — | Passphrase fuer OpenTofus native Plan- und State-Verschluesselung. Ohne sie laeuft der Plan normal, kann aber nicht als Artefakt hinterlegt werden (emit_plan bricht dann ab). |
 
 ---
 
