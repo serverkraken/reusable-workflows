@@ -1,0 +1,537 @@
+# .github/workflows/tofu-apply.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  plan_run_id, working_directory, concurrency_key,
+#            max_plan_age_minutes, tofu_version, backend_config, lock_timeout,
+#            outputs_allowlist, backup_retention_days, state_bucket, state_key,
+#            state_workspace_key_prefix, state_workspace, state_endpoint,
+#            runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key,
+#            tf_encryption_passphrase, backend_access_key, backend_secret_key,
+#            tf_vars
+#   outputs: applied, summary_line, apply_status, outputs_json
+#
+# DER RIEGEL IST DER DISPATCH, NICHT EIN ENVIRONMENT.
+#
+#   Der urspruengliche Entwurf sah einen Lauf mit zwei Jobs vor, dazwischen ein
+#   GitHub-Environment mit Required Reviewer. Das traegt nicht: Required
+#   Reviewers gibt es auf dem Team-Plan in PRIVATEN Repos nicht. Die API
+#   antwortet mit HTTP 422 ("Please ensure the billing plan supports the
+#   required reviewers protection rule") — und legt das Environment trotzdem
+#   an, mit leerer protection_rules-Liste. Ein Tippfehler im Namen erzeugte
+#   damit ein Gate, das keines ist.
+#
+#   Stattdessen: ein Mensch liest den Plan im PR-Kommentar und loest diesen
+#   Workflow von Hand mit der Run-ID GENAU DIESES Plans aus. Die Freigabe ist
+#   damit kein Feature, sondern eine Handlung mit einem Argument, das den
+#   konkreten Plan benennt.
+#
+# VIER VORPRUEFUNGEN, ALLE FAIL-CLOSED — bevor tofu ueberhaupt startet:
+#
+#   1. Stack        — ein Plan fuer ein anderes working_directory wird nie angewandt.
+#   2. State        — dasselbe fuer die concurrency_key-Identitaet.
+#   3. Katalog-Ref  — Adopter pinnen den beweglichen `v4`. Laeuft der Apply
+#                     Stunden nach dem Plan, kann `v4` weitergerueckt sein; der
+#                     Apply liefe dann mit anderem Katalog-Code als der Plan.
+#   4. Alter        — `Saved plan is stale` faengt State-Aenderungen ab, aber
+#                     NICHT Ressourcen, die ausserhalb des States veraendert
+#                     wurden. Dagegen hilft nur eine Frist.
+#
+#   Die fuenfte Pruefung macht OpenTofu selbst: `tofu apply <saved plan>`
+#   verweigert mit „Saved plan is stale", wenn sich der State seit dem Plan
+#   bewegt hat.
+#
+# WAS DIESES ATOM NICHT LOEST: die Vertrauensgrenze aus tofu-plan.yml. Der
+# PLAN-Lauf fuehrt Adopter-Konfiguration mit Credentials aus, und das passiert
+# vor jeder Freigabe. Der Dispatch-Riegel schuetzt den Apply, nicht den Plan.
+# Der Adopter sollte dem Plan deshalb nur LESENDE Backend-Credentials geben und
+# die schreibenden allein diesem Atom.
+name: tofu-apply
+on:
+  workflow_call:
+    inputs:
+      plan_run_id:
+        description: >-
+          Run-ID des Laufs, der den Plan erzeugt hat (tofu-plan mit
+          emit_plan: true). Aus genau diesem Lauf wird das Artefakt geholt.
+        required: true
+        type: string
+      working_directory:
+        description: 'OpenTofu stack directory.'
+        required: false
+        type: string
+        default: 'tofu'
+      concurrency_key:
+        description: >-
+          Identitaet des States fuers Scheduling. Leer → working_directory.
+          Muss mit dem Wert des Plan-Laufs uebereinstimmen.
+        required: false
+        type: string
+        default: ''
+      max_plan_age_minutes:
+        description: >-
+          Wie alt der Plan hoechstens sein darf. Deckt den Fall ab, den der
+          eingebaute Stale-Schutz NICHT sieht: Ressourcen, die ausserhalb des
+          States veraendert wurden.
+        required: false
+        type: number
+        default: 120
+      tofu_version:
+        description: 'Override OpenTofu version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      backend_config:
+        description: >-
+          Newline-separated `-backend-config=` arguments (bucket, endpoint,
+          region). Credentials do NOT belong here — use the secrets.
+        required: false
+        type: string
+        default: ''
+      lock_timeout:
+        description: >-
+          Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst
+          NICHT: ein lesender Plan darf auf die Sperre verzichten, ein
+          schreibender Lauf nie.
+        required: false
+        type: string
+        default: '60s'
+      outputs_allowlist:
+        description: >-
+          Newline-separated Namen der Outputs, die als outputs_json exportiert
+          werden. Leer → keine. Es wird NICHT allein auf das sensitive-Flag
+          vertraut: ein Provider oder ein Adopter kann es falsch setzen.
+        required: false
+        type: string
+        default: ''
+      backup_retention_days:
+        description: 'Retention des State-Backups in Tagen.'
+        required: false
+        type: number
+        default: 7
+      state_bucket:
+        description: >-
+          Bucket des State-Objekts. Leer → kein Backup, mit sichtbarer Warnung
+          in der Summary. Bucket und Key kommen als Input und NICHT aus
+          `.terraform/terraform.tfstate`: das ist internes Format ohne
+          Stabilitaetszusage — derselbe Grund, aus dem dieses Atom
+          `-detailed-exitcode` statt `jq` auf `show -json` benutzt.
+        required: false
+        type: string
+        default: ''
+      state_key:
+        description: 'Key des State-Objekts im Bucket.'
+        required: false
+        type: string
+        default: ''
+      state_workspace_key_prefix:
+        description: >-
+          Praefix fuer Nicht-Default-Workspaces. Der echte Objektpfad lautet
+          dann `<prefix>/<workspace>/<key>`; ein naives bucket+key sicherte das
+          falsche Objekt.
+        required: false
+        type: string
+        default: 'env:'
+      state_workspace:
+        description: 'OpenTofu-Workspace des States.'
+        required: false
+        type: string
+        default: 'default'
+      state_endpoint:
+        description: 'Endpoint-URL fuer S3-kompatible Backends (leer → AWS).'
+        required: false
+        type: string
+        default: ''
+      runs_on:
+        description: >-
+          JSON-encoded array of runner labels. MUSS dieselben Labels tragen wie
+          der Plan-Lauf: ein gespeicherter Plan uebersteht keinen Wechsel
+          zwischen amd64 und arm64, und `[self-hosted, Linux]` pinnt die
+          Architektur nicht.
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      applied:
+        description: >-
+          `true`, wenn der Apply durchlief. LEER, wenn er nicht startete
+          (Vorpruefung gescheitert, Artefakt fehlt) — ein Aufrufer muss
+          `== 'true'` pruefen, nicht `!= 'false'`.
+        value: ${{ jobs.apply.outputs.applied }}
+      summary_line:
+        description: 'Die Apply-Zusammenfassung, z. B. "Apply complete! Resources: 1 added, …".'
+        value: ${{ jobs.apply.outputs.summary_line }}
+      apply_status:
+        description: '`success`, `failed`, oder LEER wenn der Apply-Schritt nicht startete.'
+        value: ${{ jobs.apply.outputs.apply_status }}
+      outputs_json:
+        description: >-
+          JSON-Objekt der in outputs_allowlist genannten, nicht-sensitiven
+          Outputs. Leer, wenn keine Allowlist gesetzt ist.
+        value: ${{ jobs.apply.outputs.outputs_json }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+      tf_encryption_passphrase:
+        required: true
+        description: >-
+          Passphrase fuer OpenTofus native Plan- und State-Verschluesselung.
+          Muss dieselbe sein wie im Plan-Lauf, sonst laesst sich der Plan nicht
+          entschluesseln.
+      backend_access_key:
+        required: false
+        description: 'S3-compatible backend access key → AWS_ACCESS_KEY_ID.'
+      backend_secret_key:
+        required: false
+        description: 'S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY.'
+      tf_vars:
+        required: false
+        description: >-
+          Newline-separated KEY=VALUE pairs, exported as TF_VAR_key.
+          Provider-Credentials aus Umgebungsvariablen frieren NICHT im Plan
+          ein und muessen dem Apply erneut uebergeben werden.
+
+permissions:
+  contents: read
+  # Fuer `gh run download`: das Artefakt liegt an einem anderen Lauf desselben
+  # Repositories. KEIN pull-requests: write — dieses Atom laeuft nie auf PRs.
+  actions: read
+
+concurrency:
+  # `mutate`, nicht `observe`: schreibende Laeufe (apply, destroy, unlock)
+  # serialisieren streng untereinander. Die Gruppe benennt den STATE, nicht den
+  # Workflow — mit `github.workflow` im Schluessel liefen Apply und Destroy in
+  # verschiedenen Gruppen und traefen sich erst am Backend-Lock.
+  group: tofu-mutate-${{ github.repository }}-${{ inputs.concurrency_key || inputs.working_directory }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 60
+    outputs:
+      applied: ${{ steps.apply.outputs.exec_status == 'success' && 'true' || '' }}
+      summary_line: ${{ steps.apply.outputs.summary_line }}
+      apply_status: ${{ steps.apply.outputs.exec_status }}
+      outputs_json: ${{ steps.outputs.outputs.outputs_json }}
+    steps:
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      # Der Riegel dieses Atoms ist die bewusste Handlung eines Menschen. Unter
+      # pull_request oder push liefe es automatisch — genau das, was es nicht
+      # darf. Das Atom kann das `on:` des Aufrufers nicht bestimmen, aber es
+      # kann sich weigern.
+      - name: Refuse to run outside a manual dispatch
+        working-directory: ${{ github.workspace }}
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            workflow_dispatch|repository_dispatch)
+              ;;
+            *)
+              echo "::error::tofu-apply darf nur aus einem manuellen Dispatch laufen, nicht unter '${EVENT}'" >&2
+              echo "::error::der Riegel vor dem Apply ist die Dispatch-Aktion eines Menschen — ein automatischer Trigger hebt ihn auf" >&2
+              exit 1
+              ;;
+          esac
+
+      # persist-credentials: false, dieselbe Begruendung wie in tofu-plan.yml:
+      # der Checkout liesse sonst einen extraheader mit dem GITHUB_TOKEN in der
+      # lokalen Git-Config liegen, und tofu fuehrt Adopter-Konfiguration aus.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Compute the artifact name
+        id: artifact
+        env:
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+        run: |
+          set -euo pipefail
+          # Dieselbe Normalisierung wie in tofu-plan.yml. Weicht eine der
+          # beiden Seiten ab, findet der Apply das Artefakt nicht mehr.
+          safe=$(printf '%s' "$KEY" | tr -c 'A-Za-z0-9._-' '-')
+          echo "name=tofu-plan-${safe}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the plan from the referenced run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.plan_run_id }}
+          NAME: ${{ steps.artifact.outputs.name }}
+        run: |
+          set -euo pipefail
+          if ! gh run download "$RUN_ID" --name "$NAME" --dir plan-artifact; then
+            echo "::error::Artefakt '${NAME}' liess sich aus Lauf ${RUN_ID} nicht laden" >&2
+            echo "::error::lief tofu-plan dort mit emit_plan: true, und ist die Retention noch nicht abgelaufen?" >&2
+            exit 1
+          fi
+          test -f plan-artifact/plan-meta.json || { echo "::error::plan-meta.json fehlt im Artefakt" >&2; exit 1; }
+          test -f plan-artifact/tfplan || { echo "::error::tfplan fehlt im Artefakt" >&2; exit 1; }
+
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+          persist-credentials: false
+
+      - name: Install OpenTofu toolchain
+        uses: ./.catalog/actions/setup-tofu-toolchain
+        with:
+          tofu_version: ${{ inputs.tofu_version }}
+
+      - name: Preflight — four checks before tofu starts
+        id: preflight
+        env:
+          DIR: ${{ inputs.working_directory }}
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+          MAX_AGE: ${{ inputs.max_plan_age_minutes }}
+          CATALOG_REF: ${{ steps.catalog-ref.outputs.ref }}
+        run: |
+          set -euo pipefail
+          meta=plan-artifact/plan-meta.json
+
+          got_dir=$(jq -r '.working_directory' "$meta")
+          got_key=$(jq -r '.concurrency_key' "$meta")
+          got_ref=$(jq -r '.catalog_ref' "$meta")
+          got_ver=$(jq -r '.tofu_version' "$meta")
+          created=$(jq -r '.created_at' "$meta")
+
+          # 1. Stack.
+          if [[ "$got_dir" != "$DIR" ]]; then
+            echo "::error::der Plan gehoert zu Stack '${got_dir}', angewandt werden soll '${DIR}'" >&2
+            exit 1
+          fi
+
+          # 2. State-Identitaet.
+          if [[ "$got_key" != "$KEY" ]]; then
+            echo "::error::der Plan gehoert zu State '${got_key}', angewandt werden soll '${KEY}'" >&2
+            exit 1
+          fi
+
+          # 3. Katalog-Revision. Bewusst VERGLEICHEN und abbrechen, statt den
+          #    Katalog auf den alten SHA zurueckzuchecken: einen Plan mit
+          #    veralteter Katalogversion anzuwenden hiesse, einen womoeglich
+          #    bereits behobenen Fehler noch einmal auszufuehren. Neu planen
+          #    ist billig, ein falscher Apply nicht.
+          if [[ "$got_ref" != "$CATALOG_REF" ]]; then
+            echo "::error::der Plan entstand mit Katalog-Ref '${got_ref}', dieser Lauf nutzt '${CATALOG_REF}'" >&2
+            echo "::error::neu planen, statt einen Plan fremder Katalogversion anzuwenden" >&2
+            exit 1
+          fi
+
+          # 4. Alter.
+          now=$(date -u +%s)
+          # GNU date auf den Linux-Runnern; der Python-Zweig ist der Rueckfall
+          # fuer alles, was `-d` nicht kennt.
+          then_ts=$(date -u -d "$created" +%s 2>/dev/null || python3 -c "
+          import datetime, sys
+          stamp = datetime.datetime.strptime(sys.argv[1], '%Y-%m-%dT%H:%M:%SZ')
+          print(int(stamp.replace(tzinfo=datetime.timezone.utc).timestamp()))
+          " "$created")
+          age=$(( (now - then_ts) / 60 ))
+          if (( age > MAX_AGE )); then
+            echo "::error::der Plan ist ${age} Minuten alt, erlaubt sind ${MAX_AGE} — neu planen" >&2
+            exit 1
+          fi
+
+          echo "age_minutes=${age}" >> "$GITHUB_OUTPUT"
+          echo "plan_tofu_version=${got_ver}" >> "$GITHUB_OUTPUT"
+          echo "Vorpruefungen bestanden — Plan ist ${age} Minuten alt, erzeugt mit OpenTofu ${got_ver}"
+
+      - name: Warn when no state backup is configured
+        if: inputs.state_bucket == ''
+        run: |
+          echo "::warning::kein state_bucket gesetzt — dieser Apply laeuft OHNE Wiederherstellungspunkt"
+          echo "::warning::das ist nur vertretbar, wenn das Backend selbst versioniert; Garage tut das nicht"
+
+      - name: Back up the raw state object
+        if: inputs.state_bucket != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.backend_access_key }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.backend_secret_key }}
+          BUCKET: ${{ inputs.state_bucket }}
+          KEY_PATH: ${{ inputs.state_key }}
+          PREFIX: ${{ inputs.state_workspace_key_prefix }}
+          WORKSPACE: ${{ inputs.state_workspace }}
+          ENDPOINT: ${{ inputs.state_endpoint }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEY_PATH" ]]; then
+            echo "::error::state_bucket ist gesetzt, state_key fehlt" >&2
+            exit 1
+          fi
+          # Bei einem Nicht-Default-Workspace lautet der Objektpfad
+          # <prefix>/<workspace>/<key>. Ein naives bucket+key sicherte hier
+          # das falsche Objekt — und das faellt erst auf, wenn man das Backup
+          # braucht.
+          if [[ "$WORKSPACE" == "default" ]]; then
+            OBJ="$KEY_PATH"
+          else
+            OBJ="${PREFIX}/${WORKSPACE}/${KEY_PATH}"
+          fi
+          ARGS=()
+          [[ -n "$ENDPOINT" ]] && ARGS+=(--endpoint-url "$ENDPOINT")
+          aws "${ARGS[@]+"${ARGS[@]}"}" s3 cp "s3://${BUCKET}/${OBJ}" state-backup.enc
+          # Das Objekt MUSS Chiffrat sein — die Composite arbeitet mit
+          # enforced = true. Ist es Klartext, traegt es den Provider-Token im
+          # Klartext, und ein Upload waere genau das Leck, gegen das die
+          # Verschluesselung gebaut wurde.
+          if jq -e '.serial' state-backup.enc >/dev/null 2>&1; then
+            echo "::error::das State-Objekt ist unverschluesselt — Backup wird NICHT hochgeladen" >&2
+            rm -f state-backup.enc
+            exit 1
+          fi
+          echo "State-Backup bereit ($(wc -c < state-backup.enc | tr -d ' ') Bytes, Chiffrat)"
+
+      - name: Upload the state backup
+        if: inputs.state_bucket != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tofu-state-backup-${{ github.run_id }}
+          path: state-backup.enc
+          if-no-files-found: error
+          retention-days: ${{ inputs.backup_retention_days }}
+
+      - name: Apply the saved plan
+        id: apply
+        uses: ./.catalog/actions/tofu-stack-exec
+        with:
+          command: apply
+          working_directory: ${{ inputs.working_directory }}
+          backend_config: ${{ inputs.backend_config }}
+          # Absoluter Pfad: `-chdir` macht relative Pfade sonst relativ zum
+          # Stack-Verzeichnis, und das Artefakt liegt im Workspace-Wurzelverzeichnis.
+          plan_file: ${{ github.workspace }}/plan-artifact/tfplan
+          lock_timeout: ${{ inputs.lock_timeout }}
+          tf_vars: ${{ secrets.tf_vars }}
+          encryption_passphrase: ${{ secrets.tf_encryption_passphrase }}
+          backend_access_key: ${{ secrets.backend_access_key }}
+          backend_secret_key: ${{ secrets.backend_secret_key }}
+
+      - name: Export allow-listed outputs
+        if: inputs.outputs_allowlist != '' && steps.apply.outputs.exec_status == 'success'
+        id: outputs
+        env:
+          DIR: ${{ inputs.working_directory }}
+          ALLOW: ${{ inputs.outputs_allowlist }}
+        run: |
+          set -euo pipefail
+          if [[ -f "$RUNNER_TEMP/tofu-encryption.hcl" ]]; then
+            TF_ENCRYPTION="$(cat "$RUNNER_TEMP/tofu-encryption.hcl")"
+            export TF_ENCRYPTION
+          fi
+          tofu -chdir="$DIR" output -json > outputs-raw.json
+          # ZWEI Filter, nicht einer: nur was in der Allowlist steht, UND nur
+          # was nicht als sensitive markiert ist. Auf das Flag allein ist kein
+          # Verlass — ein Provider oder ein Adopter kann es falsch setzen.
+          python3 - <<'PY' > outputs.json
+          import json, os
+          raw = json.load(open("outputs-raw.json"))
+          allow = {n.strip() for n in os.environ["ALLOW"].splitlines() if n.strip()}
+          kept = {k: v["value"] for k, v in raw.items()
+                  if k in allow and not v.get("sensitive", False)}
+          dropped = sorted(set(allow) - set(kept))
+          if dropped:
+              print(f"::warning::nicht exportiert (unbekannt oder sensitive): {', '.join(dropped)}", file=__import__("sys").stderr)
+          print(json.dumps(kept))
+          PY
+          echo "outputs_json=$(cat outputs.json)" >> "$GITHUB_OUTPUT"
+          rm -f outputs-raw.json outputs.json
+
+      - name: Summary
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+          STATUS: ${{ steps.apply.outputs.exec_status }}
+          LINE: ${{ steps.apply.outputs.summary_line }}
+          AGE: ${{ steps.preflight.outputs.age_minutes }}
+          RUN_ID: ${{ inputs.plan_run_id }}
+          BUCKET: ${{ inputs.state_bucket }}
+        run: |
+          tofu_version=$(tofu version 2>/dev/null | head -1 | awk '{print $2}' || echo unknown)
+          if [[ "${STATUS:-}" == "success" ]]; then
+            result="✓ angewandt"
+          elif [[ -z "${STATUS:-}" ]]; then
+            # Der Apply-Schritt ist gar nicht gelaufen — eine Vorpruefung hat
+            # abgebrochen oder das Artefakt fehlte. Ein "✓" waere hier die
+            # falsche Aussage.
+            result="✗ Apply lief nicht durch"
+          else
+            result="✗ Apply fehlgeschlagen"
+          fi
+          {
+            echo "## tofu-apply"
+            echo ""
+            echo "**Tool:** OpenTofu ${tofu_version}"
+            echo "**Working dir:** \`${DIR}\`"
+            echo "**Plan aus Lauf:** ${RUN_ID}"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Apply | ${STATUS:-nicht gelaufen} |"
+            echo "| Plan-Alter | ${AGE:-unbekannt} min |"
+            echo "| State-Backup | ${BUCKET:-nicht konfiguriert} |"
+            echo "| Summary | ${LINE:-unknown} |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Preserve errored.tfstate and clean up
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+        run: |
+          # errored.tfstate wird NICHT geloescht: schlaegt der Apply nach
+          # bereits geaenderten Ressourcen beim Zurueckschreiben fehl, ist
+          # diese Datei womoeglich die einzige aktuelle State-Kopie. Sie bleibt
+          # liegen, und der Lauf sagt laut, was zu tun ist.
+          if [[ -f "$DIR/errored.tfstate" ]]; then
+            echo "::error::errored.tfstate liegt vor — der State wurde NICHT ins Backend zurueckgeschrieben"
+            echo "::error::NICHT einfach neu applien: erst den State wiederherstellen, Runbook in docs/operations.md"
+          fi
+          rm -rf plan-artifact || true
+          rm -f state-backup.enc apply.txt apply.err plan.txt plan.err || true
+          # Beide Dateien tragen Klartext-Secrets, und auf dem self-hosted Pool
+          # ueberlebt $RUNNER_TEMP den Job.
+          rm -f "$RUNNER_TEMP/tf-vars.env" "$RUNNER_TEMP/tofu-encryption.hcl" || true
+          echo "Aufgeraeumt (plan-artifact, state-backup.enc, tf-vars.env, tofu-encryption.hcl)"

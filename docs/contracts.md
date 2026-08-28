@@ -450,6 +450,56 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 
 ---
 
+### `tofu-apply.yml`
+
+**Der Riegel ist der Dispatch, nicht ein Environment.** Ein Mensch liest den Plan im
+PR-Kommentar und loest dieses Atom von Hand mit der Run-ID genau dieses Plans aus. Das
+urspruenglich geplante GitHub-Environment mit Required Reviewer traegt nicht: die
+Protection Rule gibt es auf dem Team-Plan in **privaten** Repos nicht — die API
+antwortet mit `HTTP 422` und legt das Environment trotzdem an, mit leerer
+`protection_rules`-Liste.
+
+**Vier Vorpruefungen, alle fail-closed,** bevor `tofu` startet: Stack, State-Identitaet,
+Katalog-Revision und Planalter. Die fuenfte macht OpenTofu selbst — `tofu apply <saved
+plan>` verweigert mit „Saved plan is stale", wenn sich der State bewegt hat.
+
+**Was dieses Atom NICHT loest:** die Vertrauensgrenze aus `tofu-plan.yml`. Der
+*Plan*-Lauf fuehrt Adopter-Konfiguration mit Credentials aus, und zwar vor jeder
+Freigabe. Dem Plan gehoeren deshalb nur **lesende** Backend-Credentials, die
+schreibenden allein diesem Atom.
+
+**`runs_on` muss mit dem Plan-Lauf uebereinstimmen.** Ein gespeicherter Plan uebersteht
+keinen Wechsel zwischen amd64 und arm64, und `[self-hosted, Linux]` pinnt die
+Architektur nicht.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `plan_run_id` | string | yes | — | Run-ID des Laufs, der den Plan erzeugt hat (tofu-plan mit emit_plan: true). Aus genau diesem Lauf wird das Artefakt geholt. |
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States fuers Scheduling. Leer → working_directory. Muss mit dem Wert des Plan-Laufs uebereinstimmen. |
+| input  | `max_plan_age_minutes` | number | no | `120` | Wie alt der Plan hoechstens sein darf. Deckt den Fall ab, den der eingebaute Stale-Schutz NICHT sieht: Ressourcen, die ausserhalb des States veraendert wurden. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments (bucket, endpoint, region). Credentials do NOT belong here — use the secrets. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst NICHT: ein lesender Plan darf auf die Sperre verzichten, ein schreibender Lauf nie. |
+| input  | `outputs_allowlist` | string | no | `''` | Newline-separated Namen der Outputs, die als outputs_json exportiert werden. Leer → keine. Es wird NICHT allein auf das sensitive-Flag vertraut: ein Provider oder ein Adopter kann es falsch setzen. |
+| input  | `backup_retention_days` | number | no | `7` | Retention des State-Backups in Tagen. |
+| input  | `state_bucket` | string | no | `''` | Bucket des State-Objekts. Leer → kein Backup, mit sichtbarer Warnung in der Summary. |
+| input  | `state_key` | string | no | `''` | Key des State-Objekts im Bucket. |
+| input  | `state_workspace_key_prefix` | string | no | `env:` | Praefix fuer Nicht-Default-Workspaces. Der echte Objektpfad lautet dann `<prefix>/<workspace>/<key>`. |
+| input  | `state_workspace` | string | no | `default` | OpenTofu-Workspace des States. |
+| input  | `state_endpoint` | string | no | `''` | Endpoint-URL fuer S3-kompatible Backends (leer → AWS). |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. MUSS dieselben Labels tragen wie der Plan-Lauf. |
+| output | `applied` | string | — | — | `true`, wenn der Apply durchlief. LEER, wenn er nicht startete — `== 'true'` pruefen, nicht `!= 'false'`. |
+| output | `summary_line` | string | — | — | Die Apply-Zusammenfassung. |
+| output | `apply_status` | string | — | — | `success`, `failed`, oder LEER wenn der Apply-Schritt nicht startete. |
+| output | `outputs_json` | string | — | — | JSON-Objekt der in outputs_allowlist genannten, nicht-sensitiven Outputs. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `tf_encryption_passphrase` | — | yes | — | Passphrase fuer OpenTofus native Plan- und State-Verschluesselung. Muss dieselbe sein wie im Plan-Lauf. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. Provider-Credentials aus Umgebungsvariablen frieren NICHT im Plan ein und muessen dem Apply erneut uebergeben werden. |
+
 ### `tofu-plan.yml`
 
 **Vertrauensgrenze — vor dem Einbau lesen.** Dieses Atom fuehrt die

@@ -135,6 +135,7 @@ jobs:
 | `lint-shell.yml`             | shellcheck über getrackte Shell-Skripte, optional shfmt        |
 | `tofu-validate.yml`          | tofu fmt + init + validate + tflint je Stack, credential-frei  |
 | `tofu-plan.yml`              | tofu plan gegen das Backend, als Sticky-PR-Kommentar           |
+| `tofu-apply.yml`             | wendet einen freigegebenen Plan an, dispatch-only              |
 
 ### Versionierung und Pinning
 
@@ -146,7 +147,7 @@ Der Katalog folgt [Semantic Versioning](https://semver.org/), getrieben von [rel
 | `@v4.2`   | immer das neueste 4.2.x   | `v4`                         |
 | `@v4.2.3` | unveränderlich            | `v4`                         |
 
-**Ein Pin friert die Workflow-Datei ein, nicht alles, was sie ausführt.** 18 Atome
+**Ein Pin friert die Workflow-Datei ein, nicht alles, was sie ausführt.** 19 Atome
 checken zur Laufzeit den Katalog aus, um Composite-Actions und Skripte unter
 `actions/` und `scripts/` zu laden — und zwar am **schwebenden Major-Tag**, nicht
 an der Version, mit der sie aufgerufen wurden. Ein Aufruf von `@v4.2.3` führt
