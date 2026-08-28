@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.26.0](https://github.com/serverkraken/reusable-workflows/compare/v4.25.0...v4.26.0) (2026-08-28)
+
+
+### Features
+
+* Postgres-Backend als erste Wahl für den State ([#409](https://github.com/serverkraken/reusable-workflows/issues/409)) ([1e81d4b](https://github.com/serverkraken/reusable-workflows/commit/1e81d4b814af94c20e397b9470eab81839cc407f))
+
 ## [4.25.0](https://github.com/serverkraken/reusable-workflows/compare/v4.24.0...v4.25.0) (2026-08-28)
 
 
