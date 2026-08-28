@@ -545,6 +545,34 @@ exakten Text in ihrer Summary.
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 | secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
 
+### `tofu-unlock.yml`
+
+**Wofuer es existiert:** ein gekillter Runner, ein Reboot oder ein abgebrochener
+Lauf laesst den State-Lock im Backend liegen. Danach steht nicht nur die CI,
+sondern auch der Apply am Laptop.
+
+**Warum es gefaehrlich ist:** `force-unlock` fragt nicht nach, ob der Halter tot
+ist — die Lock-ID ist ein Nonce, kein Lebenszeichen. Waehrend eines laufenden
+Applys geloest, schreiben zwei Prozesse denselben State. Deshalb steht die
+Lock-ID auch in der Bestaetigung, und das Atom laeuft in derselben
+`mutate`-Concurrency-Gruppe wie Apply und Destroy.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `lock_id` | string | yes | — | Die Lock-ID aus der Fehlermeldung des blockierten Laufs. |
+| input  | `confirm` | string | yes | — | Muss woertlich `UNLOCK <owner/repo> <concurrency_key> <lock_id>` lauten. |
+| input  | `allowed_refs` | string | no | `refs/heads/main` | Newline-separated Liste erlaubter `github.ref`-Werte. |
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States. Leer → working_directory. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments. |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `unlocked` | string | — | — | `true`, wenn der Lock geloest wurde. LEER bei jedem Abbruch. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+
 ### `tofu-plan.yml`
 
 **Vertrauensgrenze — vor dem Einbau lesen.** Dieses Atom fuehrt die
