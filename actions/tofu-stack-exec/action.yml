@@ -184,7 +184,8 @@ runs:
         # `module.source` erlaubt. Was der Schritt nicht braucht, bekommt er
         # nicht.
         if [[ -f "$RUNNER_TEMP/tofu-encryption.hcl" ]]; then
-          export TF_ENCRYPTION="$(cat "$RUNNER_TEMP/tofu-encryption.hcl")"
+          TF_ENCRYPTION="$(cat "$RUNNER_TEMP/tofu-encryption.hcl")"
+          export TF_ENCRYPTION
         fi
         ARGS=()
         while IFS= read -r line; do
@@ -221,7 +222,8 @@ runs:
           set +a
         fi
         if [[ -f "$RUNNER_TEMP/tofu-encryption.hcl" ]]; then
-          export TF_ENCRYPTION="$(cat "$RUNNER_TEMP/tofu-encryption.hcl")"
+          TF_ENCRYPTION="$(cat "$RUNNER_TEMP/tofu-encryption.hcl")"
+          export TF_ENCRYPTION
         fi
 
         LOCK_ARGS=(-lock-timeout="$LOCK_TIMEOUT")
