@@ -273,6 +273,69 @@ jobs:
           fi
           echo "tofu-plan meldete: ${SUMMARY_LINE}"
 
+  # ----- tofu-plan mit Artefakt -> tofu-apply: der komplette Uebergabeweg -----
+  #
+  # Plan und Apply stecken hier im SELBEN Lauf. Das deckt den Artefakt-Transport,
+  # die Entschluesselung und alle vier Vorpruefungen ab -- NICHT aber den
+  # Zeitverzug und schon gar nicht, dass ein Mensch den Dispatch ausloest. Das
+  # ist Konfiguration im Adopter-Repo, kein Verhalten des Atoms.
+  tofu-plan-emit:
+    uses: ./.github/workflows/tofu-plan.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      working_directory: tests/fixtures/tofu-apply-local
+      # Kein Remote-Backend in der Fixture, also auch kein Lock.
+      lock: false
+      comment_on_pr: false
+      emit_plan: true
+      concurrency_key: selfci-apply
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  tofu-apply-happy:
+    needs: [tofu-plan-emit]
+    uses: ./.github/workflows/tofu-apply.yml
+    permissions:
+      contents: read
+      actions: read
+    with:
+      working_directory: tests/fixtures/tofu-apply-local
+      concurrency_key: selfci-apply
+      # Derselbe Lauf: das Artefakt von tofu-plan-emit haengt an github.run_id.
+      plan_run_id: ${{ github.run_id }}
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  assert-tofu-apply:
+    needs: [tofu-apply-happy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: apply_status muss success sein
+        env:
+          STATUS: ${{ needs.tofu-apply-happy.outputs.apply_status }}
+          APPLIED: ${{ needs.tofu-apply-happy.outputs.applied }}
+          LINE: ${{ needs.tofu-apply-happy.outputs.summary_line }}
+        run: |
+          set -euo pipefail
+          if [[ "$STATUS" != "success" ]]; then
+            echo "::error::erwartet apply_status=success, bekam '${STATUS}'" >&2
+            exit 1
+          fi
+          # `applied` ist der Wert, den ein Aufrufer prueft. Leer hiesse, der
+          # Apply-Schritt lief gar nicht -- ein Fehler, den apply_status allein
+          # nicht von einem Fehlschlag unterscheidet.
+          if [[ "$APPLIED" != "true" ]]; then
+            echo "::error::erwartet applied=true, bekam '${APPLIED}'" >&2
+            exit 1
+          fi
+          if [[ "$LINE" != *"Apply complete"* ]]; then
+            echo "::error::summary_line sollte 'Apply complete' enthalten, war: '${LINE}'" >&2
+            exit 1
+          fi
+          echo "tofu-apply meldete: ${LINE}"
+
   # ----- test-go: happy -----
   test-go-happy:
     uses: ./.github/workflows/test-go.yml
@@ -823,6 +886,7 @@ jobs:
       - assert-lint-shell-findings
       - tofu-validate-happy
       - assert-tofu-plan-changes
+      - assert-tofu-apply
       - test-go-happy
       - test-python-poetry-happy
       - test-python-uv-happy
