@@ -13,6 +13,12 @@ name: self-ci
 
 on:
   pull_request:
+  # Fuer die Atome, die sich unter allem ausser workflow_dispatch weigern:
+  # tofu-apply (und in Plan 3 tofu-destroy/-unlock) sind dispatch-only, weil
+  # die bewusste Handlung eines Menschen ihr Riegel IST. Unter pull_request
+  # schlaegt dieser Riegel zuerst zu — ihr Happy Path ist dort also nicht
+  # pruefbar. Ein manueller Lauf dieses Workflows erledigt das.
+  workflow_dispatch:
 
 # All atoms here are code-inspection only. No write permissions needed.
 permissions:
@@ -275,11 +281,16 @@ jobs:
 
   # ----- tofu-plan mit Artefakt -> tofu-apply: der komplette Uebergabeweg -----
   #
-  # Plan und Apply stecken hier im SELBEN Lauf. Das deckt den Artefakt-Transport,
-  # die Entschluesselung und alle vier Vorpruefungen ab -- NICHT aber den
-  # Zeitverzug und schon gar nicht, dass ein Mensch den Dispatch ausloest. Das
-  # ist Konfiguration im Adopter-Repo, kein Verhalten des Atoms.
+  # NUR bei einem manuellen Lauf dieses Workflows. Grund: tofu-apply weigert
+  # sich unter allem ausser workflow_dispatch, denn die bewusste Handlung eines
+  # Menschen IST sein Riegel. Unter pull_request schluege dieser Riegel zuerst
+  # zu, und der Test koennte nie gruen werden.
+  #
+  # Plan und Apply stecken im SELBEN Lauf. Das deckt den Artefakt-Transport,
+  # die Entschluesselung und alle vier Vorpruefungen ab -- NICHT den Zeitverzug
+  # und nicht, dass ein Mensch den Dispatch ausloest.
   tofu-plan-emit:
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/tofu-plan.yml
     permissions:
       contents: read
@@ -295,6 +306,7 @@ jobs:
     secrets: inherit
 
   tofu-apply-happy:
+    if: github.event_name == 'workflow_dispatch'
     needs: [tofu-plan-emit]
     uses: ./.github/workflows/tofu-apply.yml
     permissions:
@@ -309,6 +321,7 @@ jobs:
     secrets: inherit
 
   assert-tofu-apply:
+    if: github.event_name == 'workflow_dispatch'
     needs: [tofu-apply-happy]
     runs-on: ubuntu-latest
     steps:
