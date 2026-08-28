@@ -500,6 +500,51 @@ Architektur nicht.
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 | secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. Provider-Credentials aus Umgebungsvariablen frieren NICHT im Plan ein und muessen dem Apply erneut uebergeben werden. |
 
+### `tofu-destroy.yml`
+
+**Zwei Dispatches, ein Atom.** Der erste Aufruf (ohne `plan_run_id`) erzeugt den
+Destroy-Plan, legt ihn verschluesselt ab und **haelt an** — es wird nichts
+zerstoert, und der Lauf ist gruen, denn Anhalten ist hier der Erfolgsfall. Der
+zweite Aufruf (mit `plan_run_id` und `confirm`) wendet genau diesen Plan an.
+
+**Kein `tofu destroy -auto-approve`:** es wird immer der gespeicherte Plan
+angewandt, sonst fuehrte der zweite Dispatch einen neu berechneten Vorgang aus
+statt des freigegebenen.
+
+**Drei Riegel, die `tofu-apply.yml` so nicht hat:** nur `workflow_dispatch`;
+`allowed_refs` (Default nur der Default-Branch); und `confirm` muss woertlich
+`DESTROY <owner/repo> <concurrency_key>` lauten — die erste Stufe nennt den
+exakten Text in ihrer Summary.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `plan_run_id` | string | no | `''` | Leer → erste Stufe: Destroy-Plan erzeugen und anhalten. Gesetzt → zweite Stufe: den Plan aus jenem Lauf anwenden. |
+| input  | `confirm` | string | no | `''` | In der zweiten Stufe Pflicht. Muss woertlich `DESTROY <owner/repo> <concurrency_key>` lauten. |
+| input  | `allowed_refs` | string | no | `refs/heads/main` | Newline-separated Liste erlaubter `github.ref`-Werte. |
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States. Leer → working_directory. |
+| input  | `max_plan_age_minutes` | number | no | `120` | Wie alt der Destroy-Plan hoechstens sein darf. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments. Credentials do NOT belong here — use the secrets. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst NICHT. |
+| input  | `plan_retention_days` | number | no | `3` | Retention des Destroy-Plan-Artefakts in Tagen. |
+| input  | `backup_retention_days` | number | no | `7` | Retention des State-Backups in Tagen. |
+| input  | `state_bucket` | string | no | `''` | Bucket des State-Objekts. Leer → kein Backup, mit Warnung. |
+| input  | `state_key` | string | no | `''` | Key des State-Objekts im Bucket. |
+| input  | `state_workspace_key_prefix` | string | no | `env:` | Praefix fuer Nicht-Default-Workspaces (`<prefix>/<workspace>/<key>`). |
+| input  | `state_workspace` | string | no | `default` | OpenTofu-Workspace des States. |
+| input  | `state_endpoint` | string | no | `''` | Endpoint-URL fuer S3-kompatible Backends (leer → AWS). |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. MUSS in beiden Stufen dieselben Labels tragen. |
+| output | `destroyed` | string | — | — | `true`, wenn die zweite Stufe durchlief. LEER nach der ersten Stufe und bei jedem Abbruch. |
+| output | `summary_line` | string | — | — | Die Zusammenfassungszeile von Plan bzw. Apply. |
+| output | `destroy_status` | string | — | — | `planned`, `success`, `failed`, oder LEER bei einem Abbruch davor. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `tf_encryption_passphrase` | — | yes | — | Passphrase fuer die native Plan- und State-Verschluesselung. In beiden Stufen dieselbe. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
+
 ### `tofu-plan.yml`
 
 **Vertrauensgrenze — vor dem Einbau lesen.** Dieses Atom fuehrt die

@@ -1,0 +1,514 @@
+# .github/workflows/tofu-destroy.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  plan_run_id, confirm, allowed_refs, working_directory,
+#            concurrency_key, max_plan_age_minutes, tofu_version,
+#            backend_config, lock_timeout, plan_retention_days, state_bucket,
+#            state_key, state_workspace_key_prefix, state_workspace,
+#            state_endpoint, backup_retention_days, runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key,
+#            tf_encryption_passphrase, backend_access_key, backend_secret_key,
+#            tf_vars
+#   outputs: destroyed, summary_line, destroy_status
+#
+# ZWEI DISPATCHES, EIN ATOM.
+#
+#   Erster Aufruf, OHNE plan_run_id:
+#     `tofu plan -destroy` laeuft, das Ergebnis landet in der Step-Summary und
+#     als verschluesseltes Artefakt — dann haelt das Atom an. Es wird NICHTS
+#     zerstoert. Der Lauf ist gruen, denn Anhalten ist hier der Erfolgsfall.
+#
+#   Zweiter Aufruf, MIT plan_run_id und confirm:
+#     dieselben vier Vorpruefungen wie beim Apply, dann `apply` des
+#     GESPEICHERTEN Destroy-Plans.
+#
+#   Kein `tofu destroy -auto-approve`: sonst fuehrte der zweite Dispatch einen
+#   neu berechneten Vorgang aus statt des freigegebenen.
+#
+# DREI RIEGEL, die tofu-apply so nicht hat:
+#
+#   1. Nur `workflow_dispatch`. Kein push, kein schedule — es gibt keinen
+#      Automatismus, bei dem das Abraeumen einer Umgebung die richtige Antwort
+#      waere.
+#   2. `allowed_refs`. Ein Destroy von einem beliebigen Feature-Branch waere
+#      ein Weg, die Reviews zu umgehen, die am Default-Branch haengen.
+#   3. `confirm` muss woertlich `DESTROY <owner/repo> <concurrency_key>`
+#      lauten. Nur das Verzeichnis abzutippen waere zu schwach — das hiesse
+#      meist "tippe tofu".
+name: tofu-destroy
+on:
+  workflow_call:
+    inputs:
+      plan_run_id:
+        description: >-
+          Leer → erste Stufe: Destroy-Plan erzeugen und anhalten. Gesetzt →
+          zweite Stufe: den Plan aus jenem Lauf anwenden.
+        required: false
+        type: string
+        default: ''
+      confirm:
+        description: >-
+          In der zweiten Stufe Pflicht. Muss woertlich
+          `DESTROY <owner/repo> <concurrency_key>` lauten; die erste Stufe
+          nennt den exakten Text in ihrer Summary.
+        required: false
+        type: string
+        default: ''
+      allowed_refs:
+        description: >-
+          Newline-separated Liste erlaubter `github.ref`-Werte. Default ist
+          allein der Default-Branch.
+        required: false
+        type: string
+        default: 'refs/heads/main'
+      working_directory:
+        description: 'OpenTofu stack directory.'
+        required: false
+        type: string
+        default: 'tofu'
+      concurrency_key:
+        description: 'Identitaet des States. Leer → working_directory.'
+        required: false
+        type: string
+        default: ''
+      max_plan_age_minutes:
+        description: 'Wie alt der Destroy-Plan hoechstens sein darf.'
+        required: false
+        type: number
+        default: 120
+      tofu_version:
+        description: 'Override OpenTofu version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      backend_config:
+        description: >-
+          Newline-separated `-backend-config=` arguments. Credentials do NOT
+          belong here — use the secrets.
+        required: false
+        type: string
+        default: ''
+      lock_timeout:
+        description: >-
+          Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst
+          NICHT.
+        required: false
+        type: string
+        default: '60s'
+      plan_retention_days:
+        description: 'Retention des Destroy-Plan-Artefakts in Tagen.'
+        required: false
+        type: number
+        default: 3
+      backup_retention_days:
+        description: 'Retention des State-Backups in Tagen.'
+        required: false
+        type: number
+        default: 7
+      state_bucket:
+        description: >-
+          Bucket des State-Objekts. Leer → kein Backup, mit Warnung. Beim
+          Destroy waere das besonders unklug: danach gibt es die Ressourcen
+          nicht mehr, aus denen sich der State rekonstruieren liesse.
+        required: false
+        type: string
+        default: ''
+      state_key:
+        description: 'Key des State-Objekts im Bucket.'
+        required: false
+        type: string
+        default: ''
+      state_workspace_key_prefix:
+        description: 'Praefix fuer Nicht-Default-Workspaces (`<prefix>/<workspace>/<key>`).'
+        required: false
+        type: string
+        default: 'env:'
+      state_workspace:
+        description: 'OpenTofu-Workspace des States.'
+        required: false
+        type: string
+        default: 'default'
+      state_endpoint:
+        description: 'Endpoint-URL fuer S3-kompatible Backends (leer → AWS).'
+        required: false
+        type: string
+        default: ''
+      runs_on:
+        description: >-
+          JSON-encoded array of runner labels. MUSS in beiden Stufen dieselben
+          Labels tragen: ein gespeicherter Plan uebersteht keinen Wechsel
+          zwischen amd64 und arm64.
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      destroyed:
+        description: >-
+          `true`, wenn die zweite Stufe durchlief. LEER nach der ersten Stufe
+          (dort wird bewusst nichts zerstoert) und bei jedem Abbruch.
+        value: ${{ jobs.destroy.outputs.destroyed }}
+      summary_line:
+        description: 'Die Zusammenfassungszeile von Plan bzw. Apply.'
+        value: ${{ jobs.destroy.outputs.summary_line }}
+      destroy_status:
+        description: '`planned`, `success`, `failed`, oder LEER bei einem Abbruch davor.'
+        value: ${{ jobs.destroy.outputs.destroy_status }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+      tf_encryption_passphrase:
+        required: true
+        description: >-
+          Passphrase fuer die native Plan- und State-Verschluesselung. In
+          beiden Stufen dieselbe, sonst laesst sich der Plan nicht
+          entschluesseln.
+      backend_access_key:
+        required: false
+        description: 'S3-compatible backend access key → AWS_ACCESS_KEY_ID.'
+      backend_secret_key:
+        required: false
+        description: 'S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY.'
+      tf_vars:
+        required: false
+        description: 'Newline-separated KEY=VALUE pairs, exported as TF_VAR_key.'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  # `mutate`, gemeinsam mit apply und unlock: schreibende Laeufe serialisieren
+  # streng untereinander.
+  group: tofu-mutate-${{ github.repository }}-${{ inputs.concurrency_key || inputs.working_directory }}
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 60
+    outputs:
+      destroyed: ${{ steps.apply.outputs.exec_status == 'success' && 'true' || '' }}
+      summary_line: ${{ steps.apply.outputs.summary_line || steps.plan.outputs.summary_line }}
+      destroy_status: ${{ steps.apply.outputs.exec_status || (steps.plan.outputs.exec_status == 'success' && 'planned' || steps.plan.outputs.exec_status) }}
+    steps:
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      - name: Refuse to run outside a manual dispatch
+        working-directory: ${{ github.workspace }}
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" != "workflow_dispatch" ]]; then
+            echo "::error::tofu-destroy darf nur aus einem manuellen workflow_dispatch laufen, nicht unter '${EVENT}'" >&2
+            echo "::error::es gibt keinen Automatismus, bei dem das Abraeumen einer Umgebung die richtige Antwort waere" >&2
+            exit 1
+          fi
+
+      - name: Refuse to run from a ref outside the allowlist
+        working-directory: ${{ github.workspace }}
+        env:
+          ALLOWED: ${{ inputs.allowed_refs }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          ok=0
+          while IFS= read -r allowed; do
+            allowed="${allowed%$'\r'}"
+            [[ -z "${allowed// /}" ]] && continue
+            [[ "$REF" == "$allowed" ]] && ok=1
+          done <<< "$ALLOWED"
+          if [[ "$ok" != "1" ]]; then
+            echo "::error::tofu-destroy laeuft nur von den erlaubten Refs, dieser Lauf kommt von '${REF}'" >&2
+            echo "::error::ein Destroy von einem beliebigen Branch umginge die Reviews, die am Default-Branch haengen" >&2
+            exit 1
+          fi
+
+      # Nur in der zweiten Stufe: die erste zerstoert nichts und braucht
+      # deshalb keine Bestaetigung — sie LIEFERT sie.
+      - name: Verify the typed confirmation
+        if: inputs.plan_run_id != ''
+        working-directory: ${{ github.workspace }}
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          expected="DESTROY ${REPO} ${KEY}"
+          if [[ "$CONFIRM" != "$expected" ]]; then
+            echo "::error::confirm stimmt nicht. Erwartet wird woertlich:" >&2
+            echo "::error::  ${expected}" >&2
+            exit 1
+          fi
+          echo "Bestaetigung akzeptiert"
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+          persist-credentials: false
+
+      - name: Install OpenTofu toolchain
+        uses: ./.catalog/actions/setup-tofu-toolchain
+        with:
+          tofu_version: ${{ inputs.tofu_version }}
+
+      # ----- Erste Stufe: planen und anhalten -----
+      - name: Plan the destruction
+        if: inputs.plan_run_id == ''
+        id: plan
+        uses: ./.catalog/actions/tofu-stack-exec
+        with:
+          command: plan-destroy
+          working_directory: ${{ inputs.working_directory }}
+          backend_config: ${{ inputs.backend_config }}
+          lock_timeout: ${{ inputs.lock_timeout }}
+          tf_vars: ${{ secrets.tf_vars }}
+          encryption_passphrase: ${{ secrets.tf_encryption_passphrase }}
+          backend_access_key: ${{ secrets.backend_access_key }}
+          backend_secret_key: ${{ secrets.backend_secret_key }}
+
+      - name: Upload the encrypted destroy plan
+        if: inputs.plan_run_id == '' && steps.plan.outputs.exec_status == 'success'
+        uses: ./.catalog/actions/tofu-plan-artifact
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          concurrency_key: ${{ inputs.concurrency_key || inputs.working_directory }}
+          catalog_ref: ${{ steps.catalog-ref.outputs.ref }}
+          artifact_prefix: tofu-destroy
+          retention_days: ${{ inputs.plan_retention_days }}
+          encryption_passphrase: ${{ secrets.tf_encryption_passphrase }}
+
+      - name: Stop and explain the second dispatch
+        if: inputs.plan_run_id == '' && steps.plan.outputs.exec_status == 'success'
+        env:
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+          REPO: ${{ github.repository }}
+          LINE: ${{ steps.plan.outputs.summary_line }}
+        run: |
+          set -euo pipefail
+          # Bewusst KEIN Fehler: die erste Stufe ist erfolgreich, wenn sie
+          # angehalten hat. Ein rotes Ergebnis waere die falsche Aussage und
+          # verleitete dazu, den Lauf "zu reparieren".
+          {
+            echo ""
+            echo "### Es wurde nichts zerstoert"
+            echo ""
+            echo "Der Destroy-Plan (\`${LINE}\`) liegt als verschluesseltes Artefakt bereit."
+            echo "Ihn anzuwenden verlangt einen ZWEITEN Dispatch dieses Workflows mit:"
+            echo ""
+            echo '```'
+            echo "plan_run_id: ${GITHUB_RUN_ID}"
+            echo "confirm:     DESTROY ${REPO} ${KEY}"
+            echo '```'
+            echo ""
+            echo "Vorher den Plan oben lesen. Danach sind die Ressourcen weg."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::Erste Stufe abgeschlossen — nichts zerstoert. plan_run_id=${GITHUB_RUN_ID}"
+
+      # ----- Zweite Stufe: den freigegebenen Plan anwenden -----
+      - name: Compute the artifact name
+        if: inputs.plan_run_id != ''
+        id: artifact
+        env:
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+        run: |
+          set -euo pipefail
+          safe=$(printf '%s' "$KEY" | tr -c 'A-Za-z0-9._-' '-')
+          echo "name=tofu-destroy-${safe}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the destroy plan from the referenced run
+        if: inputs.plan_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.plan_run_id }}
+          NAME: ${{ steps.artifact.outputs.name }}
+        run: |
+          set -euo pipefail
+          if ! gh run download "$RUN_ID" --name "$NAME" --dir plan-artifact; then
+            echo "::error::Artefakt '${NAME}' liess sich aus Lauf ${RUN_ID} nicht laden" >&2
+            echo "::error::war das wirklich die erste Stufe dieses Atoms, und ist die Retention noch nicht abgelaufen?" >&2
+            exit 1
+          fi
+          test -f plan-artifact/plan-meta.json || { echo "::error::plan-meta.json fehlt im Artefakt" >&2; exit 1; }
+          test -f plan-artifact/tfplan || { echo "::error::tfplan fehlt im Artefakt" >&2; exit 1; }
+
+      - name: Preflight — four checks before tofu starts
+        if: inputs.plan_run_id != ''
+        id: preflight
+        env:
+          DIR: ${{ inputs.working_directory }}
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+          MAX_AGE: ${{ inputs.max_plan_age_minutes }}
+          CATALOG_REF: ${{ steps.catalog-ref.outputs.ref }}
+          PREFLIGHT: ${{ github.workspace }}/.catalog/scripts/tofu-apply-preflight.sh
+        run: |
+          set -euo pipefail
+          bash "$PREFLIGHT" plan-artifact/plan-meta.json \
+            "$DIR" "$KEY" "$CATALOG_REF" "$MAX_AGE" >> "$GITHUB_OUTPUT"
+          echo "Vorpruefungen bestanden"
+
+      - name: Warn when no state backup is configured
+        if: inputs.plan_run_id != '' && inputs.state_bucket == ''
+        run: |
+          echo "::warning::kein state_bucket gesetzt — dieser Destroy laeuft OHNE Wiederherstellungspunkt"
+          echo "::warning::beim Destroy wiegt das schwerer als beim Apply: danach gibt es die Ressourcen nicht mehr, aus denen sich der State rekonstruieren liesse"
+
+      - name: Back up the raw state object
+        if: inputs.plan_run_id != '' && inputs.state_bucket != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.backend_access_key }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.backend_secret_key }}
+          BUCKET: ${{ inputs.state_bucket }}
+          KEY_PATH: ${{ inputs.state_key }}
+          PREFIX: ${{ inputs.state_workspace_key_prefix }}
+          WORKSPACE: ${{ inputs.state_workspace }}
+          ENDPOINT: ${{ inputs.state_endpoint }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEY_PATH" ]]; then
+            echo "::error::state_bucket ist gesetzt, state_key fehlt" >&2
+            exit 1
+          fi
+          if [[ "$WORKSPACE" == "default" ]]; then
+            OBJ="$KEY_PATH"
+          else
+            OBJ="${PREFIX}/${WORKSPACE}/${KEY_PATH}"
+          fi
+          ARGS=()
+          [[ -n "$ENDPOINT" ]] && ARGS+=(--endpoint-url "$ENDPOINT")
+          aws "${ARGS[@]+"${ARGS[@]}"}" s3 cp "s3://${BUCKET}/${OBJ}" state-backup.enc
+          if jq -e '.serial' state-backup.enc >/dev/null 2>&1; then
+            echo "::error::das State-Objekt ist unverschluesselt — Backup wird NICHT hochgeladen" >&2
+            rm -f state-backup.enc
+            exit 1
+          fi
+          echo "State-Backup bereit ($(wc -c < state-backup.enc | tr -d ' ') Bytes, Chiffrat)"
+
+      - name: Upload the state backup
+        if: inputs.plan_run_id != '' && inputs.state_bucket != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tofu-state-backup-${{ github.run_id }}
+          path: state-backup.enc
+          if-no-files-found: error
+          retention-days: ${{ inputs.backup_retention_days }}
+
+      - name: Apply the saved destroy plan
+        if: inputs.plan_run_id != ''
+        id: apply
+        uses: ./.catalog/actions/tofu-stack-exec
+        with:
+          command: apply
+          working_directory: ${{ inputs.working_directory }}
+          backend_config: ${{ inputs.backend_config }}
+          plan_file: ${{ github.workspace }}/plan-artifact/tfplan
+          lock_timeout: ${{ inputs.lock_timeout }}
+          tf_vars: ${{ secrets.tf_vars }}
+          encryption_passphrase: ${{ secrets.tf_encryption_passphrase }}
+          backend_access_key: ${{ secrets.backend_access_key }}
+          backend_secret_key: ${{ secrets.backend_secret_key }}
+
+      - name: Summary
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+          STAGE: ${{ inputs.plan_run_id == '' && 'plan' || 'apply' }}
+          PLAN_STATUS: ${{ steps.plan.outputs.exec_status }}
+          APPLY_STATUS: ${{ steps.apply.outputs.exec_status }}
+          PLAN_LINE: ${{ steps.plan.outputs.summary_line }}
+          APPLY_LINE: ${{ steps.apply.outputs.summary_line }}
+          RUN_ID: ${{ inputs.plan_run_id }}
+          BUCKET: ${{ inputs.state_bucket }}
+        run: |
+          tofu_version=$(tofu version 2>/dev/null | head -1 | awk '{print $2}' || echo unknown)
+          if [[ "$STAGE" == "plan" ]]; then
+            if [[ "${PLAN_STATUS:-}" == "success" ]]; then
+              result="▲ geplant — nichts zerstoert"
+            else
+              result="✗ Destroy-Plan lief nicht durch"
+            fi
+            line="${PLAN_LINE:-unknown}"
+          else
+            if [[ "${APPLY_STATUS:-}" == "success" ]]; then
+              result="✓ zerstoert"
+            elif [[ -z "${APPLY_STATUS:-}" ]]; then
+              result="✗ Destroy lief nicht durch"
+            else
+              result="✗ Destroy fehlgeschlagen"
+            fi
+            line="${APPLY_LINE:-unknown}"
+          fi
+          {
+            echo "## tofu-destroy"
+            echo ""
+            echo "**Tool:** OpenTofu ${tofu_version}"
+            echo "**Phase:** ${STAGE}"
+            echo "**Working dir:** \`${DIR}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Stufe | ${STAGE} |"
+            echo "| Plan aus Lauf | ${RUN_ID:-—} |"
+            echo "| State-Backup | ${BUCKET:-nicht konfiguriert} |"
+            echo "| Summary | ${line} |"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Preserve errored.tfstate and clean up
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+        run: |
+          if [[ -f "$DIR/errored.tfstate" ]]; then
+            echo "::error::errored.tfstate liegt vor — der State wurde NICHT ins Backend zurueckgeschrieben"
+            echo "::error::NICHT erneut destroyen: erst den State wiederherstellen, Runbook in docs/operations.md"
+          fi
+          rm -rf plan-artifact || true
+          rm -f state-backup.enc apply.txt apply.err plan.txt plan.err plan-meta.json || true
+          rm -f "$DIR/tfplan" || true
+          rm -f "$RUNNER_TEMP/tf-vars.env" "$RUNNER_TEMP/tofu-encryption.hcl" || true
+          echo "Aufgeraeumt"
