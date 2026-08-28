@@ -68,6 +68,8 @@ jobs:
         run: python3 tests/conventions/check-template-scalar-quoting.py
       - name: Check every runner-selecting job rejects an empty runs_on
         run: python3 tests/conventions/check-runs-on-guard.py
+      - name: Check every Renovate marker is picked up by a customManager
+        run: python3 tests/conventions/check-renovate-markers.py
       - name: Check reusable-workflow callers grant enough permissions
         run: python3 tests/conventions/check-reusable-permissions.py
 
@@ -79,21 +81,11 @@ jobs:
       - name: Validate renovate.json5
         run: npx --yes --package renovate renovate-config-validator .github/renovate.json5
 
-  trivy-renovate-annotation-check:
-    # Verify the customManagers regex still matches the # renovate: comment
-    # in install-trivy/action.yml. Catches regression where someone reformats
-    # the comment in a way that breaks the parser.
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - name: Check that Renovate would detect TRIVY_VERSION
-        run: |
-          set -e
-          PATTERN='# renovate: datasource=github-releases depName=aquasecurity/trivy'
-          grep -A1 "$PATTERN" actions/install-trivy/action.yml \
-            | grep -E "TRIVY_VERSION: '[0-9]+\.[0-9]+\.[0-9]+'" \
-            || { echo "::error::Renovate annotation broken in install-trivy"; exit 1; }
+  # trivy-renovate-annotation-check ist entfallen (Backlog-Punkt PERF-6 aus
+  # specs/2026-05-22-phase-5-design.md). Der Job prüfte genau EINEN Marker per
+  # grep; tests/conventions/check-renovate-markers.py prüft alle und läuft in
+  # der Konventionskette oben mit. Ausgerechnet dieser Marker war nie das
+  # Problem — dreizehn andere hatten gar keinen Manager.
 
   shell-tests:
     # Run bats unit tests for the catalog's shell scripts (onboard-detect,

@@ -31,6 +31,22 @@
       matchDepNames: ['helm-unittest/helm-unittest'],
       allowedVersions: '<1.1.0',
     },
+    {
+      // Trivy taggt `v0.70.0`, der Pin traegt `0.70.0`. Stand frueher als
+      // extractVersionTemplate im namentlichen Trivy-Manager; der generische
+      // Manager kennt keine Sonderfaelle, also gehoert es hierher.
+      description: 'Trivy tags with a leading v, the pin does not',
+      matchDepNames: ['aquasecurity/trivy'],
+      extractVersion: '^v(?<version>.*)$',
+    },
+    {
+      // kustomize taggt `kustomize/v5.5.0`. Stand frueher inline im Marker in
+      // actions/setup-kube-toolchain/action.yml — der generische Manager liest
+      // es dort nicht mehr aus.
+      description: 'kustomize tags are prefixed with the module path',
+      matchDepNames: ['kubernetes-sigs/kustomize'],
+      extractVersion: '^kustomize/v(?<version>.+)$',
+    },
   ],
   customManagers: [
     {
@@ -40,84 +56,31 @@
       // `fileMatch` until upstream sorts this out.
       //
       // NOTE: matchStrings are compiled WITHOUT the `m` flag, so `$` means
-      // end-of-INPUT, not end-of-line. A trailing `['"]?\s*$` therefore only
-      // matches a value on the LAST line of the file and can never match a
-      // mid-file `KEY: 'value'` — these four managers never produced a PR
-      // until this fix. Terminate on `['"]?\s` (a single following
-      // whitespace/newline char) instead; the lazy `\S+?` capture still
-      // stops before the closing quote.
+      // end-of-INPUT, not end-of-line. Terminate on `['"]?\s` (a single
+      // following whitespace/newline char), never on `['"]?\s*$` — the latter
+      // only ever matches a value on the LAST line of a file.
+      //
+      // EIN generischer Manager statt sechs namentlicher: datasource und
+      // depName stehen bereits im Marker selbst, depNameTemplate und
+      // datasourceTemplate entfallen deshalb. Ein neues Werkzeug braucht
+      // damit nur noch seinen Marker, keinen Eintrag hier — und genau das
+      // war die Fehlerquelle: 13 von 21 Markern hatten keinen Manager und
+      // wurden nie aktualisiert. tests/conventions/check-renovate-markers.py
+      // haelt das fest.
       customType: 'regex',
       fileMatch: [
         '^\\.github/workflows/.+\\.ya?ml$',
         '^actions/.+/action\\.ya?ml$',
       ],
       matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*TRIVY_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
+        // Form 1 — einzeilig: KEY_VERSION: 'wert' direkt unter dem Marker.
+        // `[^\n]*` schluckt ein optionales `extractVersion=` im Marker; der
+        // Wert dafuer steht in packageRules, nicht hier.
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)[^\\n]*\\n\\s*[A-Za-z_]+_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
+        // Form 2 — mehrzeilig: Input-Default einige Zeilen unter dem Marker.
+        // `[\s\S]*?` ueberbrueckt description/required/type ohne dotall-Flag.
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)[^\\n]*\\n\\s*[a-z_]+_version:[\\s\\S]*?default:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
       ],
-      datasourceTemplate: 'github-releases',
-      depNameTemplate: 'aquasecurity/trivy',
-      extractVersionTemplate: '^v(?<version>.*)$',
-    },
-    {
-      customType: 'regex',
-      fileMatch: [
-        '^\\.github/workflows/.+\\.ya?ml$',
-        '^actions/.+/action\\.ya?ml$',
-      ],
-      matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*KIND_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
-      ],
-      datasourceTemplate: 'github-releases',
-      depNameTemplate: 'kubernetes-sigs/kind',
-    },
-    {
-      customType: 'regex',
-      fileMatch: [
-        '^\\.github/workflows/.+\\.ya?ml$',
-        '^actions/.+/action\\.ya?ml$',
-      ],
-      matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*KUBECTL_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
-      ],
-      datasourceTemplate: 'github-releases',
-      depNameTemplate: 'kubernetes/kubernetes',
-    },
-    {
-      customType: 'regex',
-      fileMatch: [
-        '^\\.github/workflows/.+\\.ya?ml$',
-        '^actions/.+/action\\.ya?ml$',
-      ],
-      matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*CILIUM_CLI_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
-      ],
-      datasourceTemplate: 'github-releases',
-      depNameTemplate: 'cilium/cilium-cli',
-    },
-    {
-      // Matches the `helm_version:` input default used by lint-helm.yml,
-      // helm-publish.yml, and e2e-kind.yml. `[\s\S]*?` spans the
-      // description/required/type lines between the input key and its
-      // `default:` value without needing a dotall flag.
-      customType: 'regex',
-      fileMatch: [
-        '^\\.github/workflows/.+\\.ya?ml$',
-        '^actions/.+/action\\.ya?ml$',
-      ],
-      matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*helm_version:[\\s\\S]*?default:\\s*[\'"]?(?<currentValue>v\\S+?)[\'"]?\\s',
-      ],
-      datasourceTemplate: 'github-releases',
-      depNameTemplate: 'helm/helm',
-    },
-    {
-      customType: 'regex',
-      fileMatch: ['^\\.github/workflows/lint-helm\\.ya?ml$'],
-      matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*HELM_UNITTEST_VERSION:\\s*[\'"]?(?<currentValue>v\\S+?)[\'"]?\\s',
-      ],
-      datasourceTemplate: 'github-releases',
-      depNameTemplate: 'helm-unittest/helm-unittest',
     },
   ],
 }
