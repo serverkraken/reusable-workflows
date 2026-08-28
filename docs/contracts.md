@@ -573,6 +573,47 @@ Lock-ID auch in der Bestaetigung, und das Atom laeuft in derselben
 | secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 
+### `tofu-drift.yml`
+
+**Was es findet, das ein PR-Plan nicht findet:** Aenderungen, die niemand ueber
+den Code gemacht hat — ein von Hand vergroesserter Server, eine „kurz mal"
+angepasste Firewall-Regel. Ohne geplanten Lauf faellt das erst im naechsten PR
+auf, als Ueberraschung mitten in einem unbeteiligten Review.
+
+**Nicht zu verwechseln mit `drift-check.yml`** im Katalog: das prueft, ob
+Adopter auf einer veralteten Katalogversion stehen. Dieses Atom prueft die
+Infrastruktur eines Adopters gegen seinen eigenen Code.
+
+**Kein eigenes `schedule:`.** Ein Cron in der Atom-Datei liefe im Katalog-Repo,
+nicht beim Adopter — der Zeitplan gehoert in den aufrufenden Workflow.
+
+**Das rollende Issue wird auch wieder geschlossen,** sobald der Drift
+verschwunden ist. Ohne diesen Rueckweg bliebe ein Issue offen, dessen Ursache
+laengst behoben ist — und ein Issue, das immer offen steht, liest irgendwann
+niemand mehr. Der Titel `<issue_title_prefix>: <concurrency_key>` ist der
+Schluessel; ihn nachtraeglich zu aendern erzeugt ein ZWEITES Issue.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States. Leer → working_directory. Geht auch in den Issue-Titel. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Der Drift-Lauf nimmt den Lock, um kein Zwischenbild zu melden. |
+| input  | `issue_label` | string | no | `tofu-drift` | Label des rollenden Issues. |
+| input  | `issue_title_prefix` | string | no | `OpenTofu-Drift` | Titelpraefix; der Titel dient als Schluessel. |
+| input  | `fail_on_drift` | boolean | no | `false` | Den Job rot faerben, wenn Drift besteht. Default aus: ein nightly, das dauerhaft rot steht, liest niemand mehr. |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `has_changes` | string | — | — | `true` bei Drift, `false` ohne, LEER wenn der Plan nicht durchlief. |
+| output | `summary_line` | string | — | — | Die Plan-Zusammenfassung. |
+| output | `issue_number` | string | — | — | Nummer des offenen Drift-Issues; LEER ohne Drift. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `tf_encryption_passphrase` | — | no | — | Faktisch Pflicht, sobald der Adopter seinen State verschluesselt. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
+
 ### `tofu-plan.yml`
 
 **Vertrauensgrenze — vor dem Einbau lesen.** Dieses Atom fuehrt die
