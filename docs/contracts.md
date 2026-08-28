@@ -868,6 +868,30 @@ Dafür — und nur dafür — gibt es `allow_unencrypted_fallback: 'true'`. Gena
 Lauf lang; der Schalter setzt eine `::warning::`, weil er den Schutz aufhebt, ohne
 dass etwas rot wird.
 
+### `actions/tofu-plan-artifact`
+
+Legt einen gespeicherten Plan als Artefakt ab — mit dem Riegel, dass er
+verschluesselt sein MUSS. Genutzt von `tofu-plan.yml` (`emit_plan`) und
+`tofu-destroy.yml` (erste Stufe).
+
+Der Nachweis ist das **fehlschlagende Lesen ohne Schluessel**, nicht ein Test auf
+den Metadaten-Praefix: `encrypted_metadata_alias` kann ihn umbenennen, und ein
+Klartext-JSON kann ihn nachbauen.
+
+Der Artefaktname wird normalisiert (alles ausserhalb von `[A-Za-z0-9._-]` wird zu
+`-`), weil Artefaktnamen keinen Schraegstrich enthalten duerfen, ein Stack-Pfad
+aber im Normalfall einen traegt. Die Apply-Seite muss dieselbe Regel anwenden.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `working_directory` | string | yes | — | Stack-Verzeichnis; dort liegt die tfplan. |
+| input | `concurrency_key` | string | yes | — | State-Identitaet; geht in Artefaktnamen und Metadaten. |
+| input | `catalog_ref` | string | yes | — | Ausgecheckte Katalog-Revision; der Apply vergleicht sie. |
+| input | `artifact_prefix` | string | no | `'tofu-plan'` | Praefix des Artefaktnamens (tofu-plan \| tofu-destroy). |
+| input | `retention_days` | string | no | `'3'` | Retention des Artefakts in Tagen. |
+| input | `encryption_passphrase` | string | yes | — | Muss gesetzt sein; ohne Verschluesselung wird der Upload verweigert. |
+| output | `artifact_name` | string | — | — | Name des hochgeladenen Artefakts. |
+
 ### `actions/setup-python-deps`
 
 | Kind   | Name | Type | Required | Default | Description |

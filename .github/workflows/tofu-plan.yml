@@ -359,97 +359,19 @@ jobs:
       # PR-Kommentar und loest tofu-apply mit der Run-ID DIESES Laufes aus.
       # Ueber Laufgrenzen vertretbar ist das nur, weil die tfplan nativ
       # verschluesselt ist — im Klartext waere sie ein herunterladbares Leck.
-      - name: Verify the plan is encrypted before uploading it
-        if: >-
-          steps.fork.outputs.is_fork == 'false' && inputs.emit_plan
-          && steps.plan.outputs.exec_status == 'success'
-        env:
-          DIR: ${{ inputs.working_directory }}
-          PASSPHRASE: ${{ secrets.tf_encryption_passphrase }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${PASSPHRASE:-}" ]]; then
-            echo "::error::emit_plan verlangt das Secret tf_encryption_passphrase — ohne Verschluesselung traegt die tfplan sensitive-Werte im Klartext" >&2
-            exit 1
-          fi
-          # Der Nachweis ist, dass ein Lesen OHNE Schluessel scheitert. Ein
-          # Test auf den Metadaten-Praefix waere faelschbar
-          # (encrypted_metadata_alias benennt ihn um, Klartext-JSON faelscht ihn).
-          #
-          # `show tfplan`, NICHT `show "$DIR/tfplan"`: -chdir aendert das
-          # Arbeitsverzeichnis von tofu, der Pfad ist also schon relativ dazu.
-          # Mit $DIR davor suchte tofu in $DIR/$DIR — der Aufruf schluege am
-          # PFAD fehl, und dieser Riegel schlosse daraus faelschlich
-          # "verschluesselt". Ein Fail-open im Sicherheitscheck selbst.
-          if env -u TF_ENCRYPTION tofu -chdir="$DIR" show tfplan >/dev/null 2>&1; then
-            echo "::error::die tfplan liess sich OHNE Schluessel lesen — sie ist nicht verschluesselt, Upload verweigert" >&2
-            exit 1
-          fi
-          echo "Plan ist verschluesselt (Lesen ohne Schluessel schlaegt fehl)"
-
-      - name: Write plan metadata
-        if: >-
-          steps.fork.outputs.is_fork == 'false' && inputs.emit_plan
-          && steps.plan.outputs.exec_status == 'success'
-        env:
-          DIR: ${{ inputs.working_directory }}
-          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
-          CATALOG_REF: ${{ steps.catalog-ref.outputs.ref }}
-        run: |
-          set -euo pipefail
-          # Der Vertrag zwischen Plan- und Apply-Lauf. tofu-apply prueft jedes
-          # Feld, bevor es tofu ueberhaupt startet — insbesondere catalog_ref:
-          # Adopter pinnen den beweglichen v4, und laeuft der Apply Stunden
-          # spaeter, kann v4 weitergerueckt sein.
-          tofu_version=$(tofu version | head -1 | awk '{print $2}')
-          created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          jq -n \
-            --arg wd "$DIR" \
-            --arg key "$KEY" \
-            --arg ref "$CATALOG_REF" \
-            --arg ver "$tofu_version" \
-            --arg sha "$GITHUB_SHA" \
-            --arg created "$created_at" \
-            --arg run "$GITHUB_RUN_ID" \
-            '{working_directory:$wd, concurrency_key:$key, catalog_ref:$ref,
-              tofu_version:$ver, adopter_sha:$sha, created_at:$created, run_id:$run}' \
-            > plan-meta.json
-          cat plan-meta.json
-
-      # Artefaktnamen duerfen weder `/` noch `\ : < > | * ? "` enthalten —
-      # working_directory ist aber ein Pfad und traegt im Normalfall einen
-      # Schraegstrich. Der Name wird deshalb normalisiert, nach genau
-      # derselben Regel wie in tofu-apply.yml: alles ausserhalb von
-      # [A-Za-z0-9._-] wird zu `-`. Weicht eine der beiden Seiten davon ab,
-      # findet der Apply das Artefakt nicht mehr.
-      - name: Compute the artifact name
-        if: >-
-          steps.fork.outputs.is_fork == 'false' && inputs.emit_plan
-          && steps.plan.outputs.exec_status == 'success'
-        id: artifact
-        env:
-          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
-        run: |
-          set -euo pipefail
-          safe=$(printf '%s' "$KEY" | tr -c 'A-Za-z0-9._-' '-')
-          echo "name=tofu-plan-${safe}" >> "$GITHUB_OUTPUT"
-          echo "Artefakt: tofu-plan-${safe}"
-
+      # Die Composite verweigert den Upload, wenn sie es nicht ist.
       - name: Upload the encrypted plan
         if: >-
           steps.fork.outputs.is_fork == 'false' && inputs.emit_plan
           && steps.plan.outputs.exec_status == 'success'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: ./.catalog/actions/tofu-plan-artifact
         with:
-          name: ${{ steps.artifact.outputs.name }}
-          # Die Pfade sind Workspace-relativ, nicht tofu-relativ: `-chdir`
-          # aendert nur das Arbeitsverzeichnis von tofu. Die tfplan liegt
-          # deshalb unter $DIR, plan-meta.json im Workspace-Wurzelverzeichnis.
-          path: |
-            ${{ inputs.working_directory }}/tfplan
-            plan-meta.json
-          if-no-files-found: error
-          retention-days: ${{ inputs.plan_retention_days }}
+          working_directory: ${{ inputs.working_directory }}
+          concurrency_key: ${{ inputs.concurrency_key || inputs.working_directory }}
+          catalog_ref: ${{ steps.catalog-ref.outputs.ref }}
+          artifact_prefix: tofu-plan
+          retention_days: ${{ inputs.plan_retention_days }}
+          encryption_passphrase: ${{ secrets.tf_encryption_passphrase }}
 
       - name: Render plan as JSON
         if: steps.fork.outputs.is_fork == 'false' && inputs.plan_json
