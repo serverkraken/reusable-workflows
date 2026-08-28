@@ -320,6 +320,11 @@ jobs:
         with:
           tofu_version: ${{ inputs.tofu_version }}
 
+      # Die Vorpruefungen liegen in scripts/, nicht inline: hier haengt dran,
+      # ob ein fremder oder veralteter Plan angewandt wird. Inline waere die
+      # Logik nur ueber einen echten Workflow-Lauf pruefbar, und die
+      # Altersgrenze gar nicht — ein frisch erzeugter Plan ist null Minuten
+      # alt. tests/shell/tofu-apply-preflight.bats deckt alle vier Faelle ab.
       - name: Preflight — four checks before tofu starts
         id: preflight
         env:
@@ -327,57 +332,12 @@ jobs:
           KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
           MAX_AGE: ${{ inputs.max_plan_age_minutes }}
           CATALOG_REF: ${{ steps.catalog-ref.outputs.ref }}
+          PREFLIGHT: ${{ github.workspace }}/.catalog/scripts/tofu-apply-preflight.sh
         run: |
           set -euo pipefail
-          meta=plan-artifact/plan-meta.json
-
-          got_dir=$(jq -r '.working_directory' "$meta")
-          got_key=$(jq -r '.concurrency_key' "$meta")
-          got_ref=$(jq -r '.catalog_ref' "$meta")
-          got_ver=$(jq -r '.tofu_version' "$meta")
-          created=$(jq -r '.created_at' "$meta")
-
-          # 1. Stack.
-          if [[ "$got_dir" != "$DIR" ]]; then
-            echo "::error::der Plan gehoert zu Stack '${got_dir}', angewandt werden soll '${DIR}'" >&2
-            exit 1
-          fi
-
-          # 2. State-Identitaet.
-          if [[ "$got_key" != "$KEY" ]]; then
-            echo "::error::der Plan gehoert zu State '${got_key}', angewandt werden soll '${KEY}'" >&2
-            exit 1
-          fi
-
-          # 3. Katalog-Revision. Bewusst VERGLEICHEN und abbrechen, statt den
-          #    Katalog auf den alten SHA zurueckzuchecken: einen Plan mit
-          #    veralteter Katalogversion anzuwenden hiesse, einen womoeglich
-          #    bereits behobenen Fehler noch einmal auszufuehren. Neu planen
-          #    ist billig, ein falscher Apply nicht.
-          if [[ "$got_ref" != "$CATALOG_REF" ]]; then
-            echo "::error::der Plan entstand mit Katalog-Ref '${got_ref}', dieser Lauf nutzt '${CATALOG_REF}'" >&2
-            echo "::error::neu planen, statt einen Plan fremder Katalogversion anzuwenden" >&2
-            exit 1
-          fi
-
-          # 4. Alter.
-          now=$(date -u +%s)
-          # GNU date auf den Linux-Runnern; der Python-Zweig ist der Rueckfall
-          # fuer alles, was `-d` nicht kennt.
-          then_ts=$(date -u -d "$created" +%s 2>/dev/null || python3 -c "
-          import datetime, sys
-          stamp = datetime.datetime.strptime(sys.argv[1], '%Y-%m-%dT%H:%M:%SZ')
-          print(int(stamp.replace(tzinfo=datetime.timezone.utc).timestamp()))
-          " "$created")
-          age=$(( (now - then_ts) / 60 ))
-          if (( age > MAX_AGE )); then
-            echo "::error::der Plan ist ${age} Minuten alt, erlaubt sind ${MAX_AGE} — neu planen" >&2
-            exit 1
-          fi
-
-          echo "age_minutes=${age}" >> "$GITHUB_OUTPUT"
-          echo "plan_tofu_version=${got_ver}" >> "$GITHUB_OUTPUT"
-          echo "Vorpruefungen bestanden — Plan ist ${age} Minuten alt, erzeugt mit OpenTofu ${got_ver}"
+          bash "$PREFLIGHT" plan-artifact/plan-meta.json \
+            "$DIR" "$KEY" "$CATALOG_REF" "$MAX_AGE" >> "$GITHUB_OUTPUT"
+          echo "Vorpruefungen bestanden"
 
       - name: Warn when no state backup is configured
         if: inputs.state_bucket == ''

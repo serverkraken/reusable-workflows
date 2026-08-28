@@ -1104,6 +1104,125 @@ jobs:
           [[ "$fail" == "0" ]] || exit 1
           echo "tofu-validate hat den kaputten Stack korrekt abgelehnt (1 Stack geprueft)"
 
+  # ----- tofu-apply: Vorpruefung "falscher Stack" -----
+  #
+  # Der Plan entsteht fuer tofu-apply-local, der Apply fordert
+  # tofu-plan-local an. Die erste Vorpruefung muss abbrechen, BEVOR tofu
+  # laeuft — sonst wuerde ein Plan auf einen fremden Stack angewandt.
+  #
+  # Die uebrigen drei Vorpruefungen (State-Identitaet, Katalog-Ref, Alter)
+  # sind hier nicht ausloesbar: ein frisch erzeugter Plan ist null Minuten
+  # alt und traegt zwangslaeufig die Ref dieses Laufs. Sie werden in
+  # tests/shell/tofu-apply-preflight.bats geprueft, wo sich die Zeit stellen
+  # laesst.
+  emit-plan-for-wrong-stack:
+    uses: ./.github/workflows/tofu-plan.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      working_directory: tests/fixtures/tofu-apply-local
+      lock: false
+      comment_on_pr: false
+      emit_plan: true
+      concurrency_key: nightly-wrong-stack
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  test-tofu-apply-wrong-stack:
+    needs: [emit-plan-for-wrong-stack]
+    uses: ./.github/workflows/tofu-apply.yml
+    permissions:
+      contents: read
+      actions: read
+    with:
+      # Absichtlich der ANDERE Stack.
+      working_directory: tests/fixtures/tofu-plan-local
+      concurrency_key: nightly-wrong-stack
+      plan_run_id: ${{ github.run_id }}
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  assert-tofu-apply-wrong-stack:
+    needs: [emit-plan-for-wrong-stack, test-tofu-apply-wrong-stack]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Das Atom muss den fremden Plan ablehnen
+        env:
+          RESULT: ${{ needs.test-tofu-apply-wrong-stack.result }}
+          PLAN_RESULT: ${{ needs.emit-plan-for-wrong-stack.result }}
+          APPLIED: ${{ needs.test-tofu-apply-wrong-stack.outputs.applied }}
+        run: |
+          set -euo pipefail
+          fail=0
+          # `result == failure` allein wuerde auch einen gescheiterten
+          # Toolchain-Download als "das Gate greift" melden. Der Plan-Job muss
+          # deshalb ERFOLGREICH gewesen sein: dann existiert das Artefakt, und
+          # der Apply ist tatsaechlich bis zur Vorpruefung gekommen.
+          if [[ "$PLAN_RESULT" != "success" ]]; then
+            echo "::error::der Plan-Job scheiterte ('${PLAN_RESULT}') — die Ablehnung des Applys ist damit unbewiesen" >&2
+            fail=1
+          fi
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::erwartet 'failure' fuer einen Plan des falschen Stacks, bekam '${RESULT}'" >&2
+            fail=1
+          fi
+          if [[ -n "$APPLIED" ]]; then
+            echo "::error::applied='${APPLIED}' — der Apply lief an, obwohl die Vorpruefung haette abbrechen muessen" >&2
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "tofu-apply hat den Plan des falschen Stacks korrekt abgelehnt"
+
+  # ----- tofu-plan: emit_plan ohne Verschluesselungsschluessel -----
+  #
+  # Ohne Passphrase traegt die tfplan sensitive-Werte im Klartext. Der Upload
+  # muss verweigert werden — ein Artefakt waere fuer jeden mit Leserecht
+  # herunterladbar. secrets werden hier einzeln uebergeben statt `inherit`,
+  # damit tf_encryption_passphrase wirklich fehlt.
+  test-tofu-plan-emit-without-key:
+    uses: ./.github/workflows/tofu-plan.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      working_directory: tests/fixtures/tofu-apply-local
+      lock: false
+      comment_on_pr: false
+      emit_plan: true
+      concurrency_key: nightly-nokey
+      runs_on: '["ubuntu-latest"]'
+    secrets:
+      release_please_app_client_id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+      release_please_app_private_key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+  assert-tofu-plan-emit-without-key:
+    needs: test-tofu-plan-emit-without-key
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Der Upload muss ohne Schluessel verweigert werden
+        env:
+          RESULT: ${{ needs.test-tofu-plan-emit-without-key.result }}
+          PLAN_STATUS: ${{ needs.test-tofu-plan-emit-without-key.outputs.plan_status }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::erwartet 'failure' fuer emit_plan ohne Passphrase, bekam '${RESULT}'" >&2
+            fail=1
+          fi
+          # plan_status beweist, dass der PLAN durchlief und erst der
+          # Verschluesselungs-Riegel zuschlug. Ohne diese Zeile koennte auch
+          # ein Fehler im Backend-Init als "das Gate greift" durchgehen.
+          if [[ "$PLAN_STATUS" != "success" ]]; then
+            echo "::error::plan_status='${PLAN_STATUS}' — der Lauf scheiterte vor dem Riegel, die Verweigerung ist unbewiesen" >&2
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "tofu-plan hat den Upload ohne Verschluesselungsschluessel korrekt verweigert"
+
   # ----- secret-scan: fail-path -----
   # Planted-secret fixture (AWS access key in a tracked file) → gitleaks
   # detect finds it → findings_count > 0 → with fail_on_findings (default
@@ -1234,6 +1353,8 @@ jobs:
       - assert-kube-validate-fail
       - assert-kube-lint-fail
       - assert-tofu-validate-fail
+      - assert-tofu-apply-wrong-stack
+      - assert-tofu-plan-emit-without-key
       - assert-chart-image-bump-fail
       - assert-secret-scan-fail
       - assert-build-flutter-android-fail
