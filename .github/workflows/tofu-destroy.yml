@@ -242,22 +242,6 @@ jobs:
 
       # Nur in der zweiten Stufe: die erste zerstoert nichts und braucht
       # deshalb keine Bestaetigung — sie LIEFERT sie.
-      - name: Verify the typed confirmation
-        if: inputs.plan_run_id != ''
-        working-directory: ${{ github.workspace }}
-        env:
-          CONFIRM: ${{ inputs.confirm }}
-          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          expected="DESTROY ${REPO} ${KEY}"
-          if [[ "$CONFIRM" != "$expected" ]]; then
-            echo "::error::confirm stimmt nicht. Erwartet wird woertlich:" >&2
-            echo "::error::  ${expected}" >&2
-            exit 1
-          fi
-          echo "Bestaetigung akzeptiert"
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -290,6 +274,25 @@ jobs:
           token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
           persist-credentials: false
+
+      # Die Bestaetigungslogik liegt in scripts/, nicht inline: dieses Atom
+      # laeuft nur unter workflow_dispatch, die Self-CI auf pull_request und
+      # das Nightly auf schedule — der Event-Riegel oben schlaegt dort zuerst
+      # zu, und diese Pruefung wuerde nie erreicht. Ueber einen Workflow ist
+      # sie damit nicht abzudecken; tests/shell/tofu-confirm.bats tut es.
+      #
+      # Der Checkout steht deshalb VOR dieser Pruefung — anders als beim
+      # Event- und Ref-Riegel, die ohne Dateien auskommen.
+      - name: Verify the typed confirmation
+        if: inputs.plan_run_id != ''
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+          REPO: ${{ github.repository }}
+          CHECK: ${{ github.workspace }}/.catalog/scripts/tofu-confirm.sh
+        run: |
+          set -euo pipefail
+          bash "$CHECK" DESTROY "$REPO" "$KEY" -- "$CONFIRM"
 
       - name: Install OpenTofu toolchain
         uses: ./.catalog/actions/setup-tofu-toolchain

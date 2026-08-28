@@ -148,26 +148,6 @@ jobs:
             exit 1
           fi
 
-      - name: Verify the typed confirmation
-        working-directory: ${{ github.workspace }}
-        env:
-          CONFIRM: ${{ inputs.confirm }}
-          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
-          LOCK_ID: ${{ inputs.lock_id }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          # Die Lock-ID gehoert in die Bestaetigung, nicht nur in einen Input:
-          # sie ist der einzige Beleg, dass jemand nachgesehen hat, WELCHEN
-          # Lock er loest. Wer sie blind abtippt, hat sie wenigstens gelesen.
-          expected="UNLOCK ${REPO} ${KEY} ${LOCK_ID}"
-          if [[ "$CONFIRM" != "$expected" ]]; then
-            echo "::error::confirm stimmt nicht. Erwartet wird woertlich:" >&2
-            echo "::error::  ${expected}" >&2
-            exit 1
-          fi
-          echo "Bestaetigung akzeptiert"
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
@@ -199,6 +179,22 @@ jobs:
           token: ${{ steps.catalog-token.outputs.token }}
           path: .catalog
           persist-credentials: false
+
+      # Die Lock-ID gehoert in die Bestaetigung, nicht nur in einen Input: sie
+      # ist der einzige Beleg, dass jemand nachgesehen hat, WELCHEN Lock er
+      # loest. Die Logik liegt in scripts/, weil dieses Atom nur unter
+      # workflow_dispatch laeuft und ueber einen Workflow deshalb nicht
+      # pruefbar waere — tests/shell/tofu-confirm.bats deckt sie ab.
+      - name: Verify the typed confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          KEY: ${{ inputs.concurrency_key || inputs.working_directory }}
+          LOCK_ID: ${{ inputs.lock_id }}
+          REPO: ${{ github.repository }}
+          CHECK: ${{ github.workspace }}/.catalog/scripts/tofu-confirm.sh
+        run: |
+          set -euo pipefail
+          bash "$CHECK" UNLOCK "$REPO" "$KEY" "$LOCK_ID" -- "$CONFIRM"
 
       - name: Install OpenTofu toolchain
         uses: ./.catalog/actions/setup-tofu-toolchain

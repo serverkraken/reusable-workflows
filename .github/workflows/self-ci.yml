@@ -336,6 +336,52 @@ jobs:
           fi
           echo "tofu-apply meldete: ${LINE}"
 
+  # ----- tofu-drift: der Ruhezustand -----
+  #
+  # Bewusst gegen einen Stack OHNE Ressourcen: ein Lauf MIT Drift wuerde hier
+  # ein echtes Issue im Katalog-Repo anlegen und offen stehen lassen. Der
+  # Issue-Pfad gehoert ins Nightly, wo er hinterher aufgeraeumt werden kann.
+  # Hier wird geprueft, dass ohne Abweichung has_changes=false herauskommt und
+  # KEIN Issue angefasst wird.
+  tofu-drift-clean:
+    uses: ./.github/workflows/tofu-drift.yml
+    permissions:
+      contents: read
+      issues: write
+    with:
+      working_directory: tests/fixtures/tofu-nodrift-local
+      concurrency_key: selfci-nodrift
+      runs_on: '["ubuntu-latest"]'
+    secrets: inherit
+
+  assert-tofu-drift-clean:
+    needs: [tofu-drift-clean]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ohne Abweichung darf kein Issue entstehen
+        env:
+          HAS_CHANGES: ${{ needs.tofu-drift-clean.outputs.has_changes }}
+          ISSUE: ${{ needs.tofu-drift-clean.outputs.issue_number }}
+          LINE: ${{ needs.tofu-drift-clean.outputs.summary_line }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAS_CHANGES" != "false" ]]; then
+            echo "::error::erwartet has_changes=false fuer einen Stack ohne Ressourcen, bekam '${HAS_CHANGES}'" >&2
+            exit 1
+          fi
+          if [[ -n "$ISSUE" ]]; then
+            echo "::error::issue_number='${ISSUE}' — ohne Drift darf kein Issue entstehen" >&2
+            exit 1
+          fi
+          # Beweist, dass der Plan wirklich gelaufen ist: ein leeres
+          # summary_line hiesse, das Atom ist vorher ausgestiegen und
+          # has_changes=false waere zufaellig richtig.
+          if [[ "$LINE" != *"No changes"* ]]; then
+            echo "::error::summary_line sollte 'No changes' enthalten, war: '${LINE}'" >&2
+            exit 1
+          fi
+          echo "tofu-drift meldete Ruhe: ${LINE}"
+
   # ----- test-go: happy -----
   test-go-happy:
     uses: ./.github/workflows/test-go.yml
@@ -887,6 +933,7 @@ jobs:
       - tofu-validate-happy
       - assert-tofu-plan-changes
       - assert-tofu-apply
+      - assert-tofu-drift-clean
       - test-go-happy
       - test-python-poetry-happy
       - test-python-uv-happy
