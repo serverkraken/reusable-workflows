@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.25.0](https://github.com/serverkraken/reusable-workflows/compare/v4.24.0...v4.25.0) (2026-08-28)
+
+
+### Features
+
+* OpenTofu Apply, Destroy, Unlock und Drift — plus Reparatur der Renovate-Marker ([#407](https://github.com/serverkraken/reusable-workflows/issues/407)) ([c1610e6](https://github.com/serverkraken/reusable-workflows/commit/c1610e65f468871306c47a83c7d024b025ee0e99))
+
 ## [4.24.0](https://github.com/serverkraken/reusable-workflows/compare/v4.23.0...v4.24.0) (2026-08-27)
 
 
