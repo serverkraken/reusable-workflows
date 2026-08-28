@@ -760,6 +760,49 @@ job-private dir prepended onto PATH.
 | input | `tflint` | string | no | `'false'` | When "true", also install tflint. |
 | input | `tflint_version` | string | no | `''` | tflint version (no leading v). Empty → pinned default. |
 
+### `actions/tofu-stack-exec`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `command` | string | yes | — | plan \| plan-destroy \| apply \| unlock |
+| input | `working_directory` | string | yes | — | OpenTofu stack directory. |
+| input | `backend_config` | string | no | `''` | Newline-separated -backend-config= arguments. |
+| input | `plan_file` | string | no | `'tfplan'` | Pfad der tfplan (Ausgabe bei plan, Eingabe bei apply). |
+| input | `lock` | string | no | `'true'` | State-Lock nehmen. |
+| input | `lock_timeout` | string | no | `'60s'` | Wert fuer -lock-timeout. |
+| input | `lock_id` | string | no | `''` | Lock-ID fuer command=unlock. |
+| input | `tf_vars` | string | no | `''` | Newline-separated KEY=VALUE, wird zu TF_VAR_key. |
+| input | `encryption_passphrase` | string | no | `''` | Passphrase fuer die native Plan- und State-Verschluesselung. |
+| input | `allow_unencrypted_fallback` | string | no | `'false'` | Einmalige Migration; danach abschalten. |
+| input | `backend_access_key` | string | no | `''` | S3-kompatibler Access Key. |
+| input | `backend_secret_key` | string | no | `''` | S3-kompatibler Secret Key. |
+| output | `has_changes` | string | — | — | true\|false bei plan/plan-destroy, sonst leer. |
+| output | `summary_line` | string | — | — | Die Zusammenfassungszeile des Laufs. |
+| output | `exec_status` | string | — | — | success\|failed, leer wenn der Schritt nicht startete. |
+
+**Verschlüsselung.** Die Composite baut `TF_ENCRYPTION` selbst — der Adopter liefert
+nur `encryption_passphrase`, kein HCL. Erzeugt wird `pbkdf2` + `aes_gcm` mit
+`enforced = true` für `state` und `plan`; OpenTofu lehnt danach jeden
+unverschlüsselten Zustand selbst ab. Das ist der Nachweis, nicht ein Test auf den
+Metadaten-Präfix: `encrypted_metadata_alias` kann den Schlüssel umbenennen, und ein
+Klartext-JSON kann den Präfix fälschen.
+
+`command=plan` ohne Passphrase ist erlaubt (der Plan wird dann nicht gespeichert
+weitergereicht) und meldet eine `::notice::`. `apply` und `plan-destroy` **verlangen**
+sie und brechen sonst ab.
+
+**Migration eines vorhandenen Klartext-States.** `enforced = true` verweigert das
+Lesen. Der erste Lauf meldet dann:
+
+```
+failed to write backup file: encountered unencrypted payload
+without unencrypted method configured
+```
+
+Dafür — und nur dafür — gibt es `allow_unencrypted_fallback: 'true'`. Genau einen
+Lauf lang; der Schalter setzt eine `::warning::`, weil er den Schutz aufhebt, ohne
+dass etwas rot wird.
+
 ### `actions/setup-python-deps`
 
 | Kind   | Name | Type | Required | Default | Description |
