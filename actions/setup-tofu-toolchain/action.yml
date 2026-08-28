@@ -30,7 +30,7 @@ runs:
       shell: bash
       env:
         # renovate: datasource=github-releases depName=opentofu/opentofu
-        TOFU_VERSION: '1.10.6'
+        TOFU_VERSION: '1.12.6'
         REQUESTED: ${{ inputs.tofu_version }}
       run: |
         set -euo pipefail
@@ -52,7 +52,7 @@ runs:
       shell: bash
       env:
         # renovate: datasource=github-releases depName=terraform-linters/tflint
-        TFLINT_VERSION: '0.54.0'
+        TFLINT_VERSION: '0.64.0'
         REQUESTED: ${{ inputs.tflint_version }}
       run: |
         set -euo pipefail
