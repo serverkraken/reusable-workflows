@@ -542,7 +542,7 @@ Three reusable atoms validate a GitOps repository's Kubernetes manifests and sca
 
 **`secret-scan` is general-purpose** — callable by any adopter, not just GitOps repos. By default it is git-history-aware: a `pull_request` event scans the PR diff (`base..head`), a `push` event scans the tip commit, and a manual/scheduled run scans full history (so `fetch_depth: 0` is the default). Setting `no_git: true` switches it to a filesystem scan of `scan_path` (gitleaks `--no-git`), used for one-off directory scans and deterministic fixture tests where git history is irrelevant.
 
-All three mint a catalog-scoped App token (`secrets: inherit` covers it) to check out the catalog's composite actions, exactly like the existing security atoms. SARIF upload is auto-skipped on forks.
+All three mint a catalog-scoped App token (`secrets: inherit` covers it) to check out the catalog's composite actions, exactly like the existing security atoms. SARIF upload is auto-skipped on forks and on private repos (code-scanning there would need the paid GitHub Code Security SKU, which the org leaves disabled).
 
 > **ksops decryption is not exercised in catalog self-CI** — committing a decryptable age key to the catalog would itself be a secret leak. The happy integration path runs `kube-validate` with `sops: false` against plaintext fixtures; the real ksops path is validated at adopter-onboard time against repos that hold the real `SOPS_AGE_KEY` and encrypted trees.
 

@@ -31,7 +31,7 @@ on:
         type: boolean
         default: true
       upload_sarif:
-        description: 'Upload SARIF to GitHub code-scanning. Auto-skipped on forks.'
+        description: 'Upload SARIF to GitHub code-scanning. Auto-skipped on forks and private repos (needs paid GitHub Code Security there).'
         required: false
         type: boolean
         default: true
@@ -225,7 +225,10 @@ jobs:
         # richtige Form; kube-lint war das einzige Atom ohne die
         # event_name-Klausel. Gerade auf dem Default-Branch ist der Upload aber
         # der, auf den es ankommt: er bildet die Basislinie im code-scanning.
-        if: inputs.upload_sarif && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        # Private Repos werden uebersprungen: code-scanning-Upload braeuchte
+        # dort die kostenpflichtige GitHub-Code-Security-SKU, die die Org
+        # bewusst abgeschaltet laesst. Report bleibt als Artifact + Summary.
+        if: inputs.upload_sarif && github.event.repository.private != true && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
           sarif_file: kube-linter.sarif

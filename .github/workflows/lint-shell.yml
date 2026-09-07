@@ -48,7 +48,7 @@ on:
         type: boolean
         default: false
       sarif:
-        description: 'Upload SARIF to GitHub code-scanning. Auto-skipped on forks.'
+        description: 'Upload SARIF to GitHub code-scanning. Auto-skipped on forks and private repos (needs paid GitHub Code Security there).'
         required: false
         type: boolean
         default: true
@@ -380,7 +380,10 @@ jobs:
         # `required: true`-Secrets, die GitHub an Forks nicht weiterreicht.
         # "Auto-skipped on forks" beschreibt also das Verhalten DIESES
         # Schritts, nicht eine Fork-Tauglichkeit des Atoms.
-        if: inputs.sarif && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        # Private Repos werden uebersprungen: code-scanning-Upload braeuchte
+        # dort die kostenpflichtige GitHub-Code-Security-SKU, die die Org
+        # bewusst abgeschaltet laesst. Report bleibt als Artifact + Summary.
+        if: inputs.sarif && github.event.repository.private != true && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
           sarif_file: shellcheck.sarif
