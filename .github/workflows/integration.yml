@@ -695,6 +695,13 @@ jobs:
   # in der Gruppe (self-ci laeuft gleichzeitig), und zwei Jobs endeten auf
   # `cancelled` — darunter der BESTEHENDE Dry-Run-Test. Die Kette haelt die
   # Gruppe auf einem Mitglied je Workflow-Lauf.
+  #
+  # Seither Mitglied sind nur noch die commit:true-Selbsttests: Dry-Runs
+  # (commit:false) bekommen in den Atomen eine je Lauf eindeutige Gruppe,
+  # nachdem am 2026-09-12 wartende Dry-Runs PARALLELER Laeufe (PR #412, #413)
+  # aus der Queue gecancelt wurden — dagegen hilft diese Kette nicht, sie
+  # ordnet nur Jobs INNERHALB eines Laufs. Fuer die zwei echten Pusher hier
+  # bleibt sie noetig, aus genau dem gemessenen Grund.
   test-version-badges-commit:
     needs: [prepare-push-selftest, assert-chart-image-bump]
     if: always() && needs.prepare-push-selftest.result == 'success'

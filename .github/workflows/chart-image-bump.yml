@@ -92,7 +92,7 @@ permissions:
   contents: write
 
 concurrency:
-  # GETEILTE Gruppe mit chart-image-bump (Audit D-10).
+  # GETEILTE Gruppe mit version-badges (Audit D-10) — aber NUR im Push-Pfad.
   #
   # Beide Workflows committen und pushen in DASSELBE Repo auf denselben
   # Branch, und beide laufen im Release. Vorher hatte jeder eine EIGENE
@@ -104,13 +104,19 @@ concurrency:
   # Der Gruppenname gehoert deshalb zur Sache, nicht zum Workflow: er nennt,
   # WORAUF serialisiert wird (Pushes in dieses Repo), nicht WER pusht. Wer
   # kuenftig einen dritten pushenden Workflow ergaenzt, traegt ihn hier ein.
+  # Bewusst OHNE `github.ref` — ein Release pusht auf den Default-Branch,
+  # egal von welchem Ref der Lauf kommt.
   #
-  # Bewusst OHNE `github.ref`: version-badges hatte den Ref bisher drin,
-  # chart-image-bump nicht. Eine gemeinsame Gruppe mit Ref waere fuer
-  # chart-image-bump eine LOCKERUNG gewesen. Ohne Ref ist sie mindestens so
-  # streng wie beide vorher — und diese Workflows laufen nur im Release, also
-  # selten.
-  group: repo-push-${{ github.repository }}
+  # Der Push-Gruppe gehoert aber nur an, wer pusht: ein Dry-Run
+  # (commit:false, Self-CI) schreibt nichts und stand trotzdem drin — als
+  # Kollateralschaden. GitHub haelt je Gruppe genau EINEN laufenden und EINEN
+  # wartenden Lauf; jeder weitere bricht den wartenden ab. Am 2026-09-12
+  # kostete das binnen Minuten zwei PRs (#412, #413) ihren gruenen summary:
+  # der wartende Dry-Run-Job flog mit 0s als `cancelled` aus der Queue,
+  # waehrend parallele PR-/main-Laeufe die Gruppe belegten. Deshalb bekommt
+  # der Dry-Run eine Gruppe, die per run_id je Lauf eindeutig ist: wer nichts
+  # schreibt, serialisiert auf nichts.
+  group: ${{ inputs.commit && format('repo-push-{0}', github.repository) || format('chart-image-bump-test-{0}-{1}', github.repository, github.run_id) }}
   cancel-in-progress: false
 
 jobs:
