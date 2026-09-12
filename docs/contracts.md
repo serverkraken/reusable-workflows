@@ -201,7 +201,7 @@ runner pods.
 | input | `config_path` | string | no | `''` | Path to a .kube-linter.yaml. Empty → catalog baseline. |
 | input | `kube_linter_version` | string | no | `''` | Override kube-linter version (empty → composite default). |
 | input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when kube-linter reports findings. |
-| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks. |
+| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks and private repos (needs paid GitHub Code Security there). |
 | input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow: GitHub keeps one analysis per category, so a shared category makes the second upload REPLACE the first, and the shared artifact name fails the run outright. Empty (the default) keeps the historical names, so single-call adopters are unaffected. |
 | input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
 | output | `findings_count` | — | — | — | Number of kube-linter findings. |
@@ -307,7 +307,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | input | `follow_sources` | boolean | no | `true` | Pass -x so `source lib/common.sh` is checked too. |
 | input | `scan_shebangs` | boolean | no | `true` | Also check tracked files WITHOUT a .sh suffix whose first line is a shell shebang. A linter that silently skips `scripts/deploy` checks half the scripts in many repos. Scoped by the same `paths` globs with the .sh requirement dropped, so it never widens into a whole-repo scan. |
 | input | `shfmt` | boolean | no | `false` | Also run `shfmt -d` (format check). |
-| input | `sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks. |
+| input | `sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks and private repos (needs paid GitHub Code Security there). |
 | input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when shellcheck reports findings. |
 | input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow. |
 | input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
@@ -356,7 +356,7 @@ Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
 | input | `config_path` | string | no | `''` | Path to a .gitleaks.toml. Empty → gitleaks built-in ruleset. |
 | input | `gitleaks_version` | string | no | `''` | Override gitleaks version (empty → composite default). |
 | input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when gitleaks reports findings. |
-| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks. |
+| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks and private repos (needs paid GitHub Code Security there). |
 | input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow: GitHub keeps one analysis per category, so a shared category makes the second upload REPLACE the first, and the shared artifact name fails the run outright. Empty (the default) keeps the historical names, so single-call adopters are unaffected. |
 | input | `fetch_depth` | number | no | `0` | Checkout fetch-depth (0 = full history; needed for PR-diff/full scans). |
 | input | `no_git` | boolean | no | `false` | Scan files under scan_path without git history (gitleaks --no-git). |
@@ -701,7 +701,7 @@ keines ist.
 | input   | `severity`        | string  | no       | `'HIGH,CRITICAL'`            | Severity levels to report |
 | input   | `paths_ignore`    | string  | no       | `''`                         | Newline-separated paths to skip |
 | input   | `files_ignore`    | string  | no       | `''`                         | Newline-separated files to skip |
-| input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks) |
+| input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks and private repos) |
 | input   | `report_slug`     | string  | no       | `''`                         | Suffix making the SARIF category and artifact name unique; set it when calling this atom more than once per workflow |
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `ignore_unfixed`  | boolean | no       | `true`                       | Pass `--ignore-unfixed` to Trivy |
@@ -723,7 +723,7 @@ keines ist.
 | input   | `ignore_unfixed`  | boolean | no       | `true`                       | Pass `--ignore-unfixed` to Trivy |
 | input   | `fail_on_findings`| boolean | no       | `true`                       | Exit non-zero when findings exist |
 | input   | `paths_ignore`    | string  | no       | `''`                         | Newline-separated paths to skip |
-| input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks) |
+| input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks and private repos) |
 | input   | `platforms`       | string  | no       | `''`                         | Comma-separated platforms to scan; empty scans only the one Trivy picks (`linux/amd64`) |
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `runs_on`         | string  | no       | `'["self-hosted","Linux"]'`  | JSON-encoded runner labels |

@@ -109,8 +109,8 @@ jobs:
   # Today the cross-repo call happens to fail: the catalog checkout uses
   # github.workflow_sha, which in a called workflow is the CALLER's workflow
   # SHA and does not exist here. That is an accident of implementation, not a
-  # boundary — code_security is already mutated by then, finalize runs under
-  # always(), and a future fix to that checkout would silently open the door.
+  # boundary — finalize runs under always(), and a future fix to that
+  # checkout would silently open the door.
   #
   # Every in-repo caller (onboard-sweep.yml, integration.yml) passes this. A
   # fork that wants to drive its own org has to change the constant, which is
@@ -279,41 +279,6 @@ jobs:
           repository: serverkraken/reusable-workflows
           ref: ${{ github.workflow_sha }}
           path: .catalog
-
-      # Code scanning needs `code_security` enabled on private repos before
-      # SARIF upload works. Public repos get code-scanning for free and don't
-      # have this knob, so the script reads visibility first and skips
-      # non-private targets.
-      #
-      # Runs AFTER the catalog checkout because the logic now lives in a
-      # script — as inline workflow bash it was untestable, and the one code
-      # path that mattered (the PATCH) never ran in CI: the integration
-      # dry-run targets this repo, which is public.
-      #
-      # `continue-on-error` so a 403 (App permissions not granted/propagated)
-      # doesn't sink the onboard run — adopters with `code_security` already
-      # enabled or a different policy can still onboard, they just won't get
-      # SARIF reports until that's resolved manually. The outcome is written
-      # to the step summary either way, so a swallowed failure stays visible.
-      - name: Enable code_security on private targets
-        id: code-security
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ steps.target-token.outputs.token }}
-          TARGET: ${{ matrix.target.target }}
-          DRY_RUN: ${{ inputs.dry_run }}
-        run: .catalog/scripts/enable-code-security.sh "$TARGET"
-
-      - name: Report code_security outcome
-        if: always()
-        env:
-          RESULT: ${{ steps.code-security.outcome }}
-        run: |
-          case "$RESULT" in
-            success) note="handled (see job log for the exact outcome)" ;;
-            *)       note="**failed** — SARIF upload will not work until this is resolved manually" ;;
-          esac
-          echo "**Code scanning:** ${note}" >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Setup Go for sk-workflows
         if: ${{ inputs.use_go_cli }}
