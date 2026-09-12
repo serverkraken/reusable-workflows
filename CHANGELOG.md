@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.27.0](https://github.com/serverkraken/reusable-workflows/compare/v4.26.0...v4.27.0) (2026-09-12)
+
+
+### Features
+
+* **security:** auto-skip SARIF upload on private repos ([#412](https://github.com/serverkraken/reusable-workflows/issues/412)) ([b970ee0](https://github.com/serverkraken/reusable-workflows/commit/b970ee0a0490fb8c34cf16db405668f93b06dd47))
+* **test-rust:** timeout_minutes als Eingabe, Vorgabe bleibt 30 ([#413](https://github.com/serverkraken/reusable-workflows/issues/413)) ([5ef6227](https://github.com/serverkraken/reusable-workflows/commit/5ef6227bdefea9d1bf6c98f0ce9c27e08f930f9e))
+
+
+### Bug Fixes
+
+* **ci:** Dry-Runs raus aus der repo-weiten Push-Gruppe — sie pushen nichts ([#416](https://github.com/serverkraken/reusable-workflows/issues/416)) ([9ea77d9](https://github.com/serverkraken/reusable-workflows/commit/9ea77d938e410fcc55c266e723018b0ee57c9403))
+* **detect:** die Komponentenreihenfolge hing an der readdir-Laune des Dateisystems ([#414](https://github.com/serverkraken/reusable-workflows/issues/414)) ([3204a66](https://github.com/serverkraken/reusable-workflows/commit/3204a667e8c969701295996b6485600faa0ff6ab))
+
 ## [4.26.0](https://github.com/serverkraken/reusable-workflows/compare/v4.25.0...v4.26.0) (2026-08-28)
 
 
