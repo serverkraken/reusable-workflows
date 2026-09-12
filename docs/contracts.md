@@ -447,6 +447,7 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input | `rust_toolchain`        | string | no       | `''`                              | rustup toolchain. Empty → rustup defaults. |
 | input | `coverage_threshold`    | number | no       | `80`                              | Minimum line coverage percentage (integer 0-100). |
 | input | `cargo_llvm_cov_version`| string | no       | `'0.6.16'`                        | cargo-llvm-cov release version (bare semver — `taiki-e/install-action` rejects a leading `v`). |
+| input | `timeout_minutes`       | number | no       | `30`                              | Job timeout in minutes. |
 
 ---
 
