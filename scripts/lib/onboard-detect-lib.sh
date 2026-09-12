@@ -96,7 +96,13 @@ _expand_workspace_patterns() {
       esac
       rel="${real#"$repo_real"/}"
       [[ -n "$rel" && "$rel" != "$real" ]] && printf '%s\n' "$rel"
-    done < <(compgen -G "$repo/$pat" 2>/dev/null || true)
+    # LC_ALL=C sort, nicht compgen vertrauen: compgen -G sortiert erst ab bash
+    # 5.3. Auf bash 5.2 (ubuntu-24.04-Runner) kommt readdir-Reihenfolge — auf
+    # ext4 quasi zufaellig, lokal (APFS/bash 5.3) unauffaellig. So lieferte
+    # dieselbe Engine `apps/web` vor `apps/api` und das Paritaets-Gate riss.
+    # Die Go-Seite sortiert die Treffer JE MUSTER (sort.Strings in
+    # expandWorkspacePatterns) — Byte-Reihenfolge, also LC_ALL=C.
+    done < <( (compgen -G "$repo/$pat" 2>/dev/null || true) | LC_ALL=C sort)
   done
 }
 
@@ -1391,7 +1397,17 @@ detect_release_signals() {
   # depth 4 = helm/charts/<name>/Chart.yaml.
   local chart="null"
   local found_chart
-  found_chart=$(cd "$p" && find . -mindepth 2 -maxdepth 4 -name 'Chart.yaml' 2>/dev/null | head -n 1 || true)
+  # Sortieren, nicht find vertrauen: find laeuft in readdir-Reihenfolge, und
+  # "das erste Chart" hing damit am Dateisystem — auf dem Runner waehlte diese
+  # Engine ein anderes Chart als die Go-Seite (assert-onboard-engines-agree).
+  # Go (firstNestedChart) nimmt den ersten Treffer eines lexikalischen
+  # WalkDir, der PRO VERZEICHNISEBENE vergleicht: `helm` < `helm-x`. Ein
+  # nacktes sort vergleicht Bytes und legt `-` (0x2d) VOR `/` (0x2f) — es
+  # waehlte helm-x/. Deshalb wird `/` fuer den Vergleich auf \001 gedrueckt:
+  # so sortiert die Verzeichnisgrenze vor jedem druckbaren Zeichen, genau wie
+  # bei WalkDir.
+  found_chart=$(cd "$p" && find . -mindepth 2 -maxdepth 4 -name 'Chart.yaml' 2>/dev/null \
+    | tr '/' '\001' | LC_ALL=C sort | tr '\001' '/' | head -n 1 || true)
   if [[ -n "$found_chart" ]]; then
     # found_chart is "./charts/svc/Chart.yaml"; strip leading "./"
     found_chart="${found_chart#./}"

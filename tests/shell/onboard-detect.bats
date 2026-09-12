@@ -1267,6 +1267,61 @@ _crate() {
   echo "$output" | jq -e '[.components[].path] == ["svc"]'
 }
 
+# === Deterministische Reihenfolge (Pipeline-Fund, PR #413) ===
+#
+# `compgen -G` sortiert erst ab bash 5.3 — auf bash 5.2 (ubuntu-24.04-Runner)
+# kommt die rohe readdir-Reihenfolge des Dateisystems, auf ext4 quasi zufaellig.
+# Lokal (bash 5.3) war alles gruen, auf dem Runner lieferte die Engine
+# `apps/web` vor `apps/api` und riss drei Gates auf einmal: den Glob-Test hier,
+# check-engine-parity (pnpm-workspace) und assert-onboard-engines-agree
+# (chart_path). Die Go-Engine sortiert an beiden Stellen selbst — diese Engine
+# muss das auch tun, statt compgen bzw. find zu vertrauen.
+#
+# Die Shadows unten stellen die unsortierte Ausgabe nach, die auf dem Runner
+# real beobachtet wurde — ohne sie haengt der Test an der readdir-Laune des
+# lokalen Dateisystems.
+
+@test "Workspace-Expansion sortiert selbst, statt compgen zu vertrauen" {
+  local repo="$BATS_TEST_TMPDIR/unsorted-glob"
+  _crate "$repo/crates/alpha"; _crate "$repo/crates/beta"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  # bash 5.2 nachgestellt: compgen liefert die Treffer verkehrt herum.
+  compgen() { printf '%s\n' "$repo/crates/beta" "$repo/crates/alpha"; }
+  run _expand_workspace_patterns "$repo" "crates/*"
+  [ "$status" -eq 0 ]
+  [ "$output" = "crates/alpha
+crates/beta" ]
+}
+
+@test "Sub-Chart-Suche sortiert selbst, statt find zu vertrauen" {
+  local repo="$BATS_TEST_TMPDIR/unsorted-chart"
+  mkdir -p "$repo/charts/aaa" "$repo/charts/zzz"
+  printf 'apiVersion: v2\nname: aaa\nversion: 0.1.0\n' > "$repo/charts/aaa/Chart.yaml"
+  printf 'apiVersion: v2\nname: zzz\nversion: 0.1.0\n' > "$repo/charts/zzz/Chart.yaml"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  # readdir-Laune nachgestellt: find meldet das alphabetisch spaetere Chart zuerst.
+  find() { printf '%s\n' "./charts/zzz/Chart.yaml" "./charts/aaa/Chart.yaml"; }
+  run detect_release_signals "$repo" "."
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.chart_yaml == "charts/aaa/Chart.yaml"'
+}
+
+@test "Sub-Chart-Suche ordnet wie Gos WalkDir: Verzeichnisgrenze vor Bindestrich" {
+  # Go (firstNestedChart) laeuft lexikalisch PRO VERZEICHNISEBENE: `helm` <
+  # `helm-x`, also gewinnt helm/charts/app. Ein nacktes `sort` vergleicht
+  # Bytes, und dort liegt `-` (0x2d) VOR `/` (0x2f) — es waehlte helm-x und
+  # die Engines gingen wieder auseinander, nur eine Fixture spaeter.
+  local repo="$BATS_TEST_TMPDIR/slash-vs-dash"
+  mkdir -p "$repo/helm/charts/app" "$repo/helm-x/sub"
+  printf 'apiVersion: v2\nname: app\nversion: 0.1.0\n' > "$repo/helm/charts/app/Chart.yaml"
+  printf 'apiVersion: v2\nname: x\nversion: 0.1.0\n' > "$repo/helm-x/sub/Chart.yaml"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  find() { printf '%s\n' "./helm-x/sub/Chart.yaml" "./helm/charts/app/Chart.yaml"; }
+  run detect_release_signals "$repo" "."
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.chart_yaml == "helm/charts/app/Chart.yaml"'
+}
+
 @test "gleicher Basename ohne Dockerfiles wird abgewiesen" {
   # Suchmuster "nicht-injektive Abbildung": die Image-Namen-Pruefung fing das
   # nur MIT Dockerfiles. Ohne sie gaben beide Komponenten `package-name: api`,
