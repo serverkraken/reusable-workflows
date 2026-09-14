@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-09-07T13:23:53Z_
+_Last updated by the onboarding workflow: 2026-09-14T13:48:17Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -50,3 +50,4 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/buchregal | 2026-08-28 | v4 | [PR](https://github.com/serverkraken/buchregal/pull/1) | — | add-open, no-legacy | — |
 | serverkraken/flow-api | 2026-09-01 | v4 | [PR](https://github.com/serverkraken/flow-api/pull/12) | — | add-open, no-legacy | — |
 | serverkraken/identity-kraken-cli | 2026-09-07 | v4 | [PR](https://github.com/serverkraken/identity-kraken-cli/pull/6) | — | add-open, no-legacy | — |
+| serverkraken/flow-web | 2026-09-14 | v4 | [PR](https://github.com/serverkraken/flow-web/pull/5) | [PR](https://github.com/serverkraken/flow-web/pull/6) | add-open, cleanup-open | — |
