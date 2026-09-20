@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.28.0](https://github.com/serverkraken/reusable-workflows/compare/v4.27.0...v4.28.0) (2026-09-20)
+
+
+### Features
+
+* **test-python:** timeout_minutes als Eingabe, Vorgabe bleibt 30 ([#419](https://github.com/serverkraken/reusable-workflows/issues/419)) ([160dad1](https://github.com/serverkraken/reusable-workflows/commit/160dad12c63162faaa7cc4253c1721a325e771de))
+
 ## [4.27.0](https://github.com/serverkraken/reusable-workflows/compare/v4.26.0...v4.27.0) (2026-09-12)
 
 
