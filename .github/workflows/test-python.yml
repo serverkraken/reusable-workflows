@@ -40,6 +40,11 @@ on:
         required: false
         type: string
         default: ''
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 30
     outputs:
       coverage_pct:
         description: >-
@@ -65,7 +70,19 @@ concurrency:
 jobs:
   test:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 30
+    # Die 30 bleiben die Vorgabe — wer nichts setzt, bekommt genau das
+    # Verhalten von vorher. Sie sind aber kein Naturgesetz: eine Suite gegen
+    # eine echte Datenbank (testcontainers) waechst mit jedem Feature, und
+    # auf einem gedrosselten Runner-Pool laeuft sie um ein Mehrfaches
+    # langsamer als lokal. Ein Aufrufer konnte das bisher nur ueber
+    # schnellere Runner erkaufen, bis auch das nicht mehr reichte.
+    #
+    # Die Ueberschreitung sieht im Log aus wie ein Abbruch ("The operation
+    # was canceled"), nicht wie ein Fehlschlag — wer die Annotation nicht
+    # liest, sucht den Fehler in seinen Tests, obwohl pytest womoeglich bei
+    # 99 % stand. Ein Neustart ist dann kein Versuch, sondern eine
+    # Wiederholung. Gleiches Muster wie in test-rust.yml.
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     outputs:
       coverage_pct: ${{ steps.pytest.outputs.coverage_pct }}
     steps:
