@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.28.1](https://github.com/serverkraken/reusable-workflows/compare/v4.28.0...v4.28.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **test-rust:** Coverage-Bericht nur einmal und nur als Summe erzeugen ([#427](https://github.com/serverkraken/reusable-workflows/issues/427)) ([f30698f](https://github.com/serverkraken/reusable-workflows/commit/f30698fa89840976a068b0e3cf5cef91981780c6))
+
 ## [4.28.0](https://github.com/serverkraken/reusable-workflows/compare/v4.27.0...v4.28.0) (2026-09-20)
 
 
