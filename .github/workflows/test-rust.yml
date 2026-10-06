@@ -152,18 +152,25 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         env:
           THRESHOLD: ${{ inputs.coverage_threshold }}
+        # Genau EIN Bericht, und nur die Summen. Frueher lief nach dem
+        # Textbericht ein zweites `cargo llvm-cov report --json` OHNE
+        # --summary-only: es fuehrte alle Profildaten ein zweites Mal zusammen
+        # und exportierte die volle Abdeckung je Datei und Funktion, nur um
+        # eine Zahl daraus zu lesen. Bei einem grossen Workspace (flow-api,
+        # PR #88) brauchte das nach gruenen Tests so viel Speicher, dass der
+        # Runner zweimal die Verbindung verlor ("runner lost communication").
+        # --json --summary-only schreibt nur `totals` je Datei und gesamt
+        # (wenige KB); --fail-under-lines greift auch mit --json (Exit 1
+        # unter der Schwelle, die Datei wird trotzdem geschrieben). Scheitert
+        # ein Test, gibt es keine Datei, und die Summary meldet "tests failed".
         run: |
-          set -o pipefail
           rc=0
-          cargo llvm-cov --summary-only --fail-under-lines "$THRESHOLD" | tee llvm-cov.out || rc=$?
-          # Re-run with --json to extract line-coverage precisely (text TOTAL row's last % is branch, not line).
-          cargo llvm-cov report --json --output-path llvm-cov.json >/dev/null 2>&1 || true
-          if [[ -f llvm-cov.json ]] && command -v jq >/dev/null 2>&1; then
+          cargo llvm-cov --json --summary-only --output-path llvm-cov.json \
+            --fail-under-lines "$THRESHOLD" || rc=$?
+          pct=""
+          if [[ -f llvm-cov.json ]]; then
             pct=$(jq -r '.data[0].totals.lines.percent | tostring | .[0:5]' llvm-cov.json 2>/dev/null)
-          else
-            # Fallback: position-based parse of the TOTAL row. cargo-llvm-cov's --summary-only
-            # currently emits 13 columns; line coverage is the 10th field (after Lines / Missed Lines).
-            pct=$(awk '/^TOTAL/ {gsub("%","",$10); print $10}' llvm-cov.out)
+            jq -r '.data[0].totals | "lines \(.lines.covered)/\(.lines.count) (\(.lines.percent | tostring | .[0:5])%) · functions \(.functions.covered)/\(.functions.count) · regions \(.regions.covered)/\(.regions.count)"' llvm-cov.json || true
           fi
           echo "coverage_pct=${pct:-N/A}" >> "$GITHUB_OUTPUT"
           echo "threshold=${THRESHOLD}" >> "$GITHUB_OUTPUT"
