@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.28.2](https://github.com/serverkraken/reusable-workflows/compare/v4.28.1...v4.28.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **test-rust:** Schwelle in der Shell pruefen statt per --fail-under-lines ([#429](https://github.com/serverkraken/reusable-workflows/issues/429)) ([63a9295](https://github.com/serverkraken/reusable-workflows/commit/63a929552457fcf7f0e608d3dcb2c80d1cd8d37e))
+
 ## [4.28.1](https://github.com/serverkraken/reusable-workflows/compare/v4.28.0...v4.28.1) (2026-10-06)
 
 
