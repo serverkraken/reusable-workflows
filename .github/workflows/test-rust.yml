@@ -152,25 +152,38 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         env:
           THRESHOLD: ${{ inputs.coverage_threshold }}
-        # Genau EIN Bericht, und nur die Summen. Frueher lief nach dem
-        # Textbericht ein zweites `cargo llvm-cov report --json` OHNE
-        # --summary-only: es fuehrte alle Profildaten ein zweites Mal zusammen
-        # und exportierte die volle Abdeckung je Datei und Funktion, nur um
-        # eine Zahl daraus zu lesen. Bei einem grossen Workspace (flow-api,
-        # PR #88) brauchte das nach gruenen Tests so viel Speicher, dass der
-        # Runner zweimal die Verbindung verlor ("runner lost communication").
-        # --json --summary-only schreibt nur `totals` je Datei und gesamt
-        # (wenige KB); --fail-under-lines greift auch mit --json (Exit 1
-        # unter der Schwelle, die Datei wird trotzdem geschrieben). Scheitert
-        # ein Test, gibt es keine Datei, und die Summary meldet "tests failed".
+        # Genau EIN Export, nur die Summen, und die Schwelle prueft die Shell.
+        #
+        # `--fail-under-lines` darf hier NICHT stehen: cargo-llvm-cov schreibt
+        # damit erst den Bericht ("Finished report saved") und startet danach
+        # fuer die Schwelle einen ZWEITEN `llvm-cov export` ueber alle
+        # Testbinaries, diesmal in voller Detailtiefe je Datei und Funktion
+        # (cargo-llvm-cov 0.6.16, src/main.rs `generate_report`, Zeilen
+        # 536-548: `Format::Json.get_json(...)`). Bei flow-api (PR #88) sprang
+        # der Speicher des Runner-Containers dabei in Sekunden von 3,5 GiB auf
+        # das Limit von 8 GiB, und der Kernel beendete den Runner mit
+        # OOMKilled (Exit 137) -- nach gruenen Tests, mitten im Schritt. Fuer
+        # GitHub sah das aus wie "runner lost communication". Die gruenen
+        # Laeufe auf main davor hatten dieselbe Hochwassermarke von 8 GiB und
+        # ueberlebten nur knapp.
+        #
+        # Der Summen-Export bleibt bei wenigen GiB und liefert `totals`, aus
+        # denen jq die Zeilenabdeckung liest; der Vergleich mit THRESHOLD ist
+        # Gleitkomma (awk), weil die Schwelle als Zahl ankommt. Exit 1 unter
+        # der Schwelle. Scheitert ein Test, endet cargo llvm-cov mit Fehler,
+        # es gibt keine Datei, und die Summary meldet "tests failed".
         run: |
           rc=0
-          cargo llvm-cov --json --summary-only --output-path llvm-cov.json \
-            --fail-under-lines "$THRESHOLD" || rc=$?
+          cargo llvm-cov --json --summary-only --output-path llvm-cov.json || rc=$?
           pct=""
           if [[ -f llvm-cov.json ]]; then
-            pct=$(jq -r '.data[0].totals.lines.percent | tostring | .[0:5]' llvm-cov.json 2>/dev/null)
+            raw=$(jq -r '.data[0].totals.lines.percent' llvm-cov.json 2>/dev/null)
+            pct=$(printf '%s' "$raw" | cut -c1-5)
             jq -r '.data[0].totals | "lines \(.lines.covered)/\(.lines.count) (\(.lines.percent | tostring | .[0:5])%) · functions \(.functions.covered)/\(.functions.count) · regions \(.regions.covered)/\(.regions.count)"' llvm-cov.json || true
+            if [[ "$rc" -eq 0 ]] && ! awk -v p="$raw" -v t="$THRESHOLD" 'BEGIN { exit !(p + 0 >= t + 0) }'; then
+              echo "::error::line coverage ${pct}% is below the threshold ${THRESHOLD}%"
+              rc=1
+            fi
           fi
           echo "coverage_pct=${pct:-N/A}" >> "$GITHUB_OUTPUT"
           echo "threshold=${THRESHOLD}" >> "$GITHUB_OUTPUT"
