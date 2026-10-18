@@ -106,7 +106,7 @@ runs:
       # astral-sh/setup-uv doesn't ship a floating major v8 tag (only v1..v7
       # exist). Pin to the specific patch and let Renovate bump it.
       if: steps.detect.outputs.pm == 'uv'
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
     - name: poetry install
       if: steps.detect.outputs.pm == 'poetry'
