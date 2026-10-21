@@ -506,6 +506,60 @@ Architektur nicht.
 | secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
 | secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. Provider-Credentials aus Umgebungsvariablen frieren NICHT im Plan ein und muessen dem Apply erneut uebergeben werden. |
 
+### `tofu-plan-apply.yml`
+
+**Die Freigabe ist der Merge, nicht ein Knopf.** `tofu-apply.yml` verlangt nach dem
+Merge noch eine Handlung: Run-ID des gelesenen Plans, Dispatch, Frist. Das passt, wo ein
+Apply Server ersetzen kann. Fuer Konfiguration, die sich mit einem Revert-PR
+zuruecknehmen laesst (WAF-Regeln, DNS, Zone-Einstellungen), prueft der zweite Knopf
+nichts, was der PR-Plan nicht schon gezeigt hat. Dieses Atom plant deshalb **frisch und
+wendet im selben Lauf an**, sobald ein Merge dahintersteht: kein Artefakt, keine Frist,
+kein Architekturzwang zwischen Plan- und Apply-Lauf.
+
+**Zwei Betriebsarten** ueber `require_tag`: `true` (Default) wendet nur auf einem Tag
+oder Release an, etwa nach dem Merge eines release-please-PRs, dessen eigener
+`tofu-plan`-Kommentar die Vorschau ist. `false` wendet bei jedem Push auf den
+aufrufenden Branch an — der Merge selbst ist die Freigabe. Nie unter `pull_request`,
+`pull_request_target`, `workflow_run` oder `schedule`; `scripts/tofu-plan-apply-gate.sh`
+entscheidet das und ist je Ereignis in `tests/shell/tofu-plan-apply-gate.bats`
+abgedeckt.
+
+**Was dieses Atom NICHT loest:** die Vertrauensgrenze aus `tofu-plan.yml`, hier mit
+**schreibenden** Credentials. Der aufrufende Branch bzw. die Tags muessen durch
+Branch-Protection und Reviews geschuetzt sein — das Atom kann das `on:` des Aufrufers
+nicht pruefen, nur das Ereignis ablehnen.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States fuers Scheduling. Leer → working_directory. Muss mit dem Wert der anderen tofu-Atome desselben Stacks uebereinstimmen. |
+| input  | `require_tag` | boolean | no | `true` | `true` → anwenden nur auf einem Tag oder Release (sowie per workflow_dispatch). `false` → auch auf jedem Branch-Push: der Merge ist die Freigabe. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments (bucket, endpoint, region). Credentials do NOT belong here — use the secrets. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst NICHT: ein schreibender Lauf verzichtet nie auf die Sperre. |
+| input  | `outputs_allowlist` | string | no | `''` | Newline-separated Namen der Outputs, die als outputs_json exportiert werden. Leer → keine. Es wird NICHT allein auf das sensitive-Flag vertraut. |
+| input  | `backup_retention_days` | number | no | `7` | Retention des State-Backups in Tagen. |
+| input  | `backend_type` | string | no | `s3` | `s3` \| `pg` \| `other`. Steuert NUR, worauf die Warnung zum Wiederherstellungspunkt schaut. Bei `pg` sichert das Atom bewusst nichts (CNPG barmanObjectStore, WAL-Archiving, PITR). |
+| input  | `state_bucket` | string | no | `''` | Bucket des State-Objekts. Leer → kein Backup, mit sichtbarer Warnung in der Summary. |
+| input  | `state_key` | string | no | `''` | Key des State-Objekts im Bucket. |
+| input  | `state_workspace_key_prefix` | string | no | `env:` | Praefix fuer Nicht-Default-Workspaces. Der echte Objektpfad lautet dann `<prefix>/<workspace>/<key>`. |
+| input  | `state_workspace` | string | no | `default` | OpenTofu-Workspace des States. |
+| input  | `state_endpoint` | string | no | `''` | Endpoint-URL fuer S3-kompatible Backends (leer → AWS). |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. Plan und Apply laufen im selben Job; die Labels muessen nur das Backend erreichen. |
+| output | `applied` | string | — | — | `true`, wenn der Apply durchlief. LEER, wenn er nicht startete (keine Aenderungen, Plan gescheitert, Gatter) — `== 'true'` pruefen, nicht `!= 'false'`. |
+| output | `has_changes` | string | — | — | `true`/`false` nach erfolgreichem Plan, LEER wenn der Plan nicht durchlief. |
+| output | `plan_summary_line` | string | — | — | Die Plan-Zusammenfassung, z. B. "Plan: 2 to add, 1 to change, 0 to destroy". |
+| output | `summary_line` | string | — | — | Die Apply-Zusammenfassung. |
+| output | `apply_status` | string | — | — | `success`, `failed`, oder LEER wenn der Apply-Schritt nicht startete. |
+| output | `outputs_json` | string | — | — | JSON-Objekt der in outputs_allowlist genannten, nicht-sensitiven Outputs. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `tf_encryption_passphrase` | — | yes | — | Passphrase fuer OpenTofus native Plan- und State-Verschluesselung. Dieselbe wie in tofu-plan und tofu-apply desselben Stacks. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
+
 ### `tofu-destroy.yml`
 
 **Zwei Dispatches, ein Atom.** Der erste Aufruf (ohne `plan_run_id`) erzeugt den
