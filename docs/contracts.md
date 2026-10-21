@@ -106,6 +106,7 @@ with:
 | input   | `runs_on_arm64` | string  | no       | `'["self-hosted","Linux","ARM64"]'`            | Runner for arm64 build job |
 | input   | `runs_on_merge` | string  | no       | `'["self-hosted","Linux","low-performance"]'`  | Runner for version + merge jobs |
 | input   | `ref`           | string  | no       | `''`                                           | Git ref (tag/branch/SHA) to check out before building. Release callers whose run creates the bump commit and tag (release-please) should pass the released tag; empty keeps the default event-SHA checkout. |
+| input   | `build_secret_repos` | string | no    | `''`                                           | Bare names of private org repositories (comma/newline-separated) the Dockerfile may read during the build. The build job mints a second App token restricted to `contents:read` on exactly these repos, right before the build, and passes it as BuildKit secret `github_token` (`RUN --mount=type=secret,id=github_token`). Never in a layer or the cache; revoked at job end. **Trust boundary:** any `RUN` that mounts it can print it — opting in trusts the Dockerfile with read access to those repos. Since v4.x. |
 | output  | `image_ref`     | string  | —        | —                                              | `ghcr.io/<image_name>:<tag>` |
 | output  | `moving_ref`    | string  | —        | —                                              | `ghcr.io/<image_name>:<moving_tag>`, or empty when the run published no moving tag. Pushed only after signing, so it always resolves to the same digest as `image_ref` |
 | output  | `digest`        | string  | —        | —                                              | Manifest-list digest `sha256:…` |
@@ -126,6 +127,7 @@ with:
 | input   | `tag`             | string  | no       | `''`                                            | Shared tag for every image. Empty → auto-compute (prerelease only). |
 | input   | `prerelease`      | boolean | no       | `false`                                         | Prerelease build (no `:latest`, auto-compute tag if empty). |
 | input   | `platforms`       | string  | no       | `'linux/amd64,linux/arm64'`                     | Comma-separated platform list forwarded to each nested docker-build. |
+| input   | `build_secret_repos` | string | no      | `''`                                            | Private org repositories every image's Dockerfile may read during the build (forwarded to docker-build.yml; see its contract for the trust boundary). |
 | input   | `build_args`      | string  | no       | `''`                                            | Newline-separated KEY=VALUE build args forwarded to each nested docker-build. |
 | input   | `sign`            | boolean | no       | `true`                                          | Cosign keyless signing via OIDC (forwarded). |
 | input   | `attest`          | boolean | no       | `true`                                          | SLSA build provenance attestation (forwarded). |

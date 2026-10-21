@@ -69,6 +69,34 @@ jobs:
       runs_on_arm64: '["ubuntu-24.04-arm"]'
       runs_on_merge: '["ubuntu-latest"]'
 
+  # ----- build_secret_repos: Token-Scope im Build beweisen -----
+  # Ein Fixture-Dockerfile liest das BuildKit-Secret `github_token` und prueft
+  # per GET /installation/repositories, dass das Token GENAU den konfigurierten
+  # Repos gilt, und per Negativ-Probe, dass ein nicht gelistetes privates Repo
+  # 404 liefert. Der Katalog selbst ist oeffentlich — ihn mit dem Token zu
+  # laden wuerde nichts beweisen. flow-api ist das private Repo, fuer das die
+  # Faehigkeit gebaut wurde (agent-image), und bleibt hier bewusst ungelistet.
+  test-docker-build-secret:
+    uses: ./.github/workflows/docker-build.yml
+    secrets: inherit
+    with:
+      tag: ''
+      prerelease: true
+      context: tests/fixtures/build-secret
+      dockerfile: tests/fixtures/build-secret/Dockerfile
+      image_name: ${{ github.repository }}/test-fixture-secret
+      platforms: linux/amd64
+      build_secret_repos: reusable-workflows
+      build_args: |
+        EXPECTED_REPOS=${{ github.repository }}
+        DENIED_REPO=serverkraken/flow-api
+      sign: false
+      attest: false
+      sbom: false
+      runs_on_amd64: '["ubuntu-latest"]'
+      runs_on_arm64: '["ubuntu-24.04-arm"]'
+      runs_on_merge: '["ubuntu-latest"]'
+
   # ----- Einzel-Plattform-Pfad (Audit K-6) -----
   #
   # `docker-build.yml` faehrt IMMER eine Matrix mit beiden Architekturen und
@@ -1413,6 +1441,7 @@ jobs:
     name: "integration / summary"
     needs:
       - test-docker-build
+      - test-docker-build-secret
       - assert-attestation-verifies
       - assert-docker-build-single-platform
       - assert-flutter-release-has-apk-and-aab
