@@ -1,0 +1,505 @@
+# .github/workflows/tofu-plan-apply.yml
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  working_directory, concurrency_key, require_tag, tofu_version,
+#            backend_config, lock_timeout, outputs_allowlist,
+#            backup_retention_days, backend_type, state_bucket, state_key,
+#            state_workspace_key_prefix, state_workspace, state_endpoint,
+#            runs_on
+#   secrets: release_please_app_client_id, release_please_app_private_key,
+#            tf_encryption_passphrase, backend_access_key, backend_secret_key,
+#            backend_conn_str, tf_vars
+#   outputs: applied, has_changes, plan_summary_line, summary_line,
+#            apply_status, outputs_json
+#
+# DIE FREIGABE IST DER MERGE, NICHT EIN KNOPF.
+#
+#   tofu-apply.yml verlangt einen Menschen, der nach dem Merge noch einmal
+#   handelt: Run-ID des gelesenen Plans, Dispatch, Frist. Das passt, wo ein
+#   Apply Server ersetzen kann. Fuer Konfiguration, die sich mit einem
+#   Revert-PR zuruecknehmen laesst (WAF-Regeln, DNS, Zone-Einstellungen), ist
+#   der zweite Knopf nur Reibung: er prueft nichts, was der PR-Plan nicht schon
+#   gezeigt hat.
+#
+#   Dieses Atom plant deshalb FRISCH und wendet im selben Lauf an, sobald ein
+#   Merge dahintersteht. Kein Artefakt, keine Frist, kein Architekturzwang
+#   zwischen Plan- und Apply-Lauf. Der gelesene PR-Plan ist die Vorschau, die
+#   Summary dieses Laufs zeigt, was wirklich angewandt wurde.
+#
+#   Zwei Betriebsarten, gesteuert ueber require_tag:
+#     true  (Default) — nur auf einem Tag oder Release, z. B. nach dem Merge
+#                       eines release-please-PRs. Der Release-PR traegt seinen
+#                       eigenen tofu-plan-Kommentar; ihn zu mergen ist die
+#                       Freigabe fuer genau diesen Stand.
+#     false           — jeder Push auf den Branch, der dieses Atom aufruft.
+#                       Der Merge selbst ist die Freigabe (GitOps wie ArgoCD).
+#
+#   Nie unter pull_request, pull_request_target, workflow_run oder schedule.
+#   scripts/tofu-plan-apply-gate.sh entscheidet das und ist in
+#   tests/shell/tofu-plan-apply-gate.bats je Ereignis abgedeckt.
+#
+# WAS DIESES ATOM NICHT LOEST: die Vertrauensgrenze aus tofu-plan.yml gilt
+# hier verschaerft. Der Lauf fuehrt Adopter-Konfiguration mit SCHREIBENDEN
+# Credentials aus. Wer es aufruft, muss den Branch bzw. die Tags, auf die es
+# hoert, durch Branch-Protection und Reviews schuetzen — das Atom kann das
+# `on:` des Aufrufers nicht pruefen, nur das Ereignis ablehnen.
+name: tofu-plan-apply
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: 'OpenTofu stack directory.'
+        required: false
+        type: string
+        default: 'tofu'
+      concurrency_key:
+        description: >-
+          Identitaet des States fuers Scheduling. Leer → working_directory.
+          Muss mit dem Wert der anderen tofu-Atome desselben Stacks
+          uebereinstimmen, sonst laufen sie sich am Backend-Lock in die Quere.
+        required: false
+        type: string
+        default: ''
+      require_tag:
+        description: >-
+          `true` → anwenden nur auf einem Tag oder Release (sowie per
+          workflow_dispatch). `false` → auch auf jedem Branch-Push: der Merge
+          ist die Freigabe. Nie unter pull_request, pull_request_target,
+          workflow_run oder schedule.
+        required: false
+        type: boolean
+        default: true
+      tofu_version:
+        description: 'Override OpenTofu version (empty → composite default).'
+        required: false
+        type: string
+        default: ''
+      backend_config:
+        description: >-
+          Newline-separated `-backend-config=` arguments (bucket, endpoint,
+          region). Credentials do NOT belong here — use the secrets.
+        required: false
+        type: string
+        default: ''
+      lock_timeout:
+        description: >-
+          Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst
+          NICHT: ein schreibender Lauf verzichtet nie auf die Sperre.
+        required: false
+        type: string
+        default: '60s'
+      outputs_allowlist:
+        description: >-
+          Newline-separated Namen der Outputs, die als outputs_json exportiert
+          werden. Leer → keine. Es wird NICHT allein auf das sensitive-Flag
+          vertraut: ein Provider oder ein Adopter kann es falsch setzen.
+        required: false
+        type: string
+        default: ''
+      backup_retention_days:
+        description: 'Retention des State-Backups in Tagen.'
+        required: false
+        type: number
+        default: 7
+      backend_type:
+        description: >-
+          `s3` | `pg` | `other`. Steuert NUR, worauf die Warnung zum
+          Wiederherstellungspunkt schaut — nicht, wie tofu den Backend
+          anspricht (das steht in der versions.tf des Adopters).
+          Bei `pg` sichert dieses Atom bewusst NICHTS: eine CNPG-Datenbank mit
+          barmanObjectStore hat kontinuierliches WAL-Archiving samt
+          Point-in-Time-Recovery, und das ist einem Artefakt pro Lauf
+          ueberlegen. Der Adopter muss dieses Backup haben.
+        required: false
+        type: string
+        default: 's3'
+      state_bucket:
+        description: >-
+          Bucket des State-Objekts. Leer → kein Backup, mit sichtbarer Warnung
+          in der Summary. Bucket und Key kommen als Input und NICHT aus
+          `.terraform/terraform.tfstate`: das ist internes Format ohne
+          Stabilitaetszusage.
+        required: false
+        type: string
+        default: ''
+      state_key:
+        description: 'Key des State-Objekts im Bucket.'
+        required: false
+        type: string
+        default: ''
+      state_workspace_key_prefix:
+        description: >-
+          Praefix fuer Nicht-Default-Workspaces. Der echte Objektpfad lautet
+          dann `<prefix>/<workspace>/<key>`; ein naives bucket+key sicherte das
+          falsche Objekt.
+        required: false
+        type: string
+        default: 'env:'
+      state_workspace:
+        description: 'OpenTofu-Workspace des States.'
+        required: false
+        type: string
+        default: 'default'
+      state_endpoint:
+        description: 'Endpoint-URL fuer S3-kompatible Backends (leer → AWS).'
+        required: false
+        type: string
+        default: ''
+      runs_on:
+        description: >-
+          JSON-encoded array of runner labels. Plan und Apply laufen im selben
+          Job, ein Architekturzwang wie bei tofu-apply entfaellt; die Labels
+          muessen nur das Backend erreichen.
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      applied:
+        description: >-
+          `true`, wenn der Apply durchlief. LEER, wenn er nicht startete —
+          weil der Plan keine Aenderungen hatte, scheiterte oder das Gatter
+          ablehnte. Ein Aufrufer muss `== 'true'` pruefen, nicht `!= 'false'`.
+        value: ${{ jobs.plan-apply.outputs.applied }}
+      has_changes:
+        description: >-
+          `true`/`false` nach erfolgreichem Plan, LEER wenn der Plan nicht
+          durchlief.
+        value: ${{ jobs.plan-apply.outputs.has_changes }}
+      plan_summary_line:
+        description: 'Die Plan-Zusammenfassung, z. B. "Plan: 2 to add, 1 to change, 0 to destroy".'
+        value: ${{ jobs.plan-apply.outputs.plan_summary_line }}
+      summary_line:
+        description: 'Die Apply-Zusammenfassung, z. B. "Apply complete! Resources: 1 added, …".'
+        value: ${{ jobs.plan-apply.outputs.summary_line }}
+      apply_status:
+        description: '`success`, `failed`, oder LEER wenn der Apply-Schritt nicht startete.'
+        value: ${{ jobs.plan-apply.outputs.apply_status }}
+      outputs_json:
+        description: >-
+          JSON-Objekt der in outputs_allowlist genannten, nicht-sensitiven
+          Outputs. Leer, wenn keine Allowlist gesetzt ist.
+        value: ${{ jobs.plan-apply.outputs.outputs_json }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+      tf_encryption_passphrase:
+        required: true
+        description: >-
+          Passphrase fuer OpenTofus native Plan- und State-Verschluesselung.
+          Dieselbe wie in tofu-plan und tofu-apply desselben Stacks.
+      backend_conn_str:
+        required: false
+        description: >-
+          Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in
+          backend_config — der ist ein Input und stuende im Klartext in der
+          Workflow-Datei; ein conn_str enthaelt das Passwort.
+      backend_access_key:
+        required: false
+        description: 'S3-compatible backend access key → AWS_ACCESS_KEY_ID.'
+      backend_secret_key:
+        required: false
+        description: 'S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY.'
+      tf_vars:
+        required: false
+        description: 'Newline-separated KEY=VALUE pairs, exported as TF_VAR_key.'
+
+permissions:
+  # KEIN actions: read — es gibt kein Artefakt aus einem anderen Lauf. KEIN
+  # pull-requests: write — dieses Atom laeuft nie auf PRs.
+  contents: read
+
+concurrency:
+  # `mutate`, nicht `observe`: schreibende Laeufe (apply, plan-apply, destroy,
+  # unlock) serialisieren streng untereinander. Die Gruppe benennt den STATE,
+  # nicht den Workflow.
+  group: tofu-mutate-${{ github.repository }}-${{ inputs.concurrency_key || inputs.working_directory }}
+  cancel-in-progress: false
+
+jobs:
+  plan-apply:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 60
+    outputs:
+      applied: ${{ steps.apply.outputs.exec_status == 'success' && 'true' || '' }}
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+      plan_summary_line: ${{ steps.plan.outputs.summary_line }}
+      summary_line: ${{ steps.apply.outputs.summary_line }}
+      apply_status: ${{ steps.apply.outputs.exec_status }}
+      outputs_json: ${{ steps.outputs.outputs.outputs_json }}
+    steps:
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      # persist-credentials: false, dieselbe Begruendung wie in tofu-plan.yml:
+      # der Checkout liesse sonst einen extraheader mit dem GITHUB_TOKEN in der
+      # lokalen Git-Config liegen, und tofu fuehrt Adopter-Konfiguration aus.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog for composite actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+          persist-credentials: false
+
+      # Das Gatter liegt in scripts/ des Katalogs, deshalb erst nach dessen
+      # Checkout. Bis hierhin hat nichts Backend- oder Provider-Credentials
+      # beruehrt; der Katalog-Checkout nutzt nur das kurzlebige App-Token.
+      - name: Refuse to apply outside a merge or a manual dispatch
+        working-directory: ${{ github.workspace }}
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REQUIRE_TAG: ${{ inputs.require_tag }}
+          GATE: ${{ github.workspace }}/.catalog/scripts/tofu-plan-apply-gate.sh
+        run: |
+          set -euo pipefail
+          bash "$GATE" "$EVENT" "$REF_TYPE" "$REQUIRE_TAG"
+          echo "Ereignis '${EVENT}' auf ${REF_TYPE} ist freigegeben"
+
+      - name: Install OpenTofu toolchain
+        uses: ./.catalog/actions/setup-tofu-toolchain
+        with:
+          tofu_version: ${{ inputs.tofu_version }}
+
+      # Eine Warnung, die in einem legitimen Fall grundlos schreit, bringt man
+      # sich schnell bei zu ignorieren. Deshalb unterscheidet sie die Faelle.
+      - name: Report the recovery point
+        if: inputs.state_bucket == ''
+        env:
+          BACKEND: ${{ inputs.backend_type }}
+        run: |
+          set -euo pipefail
+          case "$BACKEND" in
+            pg)
+              echo "::notice::backend_type=pg — dieses Atom sichert den State bewusst nicht selbst"
+              echo "::notice::der Wiederherstellungspfad ist das Backup der Datenbank (CNPG barmanObjectStore, WAL-Archiving, PITR)"
+              ;;
+            *)
+              echo "::warning::kein state_bucket gesetzt — dieser Apply laeuft OHNE Wiederherstellungspunkt"
+              echo "::warning::das ist nur vertretbar, wenn das Backend selbst versioniert; Garage tut das nicht"
+              ;;
+          esac
+
+      - name: Back up the raw state object
+        if: inputs.state_bucket != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.backend_access_key }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.backend_secret_key }}
+          BUCKET: ${{ inputs.state_bucket }}
+          KEY_PATH: ${{ inputs.state_key }}
+          PREFIX: ${{ inputs.state_workspace_key_prefix }}
+          WORKSPACE: ${{ inputs.state_workspace }}
+          ENDPOINT: ${{ inputs.state_endpoint }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEY_PATH" ]]; then
+            echo "::error::state_bucket ist gesetzt, state_key fehlt" >&2
+            exit 1
+          fi
+          # Bei einem Nicht-Default-Workspace lautet der Objektpfad
+          # <prefix>/<workspace>/<key>. Ein naives bucket+key sicherte hier
+          # das falsche Objekt — und das faellt erst auf, wenn man das Backup
+          # braucht.
+          if [[ "$WORKSPACE" == "default" ]]; then
+            OBJ="$KEY_PATH"
+          else
+            OBJ="${PREFIX}/${WORKSPACE}/${KEY_PATH}"
+          fi
+          ARGS=()
+          [[ -n "$ENDPOINT" ]] && ARGS+=(--endpoint-url "$ENDPOINT")
+          aws "${ARGS[@]+"${ARGS[@]}"}" s3 cp "s3://${BUCKET}/${OBJ}" state-backup.enc
+          # Das Objekt MUSS Chiffrat sein — die Composite arbeitet mit
+          # enforced = true. Ist es Klartext, traegt es den Provider-Token im
+          # Klartext, und ein Upload waere genau das Leck, gegen das die
+          # Verschluesselung gebaut wurde.
+          if jq -e '.serial' state-backup.enc >/dev/null 2>&1; then
+            echo "::error::das State-Objekt ist unverschluesselt — Backup wird NICHT hochgeladen" >&2
+            rm -f state-backup.enc
+            exit 1
+          fi
+          echo "State-Backup bereit ($(wc -c < state-backup.enc | tr -d ' ') Bytes, Chiffrat)"
+
+      - name: Upload the state backup
+        if: inputs.state_bucket != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tofu-state-backup-${{ github.run_id }}
+          path: state-backup.enc
+          if-no-files-found: error
+          retention-days: ${{ inputs.backup_retention_days }}
+
+      # Frischer Plan gegen den echten State. Die tfplan entsteht unter
+      # <working_directory>/tfplan (`-chdir` macht den Pfad relativ zum Stack)
+      # und wird NIE als Artefakt hochgeladen — sie traegt sensitive-Werte im
+      # Klartext und lebt nur bis zum Ende dieses Jobs.
+      - name: Plan
+        id: plan
+        uses: ./.catalog/actions/tofu-stack-exec
+        with:
+          command: plan
+          working_directory: ${{ inputs.working_directory }}
+          backend_config: ${{ inputs.backend_config }}
+          lock_timeout: ${{ inputs.lock_timeout }}
+          tf_vars: ${{ secrets.tf_vars }}
+          encryption_passphrase: ${{ secrets.tf_encryption_passphrase }}
+          backend_conn_str: ${{ secrets.backend_conn_str }}
+          backend_access_key: ${{ secrets.backend_access_key }}
+          backend_secret_key: ${{ secrets.backend_secret_key }}
+
+      # Nur bei Aenderungen. Ein Apply auf einen leeren Plan waere harmlos,
+      # schriebe aber einen neuen State-Serial und verschleierte in der
+      # Historie, wann wirklich etwas passiert ist.
+      - name: Apply the fresh plan
+        id: apply
+        if: steps.plan.outputs.has_changes == 'true'
+        uses: ./.catalog/actions/tofu-stack-exec
+        with:
+          command: apply
+          working_directory: ${{ inputs.working_directory }}
+          backend_config: ${{ inputs.backend_config }}
+          lock_timeout: ${{ inputs.lock_timeout }}
+          tf_vars: ${{ secrets.tf_vars }}
+          encryption_passphrase: ${{ secrets.tf_encryption_passphrase }}
+          backend_conn_str: ${{ secrets.backend_conn_str }}
+          backend_access_key: ${{ secrets.backend_access_key }}
+          backend_secret_key: ${{ secrets.backend_secret_key }}
+
+      - name: Export allow-listed outputs
+        if: inputs.outputs_allowlist != '' && steps.apply.outputs.exec_status == 'success'
+        id: outputs
+        env:
+          DIR: ${{ inputs.working_directory }}
+          ALLOW: ${{ inputs.outputs_allowlist }}
+        run: |
+          set -euo pipefail
+          if [[ -f "$RUNNER_TEMP/tofu-encryption.hcl" ]]; then
+            TF_ENCRYPTION="$(cat "$RUNNER_TEMP/tofu-encryption.hcl")"
+            export TF_ENCRYPTION
+          fi
+          tofu -chdir="$DIR" output -json > outputs-raw.json
+          # ZWEI Filter, nicht einer: nur was in der Allowlist steht, UND nur
+          # was nicht als sensitive markiert ist. Auf das Flag allein ist kein
+          # Verlass — ein Provider oder ein Adopter kann es falsch setzen.
+          python3 - <<'PY' > outputs.json
+          import json, os
+          raw = json.load(open("outputs-raw.json"))
+          allow = {n.strip() for n in os.environ["ALLOW"].splitlines() if n.strip()}
+          kept = {k: v["value"] for k, v in raw.items()
+                  if k in allow and not v.get("sensitive", False)}
+          dropped = sorted(set(allow) - set(kept))
+          if dropped:
+              print(f"::warning::nicht exportiert (unbekannt oder sensitive): {', '.join(dropped)}", file=__import__("sys").stderr)
+          print(json.dumps(kept))
+          PY
+          echo "outputs_json=$(cat outputs.json)" >> "$GITHUB_OUTPUT"
+          rm -f outputs-raw.json outputs.json
+
+      - name: Summary
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref_name }}
+          PLAN_STATUS: ${{ steps.plan.outputs.exec_status }}
+          HAS_CHANGES: ${{ steps.plan.outputs.has_changes }}
+          PLAN_LINE: ${{ steps.plan.outputs.summary_line }}
+          APPLY_STATUS: ${{ steps.apply.outputs.exec_status }}
+          APPLY_LINE: ${{ steps.apply.outputs.summary_line }}
+          BUCKET: ${{ inputs.state_bucket }}
+          RENDER: ${{ github.workspace }}/.catalog/scripts/tofu-plan-render.sh
+        run: |
+          tofu_version=$(tofu version 2>/dev/null | head -1 | awk '{print $2}' || echo unknown)
+          # Der Fehlerfall zuerst: ein leeres has_changes ist zweideutig
+          # (nicht gestartet ODER gescheitert), plan_status trennt beides.
+          if [[ "${PLAN_STATUS:-}" != "success" ]]; then
+            result="✗ Plan lief nicht durch"
+          elif [[ "${HAS_CHANGES:-}" != "true" ]]; then
+            result="✓ keine Aenderungen, nichts angewandt"
+          elif [[ "${APPLY_STATUS:-}" == "success" ]]; then
+            result="✓ angewandt"
+          elif [[ -z "${APPLY_STATUS:-}" ]]; then
+            result="✗ Apply lief nicht durch"
+          else
+            result="✗ Apply fehlgeschlagen"
+          fi
+          {
+            echo "## tofu-plan-apply"
+            echo ""
+            echo "**Tool:** OpenTofu ${tofu_version}"
+            echo "**Working dir:** \`${DIR}\`"
+            echo "**Ausgeloest durch:** ${EVENT} auf \`${REF}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Plan | ${PLAN_STATUS:-nicht gelaufen} — ${PLAN_LINE:-unknown} |"
+            echo "| Apply | ${APPLY_STATUS:-nicht gelaufen} — ${APPLY_LINE:-—} |"
+            echo "| State-Backup | ${BUCKET:-nicht konfiguriert} |"
+            if [[ -s plan.txt ]]; then
+              echo ""
+              echo "<details><summary>Plan, wie er angewandt wurde</summary>"
+              echo ""
+              bash "$RENDER" plan.txt
+              echo ""
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Preserve errored.tfstate and clean up
+        if: always()
+        env:
+          DIR: ${{ inputs.working_directory }}
+        run: |
+          # errored.tfstate wird NICHT geloescht: schlaegt der Apply nach
+          # bereits geaenderten Ressourcen beim Zurueckschreiben fehl, ist
+          # diese Datei womoeglich die einzige aktuelle State-Kopie. Sie bleibt
+          # liegen, und der Lauf sagt laut, was zu tun ist.
+          if [[ -f "$DIR/errored.tfstate" ]]; then
+            echo "::error::errored.tfstate liegt vor — der State wurde NICHT ins Backend zurueckgeschrieben"
+            echo "::error::NICHT einfach neu applien: erst den State wiederherstellen, Runbook in docs/operations.md"
+          fi
+          # Die tfplan traegt sensitive-Werte im Klartext und ueberlebt auf dem
+          # self-hosted Pool sonst den Job.
+          rm -f "$DIR/tfplan" state-backup.enc plan.txt plan.err apply.txt apply.err || true
+          rm -f "$RUNNER_TEMP/tf-vars.env" "$RUNNER_TEMP/tofu-encryption.hcl" || true
+          echo "Aufgeraeumt (tfplan, state-backup.enc, plan/apply-Ausgaben, tf-vars.env, tofu-encryption.hcl)"

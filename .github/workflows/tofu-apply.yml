@@ -294,6 +294,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.plan_run_id }}
           NAME: ${{ steps.artifact.outputs.name }}
+          DIR: ${{ inputs.working_directory }}
         run: |
           set -euo pipefail
           if ! gh run download "$RUN_ID" --name "$NAME" --dir plan-artifact; then
@@ -301,8 +302,12 @@ jobs:
             echo "::error::lief tofu-plan dort mit emit_plan: true, und ist die Retention noch nicht abgelaufen?" >&2
             exit 1
           fi
+          # Das Artefakt behaelt das Upload-Layout von actions/tofu-plan-artifact:
+          # plan-meta.json im Wurzelverzeichnis, die tfplan unter
+          # <working_directory>/ — weil sie dort entsteht (`-chdir`). Fuer
+          # working_directory `.` faellt beides zusammen.
           test -f plan-artifact/plan-meta.json || { echo "::error::plan-meta.json fehlt im Artefakt" >&2; exit 1; }
-          test -f plan-artifact/tfplan || { echo "::error::tfplan fehlt im Artefakt" >&2; exit 1; }
+          test -f "plan-artifact/${DIR}/tfplan" || { echo "::error::tfplan fehlt im Artefakt unter ${DIR}/" >&2; exit 1; }
 
       - name: Mint catalog-scoped App token
         id: catalog-token
@@ -432,8 +437,9 @@ jobs:
           working_directory: ${{ inputs.working_directory }}
           backend_config: ${{ inputs.backend_config }}
           # Absoluter Pfad: `-chdir` macht relative Pfade sonst relativ zum
-          # Stack-Verzeichnis, und das Artefakt liegt im Workspace-Wurzelverzeichnis.
-          plan_file: ${{ github.workspace }}/plan-artifact/tfplan
+          # Stack-Verzeichnis, und das Artefakt liegt im Workspace-Wurzelverzeichnis
+          # — mit der tfplan unter <working_directory>/, wie hochgeladen.
+          plan_file: ${{ github.workspace }}/plan-artifact/${{ inputs.working_directory }}/tfplan
           lock_timeout: ${{ inputs.lock_timeout }}
           tf_vars: ${{ secrets.tf_vars }}
           encryption_passphrase: ${{ secrets.tf_encryption_passphrase }}
