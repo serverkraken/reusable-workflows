@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.29.0](https://github.com/serverkraken/reusable-workflows/compare/v4.28.2...v4.29.0) (2026-10-21)
+
+
+### Features
+
+* **docker-build:** build_secret_repos — scoped App-Token als BuildKit-Secret ([#434](https://github.com/serverkraken/reusable-workflows/issues/434)) ([9ea7187](https://github.com/serverkraken/reusable-workflows/commit/9ea7187df7a31f3d815b4f71aa8ac4e4214d1874))
+
 ## [4.28.2](https://github.com/serverkraken/reusable-workflows/compare/v4.28.1...v4.28.2) (2026-10-06)
 
 
