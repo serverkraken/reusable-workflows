@@ -27,4 +27,6 @@ RUN --mount=type=secret,id=github_token,required=true \
       echo "unlisted repo $DENIED_REPO answered $code, expected 404" >&2; exit 1; \
     fi; \
     echo "build secret ok: scoped to $got, $DENIED_REPO denied"
+# Non-root at runtime (Trivy DS-0002); the probe above runs at build time.
+USER 65532:65532
 CMD ["echo", "build-secret fixture"]
