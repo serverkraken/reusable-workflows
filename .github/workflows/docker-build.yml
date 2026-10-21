@@ -80,6 +80,22 @@ on:
         required: false
         type: string
         default: ''
+      build_secret_repos:
+        description: >-
+          Private repositories of the org whose contents the Dockerfile may
+          read during the build — bare repo names, comma- or newline-separated
+          (e.g. 'flow-api'). When set, the build job mints a second App token
+          right before the build, restricted to contents:read on exactly these
+          repositories, and hands it to BuildKit as the secret `github_token`
+          (`RUN --mount=type=secret,id=github_token …`, read it from
+          /run/secrets/github_token). A secret mount never lands in a layer or
+          the build cache. TRUST BOUNDARY: any RUN step that mounts it can print
+          it — opting in means trusting the Dockerfile with read access to the
+          named repos; keep `set -x` off and never put the token in a URL. The
+          token lives 1 h and is revoked when the job ends. Empty = no secret.
+        required: false
+        type: string
+        default: ''
     outputs:
       image_ref:
         description: 'Pushed image reference with tag.'
@@ -434,6 +450,46 @@ jobs:
           # workflow (e.g. integration tests building distinct fixtures).
           echo "value=$(echo "$IMG_NAME" | tr '/' '-')" >> "$GITHUB_OUTPUT"
 
+      # Build-Secret fuer private Release-Assets (Adopter: agent-image zieht
+      # flow/flow-mcp aus dem privaten flow-api). Eigenes, zweites App-Token:
+      # das Katalog-Token oben ist auf reusable-workflows beschraenkt, und die
+      # App traegt installationsweit contents:write — `permission-contents:
+      # read` plus `repositories` schrumpfen das Token auf genau das, was der
+      # Build braucht. Gemuenzt UNMITTELBAR vor dem Build (1 h Laufzeit, Widerruf
+      # am Job-Ende). Zweitmeinung Codex 2026-10-21: A tragfaehig, Eingabe
+      # validieren, feste Secret-ID, fail closed.
+      - name: Validate build_secret_repos
+        if: steps.check.outputs.selected == 'true' && inputs.build_secret_repos != ''
+        env:
+          REPOS: ${{ inputs.build_secret_repos }}
+        run: |
+          set -euo pipefail
+          n=0
+          while IFS= read -r repo; do
+            repo="${repo//[[:space:]]/}"
+            [[ -z "$repo" ]] && continue
+            if [[ ! "$repo" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+              echo "::error::build_secret_repos: '$repo' is not a bare repository name (owner/ prefixes, spaces and URLs are not accepted)" >&2
+              exit 1
+            fi
+            n=$((n + 1))
+          done < <(printf '%s\n' "$REPOS" | tr ',' '\n')
+          if [[ "$n" -eq 0 ]]; then
+            echo "::error::build_secret_repos is set but names no repository" >&2
+            exit 1
+          fi
+
+      - name: Mint build-secret App token
+        if: steps.check.outputs.selected == 'true' && inputs.build_secret_repos != ''
+        id: build-secret-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: ${{ inputs.build_secret_repos }}
+          permission-contents: read
+
       - name: Build and push by digest
         id: build
         if: steps.check.outputs.selected == 'true'
@@ -443,6 +499,8 @@ jobs:
           file: ${{ inputs.dockerfile }}
           platforms: ${{ matrix.platform }}
           build-args: ${{ inputs.build_args }}
+          # Feste Secret-ID: der Adopter waehlt die Repos, nicht den Namen.
+          secrets: ${{ inputs.build_secret_repos != '' && format('github_token={0}', steps.build-secret-token.outputs.token) || '' }}
           outputs: type=image,name=ghcr.io/${{ needs.version.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=build-${{ steps.suffix.outputs.value }}-${{ matrix.arch }}
           # ignore-error: a cache-backend outage must never fail a release

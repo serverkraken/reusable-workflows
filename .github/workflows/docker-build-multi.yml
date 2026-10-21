@@ -55,6 +55,14 @@ on:
         required: false
         type: string
         default: ''
+      build_secret_repos:
+        description: >-
+          Private repositories whose contents every image's Dockerfile may read
+          during the build (forwarded to docker-build.yml, see its contract for
+          the trust boundary). Empty = no secret.
+        required: false
+        type: string
+        default: ''
       sign:
         required: false
         type: boolean
@@ -229,6 +237,7 @@ jobs:
       context: ${{ inputs.context }}
       platforms: ${{ inputs.platforms }}
       build_args: ${{ inputs.build_args }}
+      build_secret_repos: ${{ inputs.build_secret_repos }}
       sign: ${{ inputs.sign }}
       attest: ${{ inputs.attest }}
       sbom: ${{ inputs.sbom }}
