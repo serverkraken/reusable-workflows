@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.30.0](https://github.com/serverkraken/reusable-workflows/compare/v4.29.0...v4.30.0) (2026-10-21)
+
+
+### Features
+
+* **tofu-plan-apply:** frisch planen und anwenden nach Merge/Release; fix(tofu-apply): tfplan-Pfad ([#436](https://github.com/serverkraken/reusable-workflows/issues/436)) ([4b994a1](https://github.com/serverkraken/reusable-workflows/commit/4b994a1dbceca08dc4684260cfbec1696fe1ec73))
+
 ## [4.29.0](https://github.com/serverkraken/reusable-workflows/compare/v4.28.2...v4.29.0) (2026-10-21)
 
 
