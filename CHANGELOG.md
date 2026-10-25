@@ -1,5 +1,88 @@
 # Changelog
 
+## [4.30.0](https://github.com/serverkraken/reusable-workflows/compare/v4.29.0...v4.30.0) (2026-10-21)
+
+
+### Features
+
+* **tofu-plan-apply:** frisch planen und anwenden nach Merge/Release; fix(tofu-apply): tfplan-Pfad ([#436](https://github.com/serverkraken/reusable-workflows/issues/436)) ([4b994a1](https://github.com/serverkraken/reusable-workflows/commit/4b994a1dbceca08dc4684260cfbec1696fe1ec73))
+
+## [4.29.0](https://github.com/serverkraken/reusable-workflows/compare/v4.28.2...v4.29.0) (2026-10-21)
+
+
+### Features
+
+* **docker-build:** build_secret_repos — scoped App-Token als BuildKit-Secret ([#434](https://github.com/serverkraken/reusable-workflows/issues/434)) ([9ea7187](https://github.com/serverkraken/reusable-workflows/commit/9ea7187df7a31f3d815b4f71aa8ac4e4214d1874))
+
+## [4.28.2](https://github.com/serverkraken/reusable-workflows/compare/v4.28.1...v4.28.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **test-rust:** Schwelle in der Shell pruefen statt per --fail-under-lines ([#429](https://github.com/serverkraken/reusable-workflows/issues/429)) ([63a9295](https://github.com/serverkraken/reusable-workflows/commit/63a929552457fcf7f0e608d3dcb2c80d1cd8d37e))
+
+## [4.28.1](https://github.com/serverkraken/reusable-workflows/compare/v4.28.0...v4.28.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **test-rust:** Coverage-Bericht nur einmal und nur als Summe erzeugen ([#427](https://github.com/serverkraken/reusable-workflows/issues/427)) ([f30698f](https://github.com/serverkraken/reusable-workflows/commit/f30698fa89840976a068b0e3cf5cef91981780c6))
+
+## [4.28.0](https://github.com/serverkraken/reusable-workflows/compare/v4.27.0...v4.28.0) (2026-09-20)
+
+
+### Features
+
+* **test-python:** timeout_minutes als Eingabe, Vorgabe bleibt 30 ([#419](https://github.com/serverkraken/reusable-workflows/issues/419)) ([160dad1](https://github.com/serverkraken/reusable-workflows/commit/160dad12c63162faaa7cc4253c1721a325e771de))
+
+## [4.27.0](https://github.com/serverkraken/reusable-workflows/compare/v4.26.0...v4.27.0) (2026-09-12)
+
+
+### Features
+
+* **security:** auto-skip SARIF upload on private repos ([#412](https://github.com/serverkraken/reusable-workflows/issues/412)) ([b970ee0](https://github.com/serverkraken/reusable-workflows/commit/b970ee0a0490fb8c34cf16db405668f93b06dd47))
+* **test-rust:** timeout_minutes als Eingabe, Vorgabe bleibt 30 ([#413](https://github.com/serverkraken/reusable-workflows/issues/413)) ([5ef6227](https://github.com/serverkraken/reusable-workflows/commit/5ef6227bdefea9d1bf6c98f0ce9c27e08f930f9e))
+
+
+### Bug Fixes
+
+* **ci:** Dry-Runs raus aus der repo-weiten Push-Gruppe — sie pushen nichts ([#416](https://github.com/serverkraken/reusable-workflows/issues/416)) ([9ea77d9](https://github.com/serverkraken/reusable-workflows/commit/9ea77d938e410fcc55c266e723018b0ee57c9403))
+* **detect:** die Komponentenreihenfolge hing an der readdir-Laune des Dateisystems ([#414](https://github.com/serverkraken/reusable-workflows/issues/414)) ([3204a66](https://github.com/serverkraken/reusable-workflows/commit/3204a667e8c969701295996b6485600faa0ff6ab))
+
+## [4.26.0](https://github.com/serverkraken/reusable-workflows/compare/v4.25.0...v4.26.0) (2026-08-28)
+
+
+### Features
+
+* Postgres-Backend als erste Wahl für den State ([#409](https://github.com/serverkraken/reusable-workflows/issues/409)) ([1e81d4b](https://github.com/serverkraken/reusable-workflows/commit/1e81d4b814af94c20e397b9470eab81839cc407f))
+
+## [4.25.0](https://github.com/serverkraken/reusable-workflows/compare/v4.24.0...v4.25.0) (2026-08-28)
+
+
+### Features
+
+* OpenTofu Apply, Destroy, Unlock und Drift — plus Reparatur der Renovate-Marker ([#407](https://github.com/serverkraken/reusable-workflows/issues/407)) ([c1610e6](https://github.com/serverkraken/reusable-workflows/commit/c1610e65f468871306c47a83c7d024b025ee0e99))
+
+## [4.24.0](https://github.com/serverkraken/reusable-workflows/compare/v4.23.0...v4.24.0) (2026-08-27)
+
+
+### Features
+
+* IaC- und Shell-Atome für den Katalog ([#405](https://github.com/serverkraken/reusable-workflows/issues/405)) ([6d7608d](https://github.com/serverkraken/reusable-workflows/commit/6d7608d1a64a95cd0fc2af653887b286d5394bbd))
+
+## [4.23.0](https://github.com/serverkraken/reusable-workflows/compare/v4.22.1...v4.23.0) (2026-08-27)
+
+
+### Features
+
+* **fixtures:** die build_runner-Vorgabe der Flutter-Atome lief nie ([#403](https://github.com/serverkraken/reusable-workflows/issues/403)) ([408c1f6](https://github.com/serverkraken/reusable-workflows/commit/408c1f618b98dd88b692a1e9c82fa74ef0de79f0))
+* **onboard:** der Prerelease-Trigger war fest auf develop gebacken ([#400](https://github.com/serverkraken/reusable-workflows/issues/400)) ([83a058a](https://github.com/serverkraken/reusable-workflows/commit/83a058a89af8692881d2e3dcfc62819972cb6b32))
+
+
+### Bug Fixes
+
+* **templates:** e2e.yml quotet Skript und Cron jetzt selbst ([#402](https://github.com/serverkraken/reusable-workflows/issues/402)) ([ed6ca55](https://github.com/serverkraken/reusable-workflows/commit/ed6ca5548141b11f5076b68a0cc3919b2c998414))
+
 ## [4.22.1](https://github.com/serverkraken/reusable-workflows/compare/v4.22.0...v4.22.1) (2026-08-27)
 
 

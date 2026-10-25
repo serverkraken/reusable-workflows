@@ -246,6 +246,14 @@ golden_check_preview() {
   golden_check_preview "go-root-multi-image"
 }
 
+# Repo-weite iac/shell-Signale (Task 12) rendern ueber die Komponenten-Kette
+# hinaus zwei zusaetzliche Jobs (Task 13). Ueber golden_check_preview, weil nur
+# der Go-Detektor `.iac`/`.shell` kennt — die Bash-Engine (golden_check) hat
+# davon keine Kenntnis und wuerde nie einen dieser Jobs rendern.
+@test "golden: iac-shell-repo (tofu-validate + shellcheck, Task 13)" {
+  golden_check_preview "iac-shell-repo"
+}
+
 # EINE Komponente, die NICHT an der Wurzel liegt (monorepo=false, path=svc).
 # Bis Audit J-6 bildete KEINE Fixture diesen Fall ab — deshalb blieb er
 # unbemerkt, obwohl er das Release-Gating still ausser Kraft setzte: der

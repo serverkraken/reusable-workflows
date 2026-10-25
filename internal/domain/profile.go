@@ -15,6 +15,8 @@ type Profile struct {
 	Workflows      *WorkflowsSpec   `json:"workflows,omitempty"`
 	Release        *ReleaseSpec     `json:"release,omitempty"`
 	Consumers      []GitOpsConsumer `json:"gitops_consumers,omitempty"`
+	IaC            *IaCSignal       `json:"iac,omitempty"`
+	Shell          *ShellSignal     `json:"shell,omitempty"`
 }
 
 type Component struct {
@@ -74,6 +76,20 @@ type GitOpsSignal struct {
 	HasKubeLinterConfig bool     `json:"has_kube_linter_config"`
 	HasGitleaksConfig   bool     `json:"has_gitleaks_config"`
 	SOPS                bool     `json:"sops"`
+}
+
+// IaCSignal listet die OpenTofu-Stacks eines Repos. `omitempty` am Profilfeld
+// ist Pflicht: ohne .tf-Dateien darf der Schluessel gar nicht erscheinen,
+// sonst aendert sich das gerenderte Profil-JSON jedes bestehenden Adopters.
+type IaCSignal struct {
+	Directories []string `json:"directories"`
+}
+
+// ShellSignal listet Globs auf die Shell-Skripte eines Repos, nicht die
+// Einzeldateien: eine neue Datei in scripts/ soll das Profil NICHT aendern
+// und damit auch keinen Drift ausloesen.
+type ShellSignal struct {
+	Paths []string `json:"paths"`
 }
 
 type LegacyOutputs struct {

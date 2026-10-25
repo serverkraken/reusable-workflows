@@ -47,3 +47,16 @@ jobs:
       oci_registry: ghcr.io/go-root-multi-image/charts
       dry_run: true
     secrets: inherit
+
+  shellcheck:
+    uses: serverkraken/reusable-workflows/.github/workflows/lint-shell.yml@v4
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      paths: |-
+        images/**/*.sh
+        test/**/*.sh
+      shellcheck_version: ${{ vars.SK_SHELLCHECK_VERSION || '' }}
+    secrets: inherit

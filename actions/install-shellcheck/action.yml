@@ -1,0 +1,70 @@
+# actions/install-shellcheck/action.yml
+name: install-shellcheck
+description: |
+  Install shellcheck (and optionally shfmt) as pinned, Renovate-managed
+  binaries. Mirrors the install-kube-linter pattern — never a third-party
+  setup action.
+
+  Deliberately NOT `apt-get install shellcheck`: the catalog default runner is
+  [self-hosted, Linux], and the apt version is unpinned and old. A lint gate
+  whose ruleset differs per runner image produces findings that vanish on
+  another machine.
+
+inputs:
+  version:
+    description: 'shellcheck version (no leading v). Empty → pinned default.'
+    required: false
+    default: ''
+  shfmt:
+    description: 'When "true", also install shfmt.'
+    required: false
+    default: 'false'
+  shfmt_version:
+    description: 'shfmt version (no leading v). Empty → pinned default.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install shellcheck
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=koalaman/shellcheck
+        SHELLCHECK_VERSION: '0.10.0'
+        REQUESTED: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$SHELLCHECK_VERSION}"
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=x86_64 ;;
+          aarch64|arm64) A=aarch64 ;;
+          *) echo "::error::Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT; cd "$TMP"
+        curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${VERSION}/shellcheck-v${VERSION}.linux.${A}.tar.xz" -o sc.tar.xz
+        tar -xJf sc.tar.xz "shellcheck-v${VERSION}/shellcheck"
+        sudo install -m 0755 "shellcheck-v${VERSION}/shellcheck" /usr/local/bin/shellcheck
+        shellcheck --version
+
+    - name: Install shfmt
+      if: ${{ inputs.shfmt == 'true' }}
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=mvdan/sh
+        SHFMT_VERSION: '3.10.0'
+        REQUESTED: ${{ inputs.shfmt_version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$SHFMT_VERSION}"
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) A=amd64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "::error::Unsupported arch: $ARCH" >&2; exit 1 ;;
+        esac
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        curl -fsSL "https://github.com/mvdan/sh/releases/download/v${VERSION}/shfmt_v${VERSION}_linux_${A}" -o "$TMP/shfmt"
+        sudo install -m 0755 "$TMP/shfmt" /usr/local/bin/shfmt
+        shfmt --version

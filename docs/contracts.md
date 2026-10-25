@@ -106,6 +106,7 @@ with:
 | input   | `runs_on_arm64` | string  | no       | `'["self-hosted","Linux","ARM64"]'`            | Runner for arm64 build job |
 | input   | `runs_on_merge` | string  | no       | `'["self-hosted","Linux","low-performance"]'`  | Runner for version + merge jobs |
 | input   | `ref`           | string  | no       | `''`                                           | Git ref (tag/branch/SHA) to check out before building. Release callers whose run creates the bump commit and tag (release-please) should pass the released tag; empty keeps the default event-SHA checkout. |
+| input   | `build_secret_repos` | string | no    | `''`                                           | Bare names of private org repositories (comma/newline-separated) the Dockerfile may read during the build. The build job mints a second App token restricted to `contents:read` on exactly these repos, right before the build, and passes it as BuildKit secret `github_token` (`RUN --mount=type=secret,id=github_token`). Never in a layer or the cache; revoked at job end. **Trust boundary:** any `RUN` that mounts it can print it — opting in trusts the Dockerfile with read access to those repos. Since v4.x. |
 | output  | `image_ref`     | string  | —        | —                                              | `ghcr.io/<image_name>:<tag>` |
 | output  | `moving_ref`    | string  | —        | —                                              | `ghcr.io/<image_name>:<moving_tag>`, or empty when the run published no moving tag. Pushed only after signing, so it always resolves to the same digest as `image_ref` |
 | output  | `digest`        | string  | —        | —                                              | Manifest-list digest `sha256:…` |
@@ -126,6 +127,7 @@ with:
 | input   | `tag`             | string  | no       | `''`                                            | Shared tag for every image. Empty → auto-compute (prerelease only). |
 | input   | `prerelease`      | boolean | no       | `false`                                         | Prerelease build (no `:latest`, auto-compute tag if empty). |
 | input   | `platforms`       | string  | no       | `'linux/amd64,linux/arm64'`                     | Comma-separated platform list forwarded to each nested docker-build. |
+| input   | `build_secret_repos` | string | no      | `''`                                            | Private org repositories every image's Dockerfile may read during the build (forwarded to docker-build.yml; see its contract for the trust boundary). |
 | input   | `build_args`      | string  | no       | `''`                                            | Newline-separated KEY=VALUE build args forwarded to each nested docker-build. |
 | input   | `sign`            | boolean | no       | `true`                                          | Cosign keyless signing via OIDC (forwarded). |
 | input   | `attest`          | boolean | no       | `true`                                          | SLSA build provenance attestation (forwarded). |
@@ -201,7 +203,7 @@ runner pods.
 | input | `config_path` | string | no | `''` | Path to a .kube-linter.yaml. Empty → catalog baseline. |
 | input | `kube_linter_version` | string | no | `''` | Override kube-linter version (empty → composite default). |
 | input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when kube-linter reports findings. |
-| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks. |
+| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks and private repos (needs paid GitHub Code Security there). |
 | input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow: GitHub keeps one analysis per category, so a shared category makes the second upload REPLACE the first, and the shared artifact name fails the run outright. Empty (the default) keeps the historical names, so single-call adopters are unaffected. |
 | input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
 | output | `findings_count` | — | — | — | Number of kube-linter findings. |
@@ -297,6 +299,27 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 
 ---
 
+### `lint-shell.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `paths` | string | no | `**/*.sh` | Newline-separated globs to check. Matching NOTHING is an ERROR, not a pass: sonst faerbt ein driftender Glob das Gate dauerhaft gruen. |
+| input | `severity` | string | no | `style` | shellcheck minimum severity: error, warning, info or style. |
+| input | `shellcheck_version` | string | no | `''` | Override shellcheck version (empty → composite default). |
+| input | `follow_sources` | boolean | no | `true` | Pass -x so `source lib/common.sh` is checked too. |
+| input | `scan_shebangs` | boolean | no | `true` | Also check tracked files WITHOUT a .sh suffix whose first line is a shell shebang. A linter that silently skips `scripts/deploy` checks half the scripts in many repos. Scoped by the same `paths` globs with the .sh requirement dropped, so it never widens into a whole-repo scan. |
+| input | `shfmt` | boolean | no | `false` | Also run `shfmt -d` (format check). |
+| input | `sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks and private repos (needs paid GitHub Code Security there). |
+| input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when shellcheck reports findings. |
+| input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow. |
+| input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `findings_count` | — | — | — | Number of shellcheck findings — und der LEERE String, wenn shellcheck gar nicht durchlief. Ein Aufrufer muss auf `== '0'` pruefen, nicht auf `!= '0'`. |
+| output | `file_count` | — | — | — | Number of files the paths globs matched, gesetzt BEVOR das Atom bei null Treffern abbricht. Damit laesst sich "am gewollten Check gescheitert" von "vorher abgestuerzt" unterscheiden: leer heisst, der Collect-Schritt lief nicht. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+
+---
+
 ### `release-flutter-android.yml`
 
 Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
@@ -335,7 +358,7 @@ Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
 | input | `config_path` | string | no | `''` | Path to a .gitleaks.toml. Empty → gitleaks built-in ruleset. |
 | input | `gitleaks_version` | string | no | `''` | Override gitleaks version (empty → composite default). |
 | input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when gitleaks reports findings. |
-| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks. |
+| input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks and private repos (needs paid GitHub Code Security there). |
 | input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow: GitHub keeps one analysis per category, so a shared category makes the second upload REPLACE the first, and the shared artifact name fails the run outright. Empty (the default) keeps the historical names, so single-call adopters are unaffected. |
 | input | `fetch_depth` | number | no | `0` | Checkout fetch-depth (0 = full history; needed for PR-diff/full scans). |
 | input | `no_git` | boolean | no | `false` | Scan files under scan_path without git history (gitleaks --no-git). |
@@ -411,6 +434,7 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input  | `python_version`                | string | no       | `''`                        | Python version. Empty → read from `<working_directory>/pyproject.toml`. |
 | input  | `coverage_threshold`            | number | no       | `80`                        | Minimum line coverage percentage (integer 0-100). |
 | input  | `coverage_source`               | string | no       | `''`                        | What coverage measures (`--cov=<value>`). Leave empty when the project configures it itself via `[tool.coverage.run] source` or pytest `addopts`; with neither, the run fails loudly instead of reporting a gate it never ran. |
+| input  | `timeout_minutes`               | number | no       | `30`                        | Job timeout in minutes. |
 | output | `coverage_pct`                  | string | —        | —                           | Measured line coverage, or `N/A` when no report was produced. |
 | secret | `release_please_app_client_id`  | —      | **yes**  | —                           | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret | `release_please_app_private_key`| —      | **yes**  | —                           | App private key for the catalog-checkout token (since v2.0.0) |
@@ -426,6 +450,303 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input | `rust_toolchain`        | string | no       | `''`                              | rustup toolchain. Empty → rustup defaults. |
 | input | `coverage_threshold`    | number | no       | `80`                              | Minimum line coverage percentage (integer 0-100). |
 | input | `cargo_llvm_cov_version`| string | no       | `'0.6.16'`                        | cargo-llvm-cov release version (bare semver — `taiki-e/install-action` rejects a leading `v`). |
+| input | `timeout_minutes`       | number | no       | `30`                              | Job timeout in minutes. |
+
+---
+
+### `tofu-apply.yml`
+
+**Der Riegel ist der Dispatch, nicht ein Environment.** Ein Mensch liest den Plan im
+PR-Kommentar und loest dieses Atom von Hand mit der Run-ID genau dieses Plans aus. Das
+urspruenglich geplante GitHub-Environment mit Required Reviewer traegt nicht: die
+Protection Rule gibt es auf dem Team-Plan in **privaten** Repos nicht — die API
+antwortet mit `HTTP 422` und legt das Environment trotzdem an, mit leerer
+`protection_rules`-Liste.
+
+**Vier Vorpruefungen, alle fail-closed,** bevor `tofu` startet: Stack, State-Identitaet,
+Katalog-Revision und Planalter. Die fuenfte macht OpenTofu selbst — `tofu apply <saved
+plan>` verweigert mit „Saved plan is stale", wenn sich der State bewegt hat.
+
+**Was dieses Atom NICHT loest:** die Vertrauensgrenze aus `tofu-plan.yml`. Der
+*Plan*-Lauf fuehrt Adopter-Konfiguration mit Credentials aus, und zwar vor jeder
+Freigabe. Dem Plan gehoeren deshalb nur **lesende** Backend-Credentials, die
+schreibenden allein diesem Atom.
+
+**`runs_on` muss mit dem Plan-Lauf uebereinstimmen.** Ein gespeicherter Plan uebersteht
+keinen Wechsel zwischen amd64 und arm64, und `[self-hosted, Linux]` pinnt die
+Architektur nicht.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `plan_run_id` | string | yes | — | Run-ID des Laufs, der den Plan erzeugt hat (tofu-plan mit emit_plan: true). Aus genau diesem Lauf wird das Artefakt geholt. |
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States fuers Scheduling. Leer → working_directory. Muss mit dem Wert des Plan-Laufs uebereinstimmen. |
+| input  | `max_plan_age_minutes` | number | no | `120` | Wie alt der Plan hoechstens sein darf. Deckt den Fall ab, den der eingebaute Stale-Schutz NICHT sieht: Ressourcen, die ausserhalb des States veraendert wurden. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments (bucket, endpoint, region). Credentials do NOT belong here — use the secrets. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst NICHT: ein lesender Plan darf auf die Sperre verzichten, ein schreibender Lauf nie. |
+| input  | `outputs_allowlist` | string | no | `''` | Newline-separated Namen der Outputs, die als outputs_json exportiert werden. Leer → keine. Es wird NICHT allein auf das sensitive-Flag vertraut: ein Provider oder ein Adopter kann es falsch setzen. |
+| input  | `backup_retention_days` | number | no | `7` | Retention des State-Backups in Tagen. |
+| input  | `backend_type` | string | no | `s3` | `s3` \| `pg` \| `other`. Steuert NUR, worauf die Warnung zum Wiederherstellungspunkt schaut. Bei `pg` sichert das Atom bewusst nichts selbst — der Wiederherstellungspfad ist das Backup der Datenbank. |
+| input  | `state_bucket` | string | no | `''` | Bucket des State-Objekts. Leer → kein Backup, mit sichtbarer Warnung in der Summary. |
+| input  | `state_key` | string | no | `''` | Key des State-Objekts im Bucket. |
+| input  | `state_workspace_key_prefix` | string | no | `env:` | Praefix fuer Nicht-Default-Workspaces. Der echte Objektpfad lautet dann `<prefix>/<workspace>/<key>`. |
+| input  | `state_workspace` | string | no | `default` | OpenTofu-Workspace des States. |
+| input  | `state_endpoint` | string | no | `''` | Endpoint-URL fuer S3-kompatible Backends (leer → AWS). |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. MUSS dieselben Labels tragen wie der Plan-Lauf. |
+| output | `applied` | string | — | — | `true`, wenn der Apply durchlief. LEER, wenn er nicht startete — `== 'true'` pruefen, nicht `!= 'false'`. |
+| output | `summary_line` | string | — | — | Die Apply-Zusammenfassung. |
+| output | `apply_status` | string | — | — | `success`, `failed`, oder LEER wenn der Apply-Schritt nicht startete. |
+| output | `outputs_json` | string | — | — | JSON-Objekt der in outputs_allowlist genannten, nicht-sensitiven Outputs. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `tf_encryption_passphrase` | — | yes | — | Passphrase fuer OpenTofus native Plan- und State-Verschluesselung. Muss dieselbe sein wie im Plan-Lauf. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. Provider-Credentials aus Umgebungsvariablen frieren NICHT im Plan ein und muessen dem Apply erneut uebergeben werden. |
+
+### `tofu-plan-apply.yml`
+
+**Die Freigabe ist der Merge, nicht ein Knopf.** `tofu-apply.yml` verlangt nach dem
+Merge noch eine Handlung: Run-ID des gelesenen Plans, Dispatch, Frist. Das passt, wo ein
+Apply Server ersetzen kann. Fuer Konfiguration, die sich mit einem Revert-PR
+zuruecknehmen laesst (WAF-Regeln, DNS, Zone-Einstellungen), prueft der zweite Knopf
+nichts, was der PR-Plan nicht schon gezeigt hat. Dieses Atom plant deshalb **frisch und
+wendet im selben Lauf an**, sobald ein Merge dahintersteht: kein Artefakt, keine Frist,
+kein Architekturzwang zwischen Plan- und Apply-Lauf.
+
+**Zwei Betriebsarten** ueber `require_tag`: `true` (Default) wendet nur auf einem Tag
+oder Release an, etwa nach dem Merge eines release-please-PRs, dessen eigener
+`tofu-plan`-Kommentar die Vorschau ist. `false` wendet bei jedem Push auf den
+aufrufenden Branch an — der Merge selbst ist die Freigabe. Nie unter `pull_request`,
+`pull_request_target`, `workflow_run` oder `schedule`; `scripts/tofu-plan-apply-gate.sh`
+entscheidet das und ist je Ereignis in `tests/shell/tofu-plan-apply-gate.bats`
+abgedeckt.
+
+**Was dieses Atom NICHT loest:** die Vertrauensgrenze aus `tofu-plan.yml`, hier mit
+**schreibenden** Credentials. Der aufrufende Branch bzw. die Tags muessen durch
+Branch-Protection und Reviews geschuetzt sein — das Atom kann das `on:` des Aufrufers
+nicht pruefen, nur das Ereignis ablehnen.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States fuers Scheduling. Leer → working_directory. Muss mit dem Wert der anderen tofu-Atome desselben Stacks uebereinstimmen. |
+| input  | `require_tag` | boolean | no | `true` | `true` → anwenden nur auf einem Tag oder Release (sowie per workflow_dispatch). `false` → auch auf jedem Branch-Push: der Merge ist die Freigabe. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments (bucket, endpoint, region). Credentials do NOT belong here — use the secrets. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst NICHT: ein schreibender Lauf verzichtet nie auf die Sperre. |
+| input  | `outputs_allowlist` | string | no | `''` | Newline-separated Namen der Outputs, die als outputs_json exportiert werden. Leer → keine. Es wird NICHT allein auf das sensitive-Flag vertraut. |
+| input  | `backup_retention_days` | number | no | `7` | Retention des State-Backups in Tagen. |
+| input  | `backend_type` | string | no | `s3` | `s3` \| `pg` \| `other`. Steuert NUR, worauf die Warnung zum Wiederherstellungspunkt schaut. Bei `pg` sichert das Atom bewusst nichts (CNPG barmanObjectStore, WAL-Archiving, PITR). |
+| input  | `state_bucket` | string | no | `''` | Bucket des State-Objekts. Leer → kein Backup, mit sichtbarer Warnung in der Summary. |
+| input  | `state_key` | string | no | `''` | Key des State-Objekts im Bucket. |
+| input  | `state_workspace_key_prefix` | string | no | `env:` | Praefix fuer Nicht-Default-Workspaces. Der echte Objektpfad lautet dann `<prefix>/<workspace>/<key>`. |
+| input  | `state_workspace` | string | no | `default` | OpenTofu-Workspace des States. |
+| input  | `state_endpoint` | string | no | `''` | Endpoint-URL fuer S3-kompatible Backends (leer → AWS). |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. Plan und Apply laufen im selben Job; die Labels muessen nur das Backend erreichen. |
+| output | `applied` | string | — | — | `true`, wenn der Apply durchlief. LEER, wenn er nicht startete (keine Aenderungen, Plan gescheitert, Gatter) — `== 'true'` pruefen, nicht `!= 'false'`. |
+| output | `has_changes` | string | — | — | `true`/`false` nach erfolgreichem Plan, LEER wenn der Plan nicht durchlief. |
+| output | `plan_summary_line` | string | — | — | Die Plan-Zusammenfassung, z. B. "Plan: 2 to add, 1 to change, 0 to destroy". |
+| output | `summary_line` | string | — | — | Die Apply-Zusammenfassung. |
+| output | `apply_status` | string | — | — | `success`, `failed`, oder LEER wenn der Apply-Schritt nicht startete. |
+| output | `outputs_json` | string | — | — | JSON-Objekt der in outputs_allowlist genannten, nicht-sensitiven Outputs. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `tf_encryption_passphrase` | — | yes | — | Passphrase fuer OpenTofus native Plan- und State-Verschluesselung. Dieselbe wie in tofu-plan und tofu-apply desselben Stacks. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
+
+### `tofu-destroy.yml`
+
+**Zwei Dispatches, ein Atom.** Der erste Aufruf (ohne `plan_run_id`) erzeugt den
+Destroy-Plan, legt ihn verschluesselt ab und **haelt an** — es wird nichts
+zerstoert, und der Lauf ist gruen, denn Anhalten ist hier der Erfolgsfall. Der
+zweite Aufruf (mit `plan_run_id` und `confirm`) wendet genau diesen Plan an.
+
+**Kein `tofu destroy -auto-approve`:** es wird immer der gespeicherte Plan
+angewandt, sonst fuehrte der zweite Dispatch einen neu berechneten Vorgang aus
+statt des freigegebenen.
+
+**Drei Riegel, die `tofu-apply.yml` so nicht hat:** nur `workflow_dispatch`;
+`allowed_refs` (Default nur der Default-Branch); und `confirm` muss woertlich
+`DESTROY <owner/repo> <concurrency_key>` lauten — die erste Stufe nennt den
+exakten Text in ihrer Summary.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `plan_run_id` | string | no | `''` | Leer → erste Stufe: Destroy-Plan erzeugen und anhalten. Gesetzt → zweite Stufe: den Plan aus jenem Lauf anwenden. |
+| input  | `confirm` | string | no | `''` | In der zweiten Stufe Pflicht. Muss woertlich `DESTROY <owner/repo> <concurrency_key>` lauten. |
+| input  | `allowed_refs` | string | no | `refs/heads/main` | Newline-separated Liste erlaubter `github.ref`-Werte. |
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States. Leer → working_directory. |
+| input  | `max_plan_age_minutes` | number | no | `120` | Wie alt der Destroy-Plan hoechstens sein darf. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments. Credentials do NOT belong here — use the secrets. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Einen `lock`-Schalter gibt es hier bewusst NICHT. |
+| input  | `plan_retention_days` | number | no | `3` | Retention des Destroy-Plan-Artefakts in Tagen. |
+| input  | `backup_retention_days` | number | no | `7` | Retention des State-Backups in Tagen. |
+| input  | `backend_type` | string | no | `s3` | `s3` \| `pg` \| `other`. Steuert NUR, worauf die Warnung zum Wiederherstellungspunkt schaut. Bei `pg` sichert das Atom bewusst nichts selbst — der Wiederherstellungspfad ist das Backup der Datenbank. |
+| input  | `state_bucket` | string | no | `''` | Bucket des State-Objekts. Leer → kein Backup, mit Warnung. |
+| input  | `state_key` | string | no | `''` | Key des State-Objekts im Bucket. |
+| input  | `state_workspace_key_prefix` | string | no | `env:` | Praefix fuer Nicht-Default-Workspaces (`<prefix>/<workspace>/<key>`). |
+| input  | `state_workspace` | string | no | `default` | OpenTofu-Workspace des States. |
+| input  | `state_endpoint` | string | no | `''` | Endpoint-URL fuer S3-kompatible Backends (leer → AWS). |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. MUSS in beiden Stufen dieselben Labels tragen. |
+| output | `destroyed` | string | — | — | `true`, wenn die zweite Stufe durchlief. LEER nach der ersten Stufe und bei jedem Abbruch. |
+| output | `summary_line` | string | — | — | Die Zusammenfassungszeile von Plan bzw. Apply. |
+| output | `destroy_status` | string | — | — | `planned`, `success`, `failed`, oder LEER bei einem Abbruch davor. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `tf_encryption_passphrase` | — | yes | — | Passphrase fuer die native Plan- und State-Verschluesselung. In beiden Stufen dieselbe. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
+
+### `tofu-unlock.yml`
+
+**Wofuer es existiert:** ein gekillter Runner, ein Reboot oder ein abgebrochener
+Lauf laesst den State-Lock im Backend liegen. Danach steht nicht nur die CI,
+sondern auch der Apply am Laptop.
+
+**Warum es gefaehrlich ist:** `force-unlock` fragt nicht nach, ob der Halter tot
+ist — die Lock-ID ist ein Nonce, kein Lebenszeichen. Waehrend eines laufenden
+Applys geloest, schreiben zwei Prozesse denselben State. Deshalb steht die
+Lock-ID auch in der Bestaetigung, und das Atom laeuft in derselben
+`mutate`-Concurrency-Gruppe wie Apply und Destroy.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `lock_id` | string | yes | — | Die Lock-ID aus der Fehlermeldung des blockierten Laufs. |
+| input  | `confirm` | string | yes | — | Muss woertlich `UNLOCK <owner/repo> <concurrency_key> <lock_id>` lauten. |
+| input  | `allowed_refs` | string | no | `refs/heads/main` | Newline-separated Liste erlaubter `github.ref`-Werte. |
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States. Leer → working_directory. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments. |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `unlocked` | string | — | — | `true`, wenn der Lock geloest wurde. LEER bei jedem Abbruch. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+
+### `tofu-drift.yml`
+
+**Was es findet, das ein PR-Plan nicht findet:** Aenderungen, die niemand ueber
+den Code gemacht hat — ein von Hand vergroesserter Server, eine „kurz mal"
+angepasste Firewall-Regel. Ohne geplanten Lauf faellt das erst im naechsten PR
+auf, als Ueberraschung mitten in einem unbeteiligten Review.
+
+**Nicht zu verwechseln mit `drift-check.yml`** im Katalog: das prueft, ob
+Adopter auf einer veralteten Katalogversion stehen. Dieses Atom prueft die
+Infrastruktur eines Adopters gegen seinen eigenen Code.
+
+**Kein eigenes `schedule:`.** Ein Cron in der Atom-Datei liefe im Katalog-Repo,
+nicht beim Adopter — der Zeitplan gehoert in den aufrufenden Workflow.
+
+**Das rollende Issue wird auch wieder geschlossen,** sobald der Drift
+verschwunden ist. Ohne diesen Rueckweg bliebe ein Issue offen, dessen Ursache
+laengst behoben ist — und ein Issue, das immer offen steht, liest irgendwann
+niemand mehr. Der Titel `<issue_title_prefix>: <concurrency_key>` ist der
+Schluessel; ihn nachtraeglich zu aendern erzeugt ein ZWEITES Issue.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States. Leer → working_directory. Geht auch in den Issue-Titel. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. Der Drift-Lauf nimmt den Lock, um kein Zwischenbild zu melden. |
+| input  | `issue_label` | string | no | `tofu-drift` | Label des rollenden Issues. |
+| input  | `issue_title_prefix` | string | no | `OpenTofu-Drift` | Titelpraefix; der Titel dient als Schluessel. |
+| input  | `fail_on_drift` | boolean | no | `false` | Den Job rot faerben, wenn Drift besteht. Default aus: ein nightly, das dauerhaft rot steht, liest niemand mehr. |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `has_changes` | string | — | — | `true` bei Drift, `false` ohne, LEER wenn der Plan nicht durchlief. |
+| output | `summary_line` | string | — | — | Die Plan-Zusammenfassung. |
+| output | `issue_number` | string | — | — | Nummer des offenen Drift-Issues; LEER ohne Drift. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `tf_encryption_passphrase` | — | no | — | Faktisch Pflicht, sobald der Adopter seinen State verschluesselt. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
+
+### `tofu-plan.yml`
+
+**Vertrauensgrenze — vor dem Einbau lesen.** Dieses Atom fuehrt die
+OpenTofu-Konfiguration des Adopters mit echten Credentials aus. `tofu plan` ist
+nicht rein deklarativ: der offizielle `external`-Provider startet waehrend des
+Plans ein beliebiges Programm, und dieser Kindprozess erbt die komplette
+Umgebung des Schritts — die Backend-Credentials und die `TF_VAR_*`
+eingeschlossen. Daraus folgt: **jeder Pull Request, der eine `.tf`-Datei aendern
+kann, kann die an dieses Atom uebergebenen Secrets lesen.** Das gilt auch fuer
+einen PR aus demselben Repository; der eingebaute Riegel gegen
+`pull_request_target` und `workflow_run` haelt fremde Forks und die falsche
+Revision fern, nicht Leute mit Branch-Zugriff.
+
+Das Atom kann diese Grenze nicht selbst ziehen — es kennt weder das `on:` des
+Aufrufers noch dessen Branch-Schutz. Ziehen muss sie der Adopter: dem Plan nur
+**lesende** Backend-Credentials geben und das Schreiben `tofu-apply.yml`
+ueberlassen, das per `workflow_dispatch` laeuft — dort ist die bewusste
+Dispatch-Aktion eines Menschen der Riegel. Alternativ kurzlebige, nur lesende
+Credentials uebergeben, deren Diebstahl nichts wert ist.
+
+**Nicht moeglich** ist der Weg, der hier frueher stand — den aufrufenden Job an
+ein geschuetztes `environment` mit Required Reviewers zu haengen. Ein Job, der
+per `jobs.<id>.uses:` einen reusable workflow aufruft, darf kein `environment:`
+tragen; erlaubt sind dort nur `uses`, `with`, `secrets`, `needs`, `if`,
+`permissions`, `concurrency` und `strategy`. Und Required Reviewers stehen auf
+dem Team-Plan in **privaten** Repos ohnehin nicht zur Verfuegung: die API
+antwortet mit `HTTP 422` ("Please ensure the billing plan supports the required
+reviewers protection rule") — und legt das Environment trotzdem an, mit leerer
+`protection_rules`-Liste. Ein Tippfehler im Namen erzeugt so ein Gate, das
+keines ist.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input  | `working_directory` | string | no | `tofu` | OpenTofu stack directory. |
+| input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments (bucket, endpoint, region). Credentials do NOT belong here — use the secrets. |
+| input  | `comment_on_pr` | boolean | no | `true` | Post the plan as a sticky PR comment. |
+| input  | `plan_json` | boolean | no | `false` | Upload `tofu show -json` as an artifact. OFF by default: unlike the human-readable output, the JSON does NOT redact values marked sensitive, so anyone who can download the artifact reads them in clear text. |
+| input  | `lock` | boolean | no | `true` | Take a state lock during plan. |
+| input  | `lock_timeout` | string | no | `60s` | Value for -lock-timeout. |
+| input  | `emit_plan` | boolean | no | `false` | Den gespeicherten Plan als Artefakt hinterlegen, damit tofu-apply ihn spaeter anwenden kann. Verlangt das Secret tf_encryption_passphrase — ohne Verschluesselung wird der Upload VERWEIGERT, weil die tfplan dieselben sensitive-Werte im Klartext traegt wie das JSON. |
+| input  | `plan_retention_days` | number | no | `3` | Retention des Plan-Artefakts in Tagen. |
+| input  | `concurrency_key` | string | no | `''` | Identitaet des States fuers Scheduling. Leer → working_directory. Ein Pfad ist aber keine belastbare State-Identitaet: ihn umzubenennen aendert die Gruppe, obwohl derselbe State weiterbenutzt wird, und zwei Verzeichnisse koennen denselben Backend-Key ansprechen. |
+| input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `has_changes` | — | — | — | true when the plan contains changes, false when it does not — und der LEERE String, wenn der Plan nicht durchlief: Fork-PR (das Atom ueberspringt sich) ODER Plan-Fehler. Ein Aufrufer muss `== 'true'` pruefen, nicht `!= 'false'`. Wer "keine Aenderungen" von "nicht gelaufen" unterscheiden will, liest `plan_status`. |
+| output | `summary_line` | — | — | — | The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy". |
+| output | `plan_status` | — | — | — | `success`, wenn `tofu plan` durchlief (mit oder ohne Aenderungen), `failed` bei einem unerwarteten Exit-Code, und der LEERE String, wenn der Plan-Schritt gar nicht erst startete (Fork-PR, Abbruch im Backend-Init). Fuer Aufrufer mit `always()` oder `continue-on-error` ist das der einzige Weg, einen Fehlschlag von "es gibt nichts zu tun" zu unterscheiden. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
+| secret | `backend_conn_str` | — | no | — | Verbindungsstring fuer den `pg`-Backend (PG_CONN_STR). Gehoert NIE in backend_config — der ist ein Input und stuende im Klartext in der Workflow-Datei. |
+| secret | `backend_access_key` | — | no | — | S3-compatible backend access key → AWS_ACCESS_KEY_ID. |
+| secret | `backend_secret_key` | — | no | — | S3-compatible backend secret key → AWS_SECRET_ACCESS_KEY. |
+| secret | `tf_vars` | — | no | — | Newline-separated KEY=VALUE pairs, exported as TF_VAR_key. |
+| secret | `tf_encryption_passphrase` | — | no | — | Passphrase fuer OpenTofus native Plan- und State-Verschluesselung. Ohne sie laeuft der Plan normal, kann aber nicht als Artefakt hinterlegt werden (emit_plan bricht dann ab). |
+
+---
+
+### `tofu-validate.yml`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `working_directories` | string | no | `tofu` | Newline-separated OpenTofu stack directories. |
+| input | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
+| input | `tflint` | boolean | no | `true` | Also run tflint in each directory. |
+| input | `lockfile_readonly` | boolean | no | `true` | Pass -lockfile=readonly to `tofu init`, so a PR that would silently change .terraform.lock.hcl fails instead of drifting the provider pins unnoticed. |
+| input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| output | `checked_directories` | — | — | — | Number of directories validated. |
+| secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
 
 ---
 
@@ -437,7 +758,7 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input   | `severity`        | string  | no       | `'HIGH,CRITICAL'`            | Severity levels to report |
 | input   | `paths_ignore`    | string  | no       | `''`                         | Newline-separated paths to skip |
 | input   | `files_ignore`    | string  | no       | `''`                         | Newline-separated files to skip |
-| input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks) |
+| input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks and private repos) |
 | input   | `report_slug`     | string  | no       | `''`                         | Suffix making the SARIF category and artifact name unique; set it when calling this atom more than once per workflow |
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `ignore_unfixed`  | boolean | no       | `true`                       | Pass `--ignore-unfixed` to Trivy |
@@ -459,7 +780,7 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input   | `ignore_unfixed`  | boolean | no       | `true`                       | Pass `--ignore-unfixed` to Trivy |
 | input   | `fail_on_findings`| boolean | no       | `true`                       | Exit non-zero when findings exist |
 | input   | `paths_ignore`    | string  | no       | `''`                         | Newline-separated paths to skip |
-| input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks) |
+| input   | `upload_sarif`    | boolean | no       | `true`                       | Upload SARIF to code-scanning (auto-skipped on forks and private repos) |
 | input   | `platforms`       | string  | no       | `''`                         | Comma-separated platforms to scan; empty scans only the one Trivy picks (`linux/amd64`) |
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `runs_on`         | string  | no       | `'["self-hosted","Linux"]'`  | JSON-encoded runner labels |
@@ -571,6 +892,14 @@ caller. A fork driving its own org has to change that constant.
 |--------|------|------|----------|---------|-------------|
 | input | `version` | string | no | `''` | kube-linter version (with or without leading v). Empty → pinned default. |
 
+### `actions/install-shellcheck`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `version` | string | no | `''` | shellcheck version (no leading v). Empty → pinned default. |
+| input | `shfmt` | string | no | `'false'` | When "true", also install shfmt. |
+| input | `shfmt_version` | string | no | `''` | shfmt version (no leading v). Empty → pinned default. |
+
 ### `actions/setup-sk-workflows`
 
 | Kind   | Name                | Type   | Required | Default                          | Description |
@@ -666,6 +995,82 @@ job-private dir prepended onto PATH.
 | input | `kustomize_version` | string | no | `''` | kustomize version (no leading v). Empty → pinned default. |
 | input | `kubeconform_version` | string | no | `''` | kubeconform version (no leading v). Empty → pinned default. |
 | input | `sops` | string | no | `false` | When "true", also install sops + ksops for SOPS decryption. |
+
+### `actions/setup-tofu-toolchain`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `tofu_version` | string | no | `''` | OpenTofu version (no leading v). Empty → pinned default. |
+| input | `tflint` | string | no | `'false'` | When "true", also install tflint. |
+| input | `tflint_version` | string | no | `''` | tflint version (no leading v). Empty → pinned default. |
+
+### `actions/tofu-stack-exec`
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `command` | string | yes | — | plan \| plan-destroy \| apply \| unlock |
+| input | `working_directory` | string | yes | — | OpenTofu stack directory. |
+| input | `backend_config` | string | no | `''` | Newline-separated -backend-config= arguments. |
+| input | `plan_file` | string | no | `'tfplan'` | Pfad der tfplan (Ausgabe bei plan, Eingabe bei apply). |
+| input | `lock` | string | no | `'true'` | State-Lock nehmen. |
+| input | `lock_timeout` | string | no | `'60s'` | Wert fuer -lock-timeout. |
+| input | `lock_id` | string | no | `''` | Lock-ID fuer command=unlock. |
+| input | `tf_vars` | string | no | `''` | Newline-separated KEY=VALUE, wird zu TF_VAR_key. |
+| input | `encryption_passphrase` | string | no | `''` | Passphrase fuer die native Plan- und State-Verschluesselung. |
+| input | `allow_unencrypted_fallback` | string | no | `'false'` | Einmalige Migration; danach abschalten. |
+| input | `backend_conn_str` | string | no | `''` | Verbindungsstring fuer den `pg`-Backend, wird als PG_CONN_STR gesetzt. |
+| input | `backend_access_key` | string | no | `''` | S3-kompatibler Access Key. |
+| input | `backend_secret_key` | string | no | `''` | S3-kompatibler Secret Key. |
+| output | `has_changes` | string | — | — | true\|false bei plan/plan-destroy, sonst leer. |
+| output | `summary_line` | string | — | — | Die Zusammenfassungszeile des Laufs. |
+| output | `exec_status` | string | — | — | success\|failed, leer wenn der Schritt nicht startete. |
+
+**Verschlüsselung.** Die Composite baut `TF_ENCRYPTION` selbst — der Adopter liefert
+nur `encryption_passphrase`, kein HCL. Erzeugt wird `pbkdf2` + `aes_gcm` mit
+`enforced = true` für `state` und `plan`; OpenTofu lehnt danach jeden
+unverschlüsselten Zustand selbst ab. Das ist der Nachweis, nicht ein Test auf den
+Metadaten-Präfix: `encrypted_metadata_alias` kann den Schlüssel umbenennen, und ein
+Klartext-JSON kann den Präfix fälschen.
+
+`command=plan` ohne Passphrase ist erlaubt (der Plan wird dann nicht gespeichert
+weitergereicht) und meldet eine `::notice::`. `apply` und `plan-destroy` **verlangen**
+sie und brechen sonst ab.
+
+**Migration eines vorhandenen Klartext-States.** `enforced = true` verweigert das
+Lesen. Der erste Lauf meldet dann:
+
+```
+failed to write backup file: encountered unencrypted payload
+without unencrypted method configured
+```
+
+Dafür — und nur dafür — gibt es `allow_unencrypted_fallback: 'true'`. Genau einen
+Lauf lang; der Schalter setzt eine `::warning::`, weil er den Schutz aufhebt, ohne
+dass etwas rot wird.
+
+### `actions/tofu-plan-artifact`
+
+Legt einen gespeicherten Plan als Artefakt ab — mit dem Riegel, dass er
+verschluesselt sein MUSS. Genutzt von `tofu-plan.yml` (`emit_plan`) und
+`tofu-destroy.yml` (erste Stufe).
+
+Der Nachweis ist das **fehlschlagende Lesen ohne Schluessel**, nicht ein Test auf
+den Metadaten-Praefix: `encrypted_metadata_alias` kann ihn umbenennen, und ein
+Klartext-JSON kann ihn nachbauen.
+
+Der Artefaktname wird normalisiert (alles ausserhalb von `[A-Za-z0-9._-]` wird zu
+`-`), weil Artefaktnamen keinen Schraegstrich enthalten duerfen, ein Stack-Pfad
+aber im Normalfall einen traegt. Die Apply-Seite muss dieselbe Regel anwenden.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `working_directory` | string | yes | — | Stack-Verzeichnis; dort liegt die tfplan. |
+| input | `concurrency_key` | string | yes | — | State-Identitaet; geht in Artefaktnamen und Metadaten. |
+| input | `catalog_ref` | string | yes | — | Ausgecheckte Katalog-Revision; der Apply vergleicht sie. |
+| input | `artifact_prefix` | string | no | `'tofu-plan'` | Praefix des Artefaktnamens (tofu-plan \| tofu-destroy). |
+| input | `retention_days` | string | no | `'3'` | Retention des Artefakts in Tagen. |
+| input | `encryption_passphrase` | string | yes | — | Muss gesetzt sein; ohne Verschluesselung wird der Upload verweigert. |
+| output | `artifact_name` | string | — | — | Name des hochgeladenen Artefakts. |
 
 ### `actions/setup-python-deps`
 

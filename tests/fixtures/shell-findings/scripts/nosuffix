@@ -1,0 +1,4 @@
+#!/bin/bash
+# Fixture ohne .sh-Endung: nur scan_shebangs=true findet sie. SC2086 erneut.
+files=$1
+rm $files

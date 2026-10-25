@@ -551,7 +551,7 @@ Three reusable atoms validate a GitOps repository's Kubernetes manifests and sca
 
 **`secret-scan` is general-purpose** — callable by any adopter, not just GitOps repos. By default it is git-history-aware: a `pull_request` event scans the PR diff (`base..head`), a `push` event scans the tip commit, and a manual/scheduled run scans full history (so `fetch_depth: 0` is the default). Setting `no_git: true` switches it to a filesystem scan of `scan_path` (gitleaks `--no-git`), used for one-off directory scans and deterministic fixture tests where git history is irrelevant.
 
-All three mint a catalog-scoped App token (`secrets: inherit` covers it) to check out the catalog's composite actions, exactly like the existing security atoms. SARIF upload is auto-skipped on forks.
+All three mint a catalog-scoped App token (`secrets: inherit` covers it) to check out the catalog's composite actions, exactly like the existing security atoms. SARIF upload is auto-skipped on forks and on private repos (code-scanning there would need the paid GitHub Code Security SKU, which the org leaves disabled).
 
 > **ksops decryption is not exercised in catalog self-CI** — committing a decryptable age key to the catalog would itself be a secret leak. The happy integration path runs `kube-validate` with `sops: false` against plaintext fixtures; the real ksops path is validated at adopter-onboard time against repos that hold the real `SOPS_AGE_KEY` and encrypted trees.
 
@@ -1098,3 +1098,121 @@ follows the same order — the annotation applies over the file-name
 convention, and a manifest `release:` value overrides both. Deprecating the
 annotations in favor of the manifest is a separate, future major-version
 step; it is not part of this feature.
+
+## 10. OpenTofu: Apply, Destroy, Zwischenfälle
+
+Die Atome `tofu-apply.yml`, `tofu-destroy.yml` und `tofu-unlock.yml` verweisen
+im Fehlerfall auf diesen Abschnitt.
+
+### Der Riegel vor dem Apply
+
+Es gibt **kein** GitHub-Environment mit Required Reviewer. Die Protection Rule
+ist auf dem Team-Plan in privaten Repos nicht verfügbar — die API antwortet mit
+`HTTP 422` und legt das Environment trotzdem an, mit leerer
+`protection_rules`-Liste. Ein Tippfehler im Namen erzeugte damit ein Gate, das
+keines ist.
+
+Stattdessen ist die **Dispatch-Aktion** der Riegel:
+
+1. Der PR läuft mit `tofu-plan` und `emit_plan: true`. Der Plan steht als
+   Sticky-Kommentar am PR.
+2. Ein Mensch liest ihn und entscheidet.
+3. `tofu-apply` wird von Hand ausgelöst, mit der **Run-ID genau dieses Plans**.
+   Das Atom prüft vier Dinge, bevor `tofu` startet — Stack, State-Identität,
+   Katalog-Revision und Planalter — und OpenTofu prüft die fünfte selbst
+   (`Saved plan is stale`, sobald sich der State bewegt hat).
+
+### `errored.tfstate` liegt vor
+
+**Was passiert ist:** Der Apply hat Ressourcen bereits verändert, konnte den
+neuen State aber nicht ins Backend zurückschreiben. OpenTofu legt ihn als
+letzte Rettung lokal ab. Die Datei wird vom Atom **nicht** gelöscht — sie kann
+die einzige aktuelle State-Kopie sein.
+
+**Nicht tun:** erneut applien. Der Backend-State beschreibt jetzt eine Realität,
+die es nicht mehr gibt; ein zweiter Apply würde auf dieser falschen Grundlage
+planen.
+
+**Reihenfolge:**
+
+1. Die Runner-Datei sichern, bevor irgendetwas anderes läuft.
+2. Das State-Backup-Artefakt des Laufs herunterladen (`tofu-state-backup-<run-id>`).
+   Es ist Chiffrat und mit `TF_ENCRYPTION` lesbar.
+3. Entscheiden, welcher der beiden Stände aktueller ist — `errored.tfstate`
+   trägt in aller Regel die höhere `serial`.
+4. Den richtigen Stand gezielt ins Backend zurückspielen.
+5. Erst danach neu planen und den Plan lesen, bevor wieder appliet wird.
+
+### State-Lock gelöst
+
+**Vor** jedem `tofu-unlock`:
+
+1. Die Lock-Meldung nennt den Halter — Lauf, Zeitpunkt, Operation. Diesen Lauf
+   in der Actions-Oberfläche aufsuchen.
+2. Prüfen, ob er wirklich tot ist. Ein laufender Job, der gerade appliet, ist
+   der Fall, gegen den das Locking existiert.
+3. Erst dann `tofu-unlock` auslösen, mit der Lock-ID aus der Meldung — sie
+   gehört auch in die Bestätigung, damit niemand blind einen fremden Lock löst.
+
+Wurde versehentlich ein aktiver Lock gelöst, schreiben womöglich zwei Prozesse
+denselben State. Dann gilt der Ablauf aus dem vorigen Abschnitt: nichts
+weiterlaufen lassen, Backup ziehen, Stände vergleichen.
+
+### Migration eines unverschlüsselten States
+
+Die Atome erzwingen die Verschlüsselung (`enforced = true`). Trifft das auf
+einen bestehenden Klartext-State, lautet der Fehler wörtlich:
+
+```
+failed to write backup file: encountered unencrypted payload
+without unencrypted method configured
+```
+
+Dafür — und nur dafür — gibt es `allow_unencrypted_fallback: 'true'` in
+`actions/tofu-stack-exec`. **Genau einen Lauf lang.** Danach abschalten: der
+Schalter hebt den Schutz auf, ohne dass irgendetwas rot wird. Der Lauf mit
+Fallback schreibt den State verschlüsselt zurück; ab dem nächsten Lauf greift
+`enforced` wieder.
+
+### Backend-Wahl
+
+Zwei Fragen entscheiden: **sperrt es**, und **gibt es einen
+Wiederherstellungspunkt**. Ein Backend, das beides nicht kann, frisst früher
+oder später eine State-Datei — zwei Schreiber (CI und Laptop) ohne Sperre,
+ohne Weg zurück.
+
+| Backend | Locking | Wiederherstellung | Urteil |
+|---|---|---|---|
+| **`pg`** (CloudNativePG) | Advisory Locks, nativ | `barmanObjectStore`: WAL-Archiving + PITR | **erste Wahl** |
+| Hetzner Object Storage | `use_lockfile` — ungeprüft | Bucket-Versionierung dokumentiert | brauchbar, Lock-Frage offen |
+| Garage | **nein** | **nein** | ungeeignet |
+
+#### `pg` — was der Adopter mitbringen muss
+
+- Der `conn_str` kommt als **Secret** `backend_conn_str` (→ `PG_CONN_STR`),
+  **niemals** über `backend_config`: das ist ein Input und stünde im Klartext
+  in der Workflow-Datei. Ein `conn_str` enthält das Passwort.
+- In der `versions.tf` genügt `backend "pg" {}` — die Verbindung kommt aus der
+  Umgebung.
+- `backend_type: pg` an `tofu-apply`/`tofu-destroy` setzen. Sonst warnen sie
+  über einen fehlenden `state_bucket`, was hier grundlos wäre.
+- **Das Atom sichert bei `pg` nichts selbst.** Der Wiederherstellungspfad ist
+  das Backup der Datenbank. Bei CNPG heißt das `barmanObjectStore` mit
+  Retention — kontinuierlich und mit Point-in-Time-Recovery, also einem
+  Artefakt pro Lauf überlegen. Ohne dieses Backup gibt es keinen Weg zurück.
+- **Die Datenbank muss vom Runner erreichbar sein.** Läuft sie im selben
+  Cluster wie die self-hosted Runner, fallen bei dessen Ausfall Runner und
+  State-Zugriff gemeinsam aus — wiederherstellbar aus dem Backup, aber eine
+  Abhängigkeit, die man kennen sollte.
+- **Nicht in den Cluster legen, den der State beschreibt.** Das ist die
+  Zirkularität aus Decision 0002: geht der Cluster kaputt, braucht man den
+  State, um ihn wiederherzustellen — und kommt nicht an ihn heran.
+
+#### S3-kompatibel
+
+- **Locking.** Ohne DynamoDB braucht es `use_lockfile = true`
+  (OpenTofu ≥ 1.10), das auf Conditional Writes beruht. Ob das Backend sie
+  unterstützt, gehört **vor** der Adoption mit zwei konkurrierenden Prozessen
+  getestet.
+- **Versionierung.** Ohne sie ist das Artefakt-Backup des Atoms der einzige
+  Wiederherstellungspunkt. `state_bucket` und `state_key` deshalb setzen.

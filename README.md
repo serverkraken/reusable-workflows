@@ -11,11 +11,11 @@
 ![license](docs/badges/license.svg)
 
 <!-- version-badges:start -->
-![reusable-workflows: v4.22.1](docs/badges/reusable-workflows.svg)
+![reusable-workflows: v4.30.0](docs/badges/reusable-workflows.svg)
 
 | Component | Version | Tag |
 |---|---|---|
-| reusable-workflows | 4.22.1 | [v4.22.1](https://github.com/serverkraken/reusable-workflows/releases/tag/v4.22.1) |
+| reusable-workflows | 4.30.0 | [v4.30.0](https://github.com/serverkraken/reusable-workflows/releases/tag/v4.30.0) |
 <!-- version-badges:end -->
 
 Versionierter, getesteter Katalog wiederverwendbarer GitHub-Actions-Workflows für die `serverkraken`-Organisation. Statt CI-Workflows zwischen Repos zu kopieren, referenziert jedes Repo den Katalog mit einer einzigen `uses:`-Zeile — und bekommt Updates über semantische Versionen.
@@ -46,7 +46,7 @@ Der Katalog testet sich selbst (Self-CI mit Fixtures, Integrationstests und näc
 - **End-to-End-Release-Pipeline:** release-please liest Conventional Commits, taggt `vX.Y.Z`, baut Multi-Arch-Images, signiert (Cosign keyless via OIDC), attestiert SLSA-Provenance, hängt ein SPDX-SBOM ans Release und scannt das publizierte Image mit Trivy.
 - **Native Multi-Arch-Builds:** amd64 und arm64 werden auf nativen Self-hosted Runnern parallel gebaut (kein QEMU), per Digest gepusht und zu einer Manifest-Liste zusammengeführt.
 - **Sprach-Atome mit Coverage-Gate:** Go, Python, Rust und Flutter je mit Lint- und Test-Atom; die Test-Atome erzwingen eine Mindest-Coverage (Default 80 %, pro Repo überschreibbar).
-- **Security als Standard:** Trivy-Filesystem-Scan auf jedem PR, Trivy-Image-Scan bei jedem Release, gitleaks-Secret-Scan, kube-linter und kubeconform für Kubernetes-Manifeste — SARIF-Upload in den Code-Scanning-Tab inklusive.
+- **Security als Standard:** Trivy-Filesystem-Scan auf jedem PR, Trivy-Image-Scan bei jedem Release, gitleaks-Secret-Scan, kube-linter und kubeconform für Kubernetes-Manifeste — auf öffentlichen Repos inklusive SARIF-Upload in den Code-Scanning-Tab (auf privaten Repos übersprungen, da dort kostenpflichtiges GitHub Code Security nötig wäre; Findings landen stattdessen im Step-Summary und als Artifact).
 - **Automatisches Flottenmanagement:** Wöchentlicher `drift-check` vergleicht jeden Adopter gegen sein Lockfile; `onboard-sweep` re-onboardet veraltete Adopter und onboardet neue Repos der Org automatisch.
 - **Per-Adopter-Overrides:** `SK_*`-GitHub-Variables (z.B. `SK_COVERAGE_THRESHOLD`) erlauben Abweichungen vom Template-Default, ohne die gerenderten Workflows anzufassen.
 - **Stabile Verträge:** Die `inputs`/`outputs`/`secrets`-Form jedes Atoms ist die öffentliche API; Änderungen daran sind Major-Bumps. Alle Schemata stehen in [`docs/contracts.md`](docs/contracts.md).
@@ -132,6 +132,14 @@ jobs:
 | `lint-flutter.yml` / `test-flutter.yml` | dart format + flutter analyze / flutter test + Coverage-Gate |
 | `build-flutter-android.yml`  | PR-Gate: flutter build apk (debug, unsigniert) — kompiliert die Android-Seite |
 | `lint-helm.yml`              | helm lint + ct lint                                            |
+| `lint-shell.yml`             | shellcheck über getrackte Shell-Skripte, optional shfmt        |
+| `tofu-validate.yml`          | tofu fmt + init + validate + tflint je Stack, credential-frei  |
+| `tofu-plan.yml`              | tofu plan gegen das Backend, als Sticky-PR-Kommentar           |
+| `tofu-apply.yml`             | wendet einen freigegebenen Plan an, dispatch-only              |
+| `tofu-plan-apply.yml`        | plant frisch und wendet im selben Lauf an, nach Merge/Release |
+| `tofu-destroy.yml`           | räumt eine Umgebung ab, zweistufig und dispatch-only           |
+| `tofu-unlock.yml`            | löst einen liegengebliebenen State-Lock, dispatch-only         |
+| `tofu-drift.yml`             | geplanter Plan gegen die echte Infrastruktur, rollendes Issue  |
 
 ### Versionierung und Pinning
 
@@ -143,7 +151,7 @@ Der Katalog folgt [Semantic Versioning](https://semver.org/), getrieben von [rel
 | `@v4.2`   | immer das neueste 4.2.x   | `v4`                         |
 | `@v4.2.3` | unveränderlich            | `v4`                         |
 
-**Ein Pin friert die Workflow-Datei ein, nicht alles, was sie ausführt.** 15 Atome
+**Ein Pin friert die Workflow-Datei ein, nicht alles, was sie ausführt.** 23 Atome
 checken zur Laufzeit den Katalog aus, um Composite-Actions und Skripte unter
 `actions/` und `scripts/` zu laden — und zwar am **schwebenden Major-Tag**, nicht
 an der Version, mit der sie aufgerufen wurden. Ein Aufruf von `@v4.2.3` führt
@@ -169,10 +177,12 @@ Gemeinsame Bausteine unter `actions/`, intern von den Atomen genutzt und für fo
 | `actions/install-trivy`           | Trivy-CLI gepinnt installieren (direktes Binary, bewusst ohne trivy-action) |
 | `actions/install-gitleaks`        | gitleaks-CLI gepinnt installieren                            |
 | `actions/install-kube-linter`     | kube-linter-CLI gepinnt installieren                         |
+| `actions/install-shellcheck`      | shellcheck-CLI gepinnt installieren (+ optional shfmt)       |
 | `actions/setup-kube-toolchain`    | kustomize + kubeconform (+ optional sops/age) bereitstellen  |
 | `actions/setup-kind-toolchain`    | kind + kubectl + cilium-cli mit Presence-Check installieren, Fallback in job-privates Verzeichnis |
 | `actions/setup-flutter-toolchain` | Java + Android-SDK + Flutter + pub get + build_runner        |
 | `actions/setup-python-deps`       | Paketmanager erkennen (poetry/uv/pip) + Dependencies installieren |
+| `actions/setup-tofu-toolchain`    | OpenTofu (+ optional tflint) gepinnt installieren            |
 | `actions/setup-sk-workflows`      | die Go-Onboarding-CLI aus Release-Assets oder Source installieren |
 | `actions/ghcr-login`              | GHCR-Login-Wrapper                                           |
 | `actions/compute-prerelease-tag`  | OCI-gültigen Tag aus Branch + Kurz-SHA berechnen             |

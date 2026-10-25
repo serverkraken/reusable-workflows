@@ -1267,6 +1267,61 @@ _crate() {
   echo "$output" | jq -e '[.components[].path] == ["svc"]'
 }
 
+# === Deterministische Reihenfolge (Pipeline-Fund, PR #413) ===
+#
+# `compgen -G` sortiert erst ab bash 5.3 — auf bash 5.2 (ubuntu-24.04-Runner)
+# kommt die rohe readdir-Reihenfolge des Dateisystems, auf ext4 quasi zufaellig.
+# Lokal (bash 5.3) war alles gruen, auf dem Runner lieferte die Engine
+# `apps/web` vor `apps/api` und riss drei Gates auf einmal: den Glob-Test hier,
+# check-engine-parity (pnpm-workspace) und assert-onboard-engines-agree
+# (chart_path). Die Go-Engine sortiert an beiden Stellen selbst — diese Engine
+# muss das auch tun, statt compgen bzw. find zu vertrauen.
+#
+# Die Shadows unten stellen die unsortierte Ausgabe nach, die auf dem Runner
+# real beobachtet wurde — ohne sie haengt der Test an der readdir-Laune des
+# lokalen Dateisystems.
+
+@test "Workspace-Expansion sortiert selbst, statt compgen zu vertrauen" {
+  local repo="$BATS_TEST_TMPDIR/unsorted-glob"
+  _crate "$repo/crates/alpha"; _crate "$repo/crates/beta"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  # bash 5.2 nachgestellt: compgen liefert die Treffer verkehrt herum.
+  compgen() { printf '%s\n' "$repo/crates/beta" "$repo/crates/alpha"; }
+  run _expand_workspace_patterns "$repo" "crates/*"
+  [ "$status" -eq 0 ]
+  [ "$output" = "crates/alpha
+crates/beta" ]
+}
+
+@test "Sub-Chart-Suche sortiert selbst, statt find zu vertrauen" {
+  local repo="$BATS_TEST_TMPDIR/unsorted-chart"
+  mkdir -p "$repo/charts/aaa" "$repo/charts/zzz"
+  printf 'apiVersion: v2\nname: aaa\nversion: 0.1.0\n' > "$repo/charts/aaa/Chart.yaml"
+  printf 'apiVersion: v2\nname: zzz\nversion: 0.1.0\n' > "$repo/charts/zzz/Chart.yaml"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  # readdir-Laune nachgestellt: find meldet das alphabetisch spaetere Chart zuerst.
+  find() { printf '%s\n' "./charts/zzz/Chart.yaml" "./charts/aaa/Chart.yaml"; }
+  run detect_release_signals "$repo" "."
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.chart_yaml == "charts/aaa/Chart.yaml"'
+}
+
+@test "Sub-Chart-Suche ordnet wie Gos WalkDir: Verzeichnisgrenze vor Bindestrich" {
+  # Go (firstNestedChart) laeuft lexikalisch PRO VERZEICHNISEBENE: `helm` <
+  # `helm-x`, also gewinnt helm/charts/app. Ein nacktes `sort` vergleicht
+  # Bytes, und dort liegt `-` (0x2d) VOR `/` (0x2f) — es waehlte helm-x und
+  # die Engines gingen wieder auseinander, nur eine Fixture spaeter.
+  local repo="$BATS_TEST_TMPDIR/slash-vs-dash"
+  mkdir -p "$repo/helm/charts/app" "$repo/helm-x/sub"
+  printf 'apiVersion: v2\nname: app\nversion: 0.1.0\n' > "$repo/helm/charts/app/Chart.yaml"
+  printf 'apiVersion: v2\nname: x\nversion: 0.1.0\n' > "$repo/helm-x/sub/Chart.yaml"
+  source "$BATS_TEST_DIRNAME/../../scripts/lib/onboard-detect-lib.sh"
+  find() { printf '%s\n' "./helm-x/sub/Chart.yaml" "./helm/charts/app/Chart.yaml"; }
+  run detect_release_signals "$repo" "."
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.chart_yaml == "helm/charts/app/Chart.yaml"'
+}
+
 @test "gleicher Basename ohne Dockerfiles wird abgewiesen" {
   # Suchmuster "nicht-injektive Abbildung": die Image-Namen-Pruefung fing das
   # nur MIT Dockerfiles. Ohne sie gaben beide Komponenten `package-name: api`,
@@ -1712,4 +1767,121 @@ _nested_repo() {  # <tiefe: 3|4>
 
   # Kein absoluter Runner-Pfad — die Meldung landet im Onboarding-PR-Text.
   jq -e '[.warnings[] | select(.message | test("^/|/Users/|/home/|/tmp/"))] | length == 0' <<<"$out" >/dev/null
+}
+
+# ---- iac/shell signal detection (Task 12) ----
+#
+# Bash-Zwilling zu TestIaCAndShellSignals / TestNoIaCOrShellSignalWhenAbsent
+# in internal/app/detect/iac_shell_test.go. Beide Signale sind repo-weit und
+# additiv - anders als gitops oben, das primary_language ueberschreibt. Ein
+# Go-Service mit tofu/ bleibt ein Go-Service und bekommt trotzdem beide
+# Schluessel. check-engine-parity.sh prueft, dass beide Engines hier exakt
+# dasselbe Profil liefern.
+
+@test "profile-json: iac-shell-repo attaches .iac.directories" {
+  run "$DETECT" --profile-json "$FIX/iac-shell-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu"]'
+}
+
+@test "profile-json: iac-shell-repo attaches .shell.paths as globs, not file lists" {
+  run "$DETECT" --profile-json "$FIX/iac-shell-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.shell.paths == [".taskfiles/**/*.sh","scripts/**/*.sh"]'
+}
+
+@test "profile-json: iac-shell-repo stays a go component (signals are additive)" {
+  run "$DETECT" --profile-json "$FIX/iac-shell-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.components[0].primary_language == "go"'
+}
+
+@test "profile-json: repo without .tf/.sh has neither .iac nor .shell key" {
+  run "$DETECT" --profile-json "$FIX/go-repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'has("iac") | not'
+  echo "$output" | jq -e 'has("shell") | not'
+}
+
+@test "profile-json: iac/shell walk skips vendor/, node_modules/, .terraform/, .catalog/, .venv/, .task/" {
+  local repo="$BATS_TEST_TMPDIR/signal-skip-dirs"
+  mkdir -p "$repo/vendor" "$repo/node_modules" "$repo/.terraform" \
+           "$repo/.catalog" "$repo/.venv" "$repo/.task"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'resource "null_resource" "x" {}\n' > "$repo/vendor/skip.tf"
+  printf '#!/usr/bin/env bash\n' > "$repo/node_modules/skip.sh"
+  printf 'resource "null_resource" "x" {}\n' > "$repo/.terraform/skip.tf"
+  printf '#!/usr/bin/env bash\n' > "$repo/.catalog/skip.sh"
+  printf '#!/usr/bin/env bash\n' > "$repo/.venv/skip.sh"
+  printf '#!/usr/bin/env bash\n' > "$repo/.task/skip.sh"
+
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'has("iac") | not'
+  echo "$output" | jq -e 'has("shell") | not'
+}
+
+# Go sortiert bytewise (sort.Strings): "Infra" kommt vor "bootstrap". Ein
+# lokalisiertes `sort -u` ohne LC_ALL=C stuft Grossbuchstaben anders ein und
+# haette hier eine andere Reihenfolge geliefert als die Go-Engine — ein
+# Paritaetsbruch, den check-engine-parity.sh nicht sieht, weil keine der 29
+# Fixtures ein gemischt gross-/kleingeschriebenes oberstes Pfadsegment hat.
+# Verifiziert auf dieser Maschine unter LC_ALL=en_US.UTF-8 (siehe Report):
+#   LC_ALL=en_US.UTF-8 sort  -> bootstrap, Infra
+#   LC_ALL=C           sort  -> Infra, bootstrap  (== Go)
+@test "profile-json: iac.directories and shell.paths sort bytewise, not locale-aware" {
+  local repo="$BATS_TEST_TMPDIR/locale-sort"
+  mkdir -p "$repo/Infra" "$repo/bootstrap"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'resource "null_resource" "a" {}\n' > "$repo/Infra/main.tf"
+  printf 'resource "null_resource" "b" {}\n' > "$repo/bootstrap/main.tf"
+  printf '#!/usr/bin/env bash\necho a\n' > "$repo/Infra/a.sh"
+  printf '#!/usr/bin/env bash\necho b\n' > "$repo/bootstrap/b.sh"
+
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["Infra","bootstrap"]'
+  echo "$output" | jq -e '.shell.paths == ["Infra/**/*.sh","bootstrap/**/*.sh"]'
+}
+
+# Zwilling von TestIaCSkipsChildModules in internal/app/detect/iac_shell_test.go.
+# Ein Kindmodul ist kein Stack: `working_directories` ist als "ein Stack pro
+# Zeile" dokumentiert, und im Modulordner liegt keine .terraform.lock.hcl —
+# `init -lockfile=readonly` koennte dort gar nicht durchlaufen. Ohne den Filter
+# meldeten beide Engines ["tofu","tofu/modules/server"].
+@test "profile-json: iac.directories laesst Kindmodule (modules/) weg" {
+  run "$DETECT" --profile-json "$FIX/iac-nested-module"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu"]'
+}
+
+# Segmentgenau: `mymodules` und `modules-old` sind normale Verzeichnisnamen.
+# Zwilling von TestIsChildModulePath.
+@test "profile-json: der modules/-Filter greift segmentgenau" {
+  local repo="$BATS_TEST_TMPDIR/module-segments"
+  mkdir -p "$repo/tofu/modules/server" "$repo/tofu/mymodules" "$repo/tofu/modules-old"
+  printf 'module example.com/x\n' > "$repo/go.mod"
+  printf 'resource "null_resource" "a" {}\n' > "$repo/tofu/main.tf"
+  printf 'resource "null_resource" "b" {}\n' > "$repo/tofu/modules/server/main.tf"
+  printf 'resource "null_resource" "c" {}\n' > "$repo/tofu/mymodules/main.tf"
+  printf 'resource "null_resource" "d" {}\n' > "$repo/tofu/modules-old/main.tf"
+
+  run "$DETECT" --profile-json "$repo"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu","tofu/modules-old","tofu/mymodules"]'
+}
+
+# Zwilling von TestSignalsIgnoreSymlinks. linked-only/ enthaelt AUSSCHLIESSLICH
+# Symlinks — einen gueltigen und einen kaputten je Endung. Zaehlte eine Engine
+# Symlinks mit, erschiene das Verzeichnis als Stack bzw. als Glob. Genau hier
+# liefen die Engines auseinander: Gos WalkDir meldet einen Symlink-auf-Datei
+# als Nicht-Verzeichnis, `find -type f` schliesst ihn aus.
+@test "profile-json: Symlinks zaehlen weder fuer iac noch fuer shell" {
+  run "$DETECT" --profile-json "$FIX/symlinked-signals"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.iac.directories == ["tofu"]'
+  echo "$output" | jq -e '.shell.paths == ["scripts/**/*.sh"]'
+  # Ein kaputter Symlink ist kein unlesbarer Pfad — geprueft wird der Typ des
+  # Eintrags, nicht sein Ziel. Also auch keine Warnung.
+  echo "$output" | jq -e '[.warnings[] | select(.code == "path_unreadable")] | length == 0'
 }
