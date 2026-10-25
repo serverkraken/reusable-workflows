@@ -164,11 +164,20 @@ narrow it:
   was left **without** a catalog checkout for exactly this reason — the fix for
   its probe (audit D-12) stayed inline rather than gaining an App-token mint.
 
-Closing it properly means minting once centrally and passing the *token*
-downward, which changes the calling contract of every atom. It is tracked as
-audit **D-1** and deliberately not fixed alongside smaller items.
+Gemessen am 2026-08-27: **18 Atome** deklarieren den Key. Davon minten 16
+selbst, und zwei (`release.yml`, `docker-build-multi.yml`) reichen ihn nur
+weiter. Wichtiger noch — **13 der 16 minten ausschliesslich einen
+katalog-gescopten Lesetoken** (`owner: serverkraken`, `contents: read`); nur
+drei brauchen einen adopter-gescopten Schreibtoken: `semantic-release`,
+`chart-image-bump`, `version-badges`.
 
-### 6.2 App permissions
+Das ist der Hebel: der ueberwiegende Teil der Key-Verbraucher braucht gar keine
+Schreibrechte irgendwo. Die Aufloesung ist deshalb in
+[`docs/superpowers/specs/2026-08-27-v5-token-contract-design.md`](superpowers/specs/2026-08-27-v5-token-contract-design.md)
+als **v5** entworfen: zwei getrennte Secrets statt eines Keys, und keins davon
+so maechtig wie der Key. Tracked als audit **D-1**.
+
+### 6.2a App permissions
 
 The catalog-scoped token needs `contents: read`. The existing `serverkraken-release-bot` App already has it. **Additionally**, the App needs `workflows: write` so it can push `.github/workflows/*.yml` into target repos via the onboarding workflow's PR-A flow — verify this is granted on the App settings page if you skipped it during the original v1.0 setup.
 
