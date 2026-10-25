@@ -1,5 +1,7 @@
 # Contributing
 
+Architektur, Vertragsregeln und Gates im Überblick (auch für KI-Agenten): [`AGENTS.md`](AGENTS.md).
+
 ## Local validation
 
 Before pushing a PR, run the static checks the CI will run:
