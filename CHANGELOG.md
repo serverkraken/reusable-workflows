@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.30.1](https://github.com/serverkraken/reusable-workflows/compare/v4.30.0...v4.30.1) (2026-10-25)
+
+
+### Documentation
+
+* AGENTS.md mit Katalog-Überblick ([#439](https://github.com/serverkraken/reusable-workflows/issues/439)) ([d6c0816](https://github.com/serverkraken/reusable-workflows/commit/d6c0816c8a8c94d3a4c67eb35a9621321be0d76b))
+* **v5:** Entwurf fuer den Token-Vertrag (D-1) ([#404](https://github.com/serverkraken/reusable-workflows/issues/404)) ([ba77c79](https://github.com/serverkraken/reusable-workflows/commit/ba77c7918a7de39fade943c0389c774bafbaf057))
+
 ## [4.30.0](https://github.com/serverkraken/reusable-workflows/compare/v4.29.0...v4.30.0) (2026-10-21)
 
 
