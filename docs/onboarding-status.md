@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-10-26T14:05:58Z_
+_Last updated by the onboarding workflow: 2026-10-29T22:25:31Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -29,7 +29,7 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/krakenchores | 2026-08-24 | v4 | [PR](https://github.com/serverkraken/krakenchores/pull/22) | — | add-open, no-legacy | — |
 | serverkraken/music-assistant-sidecar | 2026-08-19 | v4 | [PR](https://github.com/serverkraken/music-assistant-sidecar/pull/24) | — | add-open, no-legacy | — |
 | serverkraken/openstreetmap-overpass | 2026-10-26 | v4 | [PR](https://github.com/serverkraken/openstreetmap-overpass/pull/3) | — | add-open, no-legacy | — |
-| serverkraken/smarthome-helm | 2026-10-26 | v4 | [PR](https://github.com/serverkraken/smarthome-helm/pull/8) | — | add-open, no-legacy | — |
+| serverkraken/smarthome-helm | 2026-10-29 | v4 | [PR](https://github.com/serverkraken/smarthome-helm/pull/8) | — | add-open, no-legacy | serverkraken/homelab-study |
 | serverkraken/smarthome-jukebox-go | 2026-10-26 | v4 | [PR](https://github.com/serverkraken/smarthome-jukebox-go/pull/81) | [PR](https://github.com/serverkraken/smarthome-jukebox-go/pull/82) | add-open, cleanup-open | — |
 | serverkraken/smarthome-jukebox | 2026-10-26 | v4 | [PR](https://github.com/serverkraken/smarthome-jukebox/pull/33) | — | add-open, no-legacy | — |
 | serverkraken/strassenfuchs-admin-dashboard | 2026-07-27 | v4 | [PR](https://github.com/serverkraken/strassenfuchs-admin-dashboard/pull/23) | [PR](https://github.com/serverkraken/strassenfuchs-admin-dashboard/pull/24) | add-open, cleanup-open | — |
