@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-10-29T22:25:31Z_
+_Last updated by the onboarding workflow: 2026-11-02T07:14:49Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -57,3 +57,5 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/agent-image | 2026-10-26 | v4 | [PR](https://github.com/serverkraken/agent-image/pull/7) | — | add-open, no-legacy | — |
 | serverkraken/agent-job | 2026-10-26 | v4 | [PR](https://github.com/serverkraken/agent-job/pull/5) | — | add-open, no-legacy | — |
 | serverkraken/homelab-cloudflare | 2026-10-26 | v4 | [PR](https://github.com/serverkraken/homelab-cloudflare/pull/11) | — | add-open, no-legacy | — |
+| serverkraken/gewusel | 2026-11-02 | v4 | [PR](https://github.com/serverkraken/gewusel/pull/7) | [PR](https://github.com/serverkraken/gewusel/pull/8) | add-open, cleanup-open | — |
+| serverkraken/hadal | 2026-11-02 | v4 | [PR](https://github.com/serverkraken/hadal/pull/1) | — | add-open, no-legacy | — |
