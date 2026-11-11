@@ -95,6 +95,21 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux","low-performance"]'
+      timeout_minutes_release:
+        description: 'Forwarded to semantic-release. Timeout in minutes for the release job.'
+        required: false
+        type: number
+        default: 15
+      timeout_minutes_build:
+        description: 'Forwarded to docker-build. Timeout in minutes for each per-arch build job.'
+        required: false
+        type: number
+        default: 60
+      timeout_minutes_merge:
+        description: 'Forwarded to docker-build. Timeout in minutes for the version, merge and post-comment jobs.'
+        required: false
+        type: number
+        default: 60
     secrets:
       release_please_app_client_id:
         required: true
@@ -126,6 +141,7 @@ jobs:
     with:
       dry_run: ${{ inputs.dry_run }}
       runs_on: ${{ inputs.runs_on_release }}
+      timeout_minutes: ${{ inputs.timeout_minutes_release }}
 
   # Dieser Orchestrator ist per Bauart EIN Paket: er nimmt genau einen
   # image_name, ein dockerfile, einen context. Ein Monorepo kann er gar nicht
@@ -153,9 +169,31 @@ jobs:
   assert-single-package:
     needs: semantic-release
     if: always() && inputs.dry_run == false
-    runs-on: ubuntu-latest
+    # Gleiche Rolle wie der semantic-release-Schritt (reines Shell + jq), daher
+    # derselbe Runner-Eingang. Vorher fest ubuntu-latest: reine self-hosted-
+    # Adopter konnten den Job nicht umlenken.
+    runs-on: ${{ fromJSON(inputs.runs_on_release) }}
+    # timeout-fixed: one jq call on job outputs, runs in seconds
     timeout-minutes: 5
     steps:
+      # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
+      # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
+      # arbeiten. `fromJSON` oben faengt nur KAPUTTES JSON ab — `[]` ist
+      # gueltiges JSON und kommt hier an.
+      # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on_release }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
       - name: Reject a monorepo release on the single-package orchestrator
         env:
           PATHS: ${{ needs.semantic-release.outputs.paths_released }}
@@ -192,6 +230,8 @@ jobs:
       runs_on_amd64: ${{ inputs.runs_on_amd64 }}
       runs_on_arm64: ${{ inputs.runs_on_arm64 }}
       runs_on_merge: ${{ inputs.runs_on_merge }}
+      timeout_minutes_build: ${{ inputs.timeout_minutes_build }}
+      timeout_minutes_merge: ${{ inputs.timeout_minutes_merge }}
       # Build from the released tag, not the triggering event's SHA: with
       # back-to-back merges the event SHA predates release-please's bump
       # commit (semantic-release resolves the merged release PR via the API).

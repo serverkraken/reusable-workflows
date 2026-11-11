@@ -44,6 +44,11 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 10
       ref:
         description: >-
           Git ref (tag/branch/SHA) to check out before packaging. Callers
@@ -72,7 +77,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 10
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     steps:
       # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
       # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn

@@ -68,6 +68,16 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux","low-performance"]'
+      timeout_minutes_build:
+        description: 'Timeout in minutes for each per-arch build job.'
+        required: false
+        type: number
+        default: 60
+      timeout_minutes_merge:
+        description: 'Timeout in minutes for the version, merge and post-comment jobs.'
+        required: false
+        type: number
+        default: 60
       ref:
         description: >-
           Git ref (tag/branch/SHA) to check out before building. Callers
@@ -163,7 +173,7 @@ jobs:
   version:
     name: resolve tag
     runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.timeout_minutes_merge }}
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       moving_tag: ${{ steps.resolve.outputs.moving_tag }}
@@ -312,7 +322,7 @@ jobs:
             arch: arm64
             runs_on_input: runs_on_arm64
     runs-on: ${{ fromJSON(matrix.runs_on_input == 'runs_on_amd64' && inputs.runs_on_amd64 || inputs.runs_on_arm64) }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.timeout_minutes_build }}
     steps:
       # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
       # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
@@ -542,7 +552,7 @@ jobs:
     name: merge manifest list
     needs: [version, build]
     runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.timeout_minutes_merge }}
     outputs:
       image_ref: ${{ steps.compose.outputs.image_ref }}
       moving_ref: ${{ steps.compose.outputs.moving_ref }}
@@ -908,7 +918,7 @@ jobs:
     if: inputs.prerelease && github.event_name == 'pull_request'
     needs: [version, merge]
     runs-on: ${{ fromJSON(inputs.runs_on_merge) }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.timeout_minutes_merge }}
     permissions:
       contents: read
       pull-requests: write

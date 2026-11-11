@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux","X64"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 30
       working_directory:
         description: 'Component sub-path.'
         required: false
@@ -44,7 +49,7 @@ concurrency:
 jobs:
   test:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     steps:
       # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
       # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn

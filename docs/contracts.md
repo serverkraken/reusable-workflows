@@ -44,6 +44,7 @@ release semantics — no signing, no upload, no version handling. Complements
 | input | `ref` | string | no | `''` | Branch to check out, commit onto and push to. Empty keeps the caller's ref, which is right for the normal case (release job on the default branch). On a `pull_request` that ref is a DETACHED merge commit, where `git push` cannot work at all — pass a branch name to exercise the write path. |
 | input | `commit_message` | string | no | `fix(chart): Image-Pins auf die frisch gebauten Versionen` | Commit message. Keep the fix(chart) prefix or release-please will not cut a chart release. |
 | input | `runs_on` | string | no | `["self-hosted","Linux","low-performance"]` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `10` | Job timeout in minutes (since v4.31.0). |
 | output | `changed` | — | — | — | "true" when at least one pin moved. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID (catalog checkout + push of the pin commit). |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
@@ -63,6 +64,7 @@ collide on the same key and the workflow fails rather than guessing.
 | input   | `keep_stable_versions` | number | no       | `10`                        | Min count of semver (`v*.*.*`) versions to keep |
 | input   | `prerelease_age_days`  | number | no       | `14`                        | Delete non-semver tags older than N days |
 | input   | `runs_on`              | string | no       | `'["self-hosted","Linux"]'` | JSON-encoded runner labels |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 
 A package that does not exist is a no-op: the job logs `not published (yet)`
 and succeeds. Retention on a repo that has not cut its first release yet is
@@ -105,6 +107,8 @@ with:
 | input   | `runs_on_amd64` | string  | no       | `'["self-hosted","Linux","X64","performance"]'`| Runner for amd64 build job |
 | input   | `runs_on_arm64` | string  | no       | `'["self-hosted","Linux","ARM64"]'`            | Runner for arm64 build job |
 | input   | `runs_on_merge` | string  | no       | `'["self-hosted","Linux","low-performance"]'`  | Runner for version + merge jobs |
+| input   | `timeout_minutes_build` | number | no | `60` | Timeout per per-arch build job (since v4.31.0). |
+| input   | `timeout_minutes_merge` | number | no | `60` | Timeout for version, merge and post-comment jobs (since v4.31.0). |
 | input   | `ref`           | string  | no       | `''`                                           | Git ref (tag/branch/SHA) to check out before building. Release callers whose run creates the bump commit and tag (release-please) should pass the released tag; empty keeps the default event-SHA checkout. |
 | input   | `build_secret_repos` | string | no    | `''`                                           | Bare names of private org repositories (comma/newline-separated) the Dockerfile may read during the build. The build job mints a second App token restricted to `contents:read` on exactly these repos, right before the build, and passes it as BuildKit secret `github_token` (`RUN --mount=type=secret,id=github_token`). Never in a layer or the cache; revoked at job end. **Trust boundary:** any `RUN` that mounts it can print it — opting in trusts the Dockerfile with read access to those repos. Since v4.x. |
 | output  | `image_ref`     | string  | —        | —                                              | `ghcr.io/<image_name>:<tag>` |
@@ -137,6 +141,9 @@ with:
 | input   | `runs_on_merge`   | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Runner for version + merge jobs (forwarded). |
 | input   | `ref`             | string  | no       | `''`                                            | Git ref to check out before building (forwarded to docker-build). Release callers should pass the released tag; empty keeps the default event-SHA checkout. |
 | input   | `runs_on_parse`   | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Runner for the parse job (pure shell; low-performance is fine). |
+| input   | `timeout_minutes_build` | number | no | `60` | Timeout per per-arch build job (forwarded) (since v4.31.0). |
+| input   | `timeout_minutes_merge` | number | no | `60` | Timeout for version, merge and post-comment jobs (forwarded) (since v4.31.0). |
+| input   | `timeout_minutes_parse` | number | no | `60` | Timeout for the parse job (since v4.31.0). |
 | input   | `caller_id`       | string  | no       | `''`                                            | Optional caller identifier appended to the concurrency group for parallel callers. |
 | secret  | `release_please_app_client_id`  | — | **yes** | — | GitHub App Client ID with `contents:read` on the catalog repo. Forwarded to docker-build.yml. |
 | secret  | `release_please_app_private_key`| — | **yes** | — | PEM private key for the GitHub App. Forwarded to docker-build.yml. |
@@ -179,6 +186,7 @@ runner pods.
 | input   | `snapshot`           | boolean | no       | `false`                     | Run in `--snapshot` mode (no publish). Useful for PR smoke tests. |
 | input   | `ref`                | string  | no       | `''`                        | Git ref (usually the freshly created tag) to check out. Empty keeps the caller's ref. In non-snapshot mode goreleaser needs a tag AT the checked-out commit, so a caller that creates the tag in the same run must pass it here. |
 | input   | `runs_on`            | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `30` | Job timeout in minutes (since v4.31.0). |
 
 ---
 
@@ -191,6 +199,7 @@ runner pods.
 | input   | `helm_version` | string  | no       | `'v3.16.3'`                 | Helm CLI version to install (e.g. `v3.16.3`, `latest`). |
 | input   | `dry_run`      | boolean | no       | `false`                     | Lint and package only; skip registry login + push. |
 | input   | `runs_on`      | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `10` | Job timeout in minutes (since v4.31.0). |
 | input   | `ref`          | string  | no       | `''`                        | Git ref (tag/branch/SHA) to check out before packaging. Callers whose release job creates the version-bump commit and tag in the same run (release-please) must pass the released tag here; empty keeps the default event-SHA checkout. |
 
 ---
@@ -206,6 +215,7 @@ runner pods.
 | input | `upload_sarif` | boolean | no | `true` | Upload SARIF to GitHub code-scanning. Auto-skipped on forks and private repos (needs paid GitHub Code Security there). |
 | input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow: GitHub keeps one analysis per category, so a shared category makes the second upload REPLACE the first, and the shared artifact name fails the run outright. Empty (the default) keeps the historical names, so single-call adopters are unaffected. |
 | input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 | output | `findings_count` | — | — | — | Number of kube-linter findings. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
@@ -226,6 +236,7 @@ runner pods.
 | input | `kustomize_version` | string | no | `''` | Override kustomize version (empty → composite default). |
 | input | `kubeconform_version` | string | no | `''` | Override kubeconform version (empty → composite default). |
 | input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `20` | Job timeout in minutes (since v4.31.0). |
 | secret | `sops_age_key` | — | no | — | AGE secret key for SOPS decryption (required only when sops: true). |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
@@ -256,9 +267,11 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | Kind  | Name                    | Type    | Required | Default                                | Description |
 |-------|-------------------------|---------|----------|----------------------------------------|-------------|
 | input | `runs_on`               | string  | no       | `'["self-hosted","Linux","X64"]'`      | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 | input | `working_directory`     | string  | no       | `'.'`                                  | Component sub-path. Atom resolves all paths relative to this. |
 | input | `go_version`            | string  | no       | `''`                                   | Go toolchain version. Empty → read from `<working_directory>/go.mod`. |
 | input | `golangci_lint_version` | string  | no       | `'v2.12.2'`                            | golangci-lint version (e.g. `v2.12.2`). Must be `v2.1.0+` to be compatible with golangci-lint-action@v9. |
+| input | `golangci_lint_timeout` | string  | no       | `'5m'`                                 | golangci-lint `--timeout` value (Go duration, e.g. `5m`, `10m`). Keep it below `timeout_minutes`, otherwise the job is killed before golangci-lint can report (since v4.31.0). |
 | input | `cgo_enabled`           | boolean | no       | `false`                                | Set `CGO_ENABLED=1` (true) or `0` (false). Mirror the value used in `test-go.yml` for cgo-dependent packages. |
 
 ---
@@ -268,6 +281,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | Kind  | Name                | Type    | Required | Default                     | Description |
 |-------|---------------------|---------|----------|-----------------------------|-------------|
 | input | `runs_on`           | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 | input | `working_directory` | string  | no       | `'.'`                       | Repo root for `ct` (`charts_dir` is relative to this). |
 | input | `charts_dir`        | string  | no       | `'charts'`                  | Directory containing one or more charts (relative to `working_directory`). |
 | input | `helm_version`      | string  | no       | `'v3.16.3'`                 | Helm CLI version. |
@@ -281,6 +295,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | Kind   | Name                            | Type   | Required | Default                     | Description |
 |--------|---------------------------------|--------|----------|-----------------------------|-------------|
 | input  | `runs_on`                       | string | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 | input  | `working_directory`             | string | no       | `'.'`                       | Component sub-path. |
 | input  | `python_version`                | string | no       | `''`                        | Python version. Empty → read from `<working_directory>/pyproject.toml`. |
 | secret | `release_please_app_client_id`  | —      | **yes**  | —                           | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
@@ -293,6 +308,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | Kind  | Name             | Type   | Required | Default                           | Description |
 |-------|------------------|--------|----------|-----------------------------------|-------------|
 | input | `runs_on`        | string | no       | `'["self-hosted","Linux","X64"]'` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 | input | `working_directory` | string | no    | `'.'`                             | Crate root directory. |
 | input | `rust_toolchain` | string | no       | `''`                              | rustup toolchain. Empty → rustup reads `rust-toolchain.toml` if present, else stable. |
 | input | `clippy_args`    | string | no       | `'-D warnings'`                   | Extra arguments to clippy after `--`. |
@@ -313,6 +329,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | input | `fail_on_findings` | boolean | no | `true` | Exit non-zero when shellcheck reports findings. |
 | input | `report_slug` | string | no | `''` | Suffix that makes this call's SARIF category and artifact name unique. Required when a repo calls this atom more than once in the same workflow. |
 | input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 | output | `findings_count` | — | — | — | Number of shellcheck findings — und der LEERE String, wenn shellcheck gar nicht durchlief. Ein Aufrufer muss auf `== '0'` pruefen, nicht auf `!= '0'`. |
 | output | `file_count` | — | — | — | Number of files the paths globs matched, gesetzt BEVOR das Atom bei null Treffern abbricht. Damit laesst sich "am gewollten Check gescheitert" von "vorher abgestuerzt" unterscheiden: leer heisst, der Collect-Schritt lief nicht. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
@@ -364,6 +381,7 @@ Builds a signed Android APK and/or AAB and attaches it to a GitHub Release.
 | input | `no_git` | boolean | no | `false` | Scan files under scan_path without git history (gitleaks --no-git). |
 | input | `scan_path` | string | no | `.` | Directory to scan when no_git: true. |
 | input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 | output | `findings_count` | — | — | — | Number of gitleaks findings. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
@@ -379,6 +397,7 @@ category, and two artifacts of the same name are equally ambiguous.
 | Kind    | Name                            | Type    | Required | Default                                   | Description |
 |---------|---------------------------------|---------|----------|-------------------------------------------|-------------|
 | input   | `runs_on`                       | string  | no       | `'["self-hosted","Linux","low-performance"]'` | JSON-encoded runner labels |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 | input   | `release_please_config`         | string  | no       | `'release-please-config.json'`            | Path to release-please config |
 | input   | `release_please_manifest`       | string  | no       | `'.release-please-manifest.json'`         | Path to release-please manifest |
 | input   | `dry_run`                       | boolean | no       | `false`                                   | When true, run release-please without creating PRs/releases or moving floating tags (integration-test use only) |
@@ -418,6 +437,7 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | Kind  | Name                 | Type    | Required | Default                           | Description |
 |-------|----------------------|---------|----------|-----------------------------------|-------------|
 | input | `runs_on`            | string  | no       | `'["self-hosted","Linux","X64"]'` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `30` | Job timeout in minutes (since v4.31.0). |
 | input | `working_directory`  | string  | no       | `'.'`                             | Component sub-path. |
 | input | `go_version`         | string  | no       | `''`                              | Go toolchain version. Empty → read from `<working_directory>/go.mod`. |
 | input | `coverage_threshold` | number  | no       | `80`                              | Minimum line coverage percentage (integer 0-100). |
@@ -494,6 +514,7 @@ Architektur nicht.
 | input  | `state_workspace` | string | no | `default` | OpenTofu-Workspace des States. |
 | input  | `state_endpoint` | string | no | `''` | Endpoint-URL fuer S3-kompatible Backends (leer → AWS). |
 | input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. MUSS dieselben Labels tragen wie der Plan-Lauf. |
+| input | `timeout_minutes` | number | no | `60` | Job timeout in minutes (since v4.31.0). |
 | output | `applied` | string | — | — | `true`, wenn der Apply durchlief. LEER, wenn er nicht startete — `== 'true'` pruefen, nicht `!= 'false'`. |
 | output | `summary_line` | string | — | — | Die Apply-Zusammenfassung. |
 | output | `apply_status` | string | — | — | `success`, `failed`, oder LEER wenn der Apply-Schritt nicht startete. |
@@ -546,6 +567,7 @@ nicht pruefen, nur das Ereignis ablehnen.
 | input  | `state_workspace` | string | no | `default` | OpenTofu-Workspace des States. |
 | input  | `state_endpoint` | string | no | `''` | Endpoint-URL fuer S3-kompatible Backends (leer → AWS). |
 | input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. Plan und Apply laufen im selben Job; die Labels muessen nur das Backend erreichen. |
+| input | `timeout_minutes` | number | no | `60` | Job timeout in minutes (since v4.31.0). |
 | output | `applied` | string | — | — | `true`, wenn der Apply durchlief. LEER, wenn er nicht startete (keine Aenderungen, Plan gescheitert, Gatter) — `== 'true'` pruefen, nicht `!= 'false'`. |
 | output | `has_changes` | string | — | — | `true`/`false` nach erfolgreichem Plan, LEER wenn der Plan nicht durchlief. |
 | output | `plan_summary_line` | string | — | — | Die Plan-Zusammenfassung, z. B. "Plan: 2 to add, 1 to change, 0 to destroy". |
@@ -596,6 +618,7 @@ exakten Text in ihrer Summary.
 | input  | `state_workspace` | string | no | `default` | OpenTofu-Workspace des States. |
 | input  | `state_endpoint` | string | no | `''` | Endpoint-URL fuer S3-kompatible Backends (leer → AWS). |
 | input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. MUSS in beiden Stufen dieselben Labels tragen. |
+| input | `timeout_minutes` | number | no | `60` | Job timeout in minutes (since v4.31.0). |
 | output | `destroyed` | string | — | — | `true`, wenn die zweite Stufe durchlief. LEER nach der ersten Stufe und bei jedem Abbruch. |
 | output | `summary_line` | string | — | — | Die Zusammenfassungszeile von Plan bzw. Apply. |
 | output | `destroy_status` | string | — | — | `planned`, `success`, `failed`, oder LEER bei einem Abbruch davor. |
@@ -629,6 +652,7 @@ Lock-ID auch in der Bestaetigung, und das Atom laeuft in derselben
 | input  | `tofu_version` | string | no | `''` | Override OpenTofu version (empty → composite default). |
 | input  | `backend_config` | string | no | `''` | Newline-separated `-backend-config=` arguments. |
 | input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `15` | Job timeout in minutes (since v4.31.0). |
 | output | `unlocked` | string | — | — | `true`, wenn der Lock geloest wurde. LEER bei jedem Abbruch. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
@@ -667,6 +691,7 @@ Schluessel; ihn nachtraeglich zu aendern erzeugt ein ZWEITES Issue.
 | input  | `issue_title_prefix` | string | no | `OpenTofu-Drift` | Titelpraefix; der Titel dient als Schluessel. |
 | input  | `fail_on_drift` | boolean | no | `false` | Den Job rot faerben, wenn Drift besteht. Default aus: ein nightly, das dauerhaft rot steht, liest niemand mehr. |
 | input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `30` | Job timeout in minutes (since v4.31.0). |
 | output | `has_changes` | string | — | — | `true` bei Drift, `false` ohne, LEER wenn der Plan nicht durchlief. |
 | output | `summary_line` | string | — | — | Die Plan-Zusammenfassung. |
 | output | `issue_number` | string | — | — | Nummer des offenen Drift-Issues; LEER ohne Drift. |
@@ -722,6 +747,7 @@ keines ist.
 | input  | `plan_retention_days` | number | no | `3` | Retention des Plan-Artefakts in Tagen. |
 | input  | `concurrency_key` | string | no | `''` | Identitaet des States fuers Scheduling. Leer → working_directory. Ein Pfad ist aber keine belastbare State-Identitaet: ihn umzubenennen aendert die Gruppe, obwohl derselbe State weiterbenutzt wird, und zwei Verzeichnisse koennen denselben Backend-Key ansprechen. |
 | input  | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `30` | Job timeout in minutes (since v4.31.0). |
 | output | `has_changes` | — | — | — | true when the plan contains changes, false when it does not — und der LEERE String, wenn der Plan nicht durchlief: Fork-PR (das Atom ueberspringt sich) ODER Plan-Fehler. Ein Aufrufer muss `== 'true'` pruefen, nicht `!= 'false'`. Wer "keine Aenderungen" von "nicht gelaufen" unterscheiden will, liest `plan_status`. |
 | output | `summary_line` | — | — | — | The plan summary line, e.g. "2 to add, 1 to change, 0 to destroy". |
 | output | `plan_status` | — | — | — | `success`, wenn `tofu plan` durchlief (mit oder ohne Aenderungen), `failed` bei einem unerwarteten Exit-Code, und der LEERE String, wenn der Plan-Schritt gar nicht erst startete (Fork-PR, Abbruch im Backend-Init). Fuer Aufrufer mit `always()` oder `continue-on-error` ist das der einzige Weg, einen Fehlschlag von "es gibt nichts zu tun" zu unterscheiden. |
@@ -744,6 +770,7 @@ keines ist.
 | input | `tflint` | boolean | no | `true` | Also run tflint in each directory. |
 | input | `lockfile_readonly` | boolean | no | `true` | Pass -lockfile=readonly to `tofu init`, so a PR that would silently change .terraform.lock.hcl fails instead of drifting the provider pins unnoticed. |
 | input | `runs_on` | string | no | `["self-hosted","Linux"]` | JSON-encoded array of runner labels. |
+| input | `timeout_minutes` | number | no | `20` | Job timeout in minutes (since v4.31.0). |
 | output | `checked_directories` | — | — | — | Number of directories validated. |
 | secret | `release_please_app_client_id` | — | yes | — | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key` | — | yes | — | PEM private key for the GitHub App. |
@@ -764,6 +791,7 @@ keines ist.
 | input   | `ignore_unfixed`  | boolean | no       | `true`                       | Pass `--ignore-unfixed` to Trivy |
 | input   | `fail_on_findings`| boolean | no       | `true`                       | Exit non-zero when findings exist |
 | input   | `runs_on`         | string  | no       | `'["self-hosted","Linux"]'`  | JSON-encoded runner labels |
+| input | `timeout_minutes` | number | no | `20` | Job timeout in minutes (since v4.31.0). |
 | output  | `findings_count`  | string  | —        | —                            | Number of severity-matching findings |
 | secret  | `release_please_app_client_id`  | — | **yes** | — | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
@@ -784,6 +812,7 @@ keines ist.
 | input   | `platforms`       | string  | no       | `''`                         | Comma-separated platforms to scan; empty scans only the one Trivy picks (`linux/amd64`) |
 | input   | `trivy_version`   | string  | no       | `''`                         | Override Trivy version |
 | input   | `runs_on`         | string  | no       | `'["self-hosted","Linux"]'`  | JSON-encoded runner labels |
+| input | `timeout_minutes` | number | no | `20` | Job timeout in minutes (since v4.31.0). |
 | output  | `findings_count`  | string  | —        | —                            | Number of severity-matching findings |
 | secret  | `release_please_app_client_id`  | — | **yes** | — | App Client ID for the catalog-checkout token (since v3.0.0; was `release_please_app_id` in v2.x) |
 | secret  | `release_please_app_private_key`| — | **yes** | — | App private key for the catalog-checkout token (since v2.0.0) |
@@ -802,6 +831,7 @@ the same way.
 | Kind    | Name                             | Type    | Required | Default                                        | Description |
 |---------|----------------------------------|---------|----------|------------------------------------------------|-------------|
 | input   | `runs_on`                        | string  | no       | `'["self-hosted","Linux","low-performance"]'`  | JSON-encoded runner labels |
+| input | `timeout_minutes` | number | no | `10` | Job timeout in minutes (since v4.31.0). |
 | input   | `manifest_path`                  | string  | no       | `'.release-please-manifest.json'`              | release-please manifest (package path → version) |
 | input   | `config_path`                    | string  | no       | `'release-please-config.json'`                 | release-please config (optional; release-type, package-name, include-component-in-tag) |
 | input   | `readme_path`                    | string  | no       | `'README.md'`                                  | README carrying the `<!-- version-badges:start/end -->` markers |
@@ -838,6 +868,9 @@ the same way.
 | input   | `runs_on_amd64`                 | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | Pass-through to docker-build (amd64 build job) |
 | input   | `runs_on_arm64`                 | string  | no       | `'["self-hosted","Linux","ARM64"]'`             | Pass-through to docker-build (arm64 build job) |
 | input   | `runs_on_merge`                 | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Pass-through to docker-build (version + merge jobs) |
+| input   | `timeout_minutes_release` | number | no | `15` | Timeout for the semantic-release job (forwarded) (since v4.31.0). |
+| input   | `timeout_minutes_build` | number | no | `60` | Pass-through to docker-build (per-arch build jobs) (since v4.31.0). |
+| input   | `timeout_minutes_merge` | number | no | `60` | Pass-through to docker-build (version, merge, post-comment) (since v4.31.0). |
 | secret  | `release_please_app_client_id`  | —       | **yes**  | —                                               | Pass-through to semantic-release |
 | secret  | `release_please_app_private_key`| —       | **yes**  | —                                               | Pass-through to semantic-release |
 
