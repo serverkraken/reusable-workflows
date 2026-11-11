@@ -107,6 +107,8 @@ with:
 | input   | `runs_on_amd64` | string  | no       | `'["self-hosted","Linux","X64","performance"]'`| Runner for amd64 build job |
 | input   | `runs_on_arm64` | string  | no       | `'["self-hosted","Linux","ARM64"]'`            | Runner for arm64 build job |
 | input   | `runs_on_merge` | string  | no       | `'["self-hosted","Linux","low-performance"]'`  | Runner for version + merge jobs |
+| input   | `timeout_minutes_build` | number | no | `60` | Timeout per per-arch build job (since v4.31.0). |
+| input   | `timeout_minutes_merge` | number | no | `60` | Timeout for version, merge and post-comment jobs (since v4.31.0). |
 | input   | `ref`           | string  | no       | `''`                                           | Git ref (tag/branch/SHA) to check out before building. Release callers whose run creates the bump commit and tag (release-please) should pass the released tag; empty keeps the default event-SHA checkout. |
 | input   | `build_secret_repos` | string | no    | `''`                                           | Bare names of private org repositories (comma/newline-separated) the Dockerfile may read during the build. The build job mints a second App token restricted to `contents:read` on exactly these repos, right before the build, and passes it as BuildKit secret `github_token` (`RUN --mount=type=secret,id=github_token`). Never in a layer or the cache; revoked at job end. **Trust boundary:** any `RUN` that mounts it can print it — opting in trusts the Dockerfile with read access to those repos. Since v4.x. |
 | output  | `image_ref`     | string  | —        | —                                              | `ghcr.io/<image_name>:<tag>` |
@@ -139,6 +141,9 @@ with:
 | input   | `runs_on_merge`   | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Runner for version + merge jobs (forwarded). |
 | input   | `ref`             | string  | no       | `''`                                            | Git ref to check out before building (forwarded to docker-build). Release callers should pass the released tag; empty keeps the default event-SHA checkout. |
 | input   | `runs_on_parse`   | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Runner for the parse job (pure shell; low-performance is fine). |
+| input   | `timeout_minutes_build` | number | no | `60` | Timeout per per-arch build job (forwarded) (since v4.31.0). |
+| input   | `timeout_minutes_merge` | number | no | `60` | Timeout for version, merge and post-comment jobs (forwarded) (since v4.31.0). |
+| input   | `timeout_minutes_parse` | number | no | `60` | Timeout for the parse job (since v4.31.0). |
 | input   | `caller_id`       | string  | no       | `''`                                            | Optional caller identifier appended to the concurrency group for parallel callers. |
 | secret  | `release_please_app_client_id`  | — | **yes** | — | GitHub App Client ID with `contents:read` on the catalog repo. Forwarded to docker-build.yml. |
 | secret  | `release_please_app_private_key`| — | **yes** | — | PEM private key for the GitHub App. Forwarded to docker-build.yml. |
@@ -862,6 +867,9 @@ the same way.
 | input   | `runs_on_amd64`                 | string  | no       | `'["self-hosted","Linux","X64","performance"]'` | Pass-through to docker-build (amd64 build job) |
 | input   | `runs_on_arm64`                 | string  | no       | `'["self-hosted","Linux","ARM64"]'`             | Pass-through to docker-build (arm64 build job) |
 | input   | `runs_on_merge`                 | string  | no       | `'["self-hosted","Linux","low-performance"]'`   | Pass-through to docker-build (version + merge jobs) |
+| input   | `timeout_minutes_release` | number | no | `15` | Timeout for the semantic-release job (forwarded) (since v4.31.0). |
+| input   | `timeout_minutes_build` | number | no | `60` | Pass-through to docker-build (per-arch build jobs) (since v4.31.0). |
+| input   | `timeout_minutes_merge` | number | no | `60` | Pass-through to docker-build (version, merge, post-comment) (since v4.31.0). |
 | secret  | `release_please_app_client_id`  | —       | **yes**  | —                                               | Pass-through to semantic-release |
 | secret  | `release_please_app_private_key`| —       | **yes**  | —                                               | Pass-through to semantic-release |
 

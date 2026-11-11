@@ -95,6 +95,21 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux","low-performance"]'
+      timeout_minutes_release:
+        description: 'Forwarded to semantic-release. Timeout in minutes for the release job.'
+        required: false
+        type: number
+        default: 15
+      timeout_minutes_build:
+        description: 'Forwarded to docker-build. Timeout in minutes for each per-arch build job.'
+        required: false
+        type: number
+        default: 60
+      timeout_minutes_merge:
+        description: 'Forwarded to docker-build. Timeout in minutes for the version, merge and post-comment jobs.'
+        required: false
+        type: number
+        default: 60
     secrets:
       release_please_app_client_id:
         required: true
@@ -126,6 +141,7 @@ jobs:
     with:
       dry_run: ${{ inputs.dry_run }}
       runs_on: ${{ inputs.runs_on_release }}
+      timeout_minutes: ${{ inputs.timeout_minutes_release }}
 
   # Dieser Orchestrator ist per Bauart EIN Paket: er nimmt genau einen
   # image_name, ein dockerfile, einen context. Ein Monorepo kann er gar nicht
@@ -192,6 +208,8 @@ jobs:
       runs_on_amd64: ${{ inputs.runs_on_amd64 }}
       runs_on_arm64: ${{ inputs.runs_on_arm64 }}
       runs_on_merge: ${{ inputs.runs_on_merge }}
+      timeout_minutes_build: ${{ inputs.timeout_minutes_build }}
+      timeout_minutes_merge: ${{ inputs.timeout_minutes_merge }}
       # Build from the released tag, not the triggering event's SHA: with
       # back-to-back merges the event SHA predates release-please's bump
       # commit (semantic-release resolves the merged release PR via the API).
