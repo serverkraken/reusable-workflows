@@ -271,6 +271,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | input | `working_directory`     | string  | no       | `'.'`                                  | Component sub-path. Atom resolves all paths relative to this. |
 | input | `go_version`            | string  | no       | `''`                                   | Go toolchain version. Empty → read from `<working_directory>/go.mod`. |
 | input | `golangci_lint_version` | string  | no       | `'v2.12.2'`                            | golangci-lint version (e.g. `v2.12.2`). Must be `v2.1.0+` to be compatible with golangci-lint-action@v9. |
+| input | `golangci_lint_timeout` | string  | no       | `'5m'`                                 | golangci-lint `--timeout` value (Go duration, e.g. `5m`, `10m`). Keep it below `timeout_minutes`, otherwise the job is killed before golangci-lint can report (since v4.31.0). |
 | input | `cgo_enabled`           | boolean | no       | `false`                                | Set `CGO_ENABLED=1` (true) or `0` (false). Mirror the value used in `test-go.yml` for cgo-dependent packages. |
 
 ---
