@@ -173,6 +173,7 @@ jobs:
     # derselbe Runner-Eingang. Vorher fest ubuntu-latest: reine self-hosted-
     # Adopter konnten den Job nicht umlenken.
     runs-on: ${{ fromJSON(inputs.runs_on_release) }}
+    # timeout-fixed: one jq call on job outputs, runs in seconds
     timeout-minutes: 5
     steps:
       # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job

@@ -270,6 +270,7 @@ jobs:
   summary:
     needs: [parse, build]
     runs-on: ${{ fromJSON(inputs.runs_on_parse) }}
+    # timeout-fixed: writes the step summary only, runs in seconds
     timeout-minutes: 5
     steps:
       # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
