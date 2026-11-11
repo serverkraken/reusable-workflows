@@ -1,4 +1,4 @@
 # Used by trivy-fs failure-path test: scanner should find the AWS key.
-FROM alpine:3.20
+FROM alpine:3.24
 COPY .env-example /app/.env
 CMD ["true"]
