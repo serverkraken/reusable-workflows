@@ -8,6 +8,11 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux","low-performance"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 15
       release_please_config:
         required: false
         type: string
@@ -63,7 +68,7 @@ concurrency:
 jobs:
   release:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}

@@ -60,6 +60,11 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 20
     outputs:
       findings_count:
         description: 'Number of findings at requested severity.'
@@ -84,7 +89,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     outputs:
       findings_count: ${{ steps.count.outputs.findings_count }}
     steps:
