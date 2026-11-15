@@ -986,11 +986,28 @@ jobs:
       - name: Verify atom failed as expected
         env:
           RESULT: ${{ needs.test-helm-render-broken.result }}
+          VALIDATE: ${{ needs.test-helm-render-broken.outputs.validate_outcome }}
+          INVALID: ${{ needs.test-helm-render-broken.outputs.invalid_files }}
         run: |
+          set -euo pipefail
+          fail=0
           if [[ "$RESULT" != "failure" ]]; then
-            echo "::error::expected helm-render to fail for HTTPRoute with hostnames: 42, got result=$RESULT"
-            exit 1
+            echo "::error::expected helm-render to fail for HTTPRoute with hostnames: 42, got result=$RESULT" >&2
+            fail=1
           fi
+          # `result == failure` allein wuerde auch einen gescheiterten
+          # Download, eine falsche Pruefsumme oder einen Netzfehler als "das
+          # Gate greift" melden. Der Validate-Schritt muss selbst gescheitert
+          # sein, und kubeconform muss mindestens eine Datei abgelehnt haben.
+          if [[ "$VALIDATE" != "failure" ]]; then
+            echo "::error::validate_outcome='${VALIDATE}' statt 'failure' — der Lauf ist vor der Validierung gescheitert, die Ablehnung ist unbewiesen" >&2
+            fail=1
+          fi
+          if ! [[ "$INVALID" =~ ^[0-9]+$ ]] || (( INVALID < 1 )); then
+            echo "::error::invalid_files='${INVALID}' statt >= 1 — kubeconform hat keine Datei abgelehnt" >&2
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
           echo "helm-render correctly failed for invalid HTTPRoute"
 
   # ----- kube-validate: fail-path -----

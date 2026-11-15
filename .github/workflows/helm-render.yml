@@ -48,6 +48,19 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux"]'
+    outputs:
+      validate_outcome:
+        description: >-
+          Outcome (`success`/`failure`/`skipped`) of the render + kubeconform
+          step. Leer, wenn der Schritt gar nicht erreicht wurde. Damit laesst
+          sich "das Gate hat abgelehnt" von "vorher abgestuerzt" unterscheiden.
+        value: ${{ jobs.render.outputs.validate_outcome }}
+      invalid_files:
+        description: >-
+          Number of values files whose render kubeconform rejected, gesetzt
+          BEVOR der Schritt mit Fehler endet. Leer, wenn der Schritt vor der
+          Schleife abbrach.
+        value: ${{ jobs.render.outputs.invalid_files }}
 
 permissions:
   contents: read
@@ -60,6 +73,9 @@ jobs:
   render:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 15
+    outputs:
+      validate_outcome: ${{ steps.validate.outcome }}
+      invalid_files: ${{ steps.validate.outputs.invalid_files }}
     steps:
       # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
       # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
@@ -176,6 +192,7 @@ jobs:
           # sonst prueft kubeconform gerade die CRDs nicht, wegen derer es hier
           # steht. `{{.Group}}` & Co. sind kubeconform-Syntax, keine Expression.
           failed=0
+          invalid=0
           for f in "${files[@]}"; do
             name="$(basename "$f" .yaml)"
             echo "::group::$name"
@@ -189,9 +206,13 @@ jobs:
                   < "$OUT/$name.yaml"; then
               echo "::error::kubeconform rejected the render of $f" >&2
               failed=1
+              invalid=$((invalid + 1))
             fi
             echo "::endgroup::"
           done
+          # Vor dem Exit schreiben: der Aufrufer liest die Zahl auch dann,
+          # wenn dieser Schritt gleich fehlschlaegt.
+          echo "invalid_files=$invalid" >> "$GITHUB_OUTPUT"
           exit "$failed"
 
       # Rein informativ: scheitert hier etwas, bleibt der Job gruen. Der

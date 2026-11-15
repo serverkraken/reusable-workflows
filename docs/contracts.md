@@ -208,6 +208,8 @@ runner pods.
 | input | `kubeconform_version` | string | no       | `'v0.8.0'`                                                       | kubeconform version (with or without leading `v`). |
 | input | `dyff_version`        | string | no       | `'1.12.0'`                                                       | dyff version (with or without leading `v`). |
 | input | `runs_on`             | string | no       | `'["self-hosted","Linux"]'`                                      | JSON-encoded array of runner labels. |
+| output | `validate_outcome` | — | — | — | Outcome (`success`/`failure`/`skipped`) of the render + kubeconform step; empty when the step was never reached. Distinguishes "the gate rejected" from "crashed before". |
+| output | `invalid_files` | — | — | — | Number of values files whose render kubeconform rejected, written before the step fails; empty when the step aborted before the loop. |
 
 ---
 
