@@ -559,6 +559,17 @@ jobs:
       oci_registry: ghcr.io/serverkraken/test
       dry_run: true
 
+  # Chart mit OCI-Abhaengigkeit: ohne `dependency_build` scheitert das Packen.
+  test-helm-publish-oci-dep:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      chart_path: tests/fixtures/helm-oci-dep
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+      dependency_build: true
+
   # ----- kube-validate happy path: valid fixture tree must succeed -----
   # ----- chart-image-bump: bis zum K-2-Fix rief KEIN Self-CI-Workflow dieses
   #       Atom auf. Getestet war nur die Python-Logik in
@@ -1474,6 +1485,7 @@ jobs:
       - assert-release-orchestrator-skips-build
       - test-goreleaser
       - test-helm-publish
+      - test-helm-publish-oci-dep
       - test-release-flutter-android
       - test-chart-image-bump
       - assert-chart-image-bump

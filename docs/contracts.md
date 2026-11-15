@@ -190,6 +190,7 @@ runner pods.
 | input   | `oci_registry` | string  | **yes**  | —                           | OCI registry path (host + namespace) to push to, without the chart name. Example: `ghcr.io/serverkraken/charts`. |
 | input   | `helm_version` | string  | no       | `'v3.16.3'`                 | Helm CLI version to install (e.g. `v3.16.3`, `latest`). |
 | input   | `dry_run`      | boolean | no       | `false`                     | Lint and package only; skip registry login + push. |
+| input   | `dependency_build` | boolean | no     | `false`                     | Runs `helm dependency build` for the chart before lint and package. |
 | input   | `runs_on`      | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
 | input   | `ref`          | string  | no       | `''`                        | Git ref (tag/branch/SHA) to check out before packaging. Callers whose release job creates the version-bump commit and tag in the same run (release-please) must pass the released tag here; empty keeps the default event-SHA checkout. |
 
