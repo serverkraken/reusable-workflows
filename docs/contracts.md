@@ -203,7 +203,7 @@ runner pods.
 | input | `chart_path`          | string | **yes**  | —                                                                | Directory containing `Chart.yaml`. |
 | input | `values_dir`          | string | **yes**  | —                                                                | Directory with example values files (`*.yaml`, `*.yml`); the chart is rendered once per file. |
 | input | `kube_version`        | string | no       | `'1.31.0'`                                                       | Kubernetes version passed to `helm template --kube-version`. |
-| input | `api_versions`        | string | no       | `'monitoring.coreos.com/v1,gateway.networking.k8s.io/v1,cilium.io/v2'` | Comma-separated API versions passed as one `--api-versions` each (CRDs the chart may render). |
+| input | `api_versions`        | string | no       | `'monitoring.coreos.com/v1,gateway.networking.k8s.io/v1,cilium.io/v2,gateway.networking.k8s.io/v1/HTTPRoute,monitoring.coreos.com/v1/ServiceMonitor,cilium.io/v2/CiliumNetworkPolicy'` | Comma-separated API versions passed as one `--api-versions` each (CRDs the chart may render). |
 | input | `helm_version`        | string | no       | `'v3.16.3'`                                                      | Helm CLI version. |
 | input | `kubeconform_version` | string | no       | `'v0.8.0'`                                                       | kubeconform version (with or without leading `v`). |
 | input | `dyff_version`        | string | no       | `'1.12.0'`                                                       | dyff version (with or without leading `v`). |

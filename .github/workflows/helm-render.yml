@@ -24,7 +24,7 @@ on:
         description: 'Comma-separated API versions passed as one `--api-versions` each (CRDs the chart may render).'
         required: false
         type: string
-        default: 'monitoring.coreos.com/v1,gateway.networking.k8s.io/v1,cilium.io/v2'
+        default: 'monitoring.coreos.com/v1,gateway.networking.k8s.io/v1,cilium.io/v2,gateway.networking.k8s.io/v1/HTTPRoute,monitoring.coreos.com/v1/ServiceMonitor,cilium.io/v2/CiliumNetworkPolicy'
       # renovate: datasource=github-releases depName=helm/helm
       helm_version:
         description: 'Helm CLI version.'
