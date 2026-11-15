@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       values_dir:
-        description: 'Directory with example values files (*.yaml); the chart is rendered once per file.'
+        description: 'Directory with example values files (*.yaml, *.yml); the chart is rendered once per file.'
         required: true
         type: string
       kube_version:
@@ -57,16 +57,17 @@ on:
         value: ${{ jobs.render.outputs.validate_outcome }}
       invalid_files:
         description: >-
-          Number of values files whose render kubeconform rejected, gesetzt
-          BEVOR der Schritt mit Fehler endet. Leer, wenn der Schritt vor der
-          Schleife abbrach.
+          Number of values files whose render has schema violations (kubeconform
+          Invalid) or renders no document at all, gesetzt BEVOR der Schritt
+          mit Fehler endet. Fehlende Schemas und sonstige kubeconform-Fehler
+          zaehlen nicht mit. Leer, wenn der Schritt vor der Schleife abbrach.
         value: ${{ jobs.render.outputs.invalid_files }}
 
 permissions:
   contents: read
 
 concurrency:
-  group: helm-render-${{ github.workflow }}-${{ github.ref }}-${{ inputs.chart_path }}
+  group: helm-render-${{ github.workflow }}-${{ github.ref }}-${{ inputs.chart_path }}-${{ inputs.values_dir }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -159,6 +160,7 @@ jobs:
           CHART_PATH: ${{ inputs.chart_path }}
         run: |
           set -euo pipefail
+          CHART_PATH="${CHART_PATH%/}"
           # Ohne `dependencies:` im Chart ist das ein harmloser No-op.
           helm dependency build "$CHART_PATH"
 
@@ -172,6 +174,8 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
+          CHART_PATH="${CHART_PATH%/}"
+          VALUES_DIR="${VALUES_DIR%/}"
           OUT="$RUNNER_TEMP/helm-render/head"
           rm -rf "$OUT" && mkdir -p "$OUT"
 
@@ -182,31 +186,56 @@ jobs:
             [[ -n "$a" ]] && api_args+=(--api-versions "$a")
           done
 
-          files=("$VALUES_DIR"/*.yaml)
+          files=("$VALUES_DIR"/*.yaml "$VALUES_DIR"/*.yml)
           if (( ${#files[@]} == 0 )); then
-            echo "::error::no *.yaml values files in $VALUES_DIR — nothing to render" >&2
+            echo "::error::no *.yaml / *.yml values files in $VALUES_DIR — nothing to render" >&2
             exit 1
           fi
 
           # Kein -ignore-missing-schemas: ein Kind ohne Schema ist ein Fehler,
           # sonst prueft kubeconform gerade die CRDs nicht, wegen derer es hier
           # steht. `{{.Group}}` & Co. sind kubeconform-Syntax, keine Expression.
+          # `invalid` zaehlt nur Renders mit Schema-Verstoessen (kubeconform
+          # `Invalid`) und Renders ohne Dokument; fehlende Schemas, Netzfehler
+          # & Co. lassen den Schritt scheitern, zaehlen aber nicht mit.
           failed=0
           invalid=0
           for f in "${files[@]}"; do
-            name="$(basename "$f" .yaml)"
-            echo "::group::$name"
+            # Zeilenumbrueche im Dateinamen wuerden eigene Workflow-Befehle
+            # (`::group::`, `::error::`) einschleusen.
+            base="$(basename "$f")"
+            base="${base//[$'\r\n']/}"
+            fsafe="${f//[$'\r\n']/}"
+            echo "::group::$base"
             if ! helm template ci "$CHART_PATH" -f "$f" --kube-version "$KUBE_VERSION" \
-                  "${api_args[@]}" > "$OUT/$name.yaml"; then
-              echo "::error::helm template failed for $f" >&2
+                  "${api_args[@]}" > "$OUT/$base.rendered"; then
+              echo "::error::helm template failed for $fsafe" >&2
               failed=1
-            elif ! kubeconform -strict -summary \
-                  -schema-location default \
-                  -schema-location 'https://kubernetes-schemas.pages.dev/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-                  < "$OUT/$name.yaml"; then
-              echo "::error::kubeconform rejected the render of $f" >&2
-              failed=1
-              invalid=$((invalid + 1))
+            else
+              rc=0
+              kubeconform -strict -summary -kubernetes-version "$KUBE_VERSION" \
+                -schema-location default \
+                -schema-location 'https://kubernetes-schemas.pages.dev/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+                < "$OUT/$base.rendered" | tee "$OUT/$base.kubeconform" || rc=$?
+              found="" inv=""
+              sumline="$(sed -n 's/^Summary: //p' "$OUT/$base.kubeconform" | tail -n 1)"
+              [[ "$sumline" =~ ^([0-9]+)\ resource ]] && found="${BASH_REMATCH[1]}"
+              [[ "$sumline" =~ Invalid:\ ([0-9]+) ]] && inv="${BASH_REMATCH[1]}"
+              if [[ -z "$found" || -z "$inv" ]]; then
+                echo "::error::kubeconform gave no readable summary for $fsafe (exit $rc)" >&2
+                failed=1
+              elif (( found == 0 )); then
+                echo "::error::the render of $fsafe contains no document — nothing was validated" >&2
+                failed=1
+                invalid=$((invalid + 1))
+              elif (( inv > 0 )); then
+                echo "::error::kubeconform found schema violations in the render of $fsafe" >&2
+                failed=1
+                invalid=$((invalid + 1))
+              elif (( rc != 0 )); then
+                echo "::error::kubeconform could not validate the render of $fsafe (exit $rc, e.g. schema not found)" >&2
+                failed=1
+              fi
             fi
             echo "::endgroup::"
           done
@@ -230,6 +259,8 @@ jobs:
         run: |
           set -uo pipefail
           shopt -s nullglob
+          CHART_PATH="${CHART_PATH%/}"
+          VALUES_DIR="${VALUES_DIR%/}"
           BASE_REF="${PR_BASE_REF:-main}"
           HEAD_OUT="$RUNNER_TEMP/helm-render/head"
           BASE_OUT="$RUNNER_TEMP/helm-render/base"
@@ -269,19 +300,36 @@ jobs:
           helm dependency build "$BASE_TREE/$CHART_PATH" >/dev/null 2>&1 || true
 
           summary "### Render-Vergleich gegen \`$BASE_REF\`" ""
-          for f in "$VALUES_DIR"/*.yaml; do
-            name="$(basename "$f" .yaml)"
-            [[ -f "$HEAD_OUT/$name.yaml" ]] || continue
+          # Obergrenze je Diff: eine Step-Summary darf insgesamt nur 1 MiB haben.
+          max_bytes=200000
+          for f in "$VALUES_DIR"/*.yaml "$VALUES_DIR"/*.yml; do
+            name="$(basename "$f")"
+            name="${name//[$'\r\n']/}"
+            [[ -f "$HEAD_OUT/$name.rendered" ]] || continue
             if ! helm template ci "$BASE_TREE/$CHART_PATH" -f "$f" --kube-version "$KUBE_VERSION" \
-                  "${api_args[@]}" > "$BASE_OUT/$name.yaml" 2>"$BASE_OUT/$name.err"; then
+                  "${api_args[@]}" > "$BASE_OUT/$name.rendered" 2>"$BASE_OUT/$name.err"; then
               summary "**$name:** Basisstand lässt sich mit diesen Values nicht rendern, kein Vergleich" ""
               continue
             fi
-            d="$(dyff between --omit-header --color off "$BASE_OUT/$name.yaml" "$HEAD_OUT/$name.yaml" 2>&1)"
-            if [[ -z "$d" ]]; then
+            # dyff-Fehler (Exit != 0) getrennt von einem echten Unterschied
+            # melden; ohne --set-exit-code beendet dyff Unterschiede mit 0.
+            dyff_rc=0
+            d="$(dyff between --omit-header --color off "$BASE_OUT/$name.rendered" "$HEAD_OUT/$name.rendered" 2>&1)" || dyff_rc=$?
+            if (( dyff_rc != 0 )); then
+              echo "::warning::dyff failed for $name (exit $dyff_rc) — diff skipped"
+              summary "**$name:** dyff ist mit Fehler beendet (Exit $dyff_rc), kein Vergleich" ""
+            elif [[ -z "$d" ]]; then
               summary "**$name:** keine Änderung" ""
             else
-              summary "**$name:**" "" '```diff' "$d" '```' ""
+              total="$(printf '%s' "$d" | wc -c | tr -d '[:space:]')"
+              note=""
+              if (( total > max_bytes )); then
+                d="$(printf '%s' "$d" | head -c "$max_bytes")"
+                note="_Der Vergleich ist auf ${max_bytes} Bytes gekürzt (insgesamt ${total} Bytes)._"
+              fi
+              # Vier Backticks: ein Diff mit ``` darf den Block nicht beenden.
+              summary "**$name:**" "" '````diff' "$d" '````' ""
+              [[ -z "$note" ]] || summary "$note" ""
             fi
           done
           exit 0
@@ -298,6 +346,8 @@ jobs:
           DIFF_OUTCOME: ${{ steps.diff.outcome }}
           HAS_BASE: ${{ steps.diff.outputs.has_base }}
         run: |
+          CHART_PATH="${CHART_PATH%/}"
+          VALUES_DIR="${VALUES_DIR%/}"
           DIFF_MD="$RUNNER_TEMP/helm-render/diff.md"
           glyph() {
             case "$1" in

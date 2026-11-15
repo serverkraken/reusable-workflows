@@ -200,7 +200,16 @@ jobs:
           REG: ${{ inputs.oci_registry }}
           HELM_VERSION: ${{ inputs.helm_version }}
           DEP_BUILD_OUTCOME: ${{ steps.dep_build.outcome }}
+          DEP_BUILD_REQUESTED: ${{ inputs.dependency_build }}
         run: |
+          glyph() {
+            case "$1" in
+              success) echo "✓" ;;
+              failure) echo "✗" ;;
+              skipped) echo "−" ;;
+              *)       echo "?" ;;
+            esac
+          }
           # Derive chart name + version from the packaged filename:
           # /tmp/charts/<name>-<version>.tgz → name, version
           base=$(basename "${FILE:-}" .tgz)
@@ -221,7 +230,9 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|---|---|"
-            echo "| helm dependency build | ${DEP_BUILD_OUTCOME:-skipped} |"
+            if [[ "$DEP_BUILD_REQUESTED" == "true" ]]; then
+              echo "| helm dependency build | $(glyph "$DEP_BUILD_OUTCOME") |"
+            fi
             echo "| Chart | \`${CHART_NAME:-<unknown>}\` |"
             echo "| Version | \`${CHART_VERSION:-<unknown>}\` |"
             echo "| OCI Ref | \`${oci_ref}\` |"

@@ -298,7 +298,9 @@ jobs:
             echo ""
             echo "| Check | Status |"
             echo "|---|---|"
-            echo "| helm dependency build | $(glyph "$DEP_BUILD_OUTCOME") |"
+            if [[ "$DEP_BUILD_REQUESTED" == "true" ]]; then
+              echo "| helm dependency build | $(glyph "$DEP_BUILD_OUTCOME") |"
+            fi
             echo "| helm lint | $(glyph "$HELM_LINT_OUTCOME") |"
             echo "| ct lint | $(glyph "$CT_LINT_OUTCOME") |"
             echo "| helm-unittest install | $(glyph "$UNITTEST_INSTALL_OUTCOME") |"

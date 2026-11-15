@@ -201,7 +201,7 @@ runner pods.
 | Kind  | Name                  | Type   | Required | Default                                                          | Description |
 |-------|-----------------------|--------|----------|------------------------------------------------------------------|-------------|
 | input | `chart_path`          | string | **yes**  | —                                                                | Directory containing `Chart.yaml`. |
-| input | `values_dir`          | string | **yes**  | —                                                                | Directory with example values files (`*.yaml`); the chart is rendered once per file. |
+| input | `values_dir`          | string | **yes**  | —                                                                | Directory with example values files (`*.yaml`, `*.yml`); the chart is rendered once per file. |
 | input | `kube_version`        | string | no       | `'1.31.0'`                                                       | Kubernetes version passed to `helm template --kube-version`. |
 | input | `api_versions`        | string | no       | `'monitoring.coreos.com/v1,gateway.networking.k8s.io/v1,cilium.io/v2'` | Comma-separated API versions passed as one `--api-versions` each (CRDs the chart may render). |
 | input | `helm_version`        | string | no       | `'v3.16.3'`                                                      | Helm CLI version. |
@@ -209,7 +209,7 @@ runner pods.
 | input | `dyff_version`        | string | no       | `'1.12.0'`                                                       | dyff version (with or without leading `v`). |
 | input | `runs_on`             | string | no       | `'["self-hosted","Linux"]'`                                      | JSON-encoded array of runner labels. |
 | output | `validate_outcome` | — | — | — | Outcome (`success`/`failure`/`skipped`) of the render + kubeconform step; empty when the step was never reached. Distinguishes "the gate rejected" from "crashed before". |
-| output | `invalid_files` | — | — | — | Number of values files whose render kubeconform rejected, written before the step fails; empty when the step aborted before the loop. |
+| output | `invalid_files` | — | — | — | Number of values files whose render has schema violations (kubeconform `Invalid`) or renders no document; missing schemas and other kubeconform errors do not count. Written before the step fails; empty when the step aborted before the loop. |
 
 ---
 
