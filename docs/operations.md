@@ -372,6 +372,7 @@ Per-language lint and test atoms callable via `workflow_call`. Each atom accepts
 | `lint-helm.yml`       | `helm lint` + `ct lint` (`dependency_build: true` baut vorher die Chart-Abhängigkeiten, z. B. OCI-Library-Charts) |
 | `e2e-kind.yml`        | Consumer-owned kind e2e script; diagnostics artifact on failure; guaranteed cluster cleanup |
 | `helm-publish.yml`    | `helm lint` + `helm package` + OCI push (`dependency_build: true` baut vorher die Chart-Abhängigkeiten, z. B. OCI-Library-Charts) |
+| `helm-render.yml`     | `helm template` je Beispiel-Values-Datei + kubeconform `-strict` gegen CRD-Schemata (kein `-ignore-missing-schemas`); dyff-Vergleich zum Basisstand nur in der Job-Zusammenfassung |
 | `version-badges.yml`  | Static SVG version badges + Component/Version/Tag table from the release-please manifest, committed to the repo (no external services) |
 
 The test atoms expose a `coverage_threshold` input (default `80`) so consumers can tighten or loosen the gate per repo. The Python atoms reuse the `actions/setup-python-deps` composite to auto-detect Poetry / uv / pip-bare project layouts.

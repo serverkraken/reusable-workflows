@@ -967,6 +967,32 @@ jobs:
           fi
           echo "helm-publish correctly failed for broken Chart.yaml"
 
+  # ----- helm-render: fail-path -----
+  # Die Beispiel-Values rendern eine HTTPRoute mit `spec.hostnames: 42`.
+  # kubeconform -strict (ohne -ignore-missing-schemas) lehnt das gegen das
+  # CRD-Schema ab → Atom endet mit failure.
+  test-helm-render-broken:
+    uses: ./.github/workflows/helm-render.yml
+    secrets: inherit
+    with:
+      chart_path: tests/fixtures/helm-render-broken
+      values_dir: tests/fixtures/helm-render-broken/examples
+
+  assert-helm-render-broken:
+    needs: test-helm-render-broken
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-helm-render-broken.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected helm-render to fail for HTTPRoute with hostnames: 42, got result=$RESULT"
+            exit 1
+          fi
+          echo "helm-render correctly failed for invalid HTTPRoute"
+
   # ----- kube-validate: fail-path -----
   # Invalid manifest (additional property under a known schema) → kubeconform
   # -strict rejects → atom exits non-zero.
@@ -1358,6 +1384,7 @@ jobs:
       - assert-docker-build-multi-fail
       - assert-goreleaser-fail
       - assert-helm-publish-fail
+      - assert-helm-render-broken
       - assert-kube-validate-fail
       - assert-kube-lint-fail
       - assert-tofu-validate-fail

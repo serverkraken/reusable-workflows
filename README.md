@@ -132,6 +132,7 @@ jobs:
 | `lint-flutter.yml` / `test-flutter.yml` | dart format + flutter analyze / flutter test + Coverage-Gate |
 | `build-flutter-android.yml`  | PR-Gate: flutter build apk (debug, unsigniert) — kompiliert die Android-Seite |
 | `lint-helm.yml`              | helm lint + ct lint                                            |
+| `helm-render.yml`            | helm template je Beispiel-Values + kubeconform (CRD-Schemata) + dyff-Vergleich zum Basisstand |
 | `lint-shell.yml`             | shellcheck über getrackte Shell-Skripte, optional shfmt        |
 | `tofu-validate.yml`          | tofu fmt + init + validate + tflint je Stack, credential-frei  |
 | `tofu-plan.yml`              | tofu plan gegen das Backend, als Sticky-PR-Kommentar           |
