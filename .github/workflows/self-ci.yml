@@ -79,6 +79,18 @@ jobs:
       charts_dir: helm-unittest
       unittest: true
 
+  # Chart mit OCI-Abhaengigkeit: ohne `dependency_build` bricht unittest ab.
+  lint-helm-oci-dep:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
+      working_directory: tests/fixtures
+      charts_dir: helm-oci-dep
+      unittest: true
+      dependency_build: true
+
   # ----- version-badges: render badges + README block for a three-package
   #       fixture without committing; the assert job checks the outputs.
   version-badges-happy:
@@ -954,6 +966,7 @@ jobs:
       - test-go-self
       - lint-helm-happy
       - lint-helm-unittest-happy
+      - lint-helm-oci-dep
       - version-badges-happy
       - assert-version-badges
       - lint-python-poetry-happy

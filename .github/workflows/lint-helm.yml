@@ -37,6 +37,11 @@ on:
         required: false
         type: boolean
         default: false
+      dependency_build:
+        description: 'Runs `helm dependency build` for every detected chart before lint and unittest.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -85,6 +90,34 @@ jobs:
       - uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
         with:
           version: ${{ inputs.ct_version }}
+
+      - name: helm dependency build
+        id: helm_dep_build
+        if: inputs.dependency_build
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          CHARTS_DIR: ${{ inputs.charts_dir }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # Findet die Charts wie `helm lint (all charts)`. Ohne gebaute
+          # Abhaengigkeiten scheitern lint und unittest bei jedem Chart mit
+          # `dependencies:` mit "found in Chart.yaml, but missing in charts/".
+          if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
+            helm dependency build "$CHARTS_DIR"
+          else
+            found=0
+            for d in "$CHARTS_DIR"/*/; do
+              if [[ -f "${d%/}/Chart.yaml" ]]; then
+                helm dependency build "${d%/}"
+                found=1
+              fi
+            done
+            if (( found == 0 )); then
+              echo "::error::no chart found in $CHARTS_DIR (no Chart.yaml in $CHARTS_DIR or its immediate subdirs)"
+              exit 1
+            fi
+          fi
 
       - name: helm lint (all charts)
         id: helm_lint
@@ -216,6 +249,8 @@ jobs:
           HELM_UNITTEST_OUTCOME: ${{ steps.helm_unittest.outcome }}
           UNITTEST_INSTALL_OUTCOME: ${{ steps.helm_unittest_install.outcome }}
           UNITTEST_REQUESTED: ${{ inputs.unittest }}
+          DEP_BUILD_OUTCOME: ${{ steps.helm_dep_build.outcome }}
+          DEP_BUILD_REQUESTED: ${{ inputs.dependency_build }}
         run: |
           glyph() {
             case "$1" in
@@ -241,6 +276,9 @@ jobs:
           ok=1
           [[ "$HELM_LINT_OUTCOME" == "success" ]] || ok=0
           [[ "$CT_LINT_OUTCOME" == "success" ]] || ok=0
+          if [[ "$DEP_BUILD_REQUESTED" == "true" ]]; then
+            [[ "$DEP_BUILD_OUTCOME" == "success" ]] || ok=0
+          fi
           if [[ "$UNITTEST_REQUESTED" == "true" ]]; then
             [[ "$UNITTEST_INSTALL_OUTCOME" == "success" ]] || ok=0
             [[ "$HELM_UNITTEST_OUTCOME" == "success" ]] || ok=0
@@ -260,6 +298,7 @@ jobs:
             echo ""
             echo "| Check | Status |"
             echo "|---|---|"
+            echo "| helm dependency build | $(glyph "$DEP_BUILD_OUTCOME") |"
             echo "| helm lint | $(glyph "$HELM_LINT_OUTCOME") |"
             echo "| ct lint | $(glyph "$CT_LINT_OUTCOME") |"
             echo "| helm-unittest install | $(glyph "$UNITTEST_INSTALL_OUTCOME") |"

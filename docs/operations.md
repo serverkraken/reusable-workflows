@@ -369,7 +369,7 @@ Per-language lint and test atoms callable via `workflow_call`. Each atom accepts
 | `test-python.yml`     | pytest + coverage gate ≥ 80 % (poetry/uv/pip auto) |
 | `lint-rust.yml`       | `cargo fmt --check` + `cargo clippy -D warnings`   |
 | `test-rust.yml`       | `cargo test` + `cargo-llvm-cov` coverage gate      |
-| `lint-helm.yml`       | `helm lint` + `ct lint`                            |
+| `lint-helm.yml`       | `helm lint` + `ct lint` (`dependency_build: true` baut vorher die Chart-Abhängigkeiten, z. B. OCI-Library-Charts) |
 | `e2e-kind.yml`        | Consumer-owned kind e2e script; diagnostics artifact on failure; guaranteed cluster cleanup |
 | `version-badges.yml`  | Static SVG version badges + Component/Version/Tag table from the release-please manifest, committed to the repo (no external services) |
 

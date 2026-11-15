@@ -273,6 +273,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | input | `helm_version`      | string  | no       | `'v3.16.3'`                 | Helm CLI version. |
 | input | `ct_version`        | string  | no       | `'v3.11.0'`                 | chart-testing (`ct`) version. |
 | input | `unittest`          | boolean | no       | `false`                     | Run helm-unittest (`tests/*_test.yaml` in each chart) after linting. |
+| input | `dependency_build`  | boolean | no       | `false`                     | Runs `helm dependency build` for every detected chart before lint and unittest. |
 
 ---
 
