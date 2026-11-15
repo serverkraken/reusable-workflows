@@ -30,7 +30,7 @@ on:
         description: 'cargo-llvm-cov release version (bare semver — taiki-e/install-action rejects a leading v).'
         required: false
         type: string
-        default: '0.6.16'
+        default: '0.9.1'
       timeout_minutes:
         description: 'Job timeout in minutes.'
         required: false

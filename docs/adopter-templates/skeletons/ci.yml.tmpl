@@ -104,7 +104,7 @@ jobs:
       working_directory: "{{ $c.path }}"
       rust_toolchain: {{`${{ vars.SK_RUST_TOOLCHAIN || '' }}`}}
       coverage_threshold: {{`${{ fromJSON(vars.SK_COVERAGE_THRESHOLD || '80') }}`}}
-      cargo_llvm_cov_version: {{`${{ vars.SK_CARGO_LLVM_COV_VERSION || '0.6.16' }}`}}
+      cargo_llvm_cov_version: {{`${{ vars.SK_CARGO_LLVM_COV_VERSION || '0.9.1' }}`}}
     secrets: inherit
 {{- else if eq $c.primary_language "helm" }}
 {{- /* Chart-component CI (charts_dir + helm-publish dry-run) is a manifest
