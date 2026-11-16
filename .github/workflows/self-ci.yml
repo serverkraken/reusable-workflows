@@ -91,6 +91,17 @@ jobs:
       unittest: true
       dependency_build: true
 
+  # Chart, dessen Schema `image` verlangt: ohne Werte-Datei scheitert helm lint.
+  lint-helm-lint-values:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
+      working_directory: tests/fixtures
+      charts_dir: helm-required-values
+      lint_values: ci/minimal-values.yaml
+
   # ----- helm-render: happy. Render + kubeconform gegen die CRD-Schemata. -----
   helm-render-ok:
     uses: ./.github/workflows/helm-render.yml
@@ -977,6 +988,7 @@ jobs:
       - lint-helm-happy
       - lint-helm-unittest-happy
       - lint-helm-oci-dep
+      - lint-helm-lint-values
       - helm-render-ok
       - version-badges-happy
       - assert-version-badges

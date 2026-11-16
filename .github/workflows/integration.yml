@@ -570,6 +570,17 @@ jobs:
       dry_run: true
       dependency_build: true
 
+  # Chart, dessen Schema `image` verlangt: ohne `lint_values` scheitert helm lint.
+  test-helm-publish-lint-values:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      chart_path: tests/fixtures/helm-required-values
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+      lint_values: ci/minimal-values.yaml
+
   # ----- kube-validate happy path: valid fixture tree must succeed -----
   # ----- chart-image-bump: bis zum K-2-Fix rief KEIN Self-CI-Workflow dieses
   #       Atom auf. Getestet war nur die Python-Logik in
@@ -1486,6 +1497,7 @@ jobs:
       - test-goreleaser
       - test-helm-publish
       - test-helm-publish-oci-dep
+      - test-helm-publish-lint-values
       - test-release-flutter-android
       - test-chart-image-bump
       - assert-chart-image-bump

@@ -369,9 +369,9 @@ Per-language lint and test atoms callable via `workflow_call`. Each atom accepts
 | `test-python.yml`     | pytest + coverage gate ≥ 80 % (poetry/uv/pip auto) |
 | `lint-rust.yml`       | `cargo fmt --check` + `cargo clippy -D warnings`   |
 | `test-rust.yml`       | `cargo test` + `cargo-llvm-cov` coverage gate      |
-| `lint-helm.yml`       | `helm lint` + `ct lint` (`dependency_build: true` baut vorher die Chart-Abhängigkeiten, z. B. OCI-Library-Charts) |
+| `lint-helm.yml`       | `helm lint` + `ct lint` (`dependency_build: true` baut vorher die Chart-Abhängigkeiten, z. B. OCI-Library-Charts; `lint_values: ci/minimal-values.yaml` gibt `helm lint` eine Werte-Datei je Chart, wenn das Schema Werte verlangt, und dient unter `ci/` auch `ct lint`) |
 | `e2e-kind.yml`        | Consumer-owned kind e2e script; diagnostics artifact on failure; guaranteed cluster cleanup |
-| `helm-publish.yml`    | `helm lint` + `helm package` + OCI push (`dependency_build: true` baut vorher die Chart-Abhängigkeiten, z. B. OCI-Library-Charts) |
+| `helm-publish.yml`    | `helm lint` + `helm package` + OCI push (`dependency_build: true` baut vorher die Chart-Abhängigkeiten, z. B. OCI-Library-Charts; `lint_values` gibt `helm lint` eine Werte-Datei, wenn das Schema Werte verlangt) |
 | `helm-render.yml`     | `helm template` je Beispiel-Values-Datei + kubeconform `-strict` gegen CRD-Schemata (kein `-ignore-missing-schemas`); dyff-Vergleich zum Basisstand nur in der Job-Zusammenfassung |
 | `version-badges.yml`  | Static SVG version badges + Component/Version/Tag table from the release-please manifest, committed to the repo (no external services) |
 

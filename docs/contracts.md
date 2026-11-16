@@ -191,6 +191,7 @@ runner pods.
 | input   | `helm_version` | string  | no       | `'v3.16.3'`                 | Helm CLI version to install (e.g. `v3.16.3`, `latest`). |
 | input   | `dry_run`      | boolean | no       | `false`                     | Lint and package only; skip registry login + push. |
 | input   | `dependency_build` | boolean | no     | `false`                     | Runs `helm dependency build` for the chart before lint and package. |
+| input   | `lint_values`  | string  | no       | `''`                        | Values file for `helm lint`, relative to `chart_path` (e.g. `ci/minimal-values.yaml`); needed by charts whose schema requires values. Missing file = error. Packaging does not use values. |
 | input   | `runs_on`      | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
 | input   | `ref`          | string  | no       | `''`                        | Git ref (tag/branch/SHA) to check out before packaging. Callers whose release job creates the version-bump commit and tag in the same run (release-please) must pass the released tag here; empty keeps the default event-SHA checkout. |
 
@@ -292,6 +293,7 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | input | `ct_version`        | string  | no       | `'v3.11.0'`                 | chart-testing (`ct`) version. |
 | input | `unittest`          | boolean | no       | `false`                     | Run helm-unittest (`tests/*_test.yaml` in each chart) after linting. |
 | input | `dependency_build`  | boolean | no       | `false`                     | Runs `helm dependency build` for every detected chart before lint and unittest. |
+| input | `lint_values`       | string  | no       | `''`                        | Values file for `helm lint`, relative to each chart directory (e.g. `ci/minimal-values.yaml`); needed by charts whose schema requires values. Missing in a chart = error. A file under `ci/*-values.yaml` is also read by `ct lint`. |
 
 ---
 

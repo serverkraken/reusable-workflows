@@ -42,6 +42,16 @@ on:
         required: false
         type: boolean
         default: false
+      lint_values:
+        description: >-
+          Values file for `helm lint`, as a path relative to each chart
+          directory (e.g. `ci/minimal-values.yaml`). Needed by charts whose
+          schema requires values. Missing in a chart = error. A file under
+          `ci/*-values.yaml` is also picked up by `ct lint`. Empty = lint
+          without values.
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -124,17 +134,34 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         env:
           CHARTS_DIR: ${{ inputs.charts_dir }}
+          LINT_VALUES: ${{ inputs.lint_values }}
         run: |
           set -euo pipefail
           shopt -s nullglob
+          # Ein Chart, dessen Schema Werte verlangt (z. B. `image`), scheitert
+          # an `helm lint` ohne Werte-Datei mit "'anyOf' failed". `lint_values`
+          # liefert sie je Chart; fehlt sie dort, ist das ein Fehler und kein
+          # stilles Lint ohne Werte.
+          lint_chart() {
+            local chart="$1"
+            if [[ -n "$LINT_VALUES" ]]; then
+              if [[ ! -f "$chart/$LINT_VALUES" ]]; then
+                echo "::error::lint_values file not found in chart $chart: $chart/$LINT_VALUES"
+                return 1
+              fi
+              helm lint "$chart" -f "$chart/$LINT_VALUES"
+            else
+              helm lint "$chart"
+            fi
+          }
           # If charts_dir is itself a chart, lint it directly; else lint each subdir that has Chart.yaml.
           if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
-            helm lint "$CHARTS_DIR"
+            lint_chart "$CHARTS_DIR"
           else
             found=0
             for d in "$CHARTS_DIR"/*/; do
               if [[ -f "${d%/}/Chart.yaml" ]]; then
-                helm lint "${d%/}"
+                lint_chart "${d%/}"
                 found=1
               fi
             done
