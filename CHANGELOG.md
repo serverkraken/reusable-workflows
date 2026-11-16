@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.34.0](https://github.com/serverkraken/reusable-workflows/compare/v4.33.0...v4.34.0) (2026-11-16)
+
+
+### Features
+
+* **test-bats:** Atom für bats-Suiten mit gepinntem bats ([#455](https://github.com/serverkraken/reusable-workflows/issues/455)) ([f2db3f5](https://github.com/serverkraken/reusable-workflows/commit/f2db3f5c7af8b00b8d27b3a7f0173b14b6ff08b8))
+
 ## [4.33.0](https://github.com/serverkraken/reusable-workflows/compare/v4.32.0...v4.33.0) (2026-11-16)
 
 
