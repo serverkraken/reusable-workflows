@@ -23,7 +23,8 @@ on:
         default: false
       runs_on_release:
         description: >-
-          Runner-Labels fuer den semantic-release-Schritt, als JSON-Array.
+          Runner-Labels fuer den semantic-release-Schritt und den Job
+          assert-single-package (braucht jq), als JSON-Array.
           Wird durchgereicht; ohne diesen Eingang laesst sich der Orchestrator
           nicht auf GitHub-gehosteten Runnern pruefen.
         required: false

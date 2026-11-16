@@ -63,6 +63,7 @@ YAML
   atom '    timeout-minutes: ${{ inputs.minutes }}' > .github/workflows/atom.yml
   run python3 "$SCRIPT"
   [ "$status" -ne 0 ]
+  [[ "$output" == *"is fixed although the runner is overridable"* ]]
 }
 
 @test "accepts a fixed timeout marked with a reason" {
@@ -83,6 +84,7 @@ YAML
   atom $'    # timeout-fixed: summary only\n    if: always()\n    timeout-minutes: 5' > .github/workflows/atom.yml
   run python3 "$SCRIPT"
   [ "$status" -ne 0 ]
+  [[ "$output" == *"is fixed although the runner is overridable"* ]]
 }
 
 @test "a step-level timeout-minutes does not count as the job timeout" {
@@ -118,7 +120,7 @@ YAML
   [[ "$output" == *"0 job(s) checked"* ]]
 }
 
-@test "ignores reusable-workflow calls" {
+@test "a reusable-workflow call that forwards runs_on in with: is not mistaken for a runner-selecting job" {
   cat > .github/workflows/atom.yml <<'YAML'
 on:
   workflow_call:

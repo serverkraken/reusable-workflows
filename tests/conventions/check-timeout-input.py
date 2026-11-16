@@ -6,9 +6,9 @@ override its timeout as well.
 
 WHY THIS EXISTS
 ---------------
-Until v4.30 most atoms accepted `runs_on` but hard-coded `timeout-minutes`.
+Until v4.32 most atoms accepted `runs_on` but hard-coded `timeout-minutes`.
 An adopter moving a job to a slower runner (ubuntu-latest, a busy ARM64 node)
-could pick the runner but not give it the time it needed. v4.31.0 added a
+could pick the runner but not give it the time it needed. v4.33.0 added a
 `timeout_minutes*` input to every such job; this gate keeps a new job or a
 refactor from silently dropping that again.
 
@@ -27,6 +27,16 @@ For each such job:
 Workflows without runner inputs (onboard.yml: an operational tool, not an
 adopter API) are outside the scope, just as they are for the runs_on guard.
 That `inputs.timeout_minutes*` is actually declared is checked by actionlint.
+
+KNOWN LIMITS
+------------
+The parsing is line-based, like the other convention gates. It assumes what
+every atom in the catalog does today: `runs-on` and `timeout-minutes` are
+single-line job keys written before `steps:`. A multi-line `runs-on` or one
+placed after `steps:` drops the job from the check silently; a
+`timeout-minutes` after `steps:` is reported as missing. The gate also does
+not verify the ROLE: any `inputs.timeout_minutes*` passes, so a build job
+reading `timeout_minutes_merge` would not be caught — review that by eye.
 """
 
 import re
