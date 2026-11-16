@@ -1,0 +1,71 @@
+# actions/install-bats/action.yml
+name: install-bats
+description: |
+  Install bats-core as a pinned, Renovate-managed release (source tarball of
+  the GitHub release, installed with its own install.sh). Mirrors the
+  install-shellcheck pattern — never a third-party setup action.
+
+  Deliberately NOT `apt-get install bats`: the apt package is unpinned, lags
+  the upstream release by years and differs per runner image (Ubuntu 24.04
+  ships 1.10). A test gate whose runner differs per image reports failures —
+  or misses them — that vanish on another machine.
+
+  bats-core publishes no release assets and no checksum file, only the source
+  archive. The archive is therefore verified by its pinned version tag, not by
+  a digest; see docs/contracts.md for the consequence.
+
+  Installs into `$RUNNER_TEMP/bats` and prepends `bin/` to `$GITHUB_PATH`:
+  no sudo needed, and nothing survives on a self-hosted runner after the job.
+
+inputs:
+  version:
+    description: 'bats-core version (with or without leading v). Empty → pinned default.'
+    required: false
+    default: ''
+
+outputs:
+  version:
+    description: 'Installed bats-core version, as reported by `bats --version`.'
+    value: ${{ steps.install.outputs.version }}
+  path:
+    description: 'Directory holding the bats binary (also prepended to PATH).'
+    value: ${{ steps.install.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install bats-core
+      id: install
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=bats-core/bats-core
+        BATS_VERSION: '1.14.0'
+        REQUESTED: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED:-$BATS_VERSION}"
+        VERSION="${VERSION#v}"
+        # Der Wert landet in einer URL und einem Pfad: nur Versionszeichen.
+        if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+          echo "::error::bats version must look like 1.14.0, got: ${VERSION}" >&2
+          exit 1
+        fi
+        PREFIX="${RUNNER_TEMP:?RUNNER_TEMP is not set}/bats"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        curl -fsSL "https://github.com/bats-core/bats-core/archive/refs/tags/v${VERSION}.tar.gz" -o "$TMP/bats.tar.gz"
+        tar -xzf "$TMP/bats.tar.gz" -C "$TMP"
+        rm -rf "$PREFIX"
+        "$TMP/bats-core-${VERSION}/install.sh" "$PREFIX"
+        echo "$PREFIX/bin" >> "$GITHUB_PATH"
+        INSTALLED=$("$PREFIX/bin/bats" --version)
+        echo "$INSTALLED"
+        # `bats --version` meldet "Bats 1.14.0"; stimmt das nicht mit der
+        # angeforderten Version ueberein, ist das falsche Archiv entpackt worden.
+        if [[ "$INSTALLED" != "Bats ${VERSION}" ]]; then
+          echo "::error::requested bats ${VERSION}, but the binary reports '${INSTALLED}'" >&2
+          exit 1
+        fi
+        {
+          echo "version=${INSTALLED#Bats }"
+          echo "path=$PREFIX/bin"
+        } >> "$GITHUB_OUTPUT"

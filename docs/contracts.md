@@ -434,6 +434,31 @@ category, and two artifacts of the same name are equally ambiguous.
 
 ---
 
+### `test-bats.yml`
+
+Führt bats-core-Suiten mit gepinntem bats aus (`actions/install-bats`, nie apt). Optional installiert es die Systempakete des Testobjekts (`apt_packages`, pinnbar als `name=version`), setzt `LC_ALL` und zählt die Tests aus dem JUnit-Bericht. Eine leere Pfadliste, ein nicht vorhandener Pfad und eine Suite ohne Tests sind Fehler, kein grüner Lauf. Aufrufer müssen `secrets: inherit` übergeben (Katalog-Checkout).
+
+| Kind   | Name                            | Type    | Required | Default                     | Description |
+|--------|---------------------------------|---------|----------|-----------------------------|-------------|
+| input  | `paths`                         | string  | **yes**  | —                           | Newline-separated bats test files or directories, relative to the repo root. Empty, a missing path or a suite without tests is an error. `.` (repo root) is rejected. |
+| input  | `recursive`                     | boolean | no       | `false`                     | Pass `--recursive` so `.bats` files in subdirectories of a directory path are run too. |
+| input  | `bats_version`                  | string  | no       | `''`                        | Override bats-core version (empty → composite default). |
+| input  | `apt_packages`                  | string  | no       | `''`                        | Whitespace- or newline-separated apt packages the system under test needs. Pin with `name=version`; an unpinned entry is installed at the runner image's version and the run says so. Empty → nothing installed. |
+| input  | `locale`                        | string  | no       | `'C.UTF-8'`                 | Value exported as `LC_ALL` for the test run. Empty → left as the runner has it. |
+| input  | `env`                           | string  | no       | `''`                        | Newline-separated `KEY=VALUE` pairs exported for the test run. `PATH`, `BASH_ENV`, `ENV`, `LD_*`, `GITHUB_*` and `RUNNER_*` are rejected. |
+| input  | `formatter`                     | string  | no       | `'tap'`                     | bats console formatter: `tap`, `tap13`, `pretty` or `junit`. The JUnit report used for the counts is written regardless. |
+| input  | `junit`                         | boolean | no       | `false`                     | Upload the JUnit report (`report.xml`) as workflow artifact `bats-junit[-<report_slug>]`. |
+| input  | `report_slug`                   | string  | no       | `''`                        | Suffix that makes the JUnit artifact name unique. Required with `junit: true` when a repo calls this atom more than once in the same workflow. |
+| input  | `runs_on`                       | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
+| input  | `timeout_minutes`               | number  | no       | `30`                        | Job timeout in minutes. |
+| output | `tests_total`                   | string  | —        | —                           | Number of test cases bats ran (from its JUnit report); empty when no report was written. |
+| output | `tests_failed`                  | string  | —        | —                           | Number of failed test cases (failures + errors); empty when no report was written. |
+| output | `tests_skipped`                 | string  | —        | —                           | Number of skipped test cases; empty when no report was written. |
+| secret | `release_please_app_client_id`  | —       | **yes**  | —                           | GitHub App Client ID with contents:read on the catalog repo. |
+| secret | `release_please_app_private_key`| —       | **yes**  | —                           | PEM private key for the GitHub App. |
+
+---
+
 ### `test-flutter.yml`
 
 Runs `flutter test --coverage` and enforces a line-coverage threshold.
@@ -954,6 +979,16 @@ caller. A fork driving its own org has to change that constant.
 | input | `version` | string | no | `''` | shellcheck version (no leading v). Empty → pinned default. |
 | input | `shfmt` | string | no | `'false'` | When "true", also install shfmt. |
 | input | `shfmt_version` | string | no | `''` | shfmt version (no leading v). Empty → pinned default. |
+
+### `actions/install-bats`
+
+bats-core wird aus dem Release-Archiv auf GitHub installiert (`install.sh` nach `$RUNNER_TEMP/bats`, `bin/` auf `$GITHUB_PATH`; kein sudo). bats-core veröffentlicht weder Release-Assets noch eine Prüfsummendatei; das Archiv ist daher nur über den gepinnten Versions-Tag und den Abgleich mit `bats --version` abgesichert, nicht über einen Digest.
+
+| Kind   | Name | Type | Required | Default | Description |
+|--------|------|------|----------|---------|-------------|
+| input | `version` | string | no | `''` | bats-core version (with or without leading v). Empty → pinned default. |
+| output | `version` | string | — | — | Installed bats-core version, as reported by `bats --version`. |
+| output | `path` | string | — | — | Directory holding the bats binary (also prepended to PATH). |
 
 ### `actions/setup-sk-workflows`
 

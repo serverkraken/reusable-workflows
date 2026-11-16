@@ -455,6 +455,70 @@ jobs:
           fi
           echo "test-rust-cov-fail: correctly observed failure"
 
+  # ----- test-bats: Test-Gate und leerer Pfad -----
+  # Gleiches Schema wie bei lint-shell: `result == failure` allein beweist
+  # nicht, WARUM der Job rot ist. Das Test-Gate ist bewiesen, wenn bats lief
+  # (tests_total gesetzt) und den roten Test gezaehlt hat.
+  test-test-bats-fail:
+    uses: ./.github/workflows/test-bats.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      paths: |-
+        tests/fixtures/bats-fail/tests
+
+  assert-test-bats-fail:
+    needs: test-test-bats-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert the TEST gate failed, not something else
+        env:
+          RESULT: ${{ needs.test-test-bats-fail.result }}
+          TOTAL: ${{ needs.test-test-bats-fail.outputs.tests_total }}
+          FAILED: ${{ needs.test-test-bats-fail.outputs.tests_failed }}
+        run: |
+          set -euo pipefail
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test-bats to fail on the failing fixture, got: $RESULT" >&2
+            exit 1
+          fi
+          if [[ "$TOTAL/$FAILED" != "2/1" ]]; then
+            echo "::error::tests_total/tests_failed='${TOTAL}/${FAILED}', erwartet 2/1 — der Fehlschlag hat eine andere Ursache als das Test-Gate" >&2
+            exit 1
+          fi
+          echo "test-bats-fail: Gate korrekt ausgeloest (${FAILED} von ${TOTAL} Tests rot)"
+
+  # Glob-Drift: ein umbenanntes Testverzeichnis darf das Gate nicht gruen
+  # lassen. Ein leerer paths-Wert ist hier der Stellvertreter.
+  test-test-bats-empty:
+    uses: ./.github/workflows/test-bats.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      paths: ''
+
+  assert-test-bats-empty:
+    needs: test-test-bats-empty
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert an empty paths input is rejected before bats runs
+        env:
+          RESULT: ${{ needs.test-test-bats-empty.result }}
+          TOTAL: ${{ needs.test-test-bats-empty.outputs.tests_total }}
+        run: |
+          set -euo pipefail
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test-bats to reject an empty paths input, got: $RESULT" >&2
+            exit 1
+          fi
+          if [[ -n "$TOTAL" ]]; then
+            echo "::error::tests_total='${TOTAL}' — bats lief trotz leerem paths" >&2
+            exit 1
+          fi
+          echo "test-bats-empty: leerer paths-Wert korrekt abgelehnt, bats lief nicht"
+
   # ----- cleanup-images: fail-path -----
   # Empty runs_on array forces atom-level input-validation failure (matrix
   # evaluation requires non-empty input).
@@ -1422,6 +1486,8 @@ jobs:
       - assert-test-go-cov-fail
       - assert-test-python-cov-fail
       - assert-test-rust-cov-fail
+      - assert-test-bats-fail
+      - assert-test-bats-empty
       - assert-cleanup-images-fail
       - assert-docker-build-multi-fail
       - assert-goreleaser-fail
