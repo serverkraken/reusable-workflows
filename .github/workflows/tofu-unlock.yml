@@ -71,6 +71,11 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 15
     outputs:
       unlocked:
         description: '`true`, wenn der Lock geloest wurde. LEER bei jedem Abbruch.'
@@ -108,7 +113,7 @@ concurrency:
 jobs:
   unlock:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     outputs:
       unlocked: ${{ steps.unlock.outputs.exec_status == 'success' && 'true' || '' }}
     steps:

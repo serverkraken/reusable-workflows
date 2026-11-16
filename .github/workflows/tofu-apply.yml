@@ -164,6 +164,11 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 60
     outputs:
       applied:
         description: >-
@@ -231,7 +236,7 @@ concurrency:
 jobs:
   apply:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     outputs:
       applied: ${{ steps.apply.outputs.exec_status == 'success' && 'true' || '' }}
       summary_line: ${{ steps.apply.outputs.summary_line }}

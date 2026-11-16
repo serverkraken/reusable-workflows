@@ -37,6 +37,10 @@ jobs:
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/lint-test/go-happy
+      # Bewusst nicht der Default: belegt, dass beide Timeouts durchgereicht
+      # werden und golangci-lint den Wert als Duration annimmt.
+      timeout_minutes: 10
+      golangci_lint_timeout: '3m'
 
   # ----- lint-go + test-go: dogfood on the catalog's own sk-workflows module.
   # The fixture jobs above prove the atoms work; these two prove the

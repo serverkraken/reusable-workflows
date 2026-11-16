@@ -35,6 +35,11 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux","low-performance"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 10
       manifest_path:
         description: 'release-please manifest (package path → version).'
         required: false
@@ -126,7 +131,7 @@ concurrency:
 jobs:
   badges:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 10
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     outputs:
       changed: ${{ steps.render.outputs.changed }}
       badges: ${{ steps.render.outputs.badges }}

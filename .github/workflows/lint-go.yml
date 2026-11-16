@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux","X64"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 15
       working_directory:
         description: 'Component sub-path. Atom resolves all paths relative to this.'
         required: false
@@ -33,6 +38,11 @@ on:
         required: false
         type: string
         default: 'v2.12.2'
+      golangci_lint_timeout:
+        description: 'golangci-lint --timeout value (Go duration, e.g. 5m, 10m). Keep it below timeout_minutes, otherwise the job is killed before golangci-lint can report.'
+        required: false
+        type: string
+        default: '5m'
       cgo_enabled:
         description: 'Set CGO_ENABLED=1 (true) or 0 (false). Mirror the value used in test-go.yml for cgo-dependent packages.'
         required: false
@@ -49,7 +59,7 @@ concurrency:
 jobs:
   lint:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     steps:
       # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
       # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
@@ -121,7 +131,7 @@ jobs:
         with:
           version: ${{ inputs.golangci_lint_version }}
           working-directory: ${{ inputs.working_directory }}
-          args: --timeout=5m
+          args: --timeout=${{ inputs.golangci_lint_timeout }}
 
       - name: Summary
         if: always()
