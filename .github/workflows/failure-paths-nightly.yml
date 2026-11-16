@@ -142,6 +142,30 @@ jobs:
           fi
           echo "lint-helm-unittest-fail: correctly observed failure"
 
+  # lint_values fehlt: das Schema verlangt `image`, helm lint ohne Werte-Datei
+  # muss scheitern (Gegenprobe zu lint-helm-lint-values in self-ci.yml).
+  test-lint-helm-no-lint-values:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures
+      charts_dir: helm-required-values
+
+  assert-lint-helm-no-lint-values:
+    needs: test-lint-helm-no-lint-values
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-helm-no-lint-values.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail without lint_values, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-helm-no-lint-values: correctly observed failure"
+
   # ----- lint-python: fail-path -----
   test-lint-python-fail:
     uses: ./.github/workflows/lint-python.yml
@@ -1384,6 +1408,7 @@ jobs:
       - assert-lint-helm-fail
       - assert-lint-helm-unittest-fail
       - assert-lint-helm-unittest-empty
+      - assert-lint-helm-no-lint-values
       - assert-trivy-fs-gate-fail
       - assert-trivy-image-gate-fail
       - assert-cleanup-images-destructive

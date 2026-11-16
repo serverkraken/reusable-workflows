@@ -45,6 +45,15 @@ on:
         required: false
         type: boolean
         default: false
+      lint_values:
+        description: >-
+          Values file for `helm lint`, as a path relative to `chart_path`
+          (e.g. `ci/minimal-values.yaml`). Needed by charts whose schema
+          requires values. Missing = error. Packaging does not use values.
+          Empty = lint without values.
+        required: false
+        type: string
+        default: ''
       runs_on:
         required: false
         type: string
@@ -154,7 +163,20 @@ jobs:
       - name: helm lint
         env:
           CHART_PATH: ${{ inputs.chart_path }}
-        run: helm lint "$CHART_PATH"
+          LINT_VALUES: ${{ inputs.lint_values }}
+        run: |
+          set -euo pipefail
+          # Ein Chart, dessen Schema Werte verlangt, scheitert ohne Werte-Datei
+          # an `helm lint`. Nur das Linten nutzt sie; `helm package` nicht.
+          if [[ -n "$LINT_VALUES" ]]; then
+            if [[ ! -f "$CHART_PATH/$LINT_VALUES" ]]; then
+              echo "::error::lint_values file not found: $CHART_PATH/$LINT_VALUES"
+              exit 1
+            fi
+            helm lint "$CHART_PATH" -f "$CHART_PATH/$LINT_VALUES"
+          else
+            helm lint "$CHART_PATH"
+          fi
 
       - name: helm package
         id: pkg
