@@ -1,0 +1,111 @@
+# actions/install-bats/action.yml
+name: install-bats
+description: |
+  Install bats-core as a pinned, Renovate-managed release (source tarball of
+  the GitHub release, installed with its own install.sh). Mirrors the
+  install-shellcheck pattern — never a third-party setup action.
+
+  Deliberately NOT `apt-get install bats`: the apt package is unpinned, lags
+  the upstream release by years and differs per runner image (Ubuntu 24.04
+  ships 1.10). A test gate whose runner differs per image reports failures —
+  or misses them — that vanish on another machine.
+
+  bats-core publishes no release assets and no checksum file, only the source
+  archive. The archive is therefore pinned by COMMIT SHA, not by tag: the
+  default version is an annotated, signed tag, and the SHA below is the commit
+  it points to. A tag can be moved or re-created, a commit SHA cannot, so the
+  download is bound to exactly that source tree. `bats --version` is NOT an
+  integrity check (the installed script prints whatever it likes); it only
+  catches a version/SHA mismatch. Renovate keeps version and SHA together.
+
+  Overriding `version` without `sha` falls back to the tag archive and logs a
+  `::warning::`: that run is no longer commit-pinned. Pass `sha` with it to
+  stay pinned. See docs/contracts.md.
+
+  Installs into `$RUNNER_TEMP/bats` and prepends `bin/` to `$GITHUB_PATH`:
+  no sudo needed, and nothing survives on a self-hosted runner after the job.
+
+inputs:
+  version:
+    description: 'bats-core version (with or without leading v). Empty → pinned default (commit-pinned). A different version without `sha` is fetched by tag and logged as a warning.'
+    required: false
+    default: ''
+  sha:
+    description: 'Full 40-character commit SHA of the `version` tag. Pins an overridden version; only valid together with `version`. Empty → pinned default SHA, or tag download for another version.'
+    required: false
+    default: ''
+
+outputs:
+  version:
+    description: 'Installed bats-core version, as reported by `bats --version` (a consistency check against the requested version, not an integrity proof).'
+    value: ${{ steps.install.outputs.version }}
+  path:
+    description: 'Directory holding the bats binary (also prepended to PATH).'
+    value: ${{ steps.install.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install bats-core
+      id: install
+      shell: bash
+      env:
+        # Die Reihenfolge ist Absicht: BATS_SHA steht VOR BATS_VERSION, damit der
+        # generische Renovate-Manager (Form 1: Marker, dann *_VERSION direkt
+        # darunter) diese Zeilen nicht mitgreift. Den Marker samt Digest pflegt
+        # der eigene customManager in .github/renovate.json5.
+        # renovate: datasource=github-tags depName=bats-core/bats-core
+        BATS_SHA: 'eb7f42f8d608ac693d7a4b67474f6714ea68cfc5'
+        BATS_VERSION: '1.14.0'
+        REQUESTED: ${{ inputs.version }}
+        REQUESTED_SHA: ${{ inputs.sha }}
+      run: |
+        set -euo pipefail
+        REQUESTED="${REQUESTED#v}"
+        # Beide Werte landen in einer URL und einem Pfad: nur erlaubte Zeichen.
+        if [[ -n "$REQUESTED" && ! "$REQUESTED" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+          echo "::error::bats version must look like 1.14.0, got: ${REQUESTED}" >&2
+          exit 1
+        fi
+        if [[ -n "$REQUESTED_SHA" && ! "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::bats sha must be a full 40-character lowercase commit SHA, got: ${REQUESTED_SHA}" >&2
+          exit 1
+        fi
+        if [[ -n "$REQUESTED_SHA" && -z "$REQUESTED" ]]; then
+          echo "::error::sha is only valid together with version" >&2
+          exit 1
+        fi
+        VERSION="${REQUESTED:-$BATS_VERSION}"
+        SHA=""
+        if [[ "$VERSION" == "$BATS_VERSION" ]]; then
+          SHA="${REQUESTED_SHA:-$BATS_SHA}"
+        else
+          SHA="$REQUESTED_SHA"
+        fi
+        if [[ -n "$SHA" ]]; then
+          URL="https://github.com/bats-core/bats-core/archive/${SHA}.tar.gz"
+          TOPDIR="bats-core-${SHA}"
+        else
+          echo "::warning::bats ${VERSION} is fetched by tag, not by commit SHA — a moved tag would go unnoticed. Pass the sha input to pin it."
+          URL="https://github.com/bats-core/bats-core/archive/refs/tags/v${VERSION}.tar.gz"
+          TOPDIR="bats-core-${VERSION}"
+        fi
+        PREFIX="${RUNNER_TEMP:?RUNNER_TEMP is not set}/bats"
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+        curl -fsSL "$URL" -o "$TMP/bats.tar.gz"
+        tar -xzf "$TMP/bats.tar.gz" -C "$TMP"
+        rm -rf "$PREFIX"
+        "$TMP/$TOPDIR/install.sh" "$PREFIX"
+        echo "$PREFIX/bin" >> "$GITHUB_PATH"
+        INSTALLED=$("$PREFIX/bin/bats" --version)
+        echo "$INSTALLED"
+        # Kein Integritaetsnachweis, nur ein Abgleich: `bats --version` meldet
+        # "Bats 1.14.0". Weicht das ab, passen Version und SHA nicht zusammen.
+        if [[ "$INSTALLED" != "Bats ${VERSION}" ]]; then
+          echo "::error::requested bats ${VERSION}, but the binary reports '${INSTALLED}'" >&2
+          exit 1
+        fi
+        {
+          echo "version=${INSTALLED#Bats }"
+          echo "path=$PREFIX/bin"
+        } >> "$GITHUB_OUTPUT"

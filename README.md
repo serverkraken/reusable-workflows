@@ -134,6 +134,7 @@ jobs:
 | `lint-helm.yml`              | helm lint + ct lint                                            |
 | `helm-render.yml`            | helm template je Beispiel-Values + kubeconform (CRD-Schemata) + dyff-Vergleich zum Basisstand |
 | `lint-shell.yml`             | shellcheck über getrackte Shell-Skripte, optional shfmt        |
+| `test-bats.yml`              | bats-Suiten mit gepinntem bats, optional gepinnte apt-Pakete, Testzahlen aus JUnit |
 | `tofu-validate.yml`          | tofu fmt + init + validate + tflint je Stack, credential-frei  |
 | `tofu-plan.yml`              | tofu plan gegen das Backend, als Sticky-PR-Kommentar           |
 | `tofu-apply.yml`             | wendet einen freigegebenen Plan an, dispatch-only              |
@@ -152,7 +153,7 @@ Der Katalog folgt [Semantic Versioning](https://semver.org/), getrieben von [rel
 | `@v4.2`   | immer das neueste 4.2.x   | `v4`                         |
 | `@v4.2.3` | unveränderlich            | `v4`                         |
 
-**Ein Pin friert die Workflow-Datei ein, nicht alles, was sie ausführt.** 23 Atome
+**Ein Pin friert die Workflow-Datei ein, nicht alles, was sie ausführt.** 24 Atome
 checken zur Laufzeit den Katalog aus, um Composite-Actions und Skripte unter
 `actions/` und `scripts/` zu laden — und zwar am **schwebenden Major-Tag**, nicht
 an der Version, mit der sie aufgerufen wurden. Ein Aufruf von `@v4.2.3` führt
@@ -179,6 +180,7 @@ Gemeinsame Bausteine unter `actions/`, intern von den Atomen genutzt und für fo
 | `actions/install-gitleaks`        | gitleaks-CLI gepinnt installieren                            |
 | `actions/install-kube-linter`     | kube-linter-CLI gepinnt installieren                         |
 | `actions/install-shellcheck`      | shellcheck-CLI gepinnt installieren (+ optional shfmt)       |
+| `actions/install-bats`            | bats-core gepinnt aus dem GitHub-Release installieren (ohne sudo) |
 | `actions/setup-kube-toolchain`    | kustomize + kubeconform (+ optional sops/age) bereitstellen  |
 | `actions/setup-kind-toolchain`    | kind + kubectl + cilium-cli mit Presence-Check installieren, Fallback in job-privates Verzeichnis |
 | `actions/setup-flutter-toolchain` | Java + Android-SDK + Flutter + pub get + build_runner        |

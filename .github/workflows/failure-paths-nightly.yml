@@ -455,6 +455,115 @@ jobs:
           fi
           echo "test-rust-cov-fail: correctly observed failure"
 
+  # ----- test-bats: Test-Gate und leerer Pfad -----
+  # Gleiches Schema wie bei lint-shell: `result == failure` allein beweist
+  # nicht, WARUM der Job rot ist. Das Test-Gate ist bewiesen, wenn bats lief
+  # (tests_total gesetzt) und den roten Test gezaehlt hat.
+  test-test-bats-fail:
+    uses: ./.github/workflows/test-bats.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      paths: |-
+        tests/fixtures/bats-fail/tests
+
+  assert-test-bats-fail:
+    needs: test-test-bats-fail
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert the TEST gate failed, not something else
+        env:
+          RESULT: ${{ needs.test-test-bats-fail.result }}
+          TOTAL: ${{ needs.test-test-bats-fail.outputs.tests_total }}
+          FAILED: ${{ needs.test-test-bats-fail.outputs.tests_failed }}
+        run: |
+          set -euo pipefail
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected test-bats to fail on the failing fixture, got: $RESULT" >&2
+            exit 1
+          fi
+          if [[ "$TOTAL/$FAILED" != "2/1" ]]; then
+            echo "::error::tests_total/tests_failed='${TOTAL}/${FAILED}', erwartet 2/1 — der Fehlschlag hat eine andere Ursache als das Test-Gate" >&2
+            exit 1
+          fi
+          echo "test-bats-fail: Gate korrekt ausgeloest (${FAILED} von ${TOTAL} Tests rot)"
+
+  # Glob-Drift: ein umbenanntes Testverzeichnis darf das Gate nicht gruen
+  # lassen. Drei Faelle, je mit dem GRUND als Beweis: `result == failure` und
+  # ein leeres tests_total gaelten auch fuer einen Job, der schon am Checkout
+  # gestorben waere. failure_reason setzt das Atom, bevor es abbricht — genau
+  # an der Pruefung, die hier bewiesen werden soll.
+  #   empty:   leerer paths-Wert  -> Validate-Schritt, vor jedem Checkout
+  #   missing: Pfad existiert nicht -> Run-Schritt, NACH Checkout und Install
+  #   none:    Suite ohne @test     -> Run-Schritt, nach bats' eigenem Abbruch
+  test-test-bats-empty:
+    uses: ./.github/workflows/test-bats.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      paths: ''
+
+  test-test-bats-missing:
+    uses: ./.github/workflows/test-bats.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      paths: |-
+        tests/fixtures/gibt-es-nicht
+
+  test-test-bats-none:
+    uses: ./.github/workflows/test-bats.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      paths: |-
+        tests/fixtures/bats-empty/tests
+
+  assert-test-bats-rejections:
+    needs: [test-test-bats-empty, test-test-bats-missing, test-test-bats-none]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert each rejection came from its own check
+        env:
+          EMPTY_RESULT: ${{ needs.test-test-bats-empty.result }}
+          EMPTY_REASON: ${{ needs.test-test-bats-empty.outputs.failure_reason }}
+          EMPTY_TOTAL: ${{ needs.test-test-bats-empty.outputs.tests_total }}
+          MISSING_RESULT: ${{ needs.test-test-bats-missing.result }}
+          MISSING_REASON: ${{ needs.test-test-bats-missing.outputs.failure_reason }}
+          MISSING_TOTAL: ${{ needs.test-test-bats-missing.outputs.tests_total }}
+          NONE_RESULT: ${{ needs.test-test-bats-none.result }}
+          NONE_REASON: ${{ needs.test-test-bats-none.outputs.failure_reason }}
+          NONE_TOTAL: ${{ needs.test-test-bats-none.outputs.tests_total }}
+        run: |
+          set -euo pipefail
+          fail=0
+          check() {
+            local name="$1" result="$2" reason="$3" want_reason="$4" total="$5" want_total="$6"
+            if [[ "$result" != "failure" ]]; then
+              echo "::error::test-bats-${name}: expected the job to fail, got: ${result}" >&2
+              fail=1
+            fi
+            if [[ "$reason" != "$want_reason" ]]; then
+              echo "::error::test-bats-${name}: failure_reason='${reason}', erwartet '${want_reason}' — der Job ist an etwas anderem gescheitert als an der beabsichtigten Pruefung" >&2
+              fail=1
+            fi
+            if [[ "$total" != "$want_total" ]]; then
+              echo "::error::test-bats-${name}: tests_total='${total}', erwartet '${want_total}'" >&2
+              fail=1
+            fi
+          }
+          check empty   "$EMPTY_RESULT"   "$EMPTY_REASON"   empty_paths  "$EMPTY_TOTAL"   ""
+          check missing "$MISSING_RESULT" "$MISSING_REASON" path_missing "$MISSING_TOTAL" ""
+          # bats schreibt bei null Tests einen Bericht ohne <testsuite>: kein
+          # tests_total, aber ein klarer Grund.
+          check none    "$NONE_RESULT"    "$NONE_REASON"    no_tests     "$NONE_TOTAL"    ""
+          if [[ "$fail" != "0" ]]; then
+            exit 1
+          fi
+          echo "test-bats: leerer, fehlender und testloser Pfad je aus der beabsichtigten Pruefung abgelehnt"
+
   # ----- cleanup-images: fail-path -----
   # Empty runs_on array forces atom-level input-validation failure (matrix
   # evaluation requires non-empty input).
@@ -1422,6 +1531,8 @@ jobs:
       - assert-test-go-cov-fail
       - assert-test-python-cov-fail
       - assert-test-rust-cov-fail
+      - assert-test-bats-fail
+      - assert-test-bats-rejections
       - assert-cleanup-images-fail
       - assert-docker-build-multi-fail
       - assert-goreleaser-fail

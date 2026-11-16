@@ -1,0 +1,475 @@
+# .github/workflows/test-bats.yml
+# Reusable workflow: run bats-core suites with a pinned bats, optional pinned
+# system packages for the system under test, and a JUnit-derived test count.
+#
+# Auth: callers MUST pass `secrets: inherit` so the catalog-scoped App
+# token can be minted. See lint-python.yml for the full explanation.
+# Summary convention: docs/conventions/step-summary.md
+#
+# Stability surface (workflow_call contract — breaking changes = major bump):
+#   inputs:  paths, recursive, bats_version, bats_sha, apt_packages, locale,
+#            env, formatter, junit, report_slug, runs_on, timeout_minutes
+#   secrets: release_please_app_client_id, release_please_app_private_key
+#   outputs: tests_total, tests_failed, tests_skipped, failure_reason
+#
+# Fork-PRs: GitHub gibt ihnen keine Secrets, der App-Token laesst sich dort
+# nicht minten. Der Aufrufer schliesst sie am Job aus:
+#   if: github.event_name != 'pull_request' ||
+#       github.event.pull_request.head.repo.full_name == github.repository
+name: test-bats
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: >-
+          Newline-separated (one entry per line — use a `|-` block scalar, NOT
+          spaces) bats test files or directories, relative to the repo root.
+          REQUIRED: an empty value, or a path that does not exist,
+          is an ERROR, not a pass — sonst faerbt ein driftender Pfad das Gate
+          dauerhaft gruen. A suite that contains zero tests is an error too.
+        required: true
+        type: string
+      recursive:
+        description: 'Pass --recursive so .bats files in subdirectories of a directory path are run too.'
+        required: false
+        type: boolean
+        default: false
+      bats_version:
+        description: >-
+          Override bats-core version (empty → composite default, which is
+          pinned by commit SHA). A different version WITHOUT bats_sha is
+          fetched by tag and logs a warning: that run is not commit-pinned.
+        required: false
+        type: string
+        default: ''
+      bats_sha:
+        description: >-
+          Full 40-character commit SHA of the bats_version tag. Pins an
+          overridden version; only valid together with bats_version.
+        required: false
+        type: string
+        default: ''
+      apt_packages:
+        description: >-
+          Whitespace-separated (spaces or newlines, unlike `paths` which is
+          one entry per line) apt packages the system under test needs (e.g.
+          tmux, zsh). Pin with `name=version`; an unpinned entry is installed
+          at whatever version the runner image offers, and the run says so.
+          Caution: an exact pin breaks as soon as Ubuntu replaces that version
+          in its index (security update) — the install then fails instead of
+          drifting. Keep pins current with a Renovate customManager
+          (`datasource=deb`) in the calling repo, see docs/contracts.md.
+          Empty → nothing is installed.
+        required: false
+        type: string
+        default: ''
+      locale:
+        description: >-
+          Value exported as LC_ALL for the test run. Empty → LC_ALL is left
+          as the runner has it.
+        required: false
+        type: string
+        default: 'C.UTF-8'
+      env:
+        description: >-
+          Newline-separated KEY=VALUE pairs exported for the test run. PATH,
+          BASH_ENV, LD_*, GITHUB_* and RUNNER_* are rejected.
+        required: false
+        type: string
+        default: ''
+      formatter:
+        description: 'bats console formatter: tap, tap13, pretty or junit. The JUnit report used for the counts is written regardless.'
+        required: false
+        type: string
+        default: 'tap'
+      junit:
+        description: 'Upload the JUnit report (report.xml) as a workflow artifact.'
+        required: false
+        type: boolean
+        default: false
+      report_slug:
+        description: >-
+          Suffix that makes this call's JUnit artifact name unique. Required
+          with `junit: true` when a repo calls this atom more than once in the
+          same workflow.
+        required: false
+        type: string
+        default: ''
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 30
+    outputs:
+      tests_total:
+        description: >-
+          Number of test cases bats ran, from its JUnit report — und der LEERE
+          String, wenn bats gar keinen Bericht schrieb (Abbruch vor dem Lauf).
+          Ein Aufrufer muss auf einen Wert pruefen, nicht auf `!= '0'`.
+        value: ${{ jobs.test.outputs.tests_total }}
+      tests_failed:
+        description: 'Number of failed test cases (failures + errors); empty when no report was written.'
+        value: ${{ jobs.test.outputs.tests_failed }}
+      tests_skipped:
+        description: 'Number of skipped test cases; empty when no report was written.'
+        value: ${{ jobs.test.outputs.tests_skipped }}
+      failure_reason:
+        description: >-
+          Machine-readable reason when the atom itself rejected the run:
+          invalid_formatter, invalid_locale, invalid_path, empty_paths,
+          invalid_apt_package, invalid_env, path_missing, no_report, no_tests.
+          Empty when it did not (including plain test failures — see
+          tests_failed). Lets a caller tell the intended rejection from a
+          crash elsewhere in the job.
+        value: ${{ jobs.test.outputs.failure_reason }}
+    secrets:
+      release_please_app_client_id:
+        required: true
+        description: 'GitHub App Client ID with contents:read on the catalog repo.'
+      release_please_app_private_key:
+        required: true
+        description: 'PEM private key for the GitHub App.'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-bats-${{ github.workflow }}-${{ github.ref }}-${{ inputs.paths }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    outputs:
+      tests_total: ${{ steps.bats.outputs.tests_total }}
+      tests_failed: ${{ steps.bats.outputs.tests_failed }}
+      tests_skipped: ${{ steps.bats.outputs.tests_skipped }}
+      failure_reason: ${{ steps.bats.outputs.failure_reason || steps.validate.outputs.failure_reason }}
+    steps:
+      # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
+      # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
+      # arbeiten. `fromJSON` oben faengt nur KAPUTTES JSON ab — `[]` ist
+      # gueltiges JSON und kommt hier an.
+      # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
+      - name: Reject an empty runs_on
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      - name: Validate inputs
+        id: validate
+        working-directory: ${{ github.workspace }}
+        env:
+          PATHS: ${{ inputs.paths }}
+          FORMATTER: ${{ inputs.formatter }}
+          APT_PACKAGES: ${{ inputs.apt_packages }}
+          EXTRA_ENV: ${{ inputs.env }}
+          LOCALE: ${{ inputs.locale }}
+        # Frueh im Job und vor jedem Download: sonst laeuft erst die ganze
+        # Installation, nur um die Konfiguration danach abzulehnen.
+        run: |
+          set -euo pipefail
+          # Der Grund geht in den Output, BEVOR der Schritt abbricht: so laesst
+          # sich "an dieser Pruefung gescheitert" von "irgendwo sonst
+          # gestorben" unterscheiden (siehe failure-paths-nightly.yml).
+          reject() {
+            echo "failure_reason=$1" >> "$GITHUB_OUTPUT"
+            echo "::error::$2" >&2
+            exit 1
+          }
+          case "$FORMATTER" in
+            tap|tap13|pretty|junit) ;;
+            *) reject invalid_formatter "formatter must be one of tap, tap13, pretty, junit, got \"${FORMATTER}\"" ;;
+          esac
+          if [[ -n "$LOCALE" && ! "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+            reject invalid_locale "locale must be a plain locale name like C.UTF-8, got \"${LOCALE}\""
+          fi
+          n=0
+          while IFS= read -r p; do
+            [[ -z "${p//[[:space:]]/}" ]] && continue
+            n=$((n + 1))
+            if [[ "$p" == /* || "$p" == *".."* || "$p" == "." || "$p" == "./" ]]; then
+              reject invalid_path "paths entry must be a path inside the repo and not the repo root itself, got: ${p}"
+            fi
+          done <<< "$PATHS"
+          if [[ "$n" == "0" ]]; then
+            reject empty_paths "paths is empty — no bats suite was selected, so nothing would be tested"
+          fi
+          # Paket-Spezifikation: name oder name=version (optional :arch). Kein
+          # Leerraum, keine Optionen — der Wert landet als Argument in apt-get.
+          # Aufteilung wie im Installationsschritt: an Leerraum, ohne Globbing.
+          set -f
+          read -ra pkgs <<< "$(tr -s '[:space:]' ' ' <<< "$APT_PACKAGES")"
+          set +f
+          for pkg in "${pkgs[@]}"; do
+            if [[ ! "$pkg" =~ ^[a-z0-9][a-z0-9+.-]*(:[a-z0-9]+)?(=[A-Za-z0-9.+:~-]+)?$ ]]; then
+              reject invalid_apt_package "apt_packages entry is not a package spec (name or name=version): ${pkg}"
+            fi
+          done
+          while IFS= read -r line; do
+            [[ -z "${line//[[:space:]]/}" ]] && continue
+            key="${line%%=*}"
+            if [[ "$line" != *=* || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+              reject invalid_env "env line must be KEY=VALUE with a valid variable name, got: ${key}"
+            fi
+            case "$key" in
+              PATH|BASH_ENV|ENV|LD_*|GITHUB_*|RUNNER_*)
+                reject invalid_env "env must not set ${key}" ;;
+            esac
+          done <<< "$EXTRA_ENV"
+
+      # persist-credentials: false auf BEIDEN Checkouts — sonst bliebe der Token
+      # als `http.<url>.extraheader` in der Git-Config des Workspace liegen,
+      # und die Suite (Adopter-Code!) startet dort `git`. Gleiche Begruendung
+      # wie in tofu-plan.yml. Der Katalog-Checkout bringt sein eigenes
+      # `token:` mit und braucht keine gespeicherten Credentials.
+      - name: Checkout adopter repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      # Der Katalog wird nur GELESEN (Composite Actions, Zaehlskript): der Token
+      # bekommt genau contents:read und kein Schreibrecht auf den Katalog.
+      - name: Mint catalog-scoped App token
+        id: catalog-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.release_please_app_client_id }}
+          private-key: ${{ secrets.release_please_app_private_key }}
+          owner: serverkraken
+          repositories: reusable-workflows
+          permission-contents: read
+      - name: Resolve catalog ref
+        id: catalog-ref
+        env:
+          IS_SELF_CI: ${{ github.repository == 'serverkraken/reusable-workflows' }}
+          SELF_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$IS_SELF_CI" == "true" ]]; then
+            echo "ref=$SELF_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # renovate-marker: catalog-major-ref
+            echo "ref=v4" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout catalog (for composite actions)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: serverkraken/reusable-workflows
+          ref: ${{ steps.catalog-ref.outputs.ref }}
+          token: ${{ steps.catalog-token.outputs.token }}
+          path: .catalog
+          persist-credentials: false
+
+      - name: Install bats
+        id: install-bats
+        uses: ./.catalog/actions/install-bats
+        with:
+          version: ${{ inputs.bats_version }}
+          sha: ${{ inputs.bats_sha }}
+
+      - name: Install system packages
+        id: apt
+        if: inputs.apt_packages != ''
+        env:
+          APT_PACKAGES: ${{ inputs.apt_packages }}
+        # Die Pakete sind das TESTOBJEKT (tmux, zsh, ...), nicht das Werkzeug:
+        # ihre Version bestimmt, was die Suite beweist. Deshalb darf der
+        # Aufrufer `name=version` pinnen, und dieser Schritt haelt den
+        # tatsaechlich installierten Stand fest, damit die Summary ihn nennt.
+        run: |
+          set -euo pipefail
+          SUDO=""
+          if [[ "$(id -u)" != "0" ]]; then
+            if ! command -v sudo >/dev/null 2>&1; then
+              echo "::error::apt_packages needs root or sudo on this runner, and neither is available" >&2
+              exit 1
+            fi
+            SUDO="sudo -n"
+          fi
+          # Gleiche Aufteilung wie in "Validate inputs": an Leerraum, ohne
+          # Globbing. Was dort geprueft wurde, ist exakt das, was hier ankommt.
+          set -f
+          read -ra pkgs <<< "$(tr -s '[:space:]' ' ' <<< "$APT_PACKAGES")"
+          set +f
+          if [[ "${#pkgs[@]}" == "0" ]]; then
+            echo "::notice::apt_packages holds only whitespace — nothing to install"
+            exit 0
+          fi
+          for pkg in "${pkgs[@]}"; do
+            if [[ "$pkg" != *=* ]]; then
+              echo "::notice::apt package '${pkg}' is not pinned (name=version) — the installed version depends on the runner image"
+            fi
+          done
+          # DEBIAN_FRONTEND ueber `env`: sudo reicht die Umgebung nicht durch,
+          # ein `export` davor griffe unter sudo nicht. Das Lock-Timeout faengt
+          # einen parallelen apt/unattended-upgrades-Lauf auf dem Runner ab.
+          # --allow-downgrades: ein gepinntes name=version darf aelter sein als
+          # das, was das Image schon mitbringt.
+          apt_opts=(-o DPkg::Lock::Timeout=120)
+          $SUDO env DEBIAN_FRONTEND=noninteractive apt-get "${apt_opts[@]}" update -qq
+          $SUDO env DEBIAN_FRONTEND=noninteractive apt-get "${apt_opts[@]}" install -y -qq --no-install-recommends --allow-downgrades "${pkgs[@]}"
+          installed_file="${RUNNER_TEMP:?RUNNER_TEMP is not set}/apt-installed.txt"
+          : > "$installed_file"
+          for pkg in "${pkgs[@]}"; do
+            name="${pkg%%=*}"
+            name="${name%%:*}"
+            ver="$(dpkg-query -W -f='${Version}' "$name" 2>/dev/null || echo unknown)"
+            echo "${name}=${ver}" | tee -a "$installed_file"
+          done
+          echo "installed=$(paste -sd ' ' "$installed_file")" >> "$GITHUB_OUTPUT"
+
+      - name: Run bats
+        id: bats
+        env:
+          PATHS: ${{ inputs.paths }}
+          RECURSIVE: ${{ inputs.recursive }}
+          FORMATTER: ${{ inputs.formatter }}
+          LOCALE: ${{ inputs.locale }}
+          EXTRA_ENV: ${{ inputs.env }}
+          COUNTER: ${{ github.workspace }}/.catalog/scripts/bats-junit-counts.sh
+        run: |
+          set -uo pipefail
+          # LC_ALL steuert Sortierung und Zeichenbehandlung der getesteten
+          # Skripte; ein Runner-Default (oft leer oder POSIX) macht eine Suite,
+          # die lokal gruen ist, in der CI zufaellig rot.
+          [[ -n "$LOCALE" ]] && export LC_ALL="$LOCALE"
+          while IFS= read -r line; do
+            [[ -z "${line//[[:space:]]/}" ]] && continue
+            export "${line%%=*}=${line#*=}"
+          done <<< "$EXTRA_ENV"
+
+          targets=()
+          while IFS= read -r p; do
+            [[ -z "${p//[[:space:]]/}" ]] && continue
+            if [[ ! -e "$p" ]]; then
+              echo "failure_reason=path_missing" >> "$GITHUB_OUTPUT"
+              echo "::error::paths entry does not exist: ${p} — is the paths input set correctly?" >&2
+              exit 1
+            fi
+            targets+=("$p")
+          done <<< "$PATHS"
+
+          report_dir="${RUNNER_TEMP}/bats-report"
+          rm -rf "$report_dir"
+          mkdir -p "$report_dir"
+          echo "report_dir=${report_dir}" >> "$GITHUB_OUTPUT"
+
+          args=(--formatter "$FORMATTER" --report-formatter junit --output "$report_dir" --print-output-on-failure)
+          [[ "$RECURSIVE" == "true" ]] && args+=(--recursive)
+
+          # GitHub startet run-Bloecke mit `bash -e`: ohne `|| rc=$?` endete der
+          # Schritt schon hier, und Zaehler/failure_reason unten liefen nie
+          # (failure-paths-nightly: tests_total leer statt 2/1).
+          SECONDS=0
+          rc=0
+          bats "${args[@]}" "${targets[@]}" || rc=$?
+          echo "duration=${SECONDS}" >> "$GITHUB_OUTPUT"
+
+          # Die Zahlen kommen aus dem Bericht und werden gesetzt, BEVOR der
+          # Schritt mit bats' Status endet: ein Aufrufer kann so "an Tests
+          # gescheitert" von "vorher abgestuerzt" unterscheiden (leer = kein
+          # Bericht). bats selbst lehnt eine Suite ohne Tests ab (Exit 1, Bericht
+          # ohne <testsuite>); die Pruefung unten haelt das auch fest.
+          report="${report_dir}/report.xml"
+          if [[ ! -s "$report" ]]; then
+            echo "failure_reason=no_report" >> "$GITHUB_OUTPUT"
+            echo "::error::bats wrote no JUnit report (exit ${rc}) — it did not run the suite" >&2
+            exit "$(( rc == 0 ? 1 : rc ))"
+          fi
+          # Ohne einen einzigen @test schreibt bats einen Bericht ohne
+          # <testsuite> (und endet mit 1): der Zaehler lehnt ihn ab.
+          if ! counts="$(bash "$COUNTER" "$report")"; then
+            echo "failure_reason=no_tests" >> "$GITHUB_OUTPUT"
+            echo "::error::bats reported no test at all — the paths contain no @test, so the gate would pass without testing anything" >&2
+            exit 1
+          fi
+          echo "$counts" >> "$GITHUB_OUTPUT"
+          total="$(sed -n 's/^tests_total=//p' <<< "$counts")"
+          if [[ "$total" == "0" ]]; then
+            echo "failure_reason=no_tests" >> "$GITHUB_OUTPUT"
+            echo "::error::bats ran 0 tests — the paths contain no @test, so the gate would pass without testing anything" >&2
+            exit 1
+          fi
+          exit "$rc"
+
+      - name: Derive JUnit artifact name
+        id: slug
+        if: always() && inputs.junit && steps.bats.outputs.report_dir != ''
+        env:
+          RAW: ${{ inputs.report_slug }}
+        run: |
+          set -euo pipefail
+          slug="$(printf '%s' "${RAW:-}" | tr '/' '-' | tr -cd 'A-Za-z0-9._-')"
+          if [ -n "$slug" ]; then
+            echo "artifact=bats-junit-$slug" >> "$GITHUB_OUTPUT"
+          else
+            echo "artifact=bats-junit" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish JUnit artifact
+        if: always() && inputs.junit && steps.bats.outputs.report_dir != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.slug.outputs.artifact }}
+          path: ${{ steps.bats.outputs.report_dir }}/report.xml
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          BATS_OUTCOME: ${{ steps.bats.outcome }}
+          TOTAL: ${{ steps.bats.outputs.tests_total }}
+          FAILED: ${{ steps.bats.outputs.tests_failed }}
+          SKIPPED: ${{ steps.bats.outputs.tests_skipped }}
+          DURATION: ${{ steps.bats.outputs.duration }}
+          PATHS: ${{ inputs.paths }}
+          BATS_VERSION_USED: ${{ steps.install-bats.outputs.version }}
+          APT_INSTALLED: ${{ steps.apt.outputs.installed }}
+          LOCALE: ${{ inputs.locale }}
+        run: |
+          paths_inline="$(printf '%s' "$PATHS" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+          if [[ -z "$TOTAL" ]]; then
+            # Leer heisst NICHT null Tests: bats lief gar nicht bis zum Bericht.
+            result="✗ bats lief nicht durch — kein Testbericht"
+          elif [[ "$BATS_OUTCOME" == "success" ]]; then
+            result="✓ ${TOTAL} tests, all passed"
+          elif [[ "${FAILED:-0}" != "0" ]]; then
+            result="✗ ${FAILED} of ${TOTAL} tests failed"
+          else
+            result="✗ bats failed — see log"
+          fi
+          passed=""
+          if [[ -n "$TOTAL" ]]; then
+            passed=$(( TOTAL - ${FAILED:-0} - ${SKIPPED:-0} ))
+          fi
+          {
+            echo "## test-bats"
+            echo ""
+            echo "**Tool:** bats ${BATS_VERSION_USED:-unknown}"
+            echo "**Paths:** \`${paths_inline}\`"
+            echo "**Locale:** \`${LOCALE:-runner default}\`"
+            if [[ -n "$APT_INSTALLED" ]]; then
+              echo "**System packages:** \`${APT_INSTALLED}\`"
+            fi
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Tests run | ${TOTAL:-N/A} |"
+            echo "| Passed | ${passed:-N/A} |"
+            echo "| Failed | ${FAILED:-N/A} |"
+            echo "| Skipped | ${SKIPPED:-N/A} |"
+            echo "| Duration | ${DURATION:-N/A}s |"
+          } >> "$GITHUB_STEP_SUMMARY" || true

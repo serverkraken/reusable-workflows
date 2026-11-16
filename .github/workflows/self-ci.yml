@@ -483,6 +483,67 @@ jobs:
       working_directory: tests/fixtures/lint-test/rust-happy
       coverage_threshold: 90
 
+  # ----- test-bats: happy paths -----
+  # Zwei Aufrufe mit verschiedenen `paths`: die concurrency-Gruppe des Atoms
+  # enthaelt `paths`, gleiche Pfade liessen sich im PR gegenseitig abbrechen.
+  #
+  # Aufruf 1: nur die Top-Level-Datei, mit apt_packages (jq ist auf dem Runner
+  # schon da — belegt den Installationspfad ohne Versionsdrift), env und der
+  # Default-Locale. Die Fixture prueft LC_ALL und BATS_FIXTURE_FLAG selbst.
+  test-bats-happy:
+    uses: ./.github/workflows/test-bats.yml
+    secrets: inherit
+    with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
+      paths: |-
+        tests/fixtures/bats-clean/tests/basic.bats
+      apt_packages: jq
+      env: |-
+        BATS_FIXTURE_FLAG=gesetzt
+      junit: true
+      report_slug: happy
+
+  # Aufruf 2: Verzeichnis mit recursive — belegt, dass Unterverzeichnisse
+  # dazukommen (5 statt 3 Tests).
+  test-bats-recursive:
+    uses: ./.github/workflows/test-bats.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      paths: |-
+        tests/fixtures/bats-clean/tests
+      recursive: true
+      env: |-
+        BATS_FIXTURE_FLAG=gesetzt
+
+  assert-test-bats-happy:
+    needs: [test-bats-happy, test-bats-recursive]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Die Zahlen des Atoms muessen zur Fixture passen
+        env:
+          HAPPY_TOTAL: ${{ needs.test-bats-happy.outputs.tests_total }}
+          HAPPY_FAILED: ${{ needs.test-bats-happy.outputs.tests_failed }}
+          HAPPY_SKIPPED: ${{ needs.test-bats-happy.outputs.tests_skipped }}
+          REC_TOTAL: ${{ needs.test-bats-recursive.outputs.tests_total }}
+          REC_FAILED: ${{ needs.test-bats-recursive.outputs.tests_failed }}
+        run: |
+          set -euo pipefail
+          fail=0
+          # Fixture bats-clean/tests/basic.bats: 3 Tests, 1 uebersprungen.
+          if [[ "$HAPPY_TOTAL/$HAPPY_FAILED/$HAPPY_SKIPPED" != "3/0/1" ]]; then
+            echo "::error::erwartet total/failed/skipped = 3/0/1, bekam ${HAPPY_TOTAL}/${HAPPY_FAILED}/${HAPPY_SKIPPED}" >&2
+            fail=1
+          fi
+          # Mit recursive kommen sub/nested.bats (2 Tests) dazu: 5.
+          if [[ "$REC_TOTAL/$REC_FAILED" != "5/0" ]]; then
+            echo "::error::recursive: erwartet total/failed = 5/0, bekam ${REC_TOTAL}/${REC_FAILED} — Unterverzeichnisse nicht einbezogen?" >&2
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "test-bats: Zaehler und recursive-Pfad belegt"
+
   # ----- vars coercion: verify type=number + type=boolean inputs accept
   #       string-valued GHA expressions WRAPPED IN fromJSON(), which is
   #       what the SK_* override pattern emits in adopter ci.yml. The
@@ -1010,6 +1071,7 @@ jobs:
       - test-python-uv-happy
       - test-python-pip-happy
       - test-rust-happy
+      - assert-test-bats-happy
       - test-vars-coercion
       - setup-sk-workflows-source-happy
       - onboard-drift-happy
