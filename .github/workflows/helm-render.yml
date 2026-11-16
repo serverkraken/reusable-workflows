@@ -48,6 +48,11 @@ on:
         required: false
         type: string
         default: '["self-hosted","Linux"]'
+      timeout_minutes:
+        description: 'Job timeout in minutes.'
+        required: false
+        type: number
+        default: 15
     outputs:
       validate_outcome:
         description: >-
@@ -73,7 +78,7 @@ concurrency:
 jobs:
   render:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     outputs:
       validate_outcome: ${{ steps.validate.outcome }}
       invalid_files: ${{ steps.validate.outputs.invalid_files }}
