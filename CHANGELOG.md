@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.30.2](https://github.com/serverkraken/reusable-workflows/compare/v4.30.1...v4.30.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **ci:** Drift bei Flutter, Trivy-Fixtures und Rust-Coverage beheben ([#449](https://github.com/serverkraken/reusable-workflows/issues/449)) ([925cf55](https://github.com/serverkraken/reusable-workflows/commit/925cf5574f3d3d577bfd40f945d83748a06d9976))
+
 ## [4.30.1](https://github.com/serverkraken/reusable-workflows/compare/v4.30.0...v4.30.1) (2026-10-25)
 
 
