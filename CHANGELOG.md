@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.33.0](https://github.com/serverkraken/reusable-workflows/compare/v4.32.0...v4.33.0) (2026-11-16)
+
+
+### Features
+
+* Timeouts überall überschreibbar ([#444](https://github.com/serverkraken/reusable-workflows/issues/444)) ([3026b7a](https://github.com/serverkraken/reusable-workflows/commit/3026b7a7554704bc676193ccef0c6a38dbbf3b36))
+
 ## [4.32.0](https://github.com/serverkraken/reusable-workflows/compare/v4.31.0...v4.32.0) (2026-11-16)
 
 
