@@ -1,6 +1,6 @@
 # Onboarding Status
 
-_Last updated by the onboarding workflow: 2026-11-09T07:14:23Z_
+_Last updated by the onboarding workflow: 2026-11-16T07:21:47Z_
 
 This document tracks which `serverkraken/*` repositories have been onboarded to the reusable-workflows catalog. The `onboard.yml` workflow updates rows for repos it touches. Run `scripts/seed-onboarding-status.sh` once to populate `not onboarded` rows for all org repos.
 
@@ -60,3 +60,4 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/gewusel | 2026-11-02 | v4 | — | — | error (error / error) | — |
 | serverkraken/hadal | 2026-11-02 | v4 | [PR](https://github.com/serverkraken/hadal/pull/1) | — | add-open, no-legacy | — |
 | serverkraken/arena | 2026-11-09 | v4 | [PR](https://github.com/serverkraken/arena/pull/3) | — | add-open, no-legacy | — |
+| serverkraken/helm-chart-app | 2026-11-16 | v4 | [PR](https://github.com/serverkraken/helm-chart-app/pull/2) | — | add-open, no-legacy | — |
