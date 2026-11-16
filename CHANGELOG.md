@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.32.0](https://github.com/serverkraken/reusable-workflows/compare/v4.31.0...v4.32.0) (2026-11-16)
+
+
+### Features
+
+* **lint-helm:** Werte-Datei für helm lint per lint_values ([#452](https://github.com/serverkraken/reusable-workflows/issues/452)) ([29b8978](https://github.com/serverkraken/reusable-workflows/commit/29b89785a511b8a92504e5d91c1a07eae4ea3cb4))
+
 ## [4.31.0](https://github.com/serverkraken/reusable-workflows/compare/v4.30.2...v4.31.0) (2026-11-16)
 
 
