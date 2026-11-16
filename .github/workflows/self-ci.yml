@@ -877,6 +877,10 @@ jobs:
     uses: ./.github/workflows/lint-flutter.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
@@ -902,6 +906,10 @@ jobs:
     uses: ./.github/workflows/lint-flutter.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app-codegen
@@ -910,6 +918,10 @@ jobs:
     uses: ./.github/workflows/test-flutter.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
@@ -921,6 +933,10 @@ jobs:
     uses: ./.github/workflows/build-flutter-android.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
