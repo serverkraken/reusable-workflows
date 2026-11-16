@@ -42,6 +42,21 @@ on:
         required: false
         type: boolean
         default: false
+      dependency_build:
+        description: 'Runs `helm dependency build` for every detected chart before lint and unittest.'
+        required: false
+        type: boolean
+        default: false
+      lint_values:
+        description: >-
+          Values file for `helm lint`, as a path relative to each chart
+          directory (e.g. `ci/minimal-values.yaml`). Needed by charts whose
+          schema requires values. Missing in a chart = error. A file under
+          `ci/*-values.yaml` is also picked up by `ct lint`. Empty = lint
+          without values.
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -91,22 +106,67 @@ jobs:
         with:
           version: ${{ inputs.ct_version }}
 
-      - name: helm lint (all charts)
-        id: helm_lint
+      - name: helm dependency build
+        id: helm_dep_build
+        if: inputs.dependency_build
         working-directory: ${{ inputs.working_directory }}
         env:
           CHARTS_DIR: ${{ inputs.charts_dir }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          # If charts_dir is itself a chart, lint it directly; else lint each subdir that has Chart.yaml.
+          # Findet die Charts wie `helm lint (all charts)`. Ohne gebaute
+          # Abhaengigkeiten scheitern lint und unittest bei jedem Chart mit
+          # `dependencies:` mit "found in Chart.yaml, but missing in charts/".
           if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
-            helm lint "$CHARTS_DIR"
+            helm dependency build "$CHARTS_DIR"
           else
             found=0
             for d in "$CHARTS_DIR"/*/; do
               if [[ -f "${d%/}/Chart.yaml" ]]; then
-                helm lint "${d%/}"
+                helm dependency build "${d%/}"
+                found=1
+              fi
+            done
+            if (( found == 0 )); then
+              echo "::error::no chart found in $CHARTS_DIR (no Chart.yaml in $CHARTS_DIR or its immediate subdirs)"
+              exit 1
+            fi
+          fi
+
+      - name: helm lint (all charts)
+        id: helm_lint
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          CHARTS_DIR: ${{ inputs.charts_dir }}
+          LINT_VALUES: ${{ inputs.lint_values }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # Ein Chart, dessen Schema Werte verlangt (z. B. `image`), scheitert
+          # an `helm lint` ohne Werte-Datei mit "'anyOf' failed". `lint_values`
+          # liefert sie je Chart; fehlt sie dort, ist das ein Fehler und kein
+          # stilles Lint ohne Werte.
+          lint_chart() {
+            local chart="$1"
+            if [[ -n "$LINT_VALUES" ]]; then
+              if [[ ! -f "$chart/$LINT_VALUES" ]]; then
+                echo "::error::lint_values file not found in chart $chart: $chart/$LINT_VALUES"
+                return 1
+              fi
+              helm lint "$chart" -f "$chart/$LINT_VALUES"
+            else
+              helm lint "$chart"
+            fi
+          }
+          # If charts_dir is itself a chart, lint it directly; else lint each subdir that has Chart.yaml.
+          if [[ -f "$CHARTS_DIR/Chart.yaml" ]]; then
+            lint_chart "$CHARTS_DIR"
+          else
+            found=0
+            for d in "$CHARTS_DIR"/*/; do
+              if [[ -f "${d%/}/Chart.yaml" ]]; then
+                lint_chart "${d%/}"
                 found=1
               fi
             done
@@ -221,6 +281,8 @@ jobs:
           HELM_UNITTEST_OUTCOME: ${{ steps.helm_unittest.outcome }}
           UNITTEST_INSTALL_OUTCOME: ${{ steps.helm_unittest_install.outcome }}
           UNITTEST_REQUESTED: ${{ inputs.unittest }}
+          DEP_BUILD_OUTCOME: ${{ steps.helm_dep_build.outcome }}
+          DEP_BUILD_REQUESTED: ${{ inputs.dependency_build }}
         run: |
           glyph() {
             case "$1" in
@@ -246,6 +308,9 @@ jobs:
           ok=1
           [[ "$HELM_LINT_OUTCOME" == "success" ]] || ok=0
           [[ "$CT_LINT_OUTCOME" == "success" ]] || ok=0
+          if [[ "$DEP_BUILD_REQUESTED" == "true" ]]; then
+            [[ "$DEP_BUILD_OUTCOME" == "success" ]] || ok=0
+          fi
           if [[ "$UNITTEST_REQUESTED" == "true" ]]; then
             [[ "$UNITTEST_INSTALL_OUTCOME" == "success" ]] || ok=0
             [[ "$HELM_UNITTEST_OUTCOME" == "success" ]] || ok=0
@@ -265,6 +330,9 @@ jobs:
             echo ""
             echo "| Check | Status |"
             echo "|---|---|"
+            if [[ "$DEP_BUILD_REQUESTED" == "true" ]]; then
+              echo "| helm dependency build | $(glyph "$DEP_BUILD_OUTCOME") |"
+            fi
             echo "| helm lint | $(glyph "$HELM_LINT_OUTCOME") |"
             echo "| ct lint | $(glyph "$CT_LINT_OUTCOME") |"
             echo "| helm-unittest install | $(glyph "$UNITTEST_INSTALL_OUTCOME") |"

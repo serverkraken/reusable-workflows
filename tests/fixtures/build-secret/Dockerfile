@@ -8,7 +8,7 @@
 # GET /installation/repositories lists precisely the repos the token may
 # access; the negative probe shows the restriction is enforced, not just
 # declared. The token is read from the mount only, never echoed, no `set -x`.
-FROM alpine:3.20
+FROM alpine:3.24
 RUN apk add --no-cache curl jq
 ARG EXPECTED_REPOS
 ARG DENIED_REPO

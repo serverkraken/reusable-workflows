@@ -1,0 +1,4 @@
+apiVersion: v2
+name: required-values-fixture
+version: 0.1.0
+type: application

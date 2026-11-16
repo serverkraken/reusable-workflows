@@ -559,6 +559,28 @@ jobs:
       oci_registry: ghcr.io/serverkraken/test
       dry_run: true
 
+  # Chart mit OCI-Abhaengigkeit: ohne `dependency_build` scheitert das Packen.
+  test-helm-publish-oci-dep:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      chart_path: tests/fixtures/helm-oci-dep
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+      dependency_build: true
+
+  # Chart, dessen Schema `image` verlangt: ohne `lint_values` scheitert helm lint.
+  test-helm-publish-lint-values:
+    uses: ./.github/workflows/helm-publish.yml
+    secrets: inherit
+    with:
+      runs_on: '["ubuntu-latest"]'
+      chart_path: tests/fixtures/helm-required-values
+      oci_registry: ghcr.io/serverkraken/test
+      dry_run: true
+      lint_values: ci/minimal-values.yaml
+
   # ----- kube-validate happy path: valid fixture tree must succeed -----
   # ----- chart-image-bump: bis zum K-2-Fix rief KEIN Self-CI-Workflow dieses
   #       Atom auf. Getestet war nur die Python-Logik in
@@ -1360,6 +1382,10 @@ jobs:
     uses: ./.github/workflows/release-flutter-android.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
@@ -1470,6 +1496,8 @@ jobs:
       - assert-release-orchestrator-skips-build
       - test-goreleaser
       - test-helm-publish
+      - test-helm-publish-oci-dep
+      - test-helm-publish-lint-values
       - test-release-flutter-android
       - test-chart-image-bump
       - assert-chart-image-bump

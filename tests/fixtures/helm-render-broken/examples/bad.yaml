@@ -1,0 +1,2 @@
+# hostnames muss eine Liste sein; 42 verletzt das HTTPRoute-Schema.
+hostnames: 42

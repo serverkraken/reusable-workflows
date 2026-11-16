@@ -1,0 +1,3 @@
+# image kommt absichtlich nicht aus den Defaults: das Schema verlangt es,
+# ci/minimal-values.yaml setzt es.
+{}

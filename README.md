@@ -11,11 +11,11 @@
 ![license](docs/badges/license.svg)
 
 <!-- version-badges:start -->
-![reusable-workflows: v4.30.1](docs/badges/reusable-workflows.svg)
+![reusable-workflows: v4.31.0](docs/badges/reusable-workflows.svg)
 
 | Component | Version | Tag |
 |---|---|---|
-| reusable-workflows | 4.30.1 | [v4.30.1](https://github.com/serverkraken/reusable-workflows/releases/tag/v4.30.1) |
+| reusable-workflows | 4.31.0 | [v4.31.0](https://github.com/serverkraken/reusable-workflows/releases/tag/v4.31.0) |
 <!-- version-badges:end -->
 
 Versionierter, getesteter Katalog wiederverwendbarer GitHub-Actions-Workflows für die `serverkraken`-Organisation. Statt CI-Workflows zwischen Repos zu kopieren, referenziert jedes Repo den Katalog mit einer einzigen `uses:`-Zeile — und bekommt Updates über semantische Versionen.
@@ -132,6 +132,7 @@ jobs:
 | `lint-flutter.yml` / `test-flutter.yml` | dart format + flutter analyze / flutter test + Coverage-Gate |
 | `build-flutter-android.yml`  | PR-Gate: flutter build apk (debug, unsigniert) — kompiliert die Android-Seite |
 | `lint-helm.yml`              | helm lint + ct lint                                            |
+| `helm-render.yml`            | helm template je Beispiel-Values + kubeconform (CRD-Schemata) + dyff-Vergleich zum Basisstand |
 | `lint-shell.yml`             | shellcheck über getrackte Shell-Skripte, optional shfmt        |
 | `tofu-validate.yml`          | tofu fmt + init + validate + tflint je Stack, credential-frei  |
 | `tofu-plan.yml`              | tofu plan gegen das Backend, als Sticky-PR-Kommentar           |

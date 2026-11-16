@@ -198,9 +198,28 @@ runner pods.
 | input   | `oci_registry` | string  | **yes**  | —                           | OCI registry path (host + namespace) to push to, without the chart name. Example: `ghcr.io/serverkraken/charts`. |
 | input   | `helm_version` | string  | no       | `'v3.16.3'`                 | Helm CLI version to install (e.g. `v3.16.3`, `latest`). |
 | input   | `dry_run`      | boolean | no       | `false`                     | Lint and package only; skip registry login + push. |
+| input   | `dependency_build` | boolean | no     | `false`                     | Runs `helm dependency build` for the chart before lint and package. |
+| input   | `lint_values`  | string  | no       | `''`                        | Values file for `helm lint`, relative to `chart_path` (e.g. `ci/minimal-values.yaml`); needed by charts whose schema requires values. Missing file = error. Packaging does not use values. |
 | input   | `runs_on`      | string  | no       | `'["self-hosted","Linux"]'` | JSON-encoded array of runner labels. |
 | input | `timeout_minutes` | number | no | `10` | Job timeout in minutes (since v4.31.0). |
 | input   | `ref`          | string  | no       | `''`                        | Git ref (tag/branch/SHA) to check out before packaging. Callers whose release job creates the version-bump commit and tag in the same run (release-please) must pass the released tag here; empty keeps the default event-SHA checkout. |
+
+---
+
+### `helm-render.yml`
+
+| Kind  | Name                  | Type   | Required | Default                                                          | Description |
+|-------|-----------------------|--------|----------|------------------------------------------------------------------|-------------|
+| input | `chart_path`          | string | **yes**  | —                                                                | Directory containing `Chart.yaml`. |
+| input | `values_dir`          | string | **yes**  | —                                                                | Directory with example values files (`*.yaml`, `*.yml`); the chart is rendered once per file. |
+| input | `kube_version`        | string | no       | `'1.31.0'`                                                       | Kubernetes version passed to `helm template --kube-version`. |
+| input | `api_versions`        | string | no       | `'monitoring.coreos.com/v1,gateway.networking.k8s.io/v1,cilium.io/v2,gateway.networking.k8s.io/v1/HTTPRoute,monitoring.coreos.com/v1/ServiceMonitor,cilium.io/v2/CiliumNetworkPolicy'` | Comma-separated API versions passed as one `--api-versions` each (CRDs the chart may render). |
+| input | `helm_version`        | string | no       | `'v3.16.3'`                                                      | Helm CLI version. |
+| input | `kubeconform_version` | string | no       | `'v0.8.0'`                                                       | kubeconform version (with or without leading `v`). |
+| input | `dyff_version`        | string | no       | `'1.12.0'`                                                       | dyff version (with or without leading `v`). |
+| input | `runs_on`             | string | no       | `'["self-hosted","Linux"]'`                                      | JSON-encoded array of runner labels. |
+| output | `validate_outcome` | — | — | — | Outcome (`success`/`failure`/`skipped`) of the render + kubeconform step; empty when the step was never reached. Distinguishes "the gate rejected" from "crashed before". |
+| output | `invalid_files` | — | — | — | Number of values files whose render has schema violations (kubeconform `Invalid`) or renders no document; missing schemas and other kubeconform errors do not count. Written before the step fails; empty when the step aborted before the loop. |
 
 ---
 
@@ -287,6 +306,8 @@ Runs `dart format --set-exit-if-changed` + `flutter analyze`.
 | input | `helm_version`      | string  | no       | `'v3.16.3'`                 | Helm CLI version. |
 | input | `ct_version`        | string  | no       | `'v3.11.0'`                 | chart-testing (`ct`) version. |
 | input | `unittest`          | boolean | no       | `false`                     | Run helm-unittest (`tests/*_test.yaml` in each chart) after linting. |
+| input | `dependency_build`  | boolean | no       | `false`                     | Runs `helm dependency build` for every detected chart before lint and unittest. |
+| input | `lint_values`       | string  | no       | `''`                        | Values file for `helm lint`, relative to each chart directory (e.g. `ci/minimal-values.yaml`); needed by charts whose schema requires values. Missing in a chart = error. A file under `ci/*-values.yaml` is also read by `ct lint`. |
 
 ---
 
@@ -469,7 +490,7 @@ Runs `flutter test --coverage` and enforces a line-coverage threshold.
 | input | `working_directory`     | string | no       | `'.'`                             | Crate root directory. |
 | input | `rust_toolchain`        | string | no       | `''`                              | rustup toolchain. Empty → rustup defaults. |
 | input | `coverage_threshold`    | number | no       | `80`                              | Minimum line coverage percentage (integer 0-100). |
-| input | `cargo_llvm_cov_version`| string | no       | `'0.6.16'`                        | cargo-llvm-cov release version (bare semver — `taiki-e/install-action` rejects a leading `v`). |
+| input | `cargo_llvm_cov_version`| string | no       | `'0.9.1'`                         | cargo-llvm-cov release version (bare semver — `taiki-e/install-action` rejects a leading `v`). |
 | input | `timeout_minutes`       | number | no       | `30`                              | Job timeout in minutes. |
 
 ---

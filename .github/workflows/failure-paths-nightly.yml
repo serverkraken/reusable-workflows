@@ -142,6 +142,30 @@ jobs:
           fi
           echo "lint-helm-unittest-fail: correctly observed failure"
 
+  # lint_values fehlt: das Schema verlangt `image`, helm lint ohne Werte-Datei
+  # muss scheitern (Gegenprobe zu lint-helm-lint-values in self-ci.yml).
+  test-lint-helm-no-lint-values:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      working_directory: tests/fixtures
+      charts_dir: helm-required-values
+
+  assert-lint-helm-no-lint-values:
+    needs: test-lint-helm-no-lint-values
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert lint job failed
+        env:
+          RESULT: ${{ needs.test-lint-helm-no-lint-values.result }}
+        run: |
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected lint job to fail without lint_values, got: $RESULT"
+            exit 1
+          fi
+          echo "lint-helm-no-lint-values: correctly observed failure"
+
   # ----- lint-python: fail-path -----
   test-lint-python-fail:
     uses: ./.github/workflows/lint-python.yml
@@ -478,6 +502,10 @@ jobs:
     uses: ./.github/workflows/lint-flutter.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app-codegen
       use_build_runner: false
@@ -963,6 +991,49 @@ jobs:
           fi
           echo "helm-publish correctly failed for broken Chart.yaml"
 
+  # ----- helm-render: fail-path -----
+  # Die Beispiel-Values rendern eine HTTPRoute mit `spec.hostnames: 42`.
+  # kubeconform -strict (ohne -ignore-missing-schemas) lehnt das gegen das
+  # CRD-Schema ab → Atom endet mit failure.
+  test-helm-render-broken:
+    uses: ./.github/workflows/helm-render.yml
+    secrets: inherit
+    with:
+      chart_path: tests/fixtures/helm-render-broken
+      values_dir: tests/fixtures/helm-render-broken/examples
+
+  assert-helm-render-broken:
+    needs: test-helm-render-broken
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify atom failed as expected
+        env:
+          RESULT: ${{ needs.test-helm-render-broken.result }}
+          VALIDATE: ${{ needs.test-helm-render-broken.outputs.validate_outcome }}
+          INVALID: ${{ needs.test-helm-render-broken.outputs.invalid_files }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [[ "$RESULT" != "failure" ]]; then
+            echo "::error::expected helm-render to fail for HTTPRoute with hostnames: 42, got result=$RESULT" >&2
+            fail=1
+          fi
+          # `result == failure` allein wuerde auch einen gescheiterten
+          # Download, eine falsche Pruefsumme oder einen Netzfehler als "das
+          # Gate greift" melden. Der Validate-Schritt muss selbst gescheitert
+          # sein, und kubeconform muss mindestens eine Datei abgelehnt haben.
+          if [[ "$VALIDATE" != "failure" ]]; then
+            echo "::error::validate_outcome='${VALIDATE}' statt 'failure' — der Lauf ist vor der Validierung gescheitert, die Ablehnung ist unbewiesen" >&2
+            fail=1
+          fi
+          if ! [[ "$INVALID" =~ ^[0-9]+$ ]] || (( INVALID < 1 )); then
+            echo "::error::invalid_files='${INVALID}' statt >= 1 — kubeconform hat keine Datei abgelehnt" >&2
+            fail=1
+          fi
+          [[ "$fail" == "0" ]] || exit 1
+          echo "helm-render correctly failed for invalid HTTPRoute"
+
   # ----- kube-validate: fail-path -----
   # Invalid manifest (additional property under a known schema) → kubeconform
   # -strict rejects → atom exits non-zero.
@@ -1260,6 +1331,10 @@ jobs:
     uses: ./.github/workflows/build-flutter-android.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       working_directory: tests/fixtures/flutter-app
       use_build_runner: false
       flavor: nonexistent
@@ -1333,6 +1408,7 @@ jobs:
       - assert-lint-helm-fail
       - assert-lint-helm-unittest-fail
       - assert-lint-helm-unittest-empty
+      - assert-lint-helm-no-lint-values
       - assert-trivy-fs-gate-fail
       - assert-trivy-image-gate-fail
       - assert-cleanup-images-destructive
@@ -1350,6 +1426,7 @@ jobs:
       - assert-docker-build-multi-fail
       - assert-goreleaser-fail
       - assert-helm-publish-fail
+      - assert-helm-render-broken
       - assert-kube-validate-fail
       - assert-kube-lint-fail
       - assert-tofu-validate-fail

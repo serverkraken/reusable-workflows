@@ -83,6 +83,39 @@ jobs:
       charts_dir: helm-unittest
       unittest: true
 
+  # Chart mit OCI-Abhaengigkeit: ohne `dependency_build` bricht unittest ab.
+  lint-helm-oci-dep:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
+      working_directory: tests/fixtures
+      charts_dir: helm-oci-dep
+      unittest: true
+      dependency_build: true
+
+  # Chart, dessen Schema `image` verlangt: ohne Werte-Datei scheitert helm lint.
+  lint-helm-lint-values:
+    uses: ./.github/workflows/lint-helm.yml
+    secrets: inherit
+    with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
+      working_directory: tests/fixtures
+      charts_dir: helm-required-values
+      lint_values: ci/minimal-values.yaml
+
+  # ----- helm-render: happy. Render + kubeconform gegen die CRD-Schemata. -----
+  helm-render-ok:
+    uses: ./.github/workflows/helm-render.yml
+    secrets: inherit
+    with:
+      # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
+      runs_on: '["ubuntu-latest"]'
+      chart_path: tests/fixtures/helm-render
+      values_dir: tests/fixtures/helm-render/examples
+
   # ----- version-badges: render badges + README block for a three-package
   #       fixture without committing; the assert job checks the outputs.
   version-badges-happy:
@@ -881,6 +914,10 @@ jobs:
     uses: ./.github/workflows/lint-flutter.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
@@ -906,6 +943,10 @@ jobs:
     uses: ./.github/workflows/lint-flutter.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app-codegen
@@ -914,6 +955,10 @@ jobs:
     uses: ./.github/workflows/test-flutter.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
@@ -925,6 +970,10 @@ jobs:
     uses: ./.github/workflows/build-flutter-android.yml
     secrets: inherit
     with:
+      # Bewusst fest: Flutter 3.50.0 (2026-11-11) bricht die Fixture
+      # (material.dart deprecated, Gradle >= 9.3.1). Wieder entfernen, sobald
+      # tests/fixtures/flutter-app* auf 3.50 migriert ist.
+      flutter_version: '3.47.9'
       # GitHub-hosted: PR-Pfad, siehe nightly-runner-parity.yml
       runs_on: '["ubuntu-latest"]'
       working_directory: tests/fixtures/flutter-app
@@ -942,6 +991,9 @@ jobs:
       - test-go-self
       - lint-helm-happy
       - lint-helm-unittest-happy
+      - lint-helm-oci-dep
+      - lint-helm-lint-values
+      - helm-render-ok
       - version-badges-happy
       - assert-version-badges
       - lint-python-poetry-happy

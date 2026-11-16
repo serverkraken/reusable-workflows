@@ -1,0 +1,13 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-fixture
+spec:
+  parentRefs:
+    - name: gateway
+  hostnames:
+    - {{ .Values.hostname | quote }}
+  rules:
+    - backendRefs:
+        - name: {{ .Release.Name }}-backend
+          port: 80

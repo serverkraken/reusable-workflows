@@ -369,8 +369,10 @@ Per-language lint and test atoms callable via `workflow_call`. Each atom accepts
 | `test-python.yml`     | pytest + coverage gate ≥ 80 % (poetry/uv/pip auto) |
 | `lint-rust.yml`       | `cargo fmt --check` + `cargo clippy -D warnings`   |
 | `test-rust.yml`       | `cargo test` + `cargo-llvm-cov` coverage gate      |
-| `lint-helm.yml`       | `helm lint` + `ct lint`                            |
+| `lint-helm.yml`       | `helm lint` + `ct lint` (`dependency_build: true` baut vorher die Chart-Abhängigkeiten, z. B. OCI-Library-Charts; `lint_values: ci/minimal-values.yaml` gibt `helm lint` eine Werte-Datei je Chart, wenn das Schema Werte verlangt, und dient unter `ci/` auch `ct lint`) |
 | `e2e-kind.yml`        | Consumer-owned kind e2e script; diagnostics artifact on failure; guaranteed cluster cleanup |
+| `helm-publish.yml`    | `helm lint` + `helm package` + OCI push (`dependency_build: true` baut vorher die Chart-Abhängigkeiten, z. B. OCI-Library-Charts; `lint_values` gibt `helm lint` eine Werte-Datei, wenn das Schema Werte verlangt) |
+| `helm-render.yml`     | `helm template` je Beispiel-Values-Datei + kubeconform `-strict` gegen CRD-Schemata (kein `-ignore-missing-schemas`); dyff-Vergleich zum Basisstand nur in der Job-Zusammenfassung |
 | `version-badges.yml`  | Static SVG version badges + Component/Version/Tag table from the release-please manifest, committed to the repo (no external services) |
 
 The test atoms expose a `coverage_threshold` input (default `80`) so consumers can tighten or loosen the gate per repo. The Python atoms reuse the `actions/setup-python-deps` composite to auto-detect Poetry / uv / pip-bare project layouts.
@@ -390,7 +392,7 @@ The rendered `ci.yml` (and `prerelease.yml`) in every onboarded adopter pulls a 
 | `SK_RUST_TOOLCHAIN` | `rust_toolchain` | lint-rust, test-rust | (rustup default) | string |
 | `SK_GOLANGCI_LINT_VERSION` | `golangci_lint_version` | lint-go | `v2.12.2` | string |
 | `SK_CLIPPY_ARGS` | `clippy_args` | lint-rust | `-D warnings` | string |
-| `SK_CARGO_LLVM_COV_VERSION` | `cargo_llvm_cov_version` | test-rust | `0.6.16` | string |
+| `SK_CARGO_LLVM_COV_VERSION` | `cargo_llvm_cov_version` | test-rust | `0.9.1`  | string |
 | `SK_SIGN` | `sign` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
 | `SK_ATTEST` | `attest` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |
 | `SK_SBOM` | `sbom` | docker-build, docker-build-multi (release + prerelease) | `true` | boolean |

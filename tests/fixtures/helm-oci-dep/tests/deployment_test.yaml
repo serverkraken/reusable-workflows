@@ -1,0 +1,11 @@
+suite: deployment
+templates:
+  - common.yaml
+tests:
+  - it: rendert das Deployment
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isKind:
+          of: Deployment
