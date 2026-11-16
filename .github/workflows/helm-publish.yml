@@ -40,6 +40,11 @@ on:
         required: false
         type: boolean
         default: false
+      dependency_build:
+        description: 'Runs `helm dependency build` for the chart before lint and package.'
+        required: false
+        type: boolean
+        default: false
       runs_on:
         required: false
         type: string
@@ -136,6 +141,16 @@ jobs:
         with:
           version: ${{ inputs.helm_version }}
 
+      - name: helm dependency build
+        id: dep_build
+        if: inputs.dependency_build
+        env:
+          CHART_PATH: ${{ inputs.chart_path }}
+        # Ohne gebaute Abhaengigkeiten scheitern lint und package bei jedem
+        # Chart mit `dependencies:` mit "found in Chart.yaml, but missing in
+        # charts/ directory".
+        run: helm dependency build "$CHART_PATH"
+
       - name: helm lint
         env:
           CHART_PATH: ${{ inputs.chart_path }}
@@ -184,7 +199,17 @@ jobs:
           FILE: ${{ steps.pkg.outputs.file }}
           REG: ${{ inputs.oci_registry }}
           HELM_VERSION: ${{ inputs.helm_version }}
+          DEP_BUILD_OUTCOME: ${{ steps.dep_build.outcome }}
+          DEP_BUILD_REQUESTED: ${{ inputs.dependency_build }}
         run: |
+          glyph() {
+            case "$1" in
+              success) echo "✓" ;;
+              failure) echo "✗" ;;
+              skipped) echo "−" ;;
+              *)       echo "?" ;;
+            esac
+          }
           # Derive chart name + version from the packaged filename:
           # /tmp/charts/<name>-<version>.tgz → name, version
           base=$(basename "${FILE:-}" .tgz)
@@ -205,6 +230,9 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|---|---|"
+            if [[ "$DEP_BUILD_REQUESTED" == "true" ]]; then
+              echo "| helm dependency build | $(glyph "$DEP_BUILD_OUTCOME") |"
+            fi
             echo "| Chart | \`${CHART_NAME:-<unknown>}\` |"
             echo "| Version | \`${CHART_VERSION:-<unknown>}\` |"
             echo "| OCI Ref | \`${oci_ref}\` |"

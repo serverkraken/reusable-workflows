@@ -1,0 +1,384 @@
+# .github/workflows/helm-render.yml
+# Reusable workflow: rendert ein Helm-Chart mit je einer Beispiel-Values-Datei,
+# validiert das Ergebnis mit kubeconform gegen die CRD-Schemata und zeigt den
+# Unterschied des Renders zum Basisstand (dyff, nur zur Information).
+# Summary convention: docs/conventions/step-summary.md
+name: helm-render
+on:
+  workflow_call:
+    inputs:
+      chart_path:
+        description: 'Directory containing Chart.yaml.'
+        required: true
+        type: string
+      values_dir:
+        description: 'Directory with example values files (*.yaml, *.yml); the chart is rendered once per file.'
+        required: true
+        type: string
+      kube_version:
+        description: 'Kubernetes version passed to `helm template --kube-version`.'
+        required: false
+        type: string
+        default: '1.31.0'
+      api_versions:
+        description: 'Comma-separated API versions passed as one `--api-versions` each (CRDs the chart may render).'
+        required: false
+        type: string
+        default: 'monitoring.coreos.com/v1,gateway.networking.k8s.io/v1,cilium.io/v2,gateway.networking.k8s.io/v1/HTTPRoute,monitoring.coreos.com/v1/ServiceMonitor,cilium.io/v2/CiliumNetworkPolicy'
+      # renovate: datasource=github-releases depName=helm/helm
+      helm_version:
+        description: 'Helm CLI version.'
+        required: false
+        type: string
+        default: 'v3.16.3'
+      # renovate: datasource=github-releases depName=yannh/kubeconform
+      kubeconform_version:
+        description: 'kubeconform version (with or without leading v).'
+        required: false
+        type: string
+        default: 'v0.8.0'
+      # renovate: datasource=github-releases depName=homeport/dyff
+      dyff_version:
+        description: 'dyff version (with or without leading v).'
+        required: false
+        type: string
+        default: '1.12.0'
+      runs_on:
+        description: 'JSON-encoded array of runner labels.'
+        required: false
+        type: string
+        default: '["self-hosted","Linux"]'
+    outputs:
+      validate_outcome:
+        description: >-
+          Outcome (`success`/`failure`/`skipped`) of the render + kubeconform
+          step. Leer, wenn der Schritt gar nicht erreicht wurde. Damit laesst
+          sich "das Gate hat abgelehnt" von "vorher abgestuerzt" unterscheiden.
+        value: ${{ jobs.render.outputs.validate_outcome }}
+      invalid_files:
+        description: >-
+          Number of values files whose render has schema violations (kubeconform
+          Invalid) or renders no document at all, gesetzt BEVOR der Schritt
+          mit Fehler endet. Fehlende Schemas und sonstige kubeconform-Fehler
+          zaehlen nicht mit. Leer, wenn der Schritt vor der Schleife abbrach.
+        value: ${{ jobs.render.outputs.invalid_files }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: helm-render-${{ github.workflow }}-${{ github.ref }}-${{ inputs.chart_path }}-${{ inputs.values_dir }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  render:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    timeout-minutes: 15
+    outputs:
+      validate_outcome: ${{ steps.validate.outcome }}
+      invalid_files: ${{ steps.validate.outputs.invalid_files }}
+    steps:
+      # Ein leeres runs_on faellt NICHT von selbst auf. GitHub plant den Job
+      # dann auf irgendeinem Runner der Default-Gruppe ein und laesst ihn
+      # arbeiten. `fromJSON` oben faengt nur KAPUTTES JSON ab — `[]` ist
+      # gueltiges JSON und kommt hier an.
+      # Hintergrund und der gemessene Lauf: tests/conventions/check-runs-on-guard.py
+      - name: Reject an empty runs_on
+        # Fest auf den Workspace: der Waechter laeuft VOR dem Checkout, und ein
+        # Job-Ebene `defaults.run.working-directory` zeigt auf ein Verzeichnis,
+        # das es dann noch nicht gibt (gemessen an Lauf 33062297620).
+        working-directory: ${{ github.workspace }}
+        env:
+          RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          set -euo pipefail
+          trimmed="${RUNS_ON//[[:space:]]/}"
+          if [[ "$trimmed" != "["*"]" || ! "$trimmed" =~ [A-Za-z0-9] ]]; then
+            echo "::error::runs_on must be a non-empty JSON array of runner labels, got: ${RUNS_ON}" >&2
+            echo "::error::an empty array does NOT fail the job — GitHub schedules it on any runner in the default group" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0   # der Vergleich braucht den Basisstand
+
+      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
+        with:
+          version: ${{ inputs.helm_version }}
+
+      # Fremde Binaer-Releases: Version ist ein Input (Renovate-Marker oben),
+      # die Pruefsumme kommt aus den Checksums desselben Releases. Eine
+      # abweichende Summe bricht den Job ab, bevor etwas ausgefuehrt wird.
+      - name: Install kubeconform and dyff
+        id: install
+        env:
+          KUBECONFORM_VERSION: ${{ inputs.kubeconform_version }}
+          DYFF_VERSION: ${{ inputs.dyff_version }}
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) A=amd64 ;;
+            aarch64|arm64) A=arm64 ;;
+            *) echo "::error::unsupported arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          KC="${KUBECONFORM_VERSION#v}"
+          DY="${DYFF_VERSION#v}"
+          BIN="$RUNNER_TEMP/helm-render-bin"
+          TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+          mkdir -p "$BIN"
+
+          # verify <checksums-file> <asset>: genau die Zeile des Assets pruefen.
+          verify() {
+            local sums="$1" asset="$2" line
+            line="$(awk -v a="$asset" '$2 == a || $2 == "*" a { print $1 "  " a }' "$sums")"
+            if [[ -z "$line" ]]; then
+              echo "::error::no checksum for $asset in $(basename "$sums")" >&2
+              return 1
+            fi
+            (cd "$TMP" && printf '%s\n' "$line" | sha256sum -c -)
+          }
+
+          KC_ASSET="kubeconform-linux-${A}.tar.gz"
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v${KC}/${KC_ASSET}" -o "$TMP/$KC_ASSET"
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v${KC}/CHECKSUMS" -o "$TMP/kc.sums"
+          verify "$TMP/kc.sums" "$KC_ASSET"
+          tar -xzf "$TMP/$KC_ASSET" -C "$BIN" kubeconform
+
+          DY_ASSET="dyff_${DY}_linux_${A}.tar.gz"
+          curl -fsSL "https://github.com/homeport/dyff/releases/download/v${DY}/${DY_ASSET}" -o "$TMP/$DY_ASSET"
+          curl -fsSL "https://github.com/homeport/dyff/releases/download/v${DY}/checksums.txt" -o "$TMP/dy.sums"
+          verify "$TMP/dy.sums" "$DY_ASSET"
+          tar -xzf "$TMP/$DY_ASSET" -C "$BIN" dyff
+
+          echo "$BIN" >> "$GITHUB_PATH"
+          "$BIN/kubeconform" -v
+          "$BIN/dyff" version
+
+      - name: helm dependency build
+        env:
+          CHART_PATH: ${{ inputs.chart_path }}
+        run: |
+          set -euo pipefail
+          CHART_PATH="${CHART_PATH%/}"
+          # Ohne `dependencies:` im Chart ist das ein harmloser No-op.
+          helm dependency build "$CHART_PATH"
+
+      - name: Render and validate (kubeconform)
+        id: validate
+        env:
+          CHART_PATH: ${{ inputs.chart_path }}
+          VALUES_DIR: ${{ inputs.values_dir }}
+          KUBE_VERSION: ${{ inputs.kube_version }}
+          API_VERSIONS: ${{ inputs.api_versions }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          CHART_PATH="${CHART_PATH%/}"
+          VALUES_DIR="${VALUES_DIR%/}"
+          OUT="$RUNNER_TEMP/helm-render/head"
+          rm -rf "$OUT" && mkdir -p "$OUT"
+
+          api_args=()
+          IFS=',' read -r -a apis <<<"$API_VERSIONS"
+          for a in "${apis[@]}"; do
+            a="${a//[[:space:]]/}"
+            [[ -n "$a" ]] && api_args+=(--api-versions "$a")
+          done
+
+          files=("$VALUES_DIR"/*.yaml "$VALUES_DIR"/*.yml)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error::no *.yaml / *.yml values files in $VALUES_DIR — nothing to render" >&2
+            exit 1
+          fi
+
+          # Kein -ignore-missing-schemas: ein Kind ohne Schema ist ein Fehler,
+          # sonst prueft kubeconform gerade die CRDs nicht, wegen derer es hier
+          # steht. `{{.Group}}` & Co. sind kubeconform-Syntax, keine Expression.
+          # `invalid` zaehlt nur Renders mit Schema-Verstoessen (kubeconform
+          # `Invalid`) und Renders ohne Dokument; fehlende Schemas, Netzfehler
+          # & Co. lassen den Schritt scheitern, zaehlen aber nicht mit.
+          failed=0
+          invalid=0
+          for f in "${files[@]}"; do
+            # Zeilenumbrueche im Dateinamen wuerden eigene Workflow-Befehle
+            # (`::group::`, `::error::`) einschleusen.
+            base="$(basename "$f")"
+            base="${base//[$'\r\n']/}"
+            fsafe="${f//[$'\r\n']/}"
+            echo "::group::$base"
+            if ! helm template ci "$CHART_PATH" -f "$f" --kube-version "$KUBE_VERSION" \
+                  "${api_args[@]}" > "$OUT/$base.rendered"; then
+              echo "::error::helm template failed for $fsafe" >&2
+              failed=1
+            else
+              rc=0
+              kubeconform -strict -summary -kubernetes-version "$KUBE_VERSION" \
+                -schema-location default \
+                -schema-location 'https://kubernetes-schemas.pages.dev/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+                < "$OUT/$base.rendered" | tee "$OUT/$base.kubeconform" || rc=$?
+              found="" inv=""
+              sumline="$(sed -n 's/^Summary: //p' "$OUT/$base.kubeconform" | tail -n 1)"
+              [[ "$sumline" =~ ^([0-9]+)\ resource ]] && found="${BASH_REMATCH[1]}"
+              [[ "$sumline" =~ Invalid:\ ([0-9]+) ]] && inv="${BASH_REMATCH[1]}"
+              if [[ -z "$found" || -z "$inv" ]]; then
+                echo "::error::kubeconform gave no readable summary for $fsafe (exit $rc)" >&2
+                failed=1
+              elif (( found == 0 )); then
+                echo "::error::the render of $fsafe contains no document — nothing was validated" >&2
+                failed=1
+                invalid=$((invalid + 1))
+              elif (( inv > 0 )); then
+                echo "::error::kubeconform found schema violations in the render of $fsafe" >&2
+                failed=1
+                invalid=$((invalid + 1))
+              elif (( rc != 0 )); then
+                echo "::error::kubeconform could not validate the render of $fsafe (exit $rc, e.g. schema not found)" >&2
+                failed=1
+              fi
+            fi
+            echo "::endgroup::"
+          done
+          # Vor dem Exit schreiben: der Aufrufer liest die Zahl auch dann,
+          # wenn dieser Schritt gleich fehlschlaegt.
+          echo "invalid_files=$invalid" >> "$GITHUB_OUTPUT"
+          exit "$failed"
+
+      # Rein informativ: scheitert hier etwas, bleibt der Job gruen. Der
+      # Basisstand ist `github.base_ref` im PR, sonst `main` (als Schritt statt
+      # als Input-Default: Defaults duerfen keine Expressions sein).
+      - name: Diff against base (dyff, informational)
+        id: diff
+        if: always() && steps.validate.outcome != 'skipped'
+        env:
+          CHART_PATH: ${{ inputs.chart_path }}
+          VALUES_DIR: ${{ inputs.values_dir }}
+          KUBE_VERSION: ${{ inputs.kube_version }}
+          API_VERSIONS: ${{ inputs.api_versions }}
+          PR_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          CHART_PATH="${CHART_PATH%/}"
+          VALUES_DIR="${VALUES_DIR%/}"
+          BASE_REF="${PR_BASE_REF:-main}"
+          HEAD_OUT="$RUNNER_TEMP/helm-render/head"
+          BASE_OUT="$RUNNER_TEMP/helm-render/base"
+          BASE_TREE="$RUNNER_TEMP/helm-render/base-tree"
+          rm -rf "$BASE_OUT" "$BASE_TREE" && mkdir -p "$BASE_OUT"
+          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
+
+          # Der Vergleich landet in einer Datei; der Summary-Schritt haengt sie
+          # NACH dem Kopfblock an (Convention: `## helm-render` steht oben).
+          DIFF_MD="$RUNNER_TEMP/helm-render/diff.md"
+          : > "$DIFF_MD"
+          summary() { printf '%s\n' "$@" >> "$DIFF_MD"; }
+
+          ref="origin/$BASE_REF"
+          git rev-parse --verify --quiet "$ref^{commit}" >/dev/null || ref="$BASE_REF"
+          if ! git rev-parse --verify --quiet "$ref^{commit}" >/dev/null \
+             || ! git cat-file -e "$ref:$CHART_PATH/Chart.yaml" 2>/dev/null; then
+            echo "kein Basisstand: $CHART_PATH existiert auf $BASE_REF nicht"
+            echo "has_base=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "has_base=true" >> "$GITHUB_OUTPUT"
+
+          git worktree add --detach "$BASE_TREE" "$ref" >/dev/null 2>&1 || {
+            echo "::warning::git worktree add failed for $ref — diff skipped"
+            echo "has_base=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          trap 'git worktree remove --force "$BASE_TREE" >/dev/null 2>&1 || true' EXIT
+
+          api_args=()
+          IFS=',' read -r -a apis <<<"$API_VERSIONS"
+          for a in "${apis[@]}"; do
+            a="${a//[[:space:]]/}"
+            [[ -n "$a" ]] && api_args+=(--api-versions "$a")
+          done
+          helm dependency build "$BASE_TREE/$CHART_PATH" >/dev/null 2>&1 || true
+
+          summary "### Render-Vergleich gegen \`$BASE_REF\`" ""
+          # Obergrenze je Diff: eine Step-Summary darf insgesamt nur 1 MiB haben.
+          max_bytes=200000
+          for f in "$VALUES_DIR"/*.yaml "$VALUES_DIR"/*.yml; do
+            name="$(basename "$f")"
+            name="${name//[$'\r\n']/}"
+            [[ -f "$HEAD_OUT/$name.rendered" ]] || continue
+            if ! helm template ci "$BASE_TREE/$CHART_PATH" -f "$f" --kube-version "$KUBE_VERSION" \
+                  "${api_args[@]}" > "$BASE_OUT/$name.rendered" 2>"$BASE_OUT/$name.err"; then
+              summary "**$name:** Basisstand lässt sich mit diesen Values nicht rendern, kein Vergleich" ""
+              continue
+            fi
+            # dyff-Fehler (Exit != 0) getrennt von einem echten Unterschied
+            # melden; ohne --set-exit-code beendet dyff Unterschiede mit 0.
+            dyff_rc=0
+            d="$(dyff between --omit-header --color off "$BASE_OUT/$name.rendered" "$HEAD_OUT/$name.rendered" 2>&1)" || dyff_rc=$?
+            if (( dyff_rc != 0 )); then
+              echo "::warning::dyff failed for $name (exit $dyff_rc) — diff skipped"
+              summary "**$name:** dyff ist mit Fehler beendet (Exit $dyff_rc), kein Vergleich" ""
+            elif [[ -z "$d" ]]; then
+              summary "**$name:** keine Änderung" ""
+            else
+              total="$(printf '%s' "$d" | wc -c | tr -d '[:space:]')"
+              note=""
+              if (( total > max_bytes )); then
+                d="$(printf '%s' "$d" | head -c "$max_bytes")"
+                note="_Der Vergleich ist auf ${max_bytes} Bytes gekürzt (insgesamt ${total} Bytes)._"
+              fi
+              # Vier Backticks: ein Diff mit ``` darf den Block nicht beenden.
+              summary "**$name:**" "" '````diff' "$d" '````' ""
+              [[ -z "$note" ]] || summary "$note" ""
+            fi
+          done
+          exit 0
+
+      - name: Summary
+        if: always()
+        env:
+          CHART_PATH: ${{ inputs.chart_path }}
+          VALUES_DIR: ${{ inputs.values_dir }}
+          KUBE_VERSION: ${{ inputs.kube_version }}
+          KUBECONFORM_VERSION: ${{ inputs.kubeconform_version }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          DIFF_OUTCOME: ${{ steps.diff.outcome }}
+          HAS_BASE: ${{ steps.diff.outputs.has_base }}
+        run: |
+          CHART_PATH="${CHART_PATH%/}"
+          VALUES_DIR="${VALUES_DIR%/}"
+          DIFF_MD="$RUNNER_TEMP/helm-render/diff.md"
+          glyph() {
+            case "$1" in
+              success) echo "✓" ;;
+              failure) echo "✗" ;;
+              skipped) echo "−" ;;
+              *)       echo "?" ;;
+            esac
+          }
+          ok=1
+          [[ "$INSTALL_OUTCOME" == "success" ]] || ok=0
+          [[ "$VALIDATE_OUTCOME" == "success" ]] || ok=0
+          if (( ok == 1 )); then result="✓ passed"; else result="✗ failed"; fi
+          base="kein Basisstand"
+          [[ "$HAS_BASE" == "true" ]] && base="verglichen (informativ)"
+          {
+            echo "## helm-render"
+            echo ""
+            echo "**Tools:** helm template, kubeconform ${KUBECONFORM_VERSION}, dyff"
+            echo "**Chart:** \`${CHART_PATH}\`"
+            echo "**Values dir:** \`${VALUES_DIR}\`"
+            echo "**Kubernetes:** \`${KUBE_VERSION}\`"
+            echo "**Result:** ${result}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|---|---|"
+            echo "| install kubeconform + dyff | $(glyph "$INSTALL_OUTCOME") |"
+            echo "| render + kubeconform | $(glyph "$VALIDATE_OUTCOME") |"
+            echo "| diff gegen Basisstand | $(glyph "$DIFF_OUTCOME") ${base} |"
+            echo ""
+            if [[ "$HAS_BASE" == "true" && -s "$DIFF_MD" ]]; then
+              cat "$DIFF_MD"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY" || true

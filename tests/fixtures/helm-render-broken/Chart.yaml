@@ -1,0 +1,4 @@
+apiVersion: v2
+name: helm-render-broken-fixture
+version: 0.1.0
+type: application
