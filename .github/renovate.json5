@@ -47,6 +47,15 @@
       matchDepNames: ['kubernetes-sigs/kustomize'],
       extractVersion: '^kustomize/v(?<version>.+)$',
     },
+    {
+      // bats-core wird per Commit-SHA gepinnt (actions/install-bats). Renovate
+      // kann den Digest nur pflegen, wenn die Datasource ihn kennt und der
+      // Manager ihn als currentDigest greift; github-tags loest den
+      // annotierten Tag auf den Commit auf. Tag `v1.14.0`, Pin `1.14.0`.
+      description: 'bats-core tags with a leading v, the pin does not',
+      matchDepNames: ['bats-core/bats-core'],
+      extractVersion: '^v(?<version>.*)$',
+    },
   ],
   customManagers: [
     {
@@ -80,6 +89,21 @@
         // Form 2 — mehrzeilig: Input-Default einige Zeilen unter dem Marker.
         // `[\s\S]*?` ueberbrueckt description/required/type ohne dotall-Flag.
         '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)[^\\n]*\\n\\s*[a-z_]+_version:[\\s\\S]*?default:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
+      ],
+    },
+    {
+      // Variante mit Digest: Marker, darunter *_SHA (40 Hex) und *_VERSION.
+      // Der generische Manager greift diese Form nicht, weil bei ihm direkt
+      // unter dem Marker ein *_VERSION stehen muss. Version und Digest werden
+      // zusammen aktualisiert (ein PR). Ohne eigenen Eintrag hier waere die SHA
+      // ein stehender Pin, der nie nachzieht.
+      customType: 'regex',
+      fileMatch: [
+        '^\\.github/workflows/.+\\.ya?ml$',
+        '^actions/.+/action\\.ya?ml$',
+      ],
+      matchStrings: [
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)[^\\n]*\\n\\s*[A-Z_]+_SHA:\\s*[\'"]?(?<currentDigest>[0-9a-f]{40})[\'"]?\\s*\\n\\s*[A-Z_]+_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s',
       ],
     },
   ],

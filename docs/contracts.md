@@ -436,14 +436,53 @@ category, and two artifacts of the same name are equally ambiguous.
 
 ### `test-bats.yml`
 
-Führt bats-core-Suiten mit gepinntem bats aus (`actions/install-bats`, nie apt). Optional installiert es die Systempakete des Testobjekts (`apt_packages`, pinnbar als `name=version`), setzt `LC_ALL` und zählt die Tests aus dem JUnit-Bericht. Eine leere Pfadliste, ein nicht vorhandener Pfad und eine Suite ohne Tests sind Fehler, kein grüner Lauf. Aufrufer müssen `secrets: inherit` übergeben (Katalog-Checkout).
+Führt bats-core-Suiten mit gepinntem bats aus (`actions/install-bats`, nie apt). Optional installiert es die Systempakete des Testobjekts (`apt_packages`, pinnbar als `name=version`), setzt `LC_ALL` und zählt die Tests aus dem JUnit-Bericht. Eine leere Pfadliste, ein nicht vorhandener Pfad und eine Suite ohne Tests sind Fehler, kein grüner Lauf. Aufrufer müssen `secrets: inherit` übergeben (Katalog-Checkout). Der App-Token wird nur mit `contents: read` gemintet, und beide Checkouts laufen mit `persist-credentials: false`: im Workspace bleibt kein Token liegen, den Suite-Code (Adopter-Code) lesen könnte.
+
+**Fork-PRs haben keine Secrets**, der Token lässt sich dort nicht minten. Der Aufrufer schließt sie am Job aus:
+
+```yaml
+jobs:
+  bats:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: serverkraken/reusable-workflows/.github/workflows/test-bats.yml@v4
+    secrets: inherit
+    with:
+      paths: |-          # eine Zeile je Eintrag, Block-Scalar `|-`
+        tests/unit
+        tests/integration
+      recursive: true
+      apt_packages: tmux=3.4-1ubuntu0.1 zsh   # durch Leerraum getrennt
+```
+
+**Zwei Listenformate:** `paths` ist **zeilengetrennt** (ein Eintrag je Zeile, `|-`; Leerzeichen trennen nichts), `apt_packages` ist **durch Leerraum getrennt** (Leerzeichen oder Zeilen). Beide werden ohne Globbing zerlegt.
+
+**Exakte apt-Pins brechen.** `name=version` ist exakt: Ubuntu ersetzt die Version im Index, sobald ein Update erscheint, und die Installation schlägt dann fehl, statt still zu driften. Das ist gewollt (die Suite beweist etwas über genau diese Version), verlangt aber Pflege beim Aufrufer. Beispiel für einen Renovate-customManager mit `datasource=deb` im Aufruferrepo (`renovate.json5`):
+
+```json5
+customManagers: [{
+  customType: 'regex',
+  fileMatch: ['^\\.github/workflows/.+\\.ya?ml$'],
+  matchStrings: ['#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s+registryUrl=(?<registryUrl>\\S+)\\n\\s*[A-Z_]+_VERSION:\\s*[\'"]?(?<currentValue>\\S+?)[\'"]?\\s'],
+}]
+```
+
+```yaml
+env:
+  # renovate: datasource=deb depName=tmux registryUrl=https://archive.ubuntu.com/ubuntu?suite=noble-updates&components=main&binaryArch=amd64
+  TMUX_VERSION: 3.4-1ubuntu0.1
+```
+
+Der Workflow-Job übergibt dann `apt_packages: tmux=${{ env.TMUX_VERSION }}`.
+
+**Output `failure_reason`:** setzt das Atom, bevor es selbst abbricht (`invalid_formatter`, `invalid_locale`, `invalid_path`, `empty_paths`, `invalid_apt_package`, `invalid_env`, `path_missing`, `no_report`, `no_tests`); sonst leer, auch bei gewöhnlich roten Tests (dafür `tests_failed`). Damit lässt sich die beabsichtigte Ablehnung von einem Absturz an anderer Stelle unterscheiden; `failure-paths-nightly.yml` stützt sich darauf.
 
 | Kind   | Name                            | Type    | Required | Default                     | Description |
 |--------|---------------------------------|---------|----------|-----------------------------|-------------|
-| input  | `paths`                         | string  | **yes**  | —                           | Newline-separated bats test files or directories, relative to the repo root. Empty, a missing path or a suite without tests is an error. `.` (repo root) is rejected. |
+| input  | `paths`                         | string  | **yes**  | —                           | **Newline-separated** (one entry per line, `|-` block scalar) bats test files or directories, relative to the repo root. Empty, a missing path or a suite without tests is an error. `.` (repo root) is rejected. |
 | input  | `recursive`                     | boolean | no       | `false`                     | Pass `--recursive` so `.bats` files in subdirectories of a directory path are run too. |
-| input  | `bats_version`                  | string  | no       | `''`                        | Override bats-core version (empty → composite default). |
-| input  | `apt_packages`                  | string  | no       | `''`                        | Whitespace- or newline-separated apt packages the system under test needs. Pin with `name=version`; an unpinned entry is installed at the runner image's version and the run says so. Empty → nothing installed. |
+| input  | `bats_version`                  | string  | no       | `''`                        | Override bats-core version (empty → composite default, commit-pinned). A different version without `bats_sha` is fetched by tag and logs a warning. |
+| input  | `bats_sha`                      | string  | no       | `''`                        | Full 40-character commit SHA of the `bats_version` tag; pins an overridden version. Only valid together with `bats_version`. |
+| input  | `apt_packages`                  | string  | no       | `''`                        | **Whitespace-separated** (spaces or newlines) apt packages the system under test needs. Pin with `name=version` (exact; breaks when Ubuntu replaces the version, see above); an unpinned entry is installed at the runner image's version and the run says so. Empty → nothing installed. |
 | input  | `locale`                        | string  | no       | `'C.UTF-8'`                 | Value exported as `LC_ALL` for the test run. Empty → left as the runner has it. |
 | input  | `env`                           | string  | no       | `''`                        | Newline-separated `KEY=VALUE` pairs exported for the test run. `PATH`, `BASH_ENV`, `ENV`, `LD_*`, `GITHUB_*` and `RUNNER_*` are rejected. |
 | input  | `formatter`                     | string  | no       | `'tap'`                     | bats console formatter: `tap`, `tap13`, `pretty` or `junit`. The JUnit report used for the counts is written regardless. |
@@ -454,6 +493,7 @@ Führt bats-core-Suiten mit gepinntem bats aus (`actions/install-bats`, nie apt)
 | output | `tests_total`                   | string  | —        | —                           | Number of test cases bats ran (from its JUnit report); empty when no report was written. |
 | output | `tests_failed`                  | string  | —        | —                           | Number of failed test cases (failures + errors); empty when no report was written. |
 | output | `tests_skipped`                 | string  | —        | —                           | Number of skipped test cases; empty when no report was written. |
+| output | `failure_reason`                | string  | —        | —                           | Why the atom itself rejected the run (`empty_paths`, `path_missing`, `no_tests`, …); empty otherwise. |
 | secret | `release_please_app_client_id`  | —       | **yes**  | —                           | GitHub App Client ID with contents:read on the catalog repo. |
 | secret | `release_please_app_private_key`| —       | **yes**  | —                           | PEM private key for the GitHub App. |
 
@@ -982,12 +1022,15 @@ caller. A fork driving its own org has to change that constant.
 
 ### `actions/install-bats`
 
-bats-core wird aus dem Release-Archiv auf GitHub installiert (`install.sh` nach `$RUNNER_TEMP/bats`, `bin/` auf `$GITHUB_PATH`; kein sudo). bats-core veröffentlicht weder Release-Assets noch eine Prüfsummendatei; das Archiv ist daher nur über den gepinnten Versions-Tag und den Abgleich mit `bats --version` abgesichert, nicht über einen Digest.
+bats-core wird aus dem GitHub-Quellarchiv installiert (`install.sh` nach `$RUNNER_TEMP/bats`, `bin/` auf `$GITHUB_PATH`; kein sudo). bats-core veröffentlicht weder Release-Assets noch eine Prüfsummendatei. Der Standard ist deshalb auf den **Commit-SHA** des signierten, annotierten Tags `v1.14.0` gepinnt (`eb7f42f8…`); das Archiv wird als `archive/<sha>.tar.gz` geladen. Ein Tag lässt sich verschieben, ein Commit-SHA nicht: der Download ist an genau diesen Quellbaum gebunden. Der Abgleich mit `bats --version` ist **kein Integritätsnachweis** (das installierte Skript meldet, was es will), er fängt nur ein nicht zusammenpassendes Version/SHA-Paar. Renovate pflegt Version und SHA gemeinsam (eigener customManager mit `currentDigest` in `.github/renovate.json5`).
+
+Eine abweichende `version` **ohne** `sha` wird über den Tag geladen und mit `::warning::` gekennzeichnet; dieser Lauf ist nicht commit-gepinnt. Mit `sha` bleibt er es. `sha` ohne `version` ist ein Fehler.
 
 | Kind   | Name | Type | Required | Default | Description |
 |--------|------|------|----------|---------|-------------|
-| input | `version` | string | no | `''` | bats-core version (with or without leading v). Empty → pinned default. |
-| output | `version` | string | — | — | Installed bats-core version, as reported by `bats --version`. |
+| input | `version` | string | no | `''` | bats-core version (with or without leading v). Empty → pinned default (commit-pinned). A different version without `sha` is fetched by tag, with a warning. |
+| input | `sha` | string | no | `''` | Full 40-character commit SHA of the `version` tag. Only valid together with `version`. |
+| output | `version` | string | — | — | Installed bats-core version, as reported by `bats --version` (a consistency check, not an integrity proof). |
 | output | `path` | string | — | — | Directory holding the bats binary (also prepended to PATH). |
 
 ### `actions/setup-sk-workflows`
