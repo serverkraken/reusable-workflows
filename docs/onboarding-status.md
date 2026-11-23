@@ -57,7 +57,6 @@ This document tracks which `serverkraken/*` repositories have been onboarded to 
 | serverkraken/agent-image | 2026-11-23 | v4 | [PR](https://github.com/serverkraken/agent-image/pull/7) | — | add-open, no-legacy | — |
 | serverkraken/agent-job | 2026-11-23 | v4 | [PR](https://github.com/serverkraken/agent-job/pull/5) | — | add-open, no-legacy | — |
 | serverkraken/homelab-cloudflare | 2026-11-23 | v4 | [PR](https://github.com/serverkraken/homelab-cloudflare/pull/11) | — | add-open, no-legacy | — |
-| serverkraken/gewusel | 2026-11-02 | v4 | — | — | error (error / error) | — |
 | serverkraken/hadal | 2026-11-23 | v4 | [PR](https://github.com/serverkraken/hadal/pull/1) | — | add-open, no-legacy | — |
 | serverkraken/arena | 2026-11-23 | v4 | [PR](https://github.com/serverkraken/arena/pull/70) | — | add-open, no-legacy | — |
 | serverkraken/helm-chart-app | 2026-11-23 | v4 | [PR](https://github.com/serverkraken/helm-chart-app/pull/7) | — | add-open, no-legacy | — |
