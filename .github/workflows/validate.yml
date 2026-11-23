@@ -58,6 +58,8 @@ jobs:
         run: python3 tests/conventions/check-ref-fork-guard.py
       - name: Check for caller-controlled expressions in run bodies
         run: bash tests/conventions/check-run-interpolation.sh
+      - name: Check no symlink is tracked (breaks loading composite actions)
+        run: bash tests/conventions/check-no-symlinks.sh
       - name: Check every job is inside a required check
         run: bash tests/conventions/check-summary-coverage.sh
       - name: Check goldens do not freeze invalid rendered values

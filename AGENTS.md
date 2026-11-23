@@ -39,6 +39,7 @@ Zentraler, versionierter Katalog wiederverwendbarer GitHub-Actions-Workflows ("A
 | `check-scan-covers-build.py` | Jede gebaute Architektur wird auch gescannt |
 | `check-ref-fork-guard.py` | Checkout eines vom Aufrufer gelieferten `ref` hat einen Fork-Guard |
 | `check-run-interpolation.sh` | Kein `${{ }}` in `run:`-Bodies; Werte laufen über `env:` |
+| `check-no-symlinks.sh` | Kein getrackter Symlink: der Runner entpackt beim Laden einer Composite-Action das ganze Repo, ein Symlink bricht das ab (#458). Tests legen Symlinks zur Laufzeit an (`symlinks.txt` + `tests/shell/lib/materialize-symlinks.sh`) |
 | `check-summary-coverage.sh` | Jeder Job in `integration.yml`/`self-ci.yml` ist über `needs:` von `summary` erreichbar, sonst ist er dekorativ (Ausnahme nur mit `# summary-exempt: <Grund>`) |
 | `check-rendered-goldens.sh`, `check-template-scalar-quoting.py` | Goldens frieren keine ungültigen Werte ein; Profildaten in Templates sind gequotet |
 | `check-runs-on-guard.py` | Jeder Job mit `runs_on*`-Input lehnt leeren Wert als ersten Schritt ab |
