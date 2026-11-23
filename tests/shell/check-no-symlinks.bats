@@ -54,6 +54,23 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
+# Ohne -z quotet git solche Pfade als "fixtures/\303\244 b.sh" — die Annotation
+# traefe die Datei dann nicht.
+@test "nennt Pfade mit Umlaut und Leerzeichen roh, nicht C-gequotet" {
+  ln -s gibtsnicht.sh 'ä b.sh'
+  git add 'ä b.sh'
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"file=ä b.sh::"* ]]
+}
+
+@test "scheitert laut ausserhalb eines Git-Repos" {
+  rm -rf .git
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" != *"kein getrackter Symlink"* ]]
+}
+
 @test "meldet alle Links, nicht nur den ersten" {
   ln -s a.sh one.sh
   ln -s b.sh two.sh

@@ -27,7 +27,10 @@ cp -R "$src/." "$dest/"
 rm -f "$dest/symlinks.txt"
 
 count=0
-while read -r link target rest; do
+# `|| [[ -n … ]]`: ohne das ginge eine letzte Zeile ohne Newline still
+# verloren, waehrend Gos bufio.Scanner sie liest — die Engines saehen dann
+# verschiedene Fixtures.
+while read -r link target rest || [[ -n "${link:-}" ]]; do
   [[ -z "$link" || "$link" == \#* ]] && continue
   if [[ -z "$target" || -n "$rest" ]]; then
     echo "materialize-symlinks: ungueltige Zeile in $manifest: $link $target $rest" >&2

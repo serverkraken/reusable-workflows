@@ -109,6 +109,18 @@ teardown() {
   jq -e '[.comments[].code] | index(1091) == null' shellcheck.json
 }
 
+# Ein shellcheck, das mit 0 endet, aber nichts schreibt (kaputter Build,
+# falscher Wrapper im PATH), hat nichts geprueft. Stub statt echtem Binary.
+@test "rc 0 ohne Bericht ist ein Fehler, kein Nullbefund" {
+  mkdir -p "$WORK/bin"
+  printf '#!/bin/sh\nexit 0\n' > "$WORK/bin/shellcheck"
+  chmod +x "$WORK/bin/shellcheck"
+  printf 'clean.sh\n' > files.txt
+  PATH="$WORK/bin:$PATH" run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"without producing a report"* ]]
+}
+
 # Aufeinanderfolgende Laeufe im selben Workspace (self-hosted Pool): ein altes
 # shellcheck.rc mit 0 darf einen neuen fatalen Lauf nicht verdecken — und ein
 # alter fataler Status keinen neuen sauberen Lauf rot faerben.

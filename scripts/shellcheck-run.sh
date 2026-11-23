@@ -51,6 +51,9 @@ set -e
 
 cat shellcheck.err >&2 || true
 rc="$(sort -n shellcheck.rc | tail -1)"
+# Bewusst ungetestet: leer bleibt shellcheck.rc nur, wenn xargs den
+# `sh -c`-Wrapper gar nicht starten kann. Das laesst sich in bats nicht
+# ehrlich nachstellen. Der Zweig bleibt als letzte Verteidigung.
 if [[ -z "$rc" ]]; then
   echo "::error::shellcheck wurde gar nicht aufgerufen (xargs rc=${xargs_rc}) — es wurde nichts geprueft: $(tr -d '\n' < shellcheck.err)" >&2
   exit 1

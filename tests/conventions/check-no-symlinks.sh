@@ -22,12 +22,19 @@
 
 set -euo pipefail
 
-links=$(git ls-files -s | awk '$1 == "120000" { sub(/^[^\t]*\t/, ""); print }')
+# -z: Pfade roh statt C-gequotet, sonst traefe die Annotation bei Umlauten,
+# Tabs oder Anfuehrungszeichen die Datei nicht. Eintrag: "<mode> <sha> <stage>\t<pfad>".
+# Prozess-Substitution statt Pipe, damit `found` im Hauptshell landet; der
+# Exit-Status von git wird danach eigens geprueft.
+found=0
+while IFS= read -r -d '' entry; do
+  [[ "${entry%% *}" == "120000" ]] || continue
+  found=1
+  echo "::error file=${entry#*$'\t'}::getrackter Symlink — bricht das Laden der Composite-Actions des Katalogs ab (#458). Zur Testlaufzeit anlegen statt einchecken."
+done < <(git ls-files -s -z)
+wait $! || { echo "check-no-symlinks: git ls-files schlug fehl" >&2; exit 1; }
 
-if [[ -n "$links" ]]; then
-  while IFS= read -r path; do
-    echo "::error file=${path}::getrackter Symlink — bricht das Laden der Composite-Actions des Katalogs ab (#458). Zur Testlaufzeit anlegen statt einchecken."
-  done <<< "$links"
+if (( found )); then
   exit 1
 fi
 
