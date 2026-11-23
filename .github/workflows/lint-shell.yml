@@ -277,58 +277,13 @@ jobs:
         env:
           SEVERITY: ${{ inputs.severity }}
           FOLLOW: ${{ inputs.follow_sources }}
-        # DER VERTRAG von shellcheck, gemessen, nicht vermutet:
-        #
-        #   rc=0  keine Funde,          stderr leer,      stdout = Bericht
-        #   rc=1  Funde,                stderr leer,      stdout = Bericht
-        #   rc>=2 FATAL (Datei nicht lesbar, kaputte Option) — und stdout
-        #         traegt trotzdem einen gueltigen, LEEREN Bericht:
-        #
-        #     $ shellcheck -f json1 -S style gibtsnicht.sh
-        #     rc=2 · stdout {"comments":[]} · stderr "openBinaryFile: does not exist"
-        #
-        # Genau daran ist die alte Pruefung (`rc != 0 && ! -s shellcheck.json`)
-        # vorbeigelaufen: der Bericht ist nicht leer, die Bedingung greift
-        # nicht, der Konverter erzeugt gueltiges SARIF, der Count ist 0 und der
-        # Job wird gruen — der Fall, gegen den der Kommentar hier argumentierte.
-        #
-        # WARUM DER WRAPPER: `rc` war nie shellchecks Code, sondern xargs'.
-        # xargs meldet fuer JEDEN Kindstatus zwischen 1 und 125 pauschal 123
-        # (GNU; BSD 1) und macht "Funde" von "fatal" ununterscheidbar. Der
-        # `sh -c`-Wrapper schreibt den ECHTEN Status jedes Aufrufs in
-        # shellcheck.rc; ausgewertet wird der hoechste. Ohne ihn waere jede
-        # rc-basierte Pruefung hier eine Pruefung auf xargs.
-        run: |
-          # Kein FILE_COUNT==0-Zweig mehr: der Collect-Schritt bricht in dem
-          # Fall bereits ab, dieser Schritt laeuft dann gar nicht. Der frueher
-          # hier erzeugte Ersatzbericht {"comments":[]} war genau die stille
-          # Gruenfaerbung, die der Abbruch verhindert.
-          set -uo pipefail
-          ARGS=(-f json1 -S "$SEVERITY")
-          [[ "$FOLLOW" == "true" ]] && ARGS+=(-x)
-          : > shellcheck.rc
-          set +e
-          # -d '\n': die Liste ist zeilenbasiert und NUL-sicher erzeugt; ohne
-          # das zerlegt xargs Pfade mit Leerzeichen.
-          xargs -a files.txt -d '\n' \
-            sh -c 'shellcheck "$@"; echo "$?" >> shellcheck.rc' shellcheck-batch "${ARGS[@]}" \
-            > shellcheck.json 2> shellcheck.err
-          xargs_rc=$?
-          set -e
-          cat shellcheck.err >&2 || true
-          rc="$(sort -n shellcheck.rc | tail -1)"
-          if [[ -z "$rc" ]]; then
-            echo "::error::shellcheck wurde gar nicht aufgerufen (xargs rc=${xargs_rc}) — es wurde nichts geprueft: $(tr -d '\n' < shellcheck.err)" >&2
-            exit 1
-          fi
-          if [[ "$rc" -ge 2 ]]; then
-            echo "::error::shellcheck brach mit rc=${rc} ab — der Bericht ist unvollstaendig, nicht leer: $(tr -d '\n' < shellcheck.err)" >&2
-            exit 1
-          fi
-          if [[ ! -s shellcheck.json ]]; then
-            echo "::error::shellcheck exited ${rc} without producing a report — it did not check anything: $(tr -d '\n' < shellcheck.err)" >&2
-            exit 1
-          fi
+          RUNNER: ${{ github.workspace }}/.catalog/scripts/shellcheck-run.sh
+        # shellchecks Vertrag fuer fatale Laeufe (rc>=2 bei gueltigem LEEREM
+        # Bericht) und der xargs-Wrapper stehen im Skript; dort sind sie per
+        # bats getestet (tests/shell/shellcheck-run.bats). Frueher pruefte das
+        # ein Nightly-Caller mit eingechecktem kaputten Symlink — der brach das
+        # Laden aller Composite-Actions des Katalogs (#458).
+        run: bash "$RUNNER"
 
       - name: Convert to SARIF
         env:

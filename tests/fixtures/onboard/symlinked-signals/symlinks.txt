@@ -1,0 +1,12 @@
+# Symlinks dieser Fixture — zur Testlaufzeit angelegt, nie eingecheckt (#458).
+#
+# Format: <link> <ziel>, relativ zur Fixture, Ziel wie bei `ln -s` relativ zum
+# Verzeichnis des Links. Angelegt von tests/shell/lib/materialize-symlinks.sh
+# (bats, check-engine-parity.sh) und materializedFixture() in
+# internal/app/detect/symlink_fixture_test.go.
+scripts/linked.sh real.sh
+tofu/linked.tf main.tf
+linked-only/only.sh ../scripts/real.sh
+linked-only/only.tf ../tofu/main.tf
+linked-only/dangling.sh missing.sh
+linked-only/dangling.tf missing.tf

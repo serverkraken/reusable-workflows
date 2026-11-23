@@ -1,6 +1,9 @@
 package detect
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -75,8 +78,25 @@ func TestIsChildModulePath(t *testing.T) {
 // einen gueltigen und einen kaputten je Endung. Zaehlte der Walker Symlinks
 // mit, erschiene `linked-only` als Stack und als Shell-Glob; die Bash-Engine
 // (`find -type f`) meldete beides nicht, und genau das war die Abweichung.
+//
+// Die Links entstehen zur Laufzeit aus symlinks.txt (#458). Die Lstat-Pruefung
+// sichert ab, dass der Test wirklich gegen einen kaputten Link laeuft und
+// nicht gegen die nackte Fixture — die waere auch ohne Fix gruen.
 func TestSignalsIgnoreSymlinks(t *testing.T) {
-	p := detectFixture(t, "symlinked-signals").Profile
+	repo := materializedFixture(t, "symlinked-signals")
+	dangling := filepath.Join(repo, "linked-only", "dangling.tf")
+	if fi, err := os.Lstat(dangling); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("%s ist kein Symlink (err=%v)", dangling, err)
+	}
+	if _, err := os.Stat(dangling); !os.IsNotExist(err) {
+		t.Fatalf("%s sollte ins Leere zeigen, Stat-Fehler: %v", dangling, err)
+	}
+
+	res, err := (Service{}).Detect(context.Background(), Request{RepoPath: repo})
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	p := res.Profile
 
 	if p.IaC == nil {
 		t.Fatal("erwartet ein iac-Signal, bekam nil")
