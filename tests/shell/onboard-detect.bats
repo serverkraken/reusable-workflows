@@ -1876,8 +1876,17 @@ _nested_repo() {  # <tiefe: 3|4>
 # Symlinks mit, erschiene das Verzeichnis als Stack bzw. als Glob. Genau hier
 # liefen die Engines auseinander: Gos WalkDir meldet einen Symlink-auf-Datei
 # als Nicht-Verzeichnis, `find -type f` schliesst ihn aus.
+#
+# Die Links liegen nicht im Repo (#458), sondern in symlinks.txt; der Test baut
+# sie in einer Kopie. Die -L-Pruefungen sichern ab, dass er wirklich gegen
+# Symlinks laeuft und nicht gegen die nackte Fixture.
 @test "profile-json: Symlinks zaehlen weder fuer iac noch fuer shell" {
-  run "$DETECT" --profile-json "$FIX/symlinked-signals"
+  local repo="$BATS_TEST_TMPDIR/symlinked-signals"
+  "$REPO_ROOT/tests/shell/lib/materialize-symlinks.sh" "$FIX/symlinked-signals" "$repo"
+  [ -L "$repo/linked-only/dangling.sh" ] && [ ! -e "$repo/linked-only/dangling.sh" ]
+  [ -L "$repo/linked-only/only.tf" ] && [ -e "$repo/linked-only/only.tf" ]
+
+  run "$DETECT" --profile-json "$repo"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.iac.directories == ["tofu"]'
   echo "$output" | jq -e '.shell.paths == ["scripts/**/*.sh"]'

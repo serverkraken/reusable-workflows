@@ -35,10 +35,23 @@ fi
 fail=0
 checked=0
 declined=0
+materialized=0
+
+# Fixtures mit symlinks.txt tragen ihre Symlinks nicht im Repo — getrackte
+# Links brechen das Laden der Composite-Actions (#458). Verglichen wird deshalb
+# eine Kopie MIT Links; die nackte Fixture zu vergleichen haette genau die
+# Abweichung (Review-Fund I3) wieder unsichtbar gemacht, fuer die sie existiert.
+MAT_ROOT="$(mktemp -d)"
+trap 'rm -rf "$MAT_ROOT"' EXIT
 
 for dir in "$FIXTURES"/*/; do
   [[ -d "$dir" ]] || continue
   name="$(basename "$dir")"
+  if [[ -f "$dir/symlinks.txt" ]]; then
+    bash "$ROOT/tests/shell/lib/materialize-symlinks.sh" "$dir" "$MAT_ROOT/$name"
+    dir="$MAT_ROOT/$name/"
+    materialized=$((materialized + 1))
+  fi
 
   go_out=$("$BIN" detect --repo-path "$dir" --profile-json 2>/dev/null || true)
   bash_err=$(mktemp)
@@ -138,4 +151,4 @@ done
 if (( fail )); then
   exit 1
 fi
-echo "OK: $checked Fixtures, beide Engines liefern gleiches Profil UND gleiche gerenderte Dateien; $declined mit begruendeter Absage der Bash-Engine."
+echo "OK: $checked Fixtures ($materialized mit zur Laufzeit angelegten Symlinks), beide Engines liefern gleiches Profil UND gleiche gerenderte Dateien; $declined mit begruendeter Absage der Bash-Engine."
