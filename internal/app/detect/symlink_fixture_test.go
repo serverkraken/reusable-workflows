@@ -2,6 +2,7 @@ package detect
 
 import (
 	"bufio"
+	"bytes"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -47,14 +48,13 @@ func materializedFixture(t *testing.T, name string) string {
 		t.Fatalf("Fixture %s kopieren: %v", name, err)
 	}
 
-	f, err := os.Open(filepath.Join(src, "symlinks.txt"))
+	manifest, err := os.ReadFile(filepath.Join(src, "symlinks.txt"))
 	if err != nil {
 		t.Fatalf("Manifest von %s: %v", name, err)
 	}
-	defer f.Close()
 
 	count := 0
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(bytes.NewReader(manifest))
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
