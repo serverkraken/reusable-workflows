@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.34.1](https://github.com/serverkraken/reusable-workflows/compare/v4.34.0...v4.34.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **fixtures:** keine getrackten Symlinks mehr — Composite-Actions wieder ladbar ([#460](https://github.com/serverkraken/reusable-workflows/issues/460)) ([a25c51a](https://github.com/serverkraken/reusable-workflows/commit/a25c51abcc553a3b578f77146b71a313fa7fccff))
+
 ## [4.34.0](https://github.com/serverkraken/reusable-workflows/compare/v4.33.0...v4.34.0) (2026-11-16)
 
 
